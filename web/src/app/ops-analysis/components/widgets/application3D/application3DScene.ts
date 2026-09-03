@@ -56,6 +56,7 @@ import {
 import {
   ARCH_HOST_OVERLAY_GAP,
   ARCH_HOST_OVERLAY_SIZE,
+  expandArchitectureCabinetWorldBox,
   placeOverlayOutsideRect,
   projectWorldBoxToScreenRect,
   type ArchitectureHostSelection,
@@ -1608,10 +1609,12 @@ export const createApplication3DScene = (
       clearArchitectureHost();
       return;
     }
-    nodeGroup.updateWorldMatrix(true, true);
-    const box = new THREE.Box3().setFromObject(nodeGroup);
-    const rect = renderer.domElement.getBoundingClientRect();
-    const viewport = { width: Math.max(rect.width, 1), height: Math.max(rect.height, 1) };
+    camera.updateMatrixWorld();
+    const box = expandArchitectureCabinetWorldBox(nodeGroup);
+    const viewport = {
+      width: Math.max(viewportWidth, 1),
+      height: Math.max(viewportHeight, 1),
+    };
     const hostScreenRect = projectWorldBoxToScreenRect(box, camera, viewport);
     const overlay = placeOverlayOutsideRect(
       hostScreenRect,

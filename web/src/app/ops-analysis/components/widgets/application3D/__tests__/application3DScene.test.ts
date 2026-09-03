@@ -14,6 +14,12 @@ import {
 } from '../application3DArchitecture';
 import { resolveApplication3DWallCamera } from '../application3DLayout';
 import {
+  expandArchitectureCabinetWorldBox,
+  overlayScreenRect,
+  projectWorldBoxToScreenRect,
+  screenRectsIntersect,
+} from '../application3DArchitectureOverlay';
+import {
   APPLICATION3D_ORBIT_PAN,
   APPLICATION3D_USER_POLAR,
   APPLICATION3D_WALL_GROUP_NAME,
@@ -823,6 +829,52 @@ describe('application3D architecture host pick', () => {
     mockHit(undefined);
     canvas?.dispatchEvent(new PointerEvent('pointermove', point));
     expect(canvas).toHaveProperty('style.cursor', 'grab');
+    controller.dispose();
+  });
+
+  it('places the host overlay from the cabinet AABB in widget CSS pixels', () => {
+    const { controller, onArchitectureHostSelect, canvas } = mountArchitecture();
+    const rackRoot = findRackMesh('host-alarm')?.parent;
+    expect(rackRoot).toBeTruthy();
+    rackRoot?.scale.setScalar(1);
+    rackRoot?.traverse((child) => {
+      if (child.userData.archRole !== 'node-label') return;
+      const scale = child.userData.labelScale as THREE.Vector3 | undefined;
+      if (scale) child.scale.copy(scale);
+    });
+    canvas!.getBoundingClientRect = () => ({
+      x: 0,
+      y: 0,
+      top: 0,
+      left: 0,
+      right: 160,
+      bottom: 90,
+      width: 160,
+      height: 90,
+      toJSON: () => ({}),
+    });
+    mockHit(findRackMesh('host-alarm'));
+    click(canvas);
+    const selection = onArchitectureHostSelect.mock.calls.at(-1)?.[0];
+    expect(selection).toBeTruthy();
+    expect(selection.node.id).toBe('host-alarm');
+    expect(captured.camera).toBeTruthy();
+    const cssViewport = { width: 320, height: 180 };
+    const scaledViewport = { width: 160, height: 90 };
+    const cabinetBox = expandArchitectureCabinetWorldBox(rackRoot!);
+    const fullBox = new THREE.Box3().setFromObject(rackRoot!);
+    const cabinetRect = projectWorldBoxToScreenRect(cabinetBox, captured.camera!, cssViewport);
+    const fullRect = projectWorldBoxToScreenRect(fullBox, captured.camera!, cssViewport);
+    const scaledRect = projectWorldBoxToScreenRect(cabinetBox, captured.camera!, scaledViewport);
+    expect(selection.hostScreenRect.left).toBeCloseTo(cabinetRect.left, 1);
+    expect(selection.hostScreenRect.right).toBeCloseTo(cabinetRect.right, 1);
+    expect(selection.hostScreenRect.right - selection.hostScreenRect.left).toBeLessThan(
+      fullRect.right - fullRect.left,
+    );
+    expect(Math.abs(selection.hostScreenRect.left - scaledRect.left)).toBeGreaterThan(1);
+    expect(
+      screenRectsIntersect(overlayScreenRect(selection.overlay), selection.hostScreenRect),
+    ).toBe(false);
     controller.dispose();
   });
 });

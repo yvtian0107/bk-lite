@@ -44,24 +44,6 @@ export const overlayScreenRect = (
   bottom: position.top + size.height,
 });
 
-const leftoverOnSide = (
-  side: ArchitectureOverlaySide,
-  host: ScreenRect,
-  viewport: ScreenSize,
-) => {
-  if (side === 'right') return viewport.width - host.right;
-  if (side === 'left') return host.left;
-  if (side === 'above') return host.top;
-  return viewport.height - host.bottom;
-};
-
-const rankSides = (host: ScreenRect, viewport: ScreenSize) =>
-  [...SIDES].sort((a, b) => {
-    const delta = leftoverOnSide(b, host, viewport) - leftoverOnSide(a, host, viewport);
-    if (delta !== 0) return delta;
-    return SIDES.indexOf(a) - SIDES.indexOf(b);
-  });
-
 const placeOnSide = (
   side: ArchitectureOverlaySide,
   host: ScreenRect,
@@ -92,9 +74,9 @@ const clampOverlay = (
 });
 
 /**
- * Place a compact overlay outside the host screen AABB.
- * Prefers the side with more leftover viewport space: right, left, above, below.
- * Result is clamped to the canvas and must not cover the host when there is room.
+ * Place a compact overlay outside the host cabinet screen AABB.
+ * Tries right → left → above → below and takes the first side that stays
+ * inside the viewport after clamp without covering the cabinet.
  */
 export const placeOverlayOutsideRect = (
   host: ScreenRect,
@@ -102,18 +84,13 @@ export const placeOverlayOutsideRect = (
   viewport: ScreenSize,
   gap = ARCH_HOST_OVERLAY_GAP,
 ): { left: number; top: number; side: ArchitectureOverlaySide } => {
-  const sides = rankSides(host, viewport);
-  for (const side of sides) {
+  for (const side of SIDES) {
     const clamped = clampOverlay(placeOnSide(side, host, overlay, gap), overlay, viewport);
     if (!screenRectsIntersect(overlayScreenRect(clamped, overlay), host)) {
       return { ...clamped, side };
     }
-    const raw = placeOnSide(side, host, overlay, gap);
-    if (!screenRectsIntersect(overlayScreenRect(raw, overlay), host)) {
-      return { ...raw, side };
-    }
   }
-  const fallback = sides[0];
+  const fallback = SIDES[0];
   const clamped = clampOverlay(placeOnSide(fallback, host, overlay, gap), overlay, viewport);
   return { ...clamped, side: fallback };
 };
@@ -142,6 +119,36 @@ export const projectWorldBoxToScreenRect = (
     }
   }
   return { left, top, right, bottom };
+};
+
+const cabinetPartBox = new THREE.Box3();
+
+const isArchitectureCabinetOverlayMesh = (object: THREE.Object3D) => {
+  if (!(object as THREE.Mesh).isMesh) return false;
+  return object.userData.archRole !== 'node-label';
+};
+
+/**
+ * World AABB of the rack chassis (hull, LEDs, alarm stroke). Skips the
+ * billboard name plate so overlay attach uses the cabinet, not the label.
+ */
+export const expandArchitectureCabinetWorldBox = (
+  root: THREE.Object3D,
+  target = new THREE.Box3(),
+) => {
+  target.makeEmpty();
+  root.updateWorldMatrix(true, true);
+  root.traverse((child) => {
+    if (!isArchitectureCabinetOverlayMesh(child)) return;
+    const mesh = child as THREE.Mesh;
+    const geometry = mesh.geometry;
+    if (!geometry) return;
+    if (!geometry.boundingBox) geometry.computeBoundingBox();
+    if (!geometry.boundingBox) return;
+    cabinetPartBox.copy(geometry.boundingBox).applyMatrix4(mesh.matrixWorld);
+    target.union(cabinetPartBox);
+  });
+  return target;
 };
 
 export const formatArchitectureHostState = (
