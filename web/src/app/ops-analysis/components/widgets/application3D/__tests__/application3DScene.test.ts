@@ -51,6 +51,8 @@ vi.mock('three', async (importOriginal) => {
         height: 180,
         toJSON: () => ({}),
       });
+      this.domElement.setPointerCapture = () => undefined;
+      this.domElement.releasePointerCapture = () => undefined;
     }
     setClearColor() {}
     setPixelRatio() {}
@@ -369,7 +371,7 @@ describe('application3D architecture scene', () => {
     canvas?.dispatchEvent(contextEvent);
     expect(contextEvent.defaultPrevented).toBe(true);
 
-    const point = { clientX: 160, clientY: 90, bubbles: true };
+    const point = { clientX: 160, clientY: 90, pointerId: 1, bubbles: true };
     canvas?.dispatchEvent(new PointerEvent('pointerdown', { ...point, button: 2 }));
     canvas?.dispatchEvent(new PointerEvent('pointerup', { ...point, button: 2 }));
     expect(onSelect).not.toHaveBeenCalled();
