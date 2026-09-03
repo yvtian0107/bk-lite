@@ -97,44 +97,158 @@ const createDoorTexture = () =>
     context.fillRect(24, 108, 3, 26);
   });
 
-const createEquipmentTexture = () =>
-  createCanvasTexture(320, 96, (context) => {
-    context.fillStyle = "#829db2";
-    context.fillRect(0, 0, 320, 96);
-    const gradient = context.createLinearGradient(0, 0, 0, 96);
-    gradient.addColorStop(0, "rgba(255,255,255,0.28)");
-    gradient.addColorStop(0.5, "rgba(31,45,58,0.08)");
-    gradient.addColorStop(1, "rgba(6,16,26,0.25)");
-    context.fillStyle = gradient;
-    context.fillRect(0, 0, 320, 96);
-    context.fillStyle = "rgba(18, 30, 42, 0.32)";
-    context.fillRect(0, 0, 320, 12);
-    context.fillRect(0, 84, 320, 12);
-    context.fillStyle = "rgba(230, 239, 246, 0.42)";
-    context.fillRect(12, 16, 296, 2);
-    context.fillRect(12, 78, 296, 2);
-    context.fillStyle = "rgba(8, 18, 28, 0.54)";
-    for (let bay = 0; bay < 4; bay += 1) {
-      const left = 18 + bay * 68;
-      context.fillRect(left, 26, 52, 34);
-      context.fillStyle = "rgba(190, 203, 214, 0.28)";
-      context.fillRect(left + 4, 29, 44, 2);
-      context.fillStyle = "rgba(8, 18, 28, 0.54)";
-      for (let y = 35; y < 55; y += 6) {
-        for (let x = left + 5; x < left + 48; x += 7) {
-          context.fillRect(x, y, 3, 2);
-        }
+const EQUIPMENT_FRONT_MAP_WIDTH = 320;
+const EQUIPMENT_FRONT_MAP_HEIGHT = 96;
+const EQUIPMENT_FACE_EMISSIVE_INTENSITY = 1.22;
+
+type EquipmentPortLedKind = "green" | "amber" | "off";
+
+const EQUIPMENT_PORT_LED_PAINT: Record<
+  Exclude<EquipmentPortLedKind, "off">,
+  {
+    core: string;
+    innerHalo: string;
+    outerHalo: string;
+    emissiveCore: string;
+    emissiveInnerHalo: string;
+    emissiveOuterHalo: string;
+  }
+> = {
+  green: {
+    core: "#3dff68",
+    innerHalo: "rgba(61, 255, 104, 0.58)",
+    outerHalo: "rgba(61, 255, 104, 0.24)",
+    emissiveCore: "#f3fff5",
+    emissiveInnerHalo: "rgba(110, 255, 150, 0.9)",
+    emissiveOuterHalo: "rgba(50, 255, 110, 0.4)",
+  },
+  amber: {
+    core: "#ff9c1c",
+    innerHalo: "rgba(255, 156, 28, 0.6)",
+    outerHalo: "rgba(255, 156, 28, 0.26)",
+    emissiveCore: "#fff3e2",
+    emissiveInnerHalo: "rgba(255, 180, 70, 0.9)",
+    emissiveOuterHalo: "rgba(255, 150, 30, 0.42)",
+  },
+};
+
+const getEquipmentPortLedKind = (
+  bay: number,
+  row: number,
+  col: number,
+): EquipmentPortLedKind => {
+  const slot = (bay * 7 + row * 3 + col * 5 + 2) % 12;
+  if (slot === 0) {
+    return "off";
+  }
+  if (slot === 3 || slot === 9) {
+    return "amber";
+  }
+  return "green";
+};
+
+const paintEquipmentPortLed = (
+  context: CanvasRenderingContext2D,
+  x: number,
+  y: number,
+  kind: EquipmentPortLedKind,
+  target: "map" | "emissive",
+) => {
+  if (kind === "off") {
+    if (target === "map") {
+      context.fillStyle = "rgba(6, 12, 18, 0.92)";
+      context.fillRect(x, y, 3, 2);
+    }
+    return;
+  }
+
+  const paint = EQUIPMENT_PORT_LED_PAINT[kind];
+  context.fillStyle = target === "map" ? paint.outerHalo : paint.emissiveOuterHalo;
+  context.fillRect(x - 2, y - 2, 7, 6);
+  context.fillStyle = target === "map" ? paint.innerHalo : paint.emissiveInnerHalo;
+  context.fillRect(x - 1, y - 1, 5, 4);
+  context.fillStyle = target === "map" ? paint.core : paint.emissiveCore;
+  context.fillRect(x, y, 3, 2);
+  context.fillStyle =
+    target === "map" ? "rgba(255, 255, 255, 0.42)" : "rgba(255, 255, 255, 0.85)";
+  context.fillRect(x + 1, y, 1, 1);
+};
+
+const forEachEquipmentPortLed = (
+  callback: (x: number, y: number, kind: EquipmentPortLedKind) => void,
+) => {
+  for (let bay = 0; bay < 4; bay += 1) {
+    const left = 18 + bay * 68;
+    let row = 0;
+    for (let y = 35; y < 55; y += 6) {
+      let col = 0;
+      for (let x = left + 5; x < left + 48; x += 7) {
+        callback(x, y, getEquipmentPortLedKind(bay, row, col));
+        col += 1;
       }
+      row += 1;
     }
-    context.fillStyle = "#47e8ff";
-    for (let x = 286; x < 310; x += 8) {
-      context.beginPath();
-      context.arc(x, 48, 2.4, 0, Math.PI * 2);
-      context.fill();
-    }
-    context.fillStyle = "rgba(91, 234, 255, 0.42)";
-    context.fillRect(276, 31, 3, 34);
+  }
+};
+
+const paintEquipmentPortLeds = (
+  context: CanvasRenderingContext2D,
+  target: "map" | "emissive",
+) => {
+  forEachEquipmentPortLed((x, y, kind) => {
+    paintEquipmentPortLed(context, x, y, kind, target);
   });
+};
+
+const createEquipmentTexture = () => {
+  const map = createCanvasTexture(
+    EQUIPMENT_FRONT_MAP_WIDTH,
+    EQUIPMENT_FRONT_MAP_HEIGHT,
+    (context) => {
+      context.fillStyle = "#829db2";
+      context.fillRect(0, 0, 320, 96);
+      const gradient = context.createLinearGradient(0, 0, 0, 96);
+      gradient.addColorStop(0, "rgba(255,255,255,0.28)");
+      gradient.addColorStop(0.5, "rgba(31,45,58,0.08)");
+      gradient.addColorStop(1, "rgba(6,16,26,0.25)");
+      context.fillStyle = gradient;
+      context.fillRect(0, 0, 320, 96);
+      context.fillStyle = "rgba(18, 30, 42, 0.32)";
+      context.fillRect(0, 0, 320, 12);
+      context.fillRect(0, 84, 320, 12);
+      context.fillStyle = "rgba(230, 239, 246, 0.42)";
+      context.fillRect(12, 16, 296, 2);
+      context.fillRect(12, 78, 296, 2);
+      context.fillStyle = "rgba(8, 18, 28, 0.54)";
+      for (let bay = 0; bay < 4; bay += 1) {
+        const left = 18 + bay * 68;
+        context.fillRect(left, 26, 52, 34);
+        context.fillStyle = "rgba(190, 203, 214, 0.28)";
+        context.fillRect(left + 4, 29, 44, 2);
+        context.fillStyle = "rgba(8, 18, 28, 0.54)";
+      }
+      paintEquipmentPortLeds(context, "map");
+      context.fillStyle = "#47e8ff";
+      for (let x = 286; x < 310; x += 8) {
+        context.beginPath();
+        context.arc(x, 48, 2.4, 0, Math.PI * 2);
+        context.fill();
+      }
+      context.fillStyle = "rgba(91, 234, 255, 0.42)";
+      context.fillRect(276, 31, 3, 34);
+    },
+  );
+  const emissiveMap = createCanvasTexture(
+    EQUIPMENT_FRONT_MAP_WIDTH,
+    EQUIPMENT_FRONT_MAP_HEIGHT,
+    (context) => {
+      context.fillStyle = "#000000";
+      context.fillRect(0, 0, 320, 96);
+      paintEquipmentPortLeds(context, "emissive");
+    },
+  );
+  return { map, emissiveMap };
+};
 
 const createRackTopTexture = (label: string, category?: string) =>
   createCanvasTexture(192, 128, (context) => {
@@ -916,11 +1030,13 @@ const createEquipmentLayer = (
     height,
     0.34,
   );
+  const { map, emissiveMap } = createEquipmentTexture();
   const frontMaterial = new THREE.MeshStandardMaterial({
     color: "#7893a8",
-    map: createEquipmentTexture(),
-    emissive: "#1b536c",
-    emissiveIntensity: 0.24,
+    map,
+    emissive: "#ffffff",
+    emissiveMap,
+    emissiveIntensity: EQUIPMENT_FACE_EMISSIVE_INTENSITY,
     metalness: 0.28,
     roughness: 0.38,
   });
@@ -932,7 +1048,7 @@ const createEquipmentLayer = (
     metalness: 0.3,
     roughness: 0.42,
   });
-  frontMaterial.userData.baseEmissiveIntensity = 0.24;
+  frontMaterial.userData.baseEmissiveIntensity = EQUIPMENT_FACE_EMISSIVE_INTENSITY;
   sideMaterial.userData.baseEmissiveIntensity = 0.1;
   const layer = new THREE.Mesh(geometry, [
     sideMaterial,
