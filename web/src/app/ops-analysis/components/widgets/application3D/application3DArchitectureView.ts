@@ -1,5 +1,4 @@
 import * as THREE from 'three';
-import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
 import type { Application3DTranslate } from './application3DLayout';
 import { CARD_GLASS } from './application3DCardStyle';
 import cabinetFrontAlbedo from './assets/cabinet-front-albedo-v2.png';
@@ -167,8 +166,6 @@ export const ARCH_APP_CHIP_METALNESS = 0.02;
 export const ARCH_APP_CHIP_TRANSMISSION = 0.64;
 export const ARCH_APP_CHIP_THICKNESS = 0.18;
 export const ARCH_APP_CHIP_IOR = 1.45;
-export const ARCH_APP_CHIP_ENV_INTENSITY = 0.9;
-export const ARCH_APP_CHIP_CABINET_ENV_INTENSITY = 0.28;
 export const ARCH_APP_CHIP_GLASS_COLOR = 0x8fe4ea;
 export const ARCH_APP_CHIP_RIM_COLOR = ARCH_EDGE;
 export const ARCH_APP_CHIP_TITLE_FILL = 'rgba(248, 252, 255, 0.96)';
@@ -540,66 +537,6 @@ interface RackKitMaterials {
 const textureSrc = (asset: string | { src: string }) =>
   typeof asset === 'string' ? asset : asset.src;
 
-const createFallbackChipEnvironment = () => {
-  const size = 8;
-  const swatches = [0x9ad4dc, 0x6aa8b4, 0xc4eef4, 0x3e6e78, 0x88c4cc, 0x5a9098];
-  const images = swatches.map((hex) => {
-    const canvas = document.createElement('canvas');
-    canvas.width = size;
-    canvas.height = size;
-    const context = canvas.getContext('2d');
-    if (context) {
-      context.fillStyle = `#${hex.toString(16).padStart(6, '0')}`;
-      context.fillRect(0, 0, size, size);
-    }
-    return canvas;
-  });
-  const texture = new THREE.CubeTexture(images);
-  texture.needsUpdate = true;
-  texture.userData.scopedChipEnv = true;
-  texture.userData.envSource = 'fallback-cube';
-  return texture;
-};
-
-/**
- * RoomEnvironment IBL for cabinets + app chips only.
- * Never assign this as the scene-wide environment map — that leaks indoor
- * reflections onto boards/stairs. WebGL-less tests fall back to a cyan cube.
- */
-export const createScopedArchitectureEnvironment = (
-  renderer?: THREE.WebGLRenderer,
-) => {
-  let ownedRenderer: THREE.WebGLRenderer | undefined;
-  try {
-    const glRenderer = renderer ?? (ownedRenderer = new THREE.WebGLRenderer({
-      antialias: false,
-      alpha: true,
-    }));
-    const pmrem = new THREE.PMREMGenerator(glRenderer);
-    const room = new RoomEnvironment();
-    const env = pmrem.fromScene(room, 0.04).texture;
-    env.userData.scopedChipEnv = true;
-    env.userData.envSource = 'room-environment';
-    if (typeof room.dispose === 'function') room.dispose();
-    pmrem.dispose();
-    ownedRenderer?.dispose();
-    return env;
-  } catch {
-    ownedRenderer?.dispose();
-    return createFallbackChipEnvironment();
-  }
-};
-
-const assignScopedEnvMap = (
-  material: THREE.MeshStandardMaterial,
-  envMap: THREE.Texture,
-  intensity: number,
-) => {
-  material.envMap = envMap;
-  material.envMapIntensity = intensity;
-  material.userData.scopedChipEnv = true;
-};
-
 /** Lift near-black albedo pixels so a matte hull still reads without IBL. */
 export const liftCabinetAlbedoPixels = (pixels: Uint8ClampedArray | Uint8Array) => {
   for (let i = 0; i < pixels.length; i += 4) {
@@ -654,7 +591,7 @@ const loadCabinetAlbedo = (loader: THREE.TextureLoader, url: string) => {
   return texture;
 };
 
-const createRackMaterials = (envMap?: THREE.Texture): RackKitMaterials => {
+const createRackMaterials = (): RackKitMaterials => {
   const loader = new THREE.TextureLoader();
   const frontAlbedo = loadCabinetAlbedo(loader, textureSrc(cabinetFrontAlbedo));
   const sideAlbedo = loadCabinetAlbedo(loader, textureSrc(cabinetSideAlbedo));
@@ -679,11 +616,6 @@ const createRackMaterials = (envMap?: THREE.Texture): RackKitMaterials => {
     emissive: 0x000000,
     emissiveIntensity: 0,
   });
-  if (envMap) {
-    assignScopedEnvMap(side, envMap, ARCH_APP_CHIP_CABINET_ENV_INTENSITY);
-    assignScopedEnvMap(top, envMap, ARCH_APP_CHIP_CABINET_ENV_INTENSITY);
-    assignScopedEnvMap(front, envMap, ARCH_APP_CHIP_CABINET_ENV_INTENSITY);
-  }
   const led = new THREE.MeshStandardMaterial({
     color: ARCH_LED_COLOR,
     metalness: 0.12,
@@ -1159,7 +1091,7 @@ interface AppChipMaterials {
   rimHalo: THREE.MeshBasicMaterial;
 }
 
-const createAppChipMaterials = (envMap?: THREE.Texture): AppChipMaterials => {
+const createAppChipMaterials = (): AppChipMaterials => {
   const glass = new THREE.MeshPhysicalMaterial({
     color: ARCH_APP_CHIP_GLASS_COLOR,
     transparent: true,
@@ -1176,7 +1108,6 @@ const createAppChipMaterials = (envMap?: THREE.Texture): AppChipMaterials => {
     depthWrite: false,
     side: THREE.DoubleSide,
   });
-  if (envMap) assignScopedEnvMap(glass, envMap, ARCH_APP_CHIP_ENV_INTENSITY);
   return {
     glass,
     rimCyan: new THREE.MeshStandardMaterial({
@@ -1256,9 +1187,6 @@ const addAppChipMeshes = (
     opacity: 0.96,
     toneMapped: false,
   });
-  if (materials.glass.envMap) {
-    assignScopedEnvMap(faceMaterial, materials.glass.envMap, 0.4);
-  }
   const face = new THREE.Mesh(geos.shadow, faceMaterial);
   face.position.set(0, 0, depth / 2 + 0.001);
   face.scale.set(width * 0.88, height * 0.88, 1);
@@ -1552,7 +1480,6 @@ const createTubeGroup = (
 export const createArchitectureTreeGroup = (
   data: Application3DArchitectureData,
   translate: Application3DTranslate,
-  renderer?: THREE.WebGLRenderer,
 ): Application3DArchitectureView => {
   const layout = layoutApplication3DArchitecture(data);
   const group = new THREE.Group();
@@ -1576,11 +1503,10 @@ export const createArchitectureTreeGroup = (
   const ledGeo = new THREE.CylinderGeometry(1, 1, 1, 12);
   const planeGeo = new THREE.PlaneGeometry(1, 1);
   const rackGeos: RackKitGeometries = { box: chassisGeo, led: ledGeo, shadow: planeGeo };
-  const scopedEnv = createScopedArchitectureEnvironment(renderer);
-  const rackMats = createRackMaterials(scopedEnv);
+  const rackMats = createRackMaterials();
   const chipGeo = createRoundedChipGeometry();
   const chipRimGeos = createAppChipRimGeometries(ARCH_NODE_SIZE.application);
-  const chipMats = createAppChipMaterials(scopedEnv);
+  const chipMats = createAppChipMaterials();
   disposables.push(
     chassisGeo,
     ledGeo,
@@ -1591,7 +1517,6 @@ export const createArchitectureTreeGroup = (
     chipMats.glass,
     chipMats.rimCyan,
     chipMats.rimHalo,
-    scopedEnv,
     ...new Set(rackMats.faces),
     ...rackMats.textures,
     rackMats.led,

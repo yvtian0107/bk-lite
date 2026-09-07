@@ -144,8 +144,6 @@ import {
   ARCH_RING_ALARM,
   APP_CHIP_ICON_KINDS,
   ARCH_APP_CHIP_BEVEL,
-  ARCH_APP_CHIP_CABINET_ENV_INTENSITY,
-  ARCH_APP_CHIP_ENV_INTENSITY,
   ARCH_APP_CHIP_GLASS_COLOR,
   ARCH_APP_CHIP_METALNESS,
   ARCH_APP_CHIP_NAME_MAX_CHARS,
@@ -1508,12 +1506,10 @@ describe('application3D architecture view', () => {
     hostFaces.forEach((face) => {
       expect(face).toBeInstanceOf(THREE.MeshStandardMaterial);
       expect(face).not.toBeInstanceOf(THREE.MeshPhysicalMaterial);
-      expect(face.envMap).toBeTruthy();
-      expect(face.userData.scopedChipEnv).toBe(true);
-      expect(face.envMapIntensity).toBeCloseTo(ARCH_APP_CHIP_CABINET_ENV_INTENSITY);
+      expect(face.envMap).toBeFalsy();
       expect(('clearcoat' in face) ? (face as THREE.MeshPhysicalMaterial).clearcoat : 0).toBe(0);
     });
-    expect(front.envMap).toBeTruthy();
+    expect(front.envMap).toBeFalsy();
     expect(front.roughnessMap).toBeFalsy();
     expect(front.emissive.getHex()).toBe(0);
     expect(front.emissiveIntensity).toBe(0);
@@ -1636,11 +1632,9 @@ describe('application3D architecture view', () => {
     expect(viewSrc).toContain('addRackMeshes');
     expect(viewSrc).toContain('MeshPhysicalMaterial');
     expect(viewSrc).not.toContain('clearcoat');
-    expect(viewSrc).toContain('envMap');
-    expect(viewSrc).toContain('RoomEnvironment');
-    expect(viewSrc).toContain('createScopedArchitectureEnvironment');
-    expect(viewSrc).not.toContain('scene.environment =');
-    expect(viewSrc).not.toMatch(/scene\.environment\s*=/);
+    expect(viewSrc).not.toContain('envMap');
+    expect(viewSrc).not.toContain('RoomEnvironment');
+    expect(viewSrc).not.toContain('createScopedArchitectureEnvironment');
     expect(viewSrc).not.toContain('ARCH_RACK_FRONT_CLEARCOAT');
     expect(viewSrc).toContain('MeshStandardMaterial');
     expect(viewSrc).toContain('rack-led');
@@ -2168,19 +2162,8 @@ describe('application3D architecture view', () => {
     expect(glass.metalness).toBeCloseTo(ARCH_APP_CHIP_METALNESS);
     expect(glass.transmission).toBeCloseTo(ARCH_APP_CHIP_TRANSMISSION);
     expect(glass.thickness).toBeCloseTo(ARCH_APP_CHIP_THICKNESS);
-    expect(glass.envMap).toBeTruthy();
-    expect(glass.envMapIntensity).toBeCloseTo(ARCH_APP_CHIP_ENV_INTENSITY);
+    expect(glass.envMap).toBeFalsy();
     expect(glass.color.getHex()).toBe(ARCH_APP_CHIP_GLASS_COLOR);
-    view.group.traverse((child) => {
-      if (!(child as THREE.Mesh).isMesh) return;
-      const mesh = child as THREE.Mesh;
-      const role = mesh.userData.archRole as string | undefined;
-      if (role !== 'plane-mesh' && role !== 'plane-veneer' && role !== 'plane-rim') return;
-      const materials = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
-      materials.forEach((material) => {
-        expect((material as THREE.MeshStandardMaterial).envMap).toBeFalsy();
-      });
-    });
     const chipGeo = quiet.chips[0].geometry as THREE.ExtrudeGeometry;
     expect(chipGeo.parameters.options.bevelEnabled).toBe(true);
     expect(chipGeo.parameters.options.bevelSize).toBe(ARCH_APP_CHIP_BEVEL);
