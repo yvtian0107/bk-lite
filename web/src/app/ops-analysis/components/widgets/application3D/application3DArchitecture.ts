@@ -9,17 +9,16 @@ import { APPLICATION3D_CAMERA_FOV } from './application3DLayout';
 import { ARCHITECTURE_MOTION, ARCHITECTURE_PLANE_COUNT } from './application3DMotion';
 
 /**
- * Architecture-only rack sizes. One cabinet family, two scales, sitting ON
- * the horizontal platforms — they do not define the plane AABB.
- * Host is the taller/slimmer 3U-like member; application is shorter and
- * sturdier. Both stay racks (not wall cards).
+ * Architecture node sizes. Hosts stay metal cabinets on the platforms.
+ * Applications are short, slightly wide frosted-glass chips — not racks.
+ * These sizes do not define the plane AABB.
  */
 export const ARCH_NODE_SIZE: Record<
   Application3DArchitectureKind,
   { width: number; height: number; depth: number }
 > = {
   system: { width: 0.48, height: 0.76, depth: 0.36 },
-  application: { width: 0.42, height: 0.54, depth: 0.34 },
+  application: { width: 0.48, height: 0.36, depth: 0.12 },
   host: { width: 0.32, height: 0.72, depth: 0.26 },
 };
 

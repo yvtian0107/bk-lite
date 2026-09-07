@@ -138,16 +138,29 @@ import {
   ARCH_STROKE_EMISSIVE_INTENSITY,
   ARCH_RING_CYAN,
   ARCH_RING_ALARM,
+  APP_CHIP_ICON_KINDS,
+  ARCH_APP_CHIP_GLASS_COLOR,
+  ARCH_APP_CHIP_METALNESS,
+  ARCH_APP_CHIP_OPACITY,
+  ARCH_APP_CHIP_ROUGHNESS,
+  ARCH_APP_CHIP_RIM_ALARM_COLOR,
+  ARCH_APP_CHIP_RIM_COLOR,
+  ARCH_APP_CHIP_TITLE_FILL,
+  appChipIconKind,
+  applicationHasAlarm,
   architectureEdgeColor,
   architecturePulseProgress,
   createArchitectureEdgeCurve,
   createArchitectureTreeGroup,
   createTrapezoidFrustumGeometry,
+  hashAppChipIconIndex,
   hostHasAlarm,
   findArchitectureRackRoot,
   liftCabinetAlbedoPixels,
   liftCabinetAlbedoTexture,
+  truncateAppChipName,
   updateArchitecturePulse,
+  yawObjectAroundYToCamera,
 } from '../application3DArchitectureView';
 import { ARCHITECTURE_MOTION } from '../application3DMotion';
 
@@ -320,18 +333,21 @@ describe('application3D architecture layout', () => {
     expect(bottomWidth / layout.planes[0].width).toBeLessThanOrEqual(0.15);
     expect((rack?.width ?? 0) / layout.planes[0].width).toBeLessThan(0.05);
     expect(layout.planes[0].width / (rack?.width ?? 1)).toBeGreaterThan(20);
+    expect(ARCH_NODE_SIZE.application).toEqual({ width: 0.48, height: 0.36, depth: 0.12 });
     expect(ARCH_NODE_SIZE.application.width).toBeGreaterThan(ARCH_PREVIOUS_NODE_SIZE.application.width);
-    expect(ARCH_NODE_SIZE.application.height).toBeGreaterThan(ARCH_PREVIOUS_NODE_SIZE.application.height);
+    expect(ARCH_NODE_SIZE.application.height).toBeLessThan(ARCH_PREVIOUS_NODE_SIZE.application.height);
+    expect(ARCH_NODE_SIZE.application.depth).toBeLessThan(ARCH_PREVIOUS_NODE_SIZE.application.depth);
     expect(ARCH_NODE_SIZE.host.width).toBeGreaterThan(ARCH_PREVIOUS_NODE_SIZE.host.width);
     expect(ARCH_NODE_SIZE.host.height).toBeGreaterThan(ARCH_PREVIOUS_NODE_SIZE.host.height);
     expect(ARCH_NODE_SIZE.application.width).toBeLessThan(0.55);
     expect(ARCH_NODE_SIZE.host.width).toBeLessThan(ARCH_NODE_SIZE.application.width);
     expect(ARCH_NODE_SIZE.host.height).toBeGreaterThan(ARCH_NODE_SIZE.application.height);
-    expect(ARCH_NODE_SIZE.host.depth).toBeLessThan(ARCH_NODE_SIZE.application.depth);
+    expect(ARCH_NODE_SIZE.host.depth).toBeGreaterThan(ARCH_NODE_SIZE.application.depth);
     expect(ARCH_NODE_SIZE.host.height).toBeGreaterThan(ARCH_INVERTED_NODE_SIZE.host.height);
     expect(ARCH_NODE_SIZE.application.height).toBeLessThan(ARCH_INVERTED_NODE_SIZE.application.height);
     expect(ARCH_INVERTED_NODE_SIZE.application.height).toBeGreaterThan(ARCH_INVERTED_NODE_SIZE.host.height);
-    expect(ARCH_GRID_PITCH).toBeGreaterThan(ARCH_NODE_SIZE.application.width * 4);
+    expect(ARCH_GRID_PITCH).toBeGreaterThan(ARCH_NODE_SIZE.application.width * 3);
+    expect(ARCH_GRID_PITCH - ARCH_NODE_SIZE.application.width).toBeGreaterThan(1);
     expect(Math.abs(byId['app-1'].x - byId['app-2'].x)).toBeCloseTo(ARCH_GRID_PITCH);
     expect(layout.width).toBeGreaterThanOrEqual(ARCH_PLANE_WORLD_WIDTH);
     expect(layout.depth).toBeGreaterThanOrEqual(ARCH_PLANE_WORLD_DEPTH);
@@ -652,9 +668,10 @@ describe('application3D architecture layout', () => {
   });
 
   it('distinguishes ranks by size rather than wall health tints', () => {
-    expect(ARCH_NODE_SIZE.system.width).toBeGreaterThan(ARCH_NODE_SIZE.application.width);
+    expect(ARCH_NODE_SIZE.system.width).toBeGreaterThanOrEqual(ARCH_NODE_SIZE.application.width);
     expect(ARCH_NODE_SIZE.application.width).toBeGreaterThan(ARCH_NODE_SIZE.host.width);
     expect(ARCH_NODE_SIZE.host.height).toBeGreaterThan(ARCH_NODE_SIZE.application.height);
+    expect(ARCH_NODE_SIZE.host.depth).toBeGreaterThan(ARCH_NODE_SIZE.application.depth);
     expect(ARCH_NODE_FILL).toBe(ARCH_CHASSIS_COLOR);
     expect(ARCH_NODE_FILL).not.toBe(CARD_TONE.critical.tint);
     expect(ARCH_NODE_FILL).not.toBe(CARD_TONE.warning.tint);
@@ -664,6 +681,9 @@ describe('application3D architecture layout', () => {
     expect(architectureEdgeColor({ kind: 'application', health: { state: 'alarming' } })).toBe(ARCH_EDGE);
     expect(hostHasAlarm({ kind: 'host', health: { state: 'alarming' } })).toBe(true);
     expect(hostHasAlarm({ kind: 'application', health: { state: 'alarming' } })).toBe(false);
+    expect(applicationHasAlarm({ kind: 'application', health: { state: 'alarming' } })).toBe(true);
+    expect(applicationHasAlarm({ kind: 'application', health: { state: 'normal' } })).toBe(false);
+    expect(applicationHasAlarm({ kind: 'host', health: { state: 'alarming' } })).toBe(false);
     expect(formatArchitecturePlaneTitle('应用')).toBe('应用');
     expect(formatArchitecturePlaneTitle('应用')).not.toMatch(/➤|▶|>/);
   });
@@ -805,29 +825,46 @@ describe('application3D architecture view', () => {
   const fillRectCalls: Array<{ fillStyle: string }> = [];
 
   beforeAll(() => {
-    const mockContext = {
+    const mockContext: Record<string, unknown> = {
       fillStyle: '',
+      strokeStyle: '',
       shadowColor: '',
       shadowBlur: 0,
       font: '',
+      lineWidth: 1,
+      lineJoin: 'round',
+      lineCap: 'round',
       textAlign: 'center',
       textBaseline: 'middle',
+      globalAlpha: 1,
       clearRect: () => undefined,
-      fillRect(this: { fillStyle: string }) {
-        fillRectCalls.push({ fillStyle: String(this.fillStyle) });
+      beginPath: () => undefined,
+      closePath: () => undefined,
+      moveTo: () => undefined,
+      lineTo: () => undefined,
+      quadraticCurveTo: () => undefined,
+      bezierCurveTo: () => undefined,
+      arc: () => undefined,
+      stroke: () => undefined,
+      fill: () => undefined,
+      save: () => undefined,
+      restore: () => undefined,
+      translate: () => undefined,
+      rotate: () => undefined,
+      scale: () => undefined,
+      setLineDash: () => undefined,
+      measureText: (text: string) => ({ width: String(text).length * 28 }),
+      createRadialGradient: () => ({ addColorStop: () => undefined }),
+      fillRect() {
+        fillRectCalls.push({ fillStyle: String(mockContext.fillStyle) });
       },
-      fillText(this: {
-        fillStyle: string;
-        shadowColor: string;
-        shadowBlur: number;
-        font: string;
-      }, text: string) {
+      fillText(text: string) {
         paintCalls.push({
           text,
-          fillStyle: String(this.fillStyle),
-          shadowColor: String(this.shadowColor),
-          shadowBlur: Number(this.shadowBlur),
-          font: String(this.font),
+          fillStyle: String(mockContext.fillStyle),
+          shadowColor: String(mockContext.shadowColor),
+          shadowBlur: Number(mockContext.shadowBlur),
+          font: String(mockContext.font),
         });
       },
       createLinearGradient: () => ({ addColorStop: () => undefined }),
@@ -957,6 +994,8 @@ describe('application3D architecture view', () => {
     expect(labels.every((label) => label.userData.labelFill === ARCH_LABEL_FILL)).toBe(true);
     expect(ARCH_LABEL_HAS_BACKGROUND).toBe(false);
     expect(ARCH_LABEL_BILLBOARD).toBe(true);
+    expect(labels).toHaveLength(view.layout.nodes.filter((node) => node.kind === 'host').length);
+    expect(view.nodeLabels.size).toBe(labels.length);
     expect(view.billboardMeshes.length).toBe(titles.length + labels.length);
     expect(titles.every((title) => {
       const plane = view.layout.planes.find((item) => item.kind === title.parent?.userData.planeKind);
@@ -1079,12 +1118,18 @@ describe('application3D architecture view', () => {
       && call.font.startsWith('600 68px ')
       && !call.text.includes('➤')
     ))).toBe(true);
-    const nodeTexts = paintCalls.filter((call) => ['门户', '订单', 'web-1', 'shared'].includes(call.text));
-    expect(nodeTexts.length).toBeGreaterThanOrEqual(4);
-    expect(nodeTexts.every((call) => (
+    const hostTexts = paintCalls.filter((call) => ['web-1', 'shared'].includes(call.text));
+    const appTexts = paintCalls.filter((call) => ['门户', '订单'].includes(call.text));
+    expect(hostTexts.length).toBeGreaterThanOrEqual(2);
+    expect(appTexts.length).toBeGreaterThanOrEqual(2);
+    expect(hostTexts.every((call) => (
       call.fillStyle === ARCH_LABEL_FILL
       && call.shadowBlur === 0
       && call.font.startsWith('600 58px ')
+    ))).toBe(true);
+    expect(appTexts.every((call) => (
+      call.fillStyle === ARCH_APP_CHIP_TITLE_FILL
+      && call.font.startsWith('600 42px ')
     ))).toBe(true);
     expect(paintCalls.some((call) => call.text.includes('➤'))).toBe(false);
     expect(fillRectCalls.some((call) => call.fillStyle.includes('12, 32, 52'))).toBe(false);
@@ -1338,9 +1383,8 @@ describe('application3D architecture view', () => {
     const quiet = collectRackParts(quietGroup as THREE.Object3D);
     const app = collectRackParts(appGroup as THREE.Object3D);
     expect(host.chassis).toHaveLength(1);
-    expect(app.chassis).toHaveLength(1);
+    expect(app.chassis).toHaveLength(0);
     expect(quiet.chassis).toHaveLength(1);
-    expect(host.chassis[0].material).toBe(app.chassis[0].material);
     expect(quiet.chassis[0].material).toBe(host.chassis[0].material);
     expect(host.doors).toHaveLength(0);
     expect(app.doors).toHaveLength(0);
@@ -1354,7 +1398,7 @@ describe('application3D architecture view', () => {
     expect(app.bezels).toHaveLength(0);
     expect(quiet.bezels).toHaveLength(0);
 
-    expect(app.leds).toHaveLength(ARCH_RACK_LED_COUNT);
+    expect(app.leds).toHaveLength(0);
     expect(app.strokes).toHaveLength(0);
     expect(quiet.leds).toHaveLength(ARCH_RACK_LED_COUNT);
     expect(quiet.strokes).toHaveLength(0);
@@ -1377,9 +1421,7 @@ describe('application3D architecture view', () => {
     expect(host.shadows).toHaveLength(1);
 
     const hostFaces = hullFaces(host.chassis[0]);
-    const appFaces = hullFaces(app.chassis[0]);
     expect(hostFaces).toHaveLength(6);
-    expect(appFaces).toHaveLength(6);
     expect(host.chassis[0].userData.faceCount).toBe(6);
     expect(host.chassis[0].userData.mappedHull).toBe(true);
     const [posX, negX, posY, negY, posZ, negZ] = hostFaces;
@@ -1448,9 +1490,6 @@ describe('application3D architecture view', () => {
     expect(host.chassis[0].position.x).toBeCloseTo(0);
     expect(host.chassis[0].position.y).toBeCloseTo(0);
     expect(host.chassis[0].position.z).toBeCloseTo(0);
-    expect(app.chassis[0].scale.x).toBeCloseTo(appNode?.width ?? 0);
-    expect(app.chassis[0].scale.y).toBeCloseTo(appNode?.height ?? 0);
-    expect(app.chassis[0].scale.z).toBeCloseTo(appNode?.depth ?? 0);
 
     const assertCyanLeds = (leds: THREE.Mesh[]) => {
       leds.forEach((led) => {
@@ -1466,12 +1505,8 @@ describe('application3D architecture view', () => {
       expect(leds[2].position.x).toBeGreaterThan(leds[1].position.x);
       expect(Math.abs(leds[0].position.y - leds[1].position.y)).toBeLessThan(1e-6);
     };
-    assertCyanLeds(app.leds);
     assertCyanLeds(quiet.leds);
-    expect(app.leds[0].material).toBe(quiet.leds[0].material);
-    expect(host.leds[0].material).not.toBe(app.leds[0].material);
-    expect(app.leds[0].position.y).toBeGreaterThan(0);
-    expect(app.leds[0].position.z).toBeGreaterThan((appNode?.depth ?? 0) / 2);
+    expect(host.leds[0].material).not.toBe(quiet.leds[0].material);
     const assertLedUv = (leds: THREE.Mesh[], node: { width: number; height: number }) => {
       const ledRadius = node.width * ARCH_RACK_LED_RADIUS_UV;
       leds.forEach((led, index) => {
@@ -1482,7 +1517,6 @@ describe('application3D architecture view', () => {
         expect(led.scale.y).toBeCloseTo(ledRadius * 0.5, 5);
       });
     };
-    assertLedUv(app.leds, appNode as { width: number; height: number });
     assertLedUv(quiet.leds, view.layout.nodes.find((node) => node.id === 'host-quiet') as { width: number; height: number });
     assertLedUv(host.leds, hostNode as { width: number; height: number });
 
@@ -1554,7 +1588,9 @@ describe('application3D architecture view', () => {
     expect(viewSrc).toContain('width * ARCH_RACK_LED_RADIUS_UV');
     expect(viewSrc).toContain('faces: [side, side, top, top, front, top]');
     expect(viewSrc).toContain('liftCabinetAlbedoTexture');
-    expect(viewSrc).not.toContain('MeshPhysicalMaterial');
+    expect(viewSrc).toContain('addAppChipMeshes');
+    expect(viewSrc).toContain('addRackMeshes');
+    expect(viewSrc).toContain('MeshPhysicalMaterial');
     expect(viewSrc).not.toContain('clearcoat');
     expect(viewSrc).not.toContain('envMap');
     expect(viewSrc).not.toContain('ARCH_RACK_FRONT_CLEARCOAT');
@@ -1961,6 +1997,174 @@ describe('application3D architecture view', () => {
     expect(app1Ring.visible).toBe(false);
     expect(host1Ring.visible).toBe(false);
     expect(hostSharedRing.visible).toBe(false);
+
+    view.dispose();
+  });
+
+  it('assigns chip icons from a stable node.id hash and truncates face names', () => {
+    expect(APP_CHIP_ICON_KINDS).toEqual([
+      'layers',
+      'hex-node',
+      'code-brackets',
+      'pulse-ring',
+      'grid-tile',
+    ]);
+    expect(hashAppChipIconIndex('app-1')).toBe(hashAppChipIconIndex('app-1'));
+    expect(appChipIconKind('app-1')).toBe(APP_CHIP_ICON_KINDS[hashAppChipIconIndex('app-1')]);
+    expect(hashAppChipIconIndex('app-1')).toBeGreaterThanOrEqual(0);
+    expect(hashAppChipIconIndex('app-1')).toBeLessThan(APP_CHIP_ICON_KINDS.length);
+    const seen = new Set(
+      ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'app-1', 'app-2', '订单服务'].map(hashAppChipIconIndex),
+    );
+    expect(seen.size).toBeGreaterThan(1);
+    expect(truncateAppChipName('门户')).toBe('门户');
+    expect(truncateAppChipName('订单服务平台监控')).toBe('订单服务平台...');
+  });
+
+  it('builds frosted application chips instead of racks, with Y-only camera yaw', () => {
+    expect(ARCH_APP_CHIP_OPACITY).toBeGreaterThanOrEqual(0.55);
+    expect(ARCH_APP_CHIP_OPACITY).toBeLessThanOrEqual(0.7);
+    expect(ARCH_APP_CHIP_ROUGHNESS).toBeCloseTo(0.35);
+    expect(ARCH_APP_CHIP_METALNESS).toBeGreaterThanOrEqual(0);
+    expect(ARCH_APP_CHIP_METALNESS).toBeLessThanOrEqual(0.05);
+    expect(ARCH_APP_CHIP_RIM_COLOR).toBe(ARCH_EDGE);
+    expect(ARCH_APP_CHIP_RIM_ALARM_COLOR).toBe(ARCH_EDGE_ALARM);
+
+    const view = createArchitectureTreeGroup(tree({
+      nodes: [
+        { id: 'sys-1', kind: 'system', name: '门户系统', health },
+        { id: 'app-1', kind: 'application', name: '订单服务平台监控', health },
+        {
+          id: 'app-alarm',
+          kind: 'application',
+          name: '告警应用',
+          health: { ...health, state: 'alarming' },
+        },
+        { id: 'host-1', kind: 'host', name: 'web-1', health },
+        {
+          id: 'host-alarm',
+          kind: 'host',
+          name: 'web-alarm',
+          health: { ...health, state: 'alarming' },
+        },
+      ],
+      edges: [
+        { id: 'e1', sourceId: 'sys-1', targetId: 'app-1', relation: 'system_contains_application' },
+        { id: 'e2', sourceId: 'app-1', targetId: 'host-1', relation: 'application_run_host' },
+        { id: 'e3', sourceId: 'app-alarm', targetId: 'host-alarm', relation: 'application_run_host' },
+      ],
+    }), (_id, fallback = '') => fallback);
+
+    const appGroup = view.nodeGroups.get('app-1');
+    const alarmApp = view.nodeGroups.get('app-alarm');
+    const hostGroup = view.nodeGroups.get('host-1');
+    expect(appGroup?.userData.archRole).toBe('rack-root');
+    expect(appGroup?.userData.nodeId).toBe('app-1');
+    expect(appGroup?.userData.yawBillboard).toBe(true);
+    expect(hostGroup?.userData.yawBillboard).toBeUndefined();
+    expect(view.nodeLabels.has('app-1')).toBe(false);
+    expect(view.nodeLabels.has('app-alarm')).toBe(false);
+    expect(view.nodeLabels.has('host-1')).toBe(true);
+
+    const collect = (root: THREE.Object3D) => {
+      const chips: THREE.Mesh[] = [];
+      const faces: THREE.Mesh[] = [];
+      const rims: THREE.Mesh[] = [];
+      const dots: THREE.Mesh[] = [];
+      const racks: THREE.Mesh[] = [];
+      const leds: THREE.Mesh[] = [];
+      const labels: THREE.Mesh[] = [];
+      root.traverse((child) => {
+        if (!(child as THREE.Mesh).isMesh) return;
+        const mesh = child as THREE.Mesh;
+        if (mesh.userData.archRole === 'app-chip') chips.push(mesh);
+        if (mesh.userData.archRole === 'app-chip-face') faces.push(mesh);
+        if (mesh.userData.archRole === 'app-chip-rim') rims.push(mesh);
+        if (mesh.userData.archRole === 'app-chip-alarm-dot') dots.push(mesh);
+        if (mesh.userData.archRole === 'rack') racks.push(mesh);
+        if (mesh.userData.archRole === 'rack-led') leds.push(mesh);
+        if (mesh.userData.archRole === 'node-label') labels.push(mesh);
+      });
+      return { chips, faces, rims, dots, racks, leds, labels };
+    };
+
+    const quiet = collect(appGroup as THREE.Object3D);
+    const alarmed = collect(alarmApp as THREE.Object3D);
+    const host = collect(hostGroup as THREE.Object3D);
+    expect(quiet.chips).toHaveLength(1);
+    expect(quiet.faces).toHaveLength(1);
+    expect(quiet.rims).toHaveLength(12);
+    expect(quiet.dots).toHaveLength(0);
+    expect(quiet.racks).toHaveLength(0);
+    expect(quiet.leds).toHaveLength(0);
+    expect(quiet.labels).toHaveLength(0);
+    expect(host.chips).toHaveLength(0);
+    expect(host.racks).toHaveLength(1);
+    expect(host.leds).toHaveLength(ARCH_RACK_LED_COUNT);
+    expect(host.labels).toHaveLength(1);
+
+    const glass = quiet.chips[0].material as THREE.MeshPhysicalMaterial;
+    expect(glass).toBeInstanceOf(THREE.MeshPhysicalMaterial);
+    expect(glass.transparent).toBe(true);
+    expect(glass.opacity).toBeCloseTo(ARCH_APP_CHIP_OPACITY);
+    expect(glass.roughness).toBeCloseTo(ARCH_APP_CHIP_ROUGHNESS);
+    expect(glass.metalness).toBeCloseTo(ARCH_APP_CHIP_METALNESS);
+    expect(glass.color.getHex()).toBe(ARCH_APP_CHIP_GLASS_COLOR);
+    expect(quiet.chips[0].scale.x).toBeCloseTo(ARCH_NODE_SIZE.application.width);
+    expect(quiet.chips[0].scale.y).toBeCloseTo(ARCH_NODE_SIZE.application.height);
+    expect(quiet.chips[0].scale.z).toBeCloseTo(ARCH_NODE_SIZE.application.depth);
+    expect(quiet.chips[0].userData.chipIcon).toBe(appChipIconKind('app-1'));
+    expect(quiet.faces[0].userData.chipIcon).toBe(appChipIconKind('app-1'));
+    expect(quiet.faces[0].userData.chipTitle).toBe('订单服务平台...');
+    expect(quiet.faces[0].userData.hasAlarmDot).toBe(false);
+    expect(quiet.rims.every((rim) => (
+      (rim.material as THREE.MeshStandardMaterial).color.getHex() === ARCH_APP_CHIP_RIM_COLOR
+    ))).toBe(true);
+
+    expect(alarmed.dots).toHaveLength(1);
+    expect(alarmed.faces[0].userData.hasAlarmDot).toBe(true);
+    expect(alarmed.rims).toHaveLength(12);
+    expect(alarmed.rims.every((rim) => (
+      (rim.material as THREE.MeshStandardMaterial).color.getHex() === ARCH_APP_CHIP_RIM_ALARM_COLOR
+    ))).toBe(true);
+    expect((alarmed.chips[0].material as THREE.MeshPhysicalMaterial).color.getHex()).toBe(
+      ARCH_APP_CHIP_GLASS_COLOR,
+    );
+    expect(hostHasAlarm(view.layout.nodes.find((node) => node.id === 'app-alarm'))).toBe(false);
+    expect(applicationHasAlarm(view.layout.nodes.find((node) => node.id === 'app-alarm'))).toBe(true);
+    expect(architectureEdgeColor(view.layout.nodes.find((node) => node.id === 'app-alarm'))).toBe(ARCH_EDGE);
+    expect(architectureEdgeColor(view.layout.nodes.find((node) => node.id === 'host-alarm'))).toBe(ARCH_EDGE_ALARM);
+
+    const viewSrc = readFileSync(
+      resolve(process.cwd(), 'src/app/ops-analysis/components/widgets/application3D/application3DArchitectureView.ts'),
+      'utf8',
+    );
+    expect(viewSrc).toContain('addAppChipMeshes');
+    expect(viewSrc).toMatch(/if \(node\.kind === 'application'\) \{\s*addAppChipMeshes/);
+    expect(viewSrc).toContain('yawObjectAroundYToCamera');
+    expect(viewSrc).toContain('addRackMeshes(nodeGroup, node, rackGeos, rackMats, alarming)');
+
+    const camera = new THREE.PerspectiveCamera(50, 16 / 9, 0.1, 200);
+    camera.position.set(6, 4, 12);
+    const hostYawBefore = hostGroup?.rotation.y ?? 0;
+    view.tick(0.016, camera);
+    const appWorld = new THREE.Vector3();
+    appGroup?.getWorldPosition(appWorld);
+    const expectedYaw = Math.atan2(camera.position.x - appWorld.x, camera.position.z - appWorld.z);
+    expect(appGroup?.rotation.x).toBeCloseTo(0);
+    expect(appGroup?.rotation.z).toBeCloseTo(0);
+    expect(appGroup?.rotation.y).toBeCloseTo(expectedYaw);
+    expect(hostGroup?.rotation.x).toBeCloseTo(0);
+    expect(hostGroup?.rotation.y).toBeCloseTo(hostYawBefore);
+    expect(hostGroup?.rotation.y).toBeCloseTo(0);
+
+    const dummy = new THREE.Group();
+    dummy.position.set(1, 2, 3);
+    dummy.rotation.set(0.4, 0.1, 0.3);
+    yawObjectAroundYToCamera(dummy, camera);
+    expect(dummy.rotation.x).toBe(0);
+    expect(dummy.rotation.z).toBe(0);
+    expect(dummy.rotation.y).toBeCloseTo(Math.atan2(5, 9));
 
     view.dispose();
   });

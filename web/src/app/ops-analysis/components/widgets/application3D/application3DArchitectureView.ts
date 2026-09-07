@@ -137,6 +137,72 @@ export const hostHasAlarm = (
   node: { kind: string; health?: { state: string } } | undefined,
 ) => node?.kind === 'host' && node.health?.state === 'alarming';
 
+/** Own-node alarm only. Applications never inherit host alarms. */
+export const applicationHasAlarm = (
+  node: { kind: string; health?: { state: string } } | undefined,
+) => node?.kind === 'application' && node.health?.state === 'alarming';
+
+export const APP_CHIP_ICON_KINDS = [
+  'layers',
+  'hex-node',
+  'code-brackets',
+  'pulse-ring',
+  'grid-tile',
+] as const;
+
+export type AppChipIconKind = (typeof APP_CHIP_ICON_KINDS)[number];
+
+export const ARCH_APP_CHIP_OPACITY = 0.62;
+export const ARCH_APP_CHIP_ROUGHNESS = 0.35;
+export const ARCH_APP_CHIP_METALNESS = 0.03;
+export const ARCH_APP_CHIP_GLASS_COLOR = 0x8fe4ea;
+export const ARCH_APP_CHIP_RIM_COLOR = ARCH_EDGE;
+export const ARCH_APP_CHIP_RIM_ALARM_COLOR = ARCH_EDGE_ALARM;
+export const ARCH_APP_CHIP_TITLE_FILL = 'rgba(248, 252, 255, 0.96)';
+export const ARCH_APP_CHIP_ICON_STROKE = 'rgba(94, 232, 240, 0.96)';
+export const ARCH_APP_CHIP_NAME_MAX_CHARS = 6;
+export const ARCH_APP_CHIP_CORNER = 0.12;
+export const ARCH_APP_CHIP_RIM_WIDTH = 0.005;
+export const ARCH_APP_CHIP_ALARM_DOT_RADIUS = 0.012;
+
+const CHIP_YAW_WORLD = new THREE.Vector3();
+
+/** FNV-1a — stable across frames; never random. */
+export const hashAppChipIconIndex = (nodeId: string) => {
+  let hash = 2166136261;
+  for (let index = 0; index < nodeId.length; index += 1) {
+    hash ^= nodeId.charCodeAt(index);
+    hash = Math.imul(hash, 16777619);
+  }
+  return (hash >>> 0) % APP_CHIP_ICON_KINDS.length;
+};
+
+export const appChipIconKind = (nodeId: string): AppChipIconKind =>
+  APP_CHIP_ICON_KINDS[hashAppChipIconIndex(nodeId)];
+
+export const truncateAppChipName = (
+  name: string,
+  maxChars = ARCH_APP_CHIP_NAME_MAX_CHARS,
+) => {
+  const trimmed = name.trim();
+  if (trimmed.length <= maxChars) return trimmed;
+  return `${trimmed.slice(0, maxChars)}...`;
+};
+
+/** Yaw-only cylindrical billboard. Never lookAt — that would pitch the card flat. */
+export const yawObjectAroundYToCamera = (
+  object: THREE.Object3D,
+  camera: THREE.Camera,
+) => {
+  object.getWorldPosition(CHIP_YAW_WORLD);
+  object.rotation.x = 0;
+  object.rotation.z = 0;
+  object.rotation.y = Math.atan2(
+    camera.position.x - CHIP_YAW_WORLD.x,
+    camera.position.z - CHIP_YAW_WORLD.z,
+  );
+};
+
 export const findArchitectureRackRoot = (
   object: THREE.Object3D | null | undefined,
 ): THREE.Object3D | null => {
@@ -633,9 +699,9 @@ const addRackAlarmStrokes = (
 
 /**
  * Shared mapped-rack kit. One BoxGeometry hull, per-face albedo.
- * Application and quiet hosts stay 素柜: 3 cyan/teal front LEDs, never a
- * stroke. Alarming hosts swap those LEDs to red and add a 12-edge AABB
- * hairline. Chassis maps never paint red/cyan; texture LED pits are not lights.
+ * Hosts only: quiet 素柜 keep 3 cyan/teal front LEDs, never a stroke.
+ * Alarming hosts swap those LEDs to red and add a 12-edge AABB hairline.
+ * Chassis maps never paint red/cyan; texture LED pits are not lights.
  */
 const addRackMeshes = (
   group: THREE.Group,
@@ -704,6 +770,334 @@ const addRackMeshes = (
   ring.userData.archRole = 'rack-selection-ring';
   group.add(ring);
   group.userData.selectionRing = ring;
+};
+
+const strokeIcon = (
+  context: CanvasRenderingContext2D,
+  paint: () => void,
+) => {
+  context.save();
+  context.strokeStyle = ARCH_APP_CHIP_ICON_STROKE;
+  context.fillStyle = ARCH_APP_CHIP_ICON_STROKE;
+  context.lineWidth = 5;
+  context.lineJoin = 'round';
+  context.lineCap = 'round';
+  context.shadowColor = 'rgba(62, 200, 208, 0.95)';
+  context.shadowBlur = 14;
+  paint();
+  context.restore();
+};
+
+const drawAppChipIcon = (
+  context: CanvasRenderingContext2D,
+  kind: AppChipIconKind,
+  cx: number,
+  cy: number,
+  size: number,
+) => {
+  if (kind === 'layers') {
+    strokeIcon(context, () => {
+      const plateW = size * 0.72;
+      const plateH = size * 0.22;
+      const gap = size * 0.16;
+      const originY = cy + gap * 1.35;
+      for (let index = 0; index < 4; index += 1) {
+        const y = originY - index * gap;
+        const w = plateW - index * size * 0.04;
+        context.beginPath();
+        context.moveTo(cx, y - plateH / 2);
+        context.lineTo(cx + w / 2, y);
+        context.lineTo(cx, y + plateH / 2);
+        context.lineTo(cx - w / 2, y);
+        context.closePath();
+        context.stroke();
+      }
+    });
+    return;
+  }
+  if (kind === 'hex-node') {
+    strokeIcon(context, () => {
+      const outer = size * 0.38;
+      const nodeR = size * 0.055;
+      context.beginPath();
+      context.arc(cx, cy, nodeR * 1.35, 0, Math.PI * 2);
+      context.fill();
+      for (let index = 0; index < 6; index += 1) {
+        const angle = (Math.PI / 3) * index - Math.PI / 6;
+        const x = cx + Math.cos(angle) * outer;
+        const y = cy + Math.sin(angle) * outer;
+        context.beginPath();
+        context.moveTo(cx, cy);
+        context.lineTo(x, y);
+        context.stroke();
+        context.beginPath();
+        context.arc(x, y, nodeR, 0, Math.PI * 2);
+        context.fill();
+      }
+    });
+    return;
+  }
+  if (kind === 'code-brackets') {
+    strokeIcon(context, () => {
+      context.textAlign = 'center';
+      context.textBaseline = 'middle';
+      context.font = `700 ${Math.round(size * 0.42)}px ${CARD_GLASS.fontFamily}`;
+      context.fillText('</>', cx, cy);
+    });
+    return;
+  }
+  if (kind === 'pulse-ring') {
+    strokeIcon(context, () => {
+      context.beginPath();
+      context.arc(cx, cy, size * 0.07, 0, Math.PI * 2);
+      context.fill();
+      [0.22, 0.36].forEach((ratio) => {
+        context.beginPath();
+        context.arc(cx, cy, size * ratio, 0, Math.PI * 2);
+        context.stroke();
+      });
+    });
+    return;
+  }
+  strokeIcon(context, () => {
+    const cell = size * 0.22;
+    const gap = size * 0.08;
+    const origin = -cell - gap / 2;
+    const radius = cell * 0.22;
+    for (let row = 0; row < 2; row += 1) {
+      for (let col = 0; col < 2; col += 1) {
+        const x = cx + origin + col * (cell + gap);
+        const y = cy + origin + row * (cell + gap);
+        context.beginPath();
+        context.moveTo(x + radius, y);
+        context.lineTo(x + cell - radius, y);
+        context.quadraticCurveTo(x + cell, y, x + cell, y + radius);
+        context.lineTo(x + cell, y + cell - radius);
+        context.quadraticCurveTo(x + cell, y + cell, x + cell - radius, y + cell);
+        context.lineTo(x + radius, y + cell);
+        context.quadraticCurveTo(x, y + cell, x, y + cell - radius);
+        context.lineTo(x, y + radius);
+        context.quadraticCurveTo(x, y, x + radius, y);
+        context.closePath();
+        context.stroke();
+      }
+    }
+  });
+};
+
+export const paintAppChipFace = (
+  node: Application3DArchitecturePlacedNode,
+  icon: AppChipIconKind,
+  alarming: boolean,
+) =>
+  paintCanvasTexture(512, 384, (context, canvas) => {
+    const width = canvas.width;
+    const height = canvas.height;
+    const iconCy = height * 0.38;
+    const iconSize = Math.min(width, height) * 0.52;
+    drawAppChipIcon(context, icon, width / 2, iconCy, iconSize);
+    context.textAlign = 'center';
+    context.textBaseline = 'middle';
+    context.shadowColor = 'rgba(180, 240, 248, 0.45)';
+    context.shadowBlur = 8;
+    context.fillStyle = ARCH_APP_CHIP_TITLE_FILL;
+    context.font = `600 42px ${CARD_GLASS.fontFamily}`;
+    context.fillText(truncateAppChipName(node.name), width / 2, height * 0.82);
+    if (alarming) {
+      context.shadowColor = 'rgba(255, 70, 70, 0.85)';
+      context.shadowBlur = 10;
+      context.fillStyle = '#ff3b3b';
+      context.beginPath();
+      context.arc(36, 36, 11, 0, Math.PI * 2);
+      context.fill();
+    }
+  });
+
+const createRoundedChipGeometry = () => {
+  const hw = 0.5;
+  const hh = 0.5;
+  const radius = Math.min(ARCH_APP_CHIP_CORNER, 0.22);
+  const shape = new THREE.Shape();
+  shape.moveTo(-hw + radius, -hh);
+  shape.lineTo(hw - radius, -hh);
+  shape.quadraticCurveTo(hw, -hh, hw, -hh + radius);
+  shape.lineTo(hw, hh - radius);
+  shape.quadraticCurveTo(hw, hh, hw - radius, hh);
+  shape.lineTo(-hw + radius, hh);
+  shape.quadraticCurveTo(-hw, hh, -hw, hh - radius);
+  shape.lineTo(-hw, -hh + radius);
+  shape.quadraticCurveTo(-hw, -hh, -hw + radius, -hh);
+  const geometry = new THREE.ExtrudeGeometry(shape, {
+    depth: 1,
+    bevelEnabled: false,
+    curveSegments: 6,
+  });
+  geometry.translate(0, 0, -0.5);
+  geometry.computeVertexNormals();
+  return geometry;
+};
+
+interface AppChipMaterials {
+  glass: THREE.MeshPhysicalMaterial;
+  rimCyan: THREE.MeshStandardMaterial;
+  rimAlarm: THREE.MeshStandardMaterial;
+  alarmDot: THREE.MeshStandardMaterial;
+}
+
+const createAppChipMaterials = (): AppChipMaterials => ({
+  glass: new THREE.MeshPhysicalMaterial({
+    color: ARCH_APP_CHIP_GLASS_COLOR,
+    transparent: true,
+    opacity: ARCH_APP_CHIP_OPACITY,
+    roughness: ARCH_APP_CHIP_ROUGHNESS,
+    metalness: ARCH_APP_CHIP_METALNESS,
+    emissive: ARCH_EDGE,
+    emissiveIntensity: 0.12,
+    depthWrite: false,
+    side: THREE.DoubleSide,
+  }),
+  rimCyan: new THREE.MeshStandardMaterial({
+    color: ARCH_APP_CHIP_RIM_COLOR,
+    metalness: 0.08,
+    roughness: 0.28,
+    emissive: ARCH_APP_CHIP_RIM_COLOR,
+    emissiveIntensity: 0.85,
+    toneMapped: false,
+  }),
+  rimAlarm: new THREE.MeshStandardMaterial({
+    color: ARCH_APP_CHIP_RIM_ALARM_COLOR,
+    metalness: 0.08,
+    roughness: 0.28,
+    emissive: ARCH_APP_CHIP_RIM_ALARM_COLOR,
+    emissiveIntensity: 0.9,
+    toneMapped: false,
+  }),
+  alarmDot: new THREE.MeshStandardMaterial({
+    color: ARCH_RING_ALARM,
+    emissive: ARCH_RING_ALARM,
+    emissiveIntensity: 1,
+    roughness: 0.25,
+    metalness: 0.05,
+    toneMapped: false,
+  }),
+});
+
+const addChipRim = (
+  group: THREE.Group,
+  size: { width: number; height: number; depth: number },
+  geos: RackKitGeometries,
+  material: THREE.Material,
+) => {
+  const { width, height, depth } = size;
+  const strokeW = ARCH_APP_CHIP_RIM_WIDTH;
+  const hx = width / 2 - strokeW / 2;
+  const hy = height / 2 - strokeW / 2;
+  const hz = depth / 2 - strokeW / 2;
+  const extra = {
+    rimColor: (material as THREE.MeshStandardMaterial).color?.getHex?.() ?? ARCH_APP_CHIP_RIM_COLOR,
+  };
+  const add = (
+    scale: [number, number, number],
+    position: [number, number, number],
+  ) => addBoxPart(group, geos.box, material, scale, position, 'app-chip-rim', extra);
+  add([width, strokeW, strokeW], [0, hy, hz]);
+  add([width, strokeW, strokeW], [0, -hy, hz]);
+  add([strokeW, height, strokeW], [-hx, 0, hz]);
+  add([strokeW, height, strokeW], [hx, 0, hz]);
+  add([width, strokeW, strokeW], [0, hy, -hz]);
+  add([width, strokeW, strokeW], [0, -hy, -hz]);
+  add([strokeW, height, strokeW], [-hx, 0, -hz]);
+  add([strokeW, height, strokeW], [hx, 0, -hz]);
+  add([strokeW, strokeW, depth], [-hx, hy, 0]);
+  add([strokeW, strokeW, depth], [hx, hy, 0]);
+  add([strokeW, strokeW, depth], [-hx, -hy, 0]);
+  add([strokeW, strokeW, depth], [hx, -hy, 0]);
+};
+
+/**
+ * Frosted-cyan glass chip (Option B): icon + truncated name on the face.
+ * No overhead billboard, no host-count / status bars, no rack language.
+ */
+const addAppChipMeshes = (
+  group: THREE.Group,
+  node: Application3DArchitecturePlacedNode,
+  geos: RackKitGeometries,
+  chipGeo: THREE.BufferGeometry,
+  materials: AppChipMaterials,
+  rackMaterials: RackKitMaterials,
+  disposables: Array<{ dispose: () => void }>,
+) => {
+  const width = node.width;
+  const height = node.height;
+  const depth = node.depth;
+  const alarming = applicationHasAlarm(node);
+  const icon = appChipIconKind(node.id);
+
+  const glass = new THREE.Mesh(chipGeo, materials.glass);
+  glass.scale.set(width, height, depth);
+  glass.userData.archRole = 'app-chip';
+  glass.userData.nodeKind = node.kind;
+  glass.userData.chipIcon = icon;
+  glass.userData.alarmPaintsBody = false;
+  glass.userData.sharedMaterial = true;
+  group.add(glass);
+
+  const faceTexture = paintAppChipFace(node, icon, alarming);
+  const faceMaterial = new THREE.MeshBasicMaterial({
+    map: faceTexture,
+    transparent: true,
+    depthWrite: false,
+    toneMapped: false,
+  });
+  const face = new THREE.Mesh(geos.shadow, faceMaterial);
+  face.position.set(0, 0, depth / 2 + 0.001);
+  face.scale.set(width * 0.92, height * 0.92, 1);
+  face.userData.archRole = 'app-chip-face';
+  face.userData.chipIcon = icon;
+  face.userData.hasAlarmDot = alarming;
+  face.userData.chipTitle = truncateAppChipName(node.name);
+  group.add(face);
+  disposables.push(faceTexture, faceMaterial);
+
+  addChipRim(
+    group,
+    { width, height, depth },
+    geos,
+    alarming ? materials.rimAlarm : materials.rimCyan,
+  );
+
+  if (alarming) {
+    const dot = new THREE.Mesh(geos.led, materials.alarmDot);
+    const radius = ARCH_APP_CHIP_ALARM_DOT_RADIUS;
+    dot.scale.set(radius, radius * 0.45, radius);
+    dot.rotation.x = Math.PI / 2;
+    dot.position.set(
+      -width / 2 + 0.045,
+      height / 2 - 0.04,
+      depth / 2 + 0.004,
+    );
+    dot.userData.archRole = 'app-chip-alarm-dot';
+    group.add(dot);
+  }
+
+  const shadow = new THREE.Mesh(geos.shadow, rackMaterials.shadow);
+  shadow.rotation.x = -Math.PI / 2;
+  shadow.position.set(0, -height / 2 + 0.001, 0);
+  shadow.scale.set(width * 1.18, depth * 1.18, 1);
+  shadow.userData.archRole = 'rack-contact-shadow';
+  group.add(shadow);
+
+  const ringSize = Math.max(width, depth) * 1.85;
+  const ring = new THREE.Mesh(geos.shadow, rackMaterials.ringCyan);
+  ring.rotation.x = -Math.PI / 2;
+  ring.position.set(0, -height / 2 + 0.002, 0);
+  ring.scale.set(ringSize, ringSize, 1);
+  ring.visible = false;
+  ring.userData.archRole = 'rack-selection-ring';
+  group.add(ring);
+  group.userData.selectionRing = ring;
+  group.userData.chipIcon = icon;
+  group.userData.yawBillboard = true;
 };
 
 export const createArchitectureEdgeCurve = (
@@ -988,10 +1382,17 @@ export const createArchitectureTreeGroup = (
   const planeGeo = new THREE.PlaneGeometry(1, 1);
   const rackGeos: RackKitGeometries = { box: chassisGeo, led: ledGeo, shadow: planeGeo };
   const rackMats = createRackMaterials();
+  const chipGeo = createRoundedChipGeometry();
+  const chipMats = createAppChipMaterials();
   disposables.push(
     chassisGeo,
     ledGeo,
     planeGeo,
+    chipGeo,
+    chipMats.glass,
+    chipMats.rimCyan,
+    chipMats.rimAlarm,
+    chipMats.alarmDot,
     ...new Set(rackMats.faces),
     ...rackMats.textures,
     rackMats.led,
@@ -1119,32 +1520,38 @@ export const createArchitectureTreeGroup = (
     const alarming = hostHasAlarm(node);
     nodeGroup.userData.alarming = alarming;
     nodeGroup.userData.plainMetal = !alarming;
-    addRackMeshes(nodeGroup, node, rackGeos, rackMats, alarming);
-    // Y-up rack sitting ON the horizontal XZ platform — do not pitch the cabinet.
+    if (node.kind === 'application') {
+      addAppChipMeshes(nodeGroup, node, rackGeos, chipGeo, chipMats, rackMats, disposables);
+    } else {
+      addRackMeshes(nodeGroup, node, rackGeos, rackMats, alarming);
+    }
+    // Y-up node sitting ON the horizontal XZ platform — do not pitch the body.
     nodeGroup.rotation.x = 0;
-    const texture = paintNodeLabel(node);
-    const labelMaterial = new THREE.MeshBasicMaterial({
-      map: texture,
-      transparent: true,
-      depthWrite: false,
-      toneMapped: false,
-    });
-    const label = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), labelMaterial);
-    const labelScale = new THREE.Vector3(Math.max(node.width * 3.6, 1.4), 0.36, 1);
-    label.userData.labelScale = labelScale;
-    label.userData.archRole = 'node-label';
-    label.userData.billboard = ARCH_LABEL_BILLBOARD;
-    label.userData.labelHasBackground = ARCH_LABEL_HAS_BACKGROUND;
-    label.userData.labelFill = ARCH_LABEL_FILL;
-    label.scale.set(0, 0, 1);
-    label.position.set(0, node.height / 2 + 0.28, 0);
-    nodeGroup.add(label);
-    billboardMeshes.push(label);
+    if (node.kind === 'host') {
+      const texture = paintNodeLabel(node);
+      const labelMaterial = new THREE.MeshBasicMaterial({
+        map: texture,
+        transparent: true,
+        depthWrite: false,
+        toneMapped: false,
+      });
+      const label = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), labelMaterial);
+      const labelScale = new THREE.Vector3(Math.max(node.width * 3.6, 1.4), 0.36, 1);
+      label.userData.labelScale = labelScale;
+      label.userData.archRole = 'node-label';
+      label.userData.billboard = ARCH_LABEL_BILLBOARD;
+      label.userData.labelHasBackground = ARCH_LABEL_HAS_BACKGROUND;
+      label.userData.labelFill = ARCH_LABEL_FILL;
+      label.scale.set(0, 0, 1);
+      label.position.set(0, node.height / 2 + 0.28, 0);
+      nodeGroup.add(label);
+      billboardMeshes.push(label);
+      nodeLabels.set(node.id, label);
+      disposables.push(texture, label.geometry, labelMaterial);
+    }
     nodeGroup.position.set(node.x, node.y + ARCH_RACK_LIFT, node.z);
     group.add(nodeGroup);
     nodeGroups.set(node.id, nodeGroup);
-    nodeLabels.set(node.id, label);
-    disposables.push(texture, label.geometry, labelMaterial);
   });
 
   layout.edges.forEach((edge) => {
@@ -1300,6 +1707,10 @@ export const createArchitectureTreeGroup = (
       if (!camera) return;
       billboardMeshes.forEach((mesh) => {
         mesh.lookAt(camera.position);
+      });
+      nodeGroups.forEach((nodeGroup) => {
+        if (nodeGroup.userData.nodeKind !== 'application') return;
+        yawObjectAroundYToCamera(nodeGroup, camera);
       });
     },
     dispose: () => {
