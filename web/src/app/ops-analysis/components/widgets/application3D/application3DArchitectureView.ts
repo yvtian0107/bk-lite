@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
 import type { Application3DTranslate } from './application3DLayout';
 import { CARD_GLASS } from './application3DCardStyle';
 import cabinetFrontAlbedo from './assets/cabinet-front-albedo-v2.png';
@@ -7,6 +8,7 @@ import cabinetTopAlbedo from './assets/cabinet-top-albedo.png';
 import {
   ARCH_FRUSTUM_HEIGHT,
   ARCH_FRUSTUM_TAPER,
+  ARCH_NODE_SIZE,
   ARCH_LABEL_BILLBOARD,
   ARCH_LABEL_CANVAS_HEIGHT,
   ARCH_LABEL_CANVAS_WIDTH,
@@ -159,16 +161,28 @@ export const APP_CHIP_ICON_KINDS = [
 
 export type AppChipIconKind = (typeof APP_CHIP_ICON_KINDS)[number];
 
-export const ARCH_APP_CHIP_OPACITY = 0.62;
-export const ARCH_APP_CHIP_ROUGHNESS = 0.35;
-export const ARCH_APP_CHIP_METALNESS = 0.03;
+export const ARCH_APP_CHIP_OPACITY = 0.66;
+export const ARCH_APP_CHIP_ROUGHNESS = 0.42;
+export const ARCH_APP_CHIP_METALNESS = 0.02;
+export const ARCH_APP_CHIP_TRANSMISSION = 0.64;
+export const ARCH_APP_CHIP_THICKNESS = 0.18;
+export const ARCH_APP_CHIP_IOR = 1.45;
+export const ARCH_APP_CHIP_ENV_INTENSITY = 0.9;
+export const ARCH_APP_CHIP_CABINET_ENV_INTENSITY = 0.28;
 export const ARCH_APP_CHIP_GLASS_COLOR = 0x8fe4ea;
 export const ARCH_APP_CHIP_RIM_COLOR = ARCH_EDGE;
 export const ARCH_APP_CHIP_TITLE_FILL = 'rgba(248, 252, 255, 0.96)';
-export const ARCH_APP_CHIP_ICON_STROKE = 'rgba(94, 232, 240, 0.96)';
-export const ARCH_APP_CHIP_NAME_MAX_CHARS = 6;
+export const ARCH_APP_CHIP_ICON_STROKE = 'rgba(210, 250, 255, 0.88)';
+export const ARCH_APP_CHIP_ICON_FILL = 'rgba(120, 236, 244, 0.32)';
+export const ARCH_APP_CHIP_ICON_FILL_STRONG = 'rgba(210, 250, 255, 0.42)';
+export const ARCH_APP_CHIP_SEPARATOR = 'rgba(186, 240, 246, 0.45)';
+export const ARCH_APP_CHIP_NAME_MAX_CHARS = 9;
+export const ARCH_APP_CHIP_TITLE_WEIGHT = 700;
+export const ARCH_APP_CHIP_TITLE_SIZE = 46;
 export const ARCH_APP_CHIP_CORNER = 0.12;
-export const ARCH_APP_CHIP_RIM_WIDTH = 0.005;
+export const ARCH_APP_CHIP_BEVEL = 0.032;
+export const ARCH_APP_CHIP_RIM_INNER = 0.007;
+export const ARCH_APP_CHIP_RIM_HALO = 0.02;
 
 const CHIP_YAW_WORLD = new THREE.Vector3();
 
@@ -526,6 +540,66 @@ interface RackKitMaterials {
 const textureSrc = (asset: string | { src: string }) =>
   typeof asset === 'string' ? asset : asset.src;
 
+const createFallbackChipEnvironment = () => {
+  const size = 8;
+  const swatches = [0x9ad4dc, 0x6aa8b4, 0xc4eef4, 0x3e6e78, 0x88c4cc, 0x5a9098];
+  const images = swatches.map((hex) => {
+    const canvas = document.createElement('canvas');
+    canvas.width = size;
+    canvas.height = size;
+    const context = canvas.getContext('2d');
+    if (context) {
+      context.fillStyle = `#${hex.toString(16).padStart(6, '0')}`;
+      context.fillRect(0, 0, size, size);
+    }
+    return canvas;
+  });
+  const texture = new THREE.CubeTexture(images);
+  texture.needsUpdate = true;
+  texture.userData.scopedChipEnv = true;
+  texture.userData.envSource = 'fallback-cube';
+  return texture;
+};
+
+/**
+ * RoomEnvironment IBL for cabinets + app chips only.
+ * Never assign this to scene.environment — that leaks indoor reflections
+ * onto boards/stairs. WebGL-less tests fall back to a cyan cube map.
+ */
+export const createScopedArchitectureEnvironment = (
+  renderer?: THREE.WebGLRenderer,
+) => {
+  let ownedRenderer: THREE.WebGLRenderer | undefined;
+  try {
+    const glRenderer = renderer ?? (ownedRenderer = new THREE.WebGLRenderer({
+      antialias: false,
+      alpha: true,
+    }));
+    const pmrem = new THREE.PMREMGenerator(glRenderer);
+    const room = new RoomEnvironment();
+    const env = pmrem.fromScene(room, 0.04).texture;
+    env.userData.scopedChipEnv = true;
+    env.userData.envSource = 'room-environment';
+    if (typeof room.dispose === 'function') room.dispose();
+    pmrem.dispose();
+    ownedRenderer?.dispose();
+    return env;
+  } catch {
+    ownedRenderer?.dispose();
+    return createFallbackChipEnvironment();
+  }
+};
+
+const assignScopedEnvMap = (
+  material: THREE.MeshStandardMaterial,
+  envMap: THREE.Texture,
+  intensity: number,
+) => {
+  material.envMap = envMap;
+  material.envMapIntensity = intensity;
+  material.userData.scopedChipEnv = true;
+};
+
 /** Lift near-black albedo pixels so a matte hull still reads without IBL. */
 export const liftCabinetAlbedoPixels = (pixels: Uint8ClampedArray | Uint8Array) => {
   for (let i = 0; i < pixels.length; i += 4) {
@@ -580,7 +654,7 @@ const loadCabinetAlbedo = (loader: THREE.TextureLoader, url: string) => {
   return texture;
 };
 
-const createRackMaterials = (): RackKitMaterials => {
+const createRackMaterials = (envMap?: THREE.Texture): RackKitMaterials => {
   const loader = new THREE.TextureLoader();
   const frontAlbedo = loadCabinetAlbedo(loader, textureSrc(cabinetFrontAlbedo));
   const sideAlbedo = loadCabinetAlbedo(loader, textureSrc(cabinetSideAlbedo));
@@ -605,6 +679,11 @@ const createRackMaterials = (): RackKitMaterials => {
     emissive: 0x000000,
     emissiveIntensity: 0,
   });
+  if (envMap) {
+    assignScopedEnvMap(side, envMap, ARCH_APP_CHIP_CABINET_ENV_INTENSITY);
+    assignScopedEnvMap(top, envMap, ARCH_APP_CHIP_CABINET_ENV_INTENSITY);
+    assignScopedEnvMap(front, envMap, ARCH_APP_CHIP_CABINET_ENV_INTENSITY);
+  }
   const led = new THREE.MeshStandardMaterial({
     color: ARCH_LED_COLOR,
     metalness: 0.12,
@@ -781,19 +860,45 @@ const addRackMeshes = (
   group.userData.selectionRing = ring;
 };
 
-const strokeIcon = (
+const roundedRectPath = (
   context: CanvasRenderingContext2D,
-  paint: () => void,
+  x: number,
+  y: number,
+  width: number,
+  height: number,
+  radius: number,
+) => {
+  const r = Math.min(radius, width / 2, height / 2);
+  context.moveTo(x + r, y);
+  context.lineTo(x + width - r, y);
+  context.quadraticCurveTo(x + width, y, x + width, y + r);
+  context.lineTo(x + width, y + height - r);
+  context.quadraticCurveTo(x + width, y + height, x + width - r, y + height);
+  context.lineTo(x + r, y + height);
+  context.quadraticCurveTo(x, y + height, x, y + height - r);
+  context.lineTo(x, y + r);
+  context.quadraticCurveTo(x, y, x + r, y);
+  context.closePath();
+};
+
+const paintFilledLayer = (
+  context: CanvasRenderingContext2D,
+  draw: () => void,
+  options?: { fill?: string; stroke?: string; blur?: number; lineWidth?: number; alpha?: number },
 ) => {
   context.save();
-  context.strokeStyle = ARCH_APP_CHIP_ICON_STROKE;
-  context.fillStyle = ARCH_APP_CHIP_ICON_STROKE;
-  context.lineWidth = 5;
+  context.globalAlpha = options?.alpha ?? 1;
+  context.fillStyle = options?.fill ?? ARCH_APP_CHIP_ICON_FILL;
+  context.strokeStyle = options?.stroke ?? ARCH_APP_CHIP_ICON_STROKE;
+  context.lineWidth = options?.lineWidth ?? 3.5;
   context.lineJoin = 'round';
   context.lineCap = 'round';
-  context.shadowColor = 'rgba(62, 200, 208, 0.95)';
-  context.shadowBlur = 14;
-  paint();
+  context.shadowColor = 'rgba(94, 232, 240, 0.75)';
+  context.shadowBlur = options?.blur ?? 16;
+  context.beginPath();
+  draw();
+  context.fill();
+  context.stroke();
   context.restore();
 };
 
@@ -805,93 +910,115 @@ const drawAppChipIcon = (
   size: number,
 ) => {
   if (kind === 'layers') {
-    strokeIcon(context, () => {
-      const plateW = size * 0.72;
-      const plateH = size * 0.22;
-      const gap = size * 0.16;
-      const originY = cy + gap * 1.35;
-      for (let index = 0; index < 4; index += 1) {
-        const y = originY - index * gap;
-        const w = plateW - index * size * 0.04;
-        context.beginPath();
-        context.moveTo(cx, y - plateH / 2);
-        context.lineTo(cx + w / 2, y);
-        context.lineTo(cx, y + plateH / 2);
-        context.lineTo(cx - w / 2, y);
+    const plateW = size * 0.7;
+    const plateH = size * 0.2;
+    const gap = size * 0.15;
+    const originY = cy + gap * 1.15;
+    for (let index = 0; index < 4; index += 1) {
+      const y = originY - index * gap;
+      const w = plateW - index * size * 0.035;
+      const ox = index * size * 0.018;
+      paintFilledLayer(context, () => {
+        context.moveTo(cx + ox, y - plateH / 2);
+        context.lineTo(cx + ox + w / 2, y);
+        context.lineTo(cx + ox, y + plateH / 2);
+        context.lineTo(cx + ox - w / 2, y);
         context.closePath();
-        context.stroke();
-      }
-    });
+      }, {
+        fill: index > 1 ? ARCH_APP_CHIP_ICON_FILL_STRONG : ARCH_APP_CHIP_ICON_FILL,
+        alpha: 0.42 + index * 0.12,
+        blur: 12 + index * 2,
+      });
+    }
     return;
   }
   if (kind === 'hex-node') {
-    strokeIcon(context, () => {
-      const outer = size * 0.38;
-      const nodeR = size * 0.055;
-      context.beginPath();
-      context.arc(cx, cy, nodeR * 1.35, 0, Math.PI * 2);
-      context.fill();
-      for (let index = 0; index < 6; index += 1) {
-        const angle = (Math.PI / 3) * index - Math.PI / 6;
-        const x = cx + Math.cos(angle) * outer;
-        const y = cy + Math.sin(angle) * outer;
-        context.beginPath();
+    const outer = size * 0.36;
+    const nodeR = size * 0.07;
+    paintFilledLayer(context, () => {
+      context.arc(cx, cy, size * 0.4, 0, Math.PI * 2);
+    }, {
+      fill: 'rgba(94, 232, 240, 0.12)',
+      stroke: 'rgba(190, 250, 255, 0.28)',
+      blur: 22,
+      lineWidth: 2,
+    });
+    for (let index = 0; index < 6; index += 1) {
+      const angle = (Math.PI / 3) * index - Math.PI / 6;
+      const x = cx + Math.cos(angle) * outer;
+      const y = cy + Math.sin(angle) * outer;
+      paintFilledLayer(context, () => {
         context.moveTo(cx, cy);
         context.lineTo(x, y);
-        context.stroke();
-        context.beginPath();
+        context.lineTo(x + Math.cos(angle + Math.PI / 2) * 4, y + Math.sin(angle + Math.PI / 2) * 4);
+        context.closePath();
+      }, { fill: ARCH_APP_CHIP_ICON_FILL, stroke: ARCH_APP_CHIP_ICON_STROKE, blur: 10, lineWidth: 4 });
+      paintFilledLayer(context, () => {
         context.arc(x, y, nodeR, 0, Math.PI * 2);
-        context.fill();
-      }
-    });
+      }, { fill: ARCH_APP_CHIP_ICON_FILL_STRONG, blur: 12 });
+    }
+    paintFilledLayer(context, () => {
+      context.arc(cx, cy, nodeR * 1.45, 0, Math.PI * 2);
+    }, { fill: ARCH_APP_CHIP_ICON_FILL_STRONG, blur: 14 });
     return;
   }
   if (kind === 'code-brackets') {
-    strokeIcon(context, () => {
-      context.textAlign = 'center';
-      context.textBaseline = 'middle';
-      context.font = `700 ${Math.round(size * 0.42)}px ${CARD_GLASS.fontFamily}`;
-      context.fillText('</>', cx, cy);
-    });
+    for (let index = 2; index >= 0; index -= 1) {
+      const inset = size * (0.34 + index * 0.03);
+      paintFilledLayer(context, () => {
+        roundedRectPath(
+          context,
+          cx - inset + index * 7,
+          cy - inset - index * 6,
+          inset * 2,
+          inset * 2,
+          size * 0.12,
+        );
+      }, {
+        fill: index === 0 ? ARCH_APP_CHIP_ICON_FILL_STRONG : ARCH_APP_CHIP_ICON_FILL,
+        alpha: 0.38 + (2 - index) * 0.18,
+        blur: 14,
+      });
+    }
+    context.save();
+    context.textAlign = 'center';
+    context.textBaseline = 'middle';
+    context.fillStyle = ARCH_APP_CHIP_TITLE_FILL;
+    context.shadowColor = 'rgba(94, 232, 240, 0.8)';
+    context.shadowBlur = 16;
+    context.font = `700 ${Math.round(size * 0.36)}px ${CARD_GLASS.fontFamily}`;
+    context.fillText('</>', cx, cy);
+    context.restore();
     return;
   }
   if (kind === 'pulse-ring') {
-    strokeIcon(context, () => {
-      context.beginPath();
-      context.arc(cx, cy, size * 0.07, 0, Math.PI * 2);
-      context.fill();
-      [0.22, 0.36].forEach((ratio) => {
-        context.beginPath();
+    [0.4, 0.28, 0.09].forEach((ratio, index) => {
+      paintFilledLayer(context, () => {
         context.arc(cx, cy, size * ratio, 0, Math.PI * 2);
-        context.stroke();
+      }, {
+        fill: index === 2 ? ARCH_APP_CHIP_ICON_FILL_STRONG : 'rgba(94, 232, 240, 0.16)',
+        alpha: 0.4 + index * 0.2,
+        blur: 14,
+        lineWidth: index === 2 ? 2 : 3.5,
       });
     });
     return;
   }
-  strokeIcon(context, () => {
-    const cell = size * 0.22;
-    const gap = size * 0.08;
-    const origin = -cell - gap / 2;
-    const radius = cell * 0.22;
-    for (let row = 0; row < 2; row += 1) {
-      for (let col = 0; col < 2; col += 1) {
-        const x = cx + origin + col * (cell + gap);
-        const y = cy + origin + row * (cell + gap);
-        context.beginPath();
-        context.moveTo(x + radius, y);
-        context.lineTo(x + cell - radius, y);
-        context.quadraticCurveTo(x + cell, y, x + cell, y + radius);
-        context.lineTo(x + cell, y + cell - radius);
-        context.quadraticCurveTo(x + cell, y + cell, x + cell - radius, y + cell);
-        context.lineTo(x + radius, y + cell);
-        context.quadraticCurveTo(x, y + cell, x, y + cell - radius);
-        context.lineTo(x, y + radius);
-        context.quadraticCurveTo(x, y, x + radius, y);
-        context.closePath();
-        context.stroke();
-      }
+  const cell = size * 0.22;
+  const gap = size * 0.08;
+  const origin = -cell - gap / 2;
+  paintFilledLayer(context, () => {
+    roundedRectPath(context, cx - size * 0.36 + 8, cy - size * 0.4, size * 0.72, size * 0.72, size * 0.12);
+  }, { fill: 'rgba(94, 232, 240, 0.14)', alpha: 0.45, blur: 18 });
+  for (let row = 0; row < 2; row += 1) {
+    for (let col = 0; col < 2; col += 1) {
+      const x = cx + origin + col * (cell + gap);
+      const y = cy + origin + row * (cell + gap);
+      paintFilledLayer(context, () => {
+        roundedRectPath(context, x, y, cell, cell, cell * 0.22);
+      }, { fill: ARCH_APP_CHIP_ICON_FILL_STRONG, blur: 12 });
     }
-  });
+  }
 };
 
 export const paintAppChipFace = (
@@ -901,21 +1028,32 @@ export const paintAppChipFace = (
   paintCanvasTexture(512, 384, (context, canvas) => {
     const width = canvas.width;
     const height = canvas.height;
-    const iconCy = height * 0.38;
-    const iconSize = Math.min(width, height) * 0.52;
+    const iconCy = height * 0.36;
+    const iconSize = Math.min(width, height) * 0.5;
     drawAppChipIcon(context, icon, width / 2, iconCy, iconSize);
+    context.save();
+    context.strokeStyle = ARCH_APP_CHIP_SEPARATOR;
+    context.lineWidth = 2;
+    context.shadowColor = 'rgba(160, 236, 244, 0.55)';
+    context.shadowBlur = 8;
+    context.beginPath();
+    context.moveTo(width * 0.18, height * 0.66);
+    context.lineTo(width * 0.82, height * 0.66);
+    context.stroke();
+    context.restore();
     context.textAlign = 'center';
     context.textBaseline = 'middle';
-    context.shadowColor = 'rgba(180, 240, 248, 0.45)';
-    context.shadowBlur = 8;
+    context.shadowColor = 'rgba(180, 240, 248, 0.55)';
+    context.shadowBlur = 10;
     context.fillStyle = ARCH_APP_CHIP_TITLE_FILL;
-    context.font = `600 42px ${CARD_GLASS.fontFamily}`;
+    context.font = `${ARCH_APP_CHIP_TITLE_WEIGHT} ${ARCH_APP_CHIP_TITLE_SIZE}px ${CARD_GLASS.fontFamily}`;
     context.fillText(truncateAppChipName(node.name), width / 2, height * 0.82);
   });
 
-const createRoundedChipGeometry = () => {
-  const hw = 0.5;
-  const hh = 0.5;
+export const createRoundedChipGeometry = () => {
+  const bevel = ARCH_APP_CHIP_BEVEL;
+  const hw = 0.5 - bevel;
+  const hh = 0.5 - bevel;
   const radius = Math.min(ARCH_APP_CHIP_CORNER, 0.22);
   const shape = new THREE.Shape();
   shape.moveTo(-hw + radius, -hh);
@@ -929,71 +1067,151 @@ const createRoundedChipGeometry = () => {
   shape.quadraticCurveTo(-hw, -hh, -hw + radius, -hh);
   const geometry = new THREE.ExtrudeGeometry(shape, {
     depth: 1,
-    bevelEnabled: false,
-    curveSegments: 6,
+    bevelEnabled: true,
+    bevelThickness: bevel,
+    bevelSize: bevel,
+    bevelOffset: 0,
+    bevelSegments: 2,
+    curveSegments: 10,
   });
-  geometry.translate(0, 0, -0.5);
+  geometry.center();
   geometry.computeVertexNormals();
   return geometry;
+};
+
+export const createRoundedRectCurve = (
+  width: number,
+  height: number,
+  radius: number,
+  z: number,
+) => {
+  const hw = width / 2;
+  const hh = height / 2;
+  const r = Math.min(radius, hw - 1e-4, hh - 1e-4);
+  const path = new THREE.CurvePath<THREE.Vector3>();
+  path.add(new THREE.LineCurve3(
+    new THREE.Vector3(-hw + r, -hh, z),
+    new THREE.Vector3(hw - r, -hh, z),
+  ));
+  path.add(new THREE.QuadraticBezierCurve3(
+    new THREE.Vector3(hw - r, -hh, z),
+    new THREE.Vector3(hw, -hh, z),
+    new THREE.Vector3(hw, -hh + r, z),
+  ));
+  path.add(new THREE.LineCurve3(
+    new THREE.Vector3(hw, -hh + r, z),
+    new THREE.Vector3(hw, hh - r, z),
+  ));
+  path.add(new THREE.QuadraticBezierCurve3(
+    new THREE.Vector3(hw, hh - r, z),
+    new THREE.Vector3(hw, hh, z),
+    new THREE.Vector3(hw - r, hh, z),
+  ));
+  path.add(new THREE.LineCurve3(
+    new THREE.Vector3(hw - r, hh, z),
+    new THREE.Vector3(-hw + r, hh, z),
+  ));
+  path.add(new THREE.QuadraticBezierCurve3(
+    new THREE.Vector3(-hw + r, hh, z),
+    new THREE.Vector3(-hw, hh, z),
+    new THREE.Vector3(-hw, hh - r, z),
+  ));
+  path.add(new THREE.LineCurve3(
+    new THREE.Vector3(-hw, hh - r, z),
+    new THREE.Vector3(-hw, -hh + r, z),
+  ));
+  path.add(new THREE.QuadraticBezierCurve3(
+    new THREE.Vector3(-hw, -hh + r, z),
+    new THREE.Vector3(-hw, -hh, z),
+    new THREE.Vector3(-hw + r, -hh, z),
+  ));
+  return path;
+};
+
+export const createAppChipRimGeometries = (size: {
+  width: number;
+  height: number;
+  depth: number;
+}) => {
+  const { width, height, depth } = size;
+  const corner = ARCH_APP_CHIP_CORNER * Math.min(width, height);
+  const z = depth / 2 + 0.002;
+  const inner = new THREE.TubeGeometry(
+    createRoundedRectCurve(width * 0.985, height * 0.985, corner, z),
+    96,
+    ARCH_APP_CHIP_RIM_INNER,
+    8,
+    true,
+  );
+  const halo = new THREE.TubeGeometry(
+    createRoundedRectCurve(width * 1.045, height * 1.045, corner + 0.01, z),
+    96,
+    ARCH_APP_CHIP_RIM_HALO,
+    8,
+    true,
+  );
+  return { inner, halo };
 };
 
 interface AppChipMaterials {
   glass: THREE.MeshPhysicalMaterial;
   rimCyan: THREE.MeshStandardMaterial;
+  rimHalo: THREE.MeshBasicMaterial;
 }
 
-const createAppChipMaterials = (): AppChipMaterials => ({
-  glass: new THREE.MeshPhysicalMaterial({
+const createAppChipMaterials = (envMap?: THREE.Texture): AppChipMaterials => {
+  const glass = new THREE.MeshPhysicalMaterial({
     color: ARCH_APP_CHIP_GLASS_COLOR,
     transparent: true,
     opacity: ARCH_APP_CHIP_OPACITY,
     roughness: ARCH_APP_CHIP_ROUGHNESS,
     metalness: ARCH_APP_CHIP_METALNESS,
+    transmission: ARCH_APP_CHIP_TRANSMISSION,
+    thickness: ARCH_APP_CHIP_THICKNESS,
+    ior: ARCH_APP_CHIP_IOR,
+    attenuationColor: new THREE.Color(ARCH_APP_CHIP_GLASS_COLOR),
+    attenuationDistance: 0.42,
     emissive: ARCH_EDGE,
-    emissiveIntensity: 0.12,
+    emissiveIntensity: 0.08,
     depthWrite: false,
     side: THREE.DoubleSide,
-  }),
-  rimCyan: new THREE.MeshStandardMaterial({
-    color: ARCH_APP_CHIP_RIM_COLOR,
-    metalness: 0.08,
-    roughness: 0.28,
-    emissive: ARCH_APP_CHIP_RIM_COLOR,
-    emissiveIntensity: 0.85,
-    toneMapped: false,
-  }),
-});
+  });
+  if (envMap) assignScopedEnvMap(glass, envMap, ARCH_APP_CHIP_ENV_INTENSITY);
+  return {
+    glass,
+    rimCyan: new THREE.MeshStandardMaterial({
+      color: ARCH_APP_CHIP_RIM_COLOR,
+      metalness: 0.08,
+      roughness: 0.22,
+      emissive: ARCH_APP_CHIP_RIM_COLOR,
+      emissiveIntensity: 0.95,
+      toneMapped: false,
+    }),
+    rimHalo: new THREE.MeshBasicMaterial({
+      color: ARCH_APP_CHIP_RIM_COLOR,
+      transparent: true,
+      opacity: 0.32,
+      depthWrite: false,
+      blending: THREE.AdditiveBlending,
+      toneMapped: false,
+    }),
+  };
+};
 
 const addChipRim = (
   group: THREE.Group,
-  size: { width: number; height: number; depth: number },
-  geos: RackKitGeometries,
-  material: THREE.Material,
+  geos: { inner: THREE.TubeGeometry; halo: THREE.TubeGeometry },
+  materials: AppChipMaterials,
 ) => {
-  const { width, height, depth } = size;
-  const strokeW = ARCH_APP_CHIP_RIM_WIDTH;
-  const hx = width / 2 - strokeW / 2;
-  const hy = height / 2 - strokeW / 2;
-  const hz = depth / 2 - strokeW / 2;
-  const extra = {
-    rimColor: (material as THREE.MeshStandardMaterial).color?.getHex?.() ?? ARCH_APP_CHIP_RIM_COLOR,
-  };
-  const add = (
-    scale: [number, number, number],
-    position: [number, number, number],
-  ) => addBoxPart(group, geos.box, material, scale, position, 'app-chip-rim', extra);
-  add([width, strokeW, strokeW], [0, hy, hz]);
-  add([width, strokeW, strokeW], [0, -hy, hz]);
-  add([strokeW, height, strokeW], [-hx, 0, hz]);
-  add([strokeW, height, strokeW], [hx, 0, hz]);
-  add([width, strokeW, strokeW], [0, hy, -hz]);
-  add([width, strokeW, strokeW], [0, -hy, -hz]);
-  add([strokeW, height, strokeW], [-hx, 0, -hz]);
-  add([strokeW, height, strokeW], [hx, 0, -hz]);
-  add([strokeW, strokeW, depth], [-hx, hy, 0]);
-  add([strokeW, strokeW, depth], [hx, hy, 0]);
-  add([strokeW, strokeW, depth], [-hx, -hy, 0]);
-  add([strokeW, strokeW, depth], [hx, -hy, 0]);
+  const extra = { rimColor: ARCH_APP_CHIP_RIM_COLOR };
+  const halo = new THREE.Mesh(geos.halo, materials.rimHalo);
+  halo.userData.archRole = 'app-chip-rim-halo';
+  Object.assign(halo.userData, extra);
+  group.add(halo);
+  const inner = new THREE.Mesh(geos.inner, materials.rimCyan);
+  inner.userData.archRole = 'app-chip-rim';
+  Object.assign(inner.userData, extra);
+  group.add(inner);
 };
 
 /**
@@ -1006,6 +1224,7 @@ const addAppChipMeshes = (
   node: Application3DArchitecturePlacedNode,
   geos: RackKitGeometries,
   chipGeo: THREE.BufferGeometry,
+  rimGeos: { inner: THREE.TubeGeometry; halo: THREE.TubeGeometry },
   materials: AppChipMaterials,
   rackMaterials: RackKitMaterials,
   disposables: Array<{ dispose: () => void }>,
@@ -1025,23 +1244,35 @@ const addAppChipMeshes = (
   group.add(glass);
 
   const faceTexture = paintAppChipFace(node, icon);
-  const faceMaterial = new THREE.MeshBasicMaterial({
+  const faceMaterial = new THREE.MeshPhysicalMaterial({
     map: faceTexture,
     transparent: true,
     depthWrite: false,
+    roughness: 0.3,
+    metalness: ARCH_APP_CHIP_METALNESS,
+    emissive: ARCH_EDGE,
+    emissiveMap: faceTexture,
+    emissiveIntensity: 0.28,
+    opacity: 0.96,
     toneMapped: false,
   });
+  if (materials.glass.envMap) {
+    assignScopedEnvMap(faceMaterial, materials.glass.envMap, 0.4);
+  }
   const face = new THREE.Mesh(geos.shadow, faceMaterial);
   face.position.set(0, 0, depth / 2 + 0.001);
-  face.scale.set(width * 0.92, height * 0.92, 1);
+  face.scale.set(width * 0.88, height * 0.88, 1);
   face.userData.archRole = 'app-chip-face';
   face.userData.chipIcon = icon;
   face.userData.hasAlarmDot = false;
+  face.userData.iconFilled = true;
+  face.userData.hasSeparator = true;
+  face.userData.faceMaterialKind = 'physical';
   face.userData.chipTitle = truncateAppChipName(node.name);
   group.add(face);
   disposables.push(faceTexture, faceMaterial);
 
-  addChipRim(group, { width, height, depth }, geos, materials.rimCyan);
+  addChipRim(group, rimGeos, materials);
 
   const shadow = new THREE.Mesh(geos.shadow, rackMaterials.shadow);
   shadow.rotation.x = -Math.PI / 2;
@@ -1321,6 +1552,7 @@ const createTubeGroup = (
 export const createArchitectureTreeGroup = (
   data: Application3DArchitectureData,
   translate: Application3DTranslate,
+  renderer?: THREE.WebGLRenderer,
 ): Application3DArchitectureView => {
   const layout = layoutApplication3DArchitecture(data);
   const group = new THREE.Group();
@@ -1344,16 +1576,22 @@ export const createArchitectureTreeGroup = (
   const ledGeo = new THREE.CylinderGeometry(1, 1, 1, 12);
   const planeGeo = new THREE.PlaneGeometry(1, 1);
   const rackGeos: RackKitGeometries = { box: chassisGeo, led: ledGeo, shadow: planeGeo };
-  const rackMats = createRackMaterials();
+  const scopedEnv = createScopedArchitectureEnvironment(renderer);
+  const rackMats = createRackMaterials(scopedEnv);
   const chipGeo = createRoundedChipGeometry();
-  const chipMats = createAppChipMaterials();
+  const chipRimGeos = createAppChipRimGeometries(ARCH_NODE_SIZE.application);
+  const chipMats = createAppChipMaterials(scopedEnv);
   disposables.push(
     chassisGeo,
     ledGeo,
     planeGeo,
     chipGeo,
+    chipRimGeos.inner,
+    chipRimGeos.halo,
     chipMats.glass,
     chipMats.rimCyan,
+    chipMats.rimHalo,
+    scopedEnv,
     ...new Set(rackMats.faces),
     ...rackMats.textures,
     rackMats.led,
@@ -1482,7 +1720,7 @@ export const createArchitectureTreeGroup = (
     nodeGroup.userData.alarming = alarming;
     nodeGroup.userData.plainMetal = !alarming;
     if (node.kind === 'application') {
-      addAppChipMeshes(nodeGroup, node, rackGeos, chipGeo, chipMats, rackMats, disposables);
+      addAppChipMeshes(nodeGroup, node, rackGeos, chipGeo, chipRimGeos, chipMats, rackMats, disposables);
     } else {
       addRackMeshes(nodeGroup, node, rackGeos, rackMats, alarming);
     }

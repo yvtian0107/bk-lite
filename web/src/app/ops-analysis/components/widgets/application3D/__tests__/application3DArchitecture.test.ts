@@ -143,12 +143,22 @@ import {
   ARCH_RING_CYAN,
   ARCH_RING_ALARM,
   APP_CHIP_ICON_KINDS,
+  ARCH_APP_CHIP_BEVEL,
+  ARCH_APP_CHIP_CABINET_ENV_INTENSITY,
+  ARCH_APP_CHIP_ENV_INTENSITY,
   ARCH_APP_CHIP_GLASS_COLOR,
   ARCH_APP_CHIP_METALNESS,
+  ARCH_APP_CHIP_NAME_MAX_CHARS,
   ARCH_APP_CHIP_OPACITY,
+  ARCH_APP_CHIP_RIM_HALO,
+  ARCH_APP_CHIP_RIM_INNER,
   ARCH_APP_CHIP_ROUGHNESS,
   ARCH_APP_CHIP_RIM_COLOR,
+  ARCH_APP_CHIP_THICKNESS,
   ARCH_APP_CHIP_TITLE_FILL,
+  ARCH_APP_CHIP_TITLE_SIZE,
+  ARCH_APP_CHIP_TITLE_WEIGHT,
+  ARCH_APP_CHIP_TRANSMISSION,
   appChipIconKind,
   applicationHasAlarm,
   architectureEdgeColor,
@@ -156,6 +166,8 @@ import {
   architecturePulseProgress,
   createArchitectureEdgeCurve,
   createArchitectureTreeGroup,
+  createRoundedChipGeometry,
+  createRoundedRectCurve,
   createTrapezoidFrustumGeometry,
   hashAppChipIconIndex,
   hostHasAlarm,
@@ -1066,6 +1078,8 @@ describe('application3D architecture view', () => {
     const edgeTubes = tubes.filter((mesh) => (
       mesh.userData.archRole !== 'edge-pulse'
       && mesh.userData.archRole !== 'edge-pulse-halo'
+      && mesh.userData.archRole !== 'app-chip-rim'
+      && mesh.userData.archRole !== 'app-chip-rim-halo'
     ));
     expect(edgeTubes.length).toBe(view.layout.edges.length);
     expect(view.interPlaneTubes.length).toBe(view.layout.edges.length);
@@ -1138,7 +1152,9 @@ describe('application3D architecture view', () => {
     ))).toBe(true);
     const hostTexts = paintCalls.filter((call) => ['web-1', 'shared'].includes(call.text));
     const appTexts = paintCalls.filter((call) => ['门户', '订单'].includes(call.text));
-    const appFaceTexts = appTexts.filter((call) => call.font.startsWith('600 42px '));
+    const appFaceTexts = appTexts.filter((call) => (
+      call.font.startsWith(`${ARCH_APP_CHIP_TITLE_WEIGHT} ${ARCH_APP_CHIP_TITLE_SIZE}px `)
+    ));
     const appLabelTexts = appTexts.filter((call) => call.font.startsWith('600 58px '));
     expect(hostTexts.length).toBeGreaterThanOrEqual(2);
     expect(appFaceTexts.length).toBeGreaterThanOrEqual(2);
@@ -1150,7 +1166,7 @@ describe('application3D architecture view', () => {
     ))).toBe(true);
     expect(appFaceTexts.every((call) => (
       call.fillStyle === ARCH_APP_CHIP_TITLE_FILL
-      && call.font.startsWith('600 42px ')
+      && call.font.startsWith(`${ARCH_APP_CHIP_TITLE_WEIGHT} ${ARCH_APP_CHIP_TITLE_SIZE}px `)
     ))).toBe(true);
     expect(appLabelTexts.every((call) => (
       call.fillStyle === ARCH_LABEL_FILL
@@ -1492,10 +1508,12 @@ describe('application3D architecture view', () => {
     hostFaces.forEach((face) => {
       expect(face).toBeInstanceOf(THREE.MeshStandardMaterial);
       expect(face).not.toBeInstanceOf(THREE.MeshPhysicalMaterial);
-      expect(face.envMap).toBeFalsy();
+      expect(face.envMap).toBeTruthy();
+      expect(face.userData.scopedChipEnv).toBe(true);
+      expect(face.envMapIntensity).toBeCloseTo(ARCH_APP_CHIP_CABINET_ENV_INTENSITY);
       expect(('clearcoat' in face) ? (face as THREE.MeshPhysicalMaterial).clearcoat : 0).toBe(0);
     });
-    expect(front.envMap).toBeFalsy();
+    expect(front.envMap).toBeTruthy();
     expect(front.roughnessMap).toBeFalsy();
     expect(front.emissive.getHex()).toBe(0);
     expect(front.emissiveIntensity).toBe(0);
@@ -1618,7 +1636,10 @@ describe('application3D architecture view', () => {
     expect(viewSrc).toContain('addRackMeshes');
     expect(viewSrc).toContain('MeshPhysicalMaterial');
     expect(viewSrc).not.toContain('clearcoat');
-    expect(viewSrc).not.toContain('envMap');
+    expect(viewSrc).toContain('envMap');
+    expect(viewSrc).toContain('RoomEnvironment');
+    expect(viewSrc).toContain('createScopedArchitectureEnvironment');
+    expect(viewSrc).not.toContain('scene.environment');
     expect(viewSrc).not.toContain('ARCH_RACK_FRONT_CLEARCOAT');
     expect(viewSrc).toContain('MeshStandardMaterial');
     expect(viewSrc).toContain('rack-led');
@@ -2044,15 +2065,22 @@ describe('application3D architecture view', () => {
     );
     expect(seen.size).toBeGreaterThan(1);
     expect(truncateAppChipName('门户')).toBe('门户');
-    expect(truncateAppChipName('订单服务平台监控')).toBe('订单服务平台...');
+    expect(truncateAppChipName('订单服务平台监控')).toBe('订单服务平台监控');
+    expect(truncateAppChipName('订单服务平台监控中心')).toBe('订单服务平台监控...');
+    expect(ARCH_APP_CHIP_NAME_MAX_CHARS).toBe(9);
   });
 
   it('builds frosted application chips instead of racks, with Y-only camera yaw', () => {
     expect(ARCH_APP_CHIP_OPACITY).toBeGreaterThanOrEqual(0.55);
     expect(ARCH_APP_CHIP_OPACITY).toBeLessThanOrEqual(0.7);
-    expect(ARCH_APP_CHIP_ROUGHNESS).toBeCloseTo(0.35);
+    expect(ARCH_APP_CHIP_ROUGHNESS).toBeCloseTo(0.42);
     expect(ARCH_APP_CHIP_METALNESS).toBeGreaterThanOrEqual(0);
     expect(ARCH_APP_CHIP_METALNESS).toBeLessThanOrEqual(0.05);
+    expect(ARCH_APP_CHIP_TRANSMISSION).toBeGreaterThanOrEqual(0.55);
+    expect(ARCH_APP_CHIP_TRANSMISSION).toBeLessThanOrEqual(0.75);
+    expect(ARCH_APP_CHIP_THICKNESS).toBeGreaterThan(0.1);
+    expect(ARCH_APP_CHIP_BEVEL).toBeGreaterThan(0);
+    expect(ARCH_APP_CHIP_RIM_INNER).toBeLessThan(ARCH_APP_CHIP_RIM_HALO);
     expect(ARCH_APP_CHIP_RIM_COLOR).toBe(ARCH_EDGE);
 
     const view = createArchitectureTreeGroup(tree({
@@ -2095,6 +2123,7 @@ describe('application3D architecture view', () => {
       const chips: THREE.Mesh[] = [];
       const faces: THREE.Mesh[] = [];
       const rims: THREE.Mesh[] = [];
+      const halos: THREE.Mesh[] = [];
       const dots: THREE.Mesh[] = [];
       const racks: THREE.Mesh[] = [];
       const leds: THREE.Mesh[] = [];
@@ -2105,12 +2134,13 @@ describe('application3D architecture view', () => {
         if (mesh.userData.archRole === 'app-chip') chips.push(mesh);
         if (mesh.userData.archRole === 'app-chip-face') faces.push(mesh);
         if (mesh.userData.archRole === 'app-chip-rim') rims.push(mesh);
+        if (mesh.userData.archRole === 'app-chip-rim-halo') halos.push(mesh);
         if (mesh.userData.archRole === 'app-chip-alarm-dot') dots.push(mesh);
         if (mesh.userData.archRole === 'rack') racks.push(mesh);
         if (mesh.userData.archRole === 'rack-led') leds.push(mesh);
         if (mesh.userData.archRole === 'node-label') labels.push(mesh);
       });
-      return { chips, faces, rims, dots, racks, leds, labels };
+      return { chips, faces, rims, halos, dots, racks, leds, labels };
     };
 
     const quiet = collect(appGroup as THREE.Object3D);
@@ -2118,7 +2148,8 @@ describe('application3D architecture view', () => {
     const host = collect(hostGroup as THREE.Object3D);
     expect(quiet.chips).toHaveLength(1);
     expect(quiet.faces).toHaveLength(1);
-    expect(quiet.rims).toHaveLength(12);
+    expect(quiet.rims).toHaveLength(1);
+    expect(quiet.halos).toHaveLength(1);
     expect(quiet.dots).toHaveLength(0);
     expect(quiet.racks).toHaveLength(0);
     expect(quiet.leds).toHaveLength(0);
@@ -2134,21 +2165,54 @@ describe('application3D architecture view', () => {
     expect(glass.opacity).toBeCloseTo(ARCH_APP_CHIP_OPACITY);
     expect(glass.roughness).toBeCloseTo(ARCH_APP_CHIP_ROUGHNESS);
     expect(glass.metalness).toBeCloseTo(ARCH_APP_CHIP_METALNESS);
+    expect(glass.transmission).toBeCloseTo(ARCH_APP_CHIP_TRANSMISSION);
+    expect(glass.thickness).toBeCloseTo(ARCH_APP_CHIP_THICKNESS);
+    expect(glass.envMap).toBeTruthy();
+    expect(glass.envMapIntensity).toBeCloseTo(ARCH_APP_CHIP_ENV_INTENSITY);
     expect(glass.color.getHex()).toBe(ARCH_APP_CHIP_GLASS_COLOR);
+    view.group.traverse((child) => {
+      if (!(child as THREE.Mesh).isMesh) return;
+      const mesh = child as THREE.Mesh;
+      const role = mesh.userData.archRole as string | undefined;
+      if (role !== 'plane-mesh' && role !== 'plane-veneer' && role !== 'plane-rim') return;
+      const materials = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
+      materials.forEach((material) => {
+        expect((material as THREE.MeshStandardMaterial).envMap).toBeFalsy();
+      });
+    });
+    const chipGeo = quiet.chips[0].geometry as THREE.ExtrudeGeometry;
+    expect(chipGeo.parameters.options.bevelEnabled).toBe(true);
+    expect(chipGeo.parameters.options.bevelSize).toBe(ARCH_APP_CHIP_BEVEL);
+    const unitChip = createRoundedChipGeometry();
+    expect(unitChip.parameters.options.bevelEnabled).toBe(true);
+    expect(createRoundedRectCurve(1, 1, 0.12, 0).curves).toHaveLength(8);
+    unitChip.dispose();
     expect(quiet.chips[0].scale.x).toBeCloseTo(ARCH_NODE_SIZE.application.width);
     expect(quiet.chips[0].scale.y).toBeCloseTo(ARCH_NODE_SIZE.application.height);
     expect(quiet.chips[0].scale.z).toBeCloseTo(ARCH_NODE_SIZE.application.depth);
     expect(quiet.chips[0].userData.chipIcon).toBe(appChipIconKind('app-1'));
+    expect(quiet.faces[0].material).toBeInstanceOf(THREE.MeshPhysicalMaterial);
     expect(quiet.faces[0].userData.chipIcon).toBe(appChipIconKind('app-1'));
-    expect(quiet.faces[0].userData.chipTitle).toBe('订单服务平台...');
+    expect(quiet.faces[0].userData.chipTitle).toBe('订单服务平台监控');
     expect(quiet.faces[0].userData.hasAlarmDot).toBe(false);
+    expect(quiet.faces[0].userData.iconFilled).toBe(true);
+    expect(quiet.faces[0].userData.hasSeparator).toBe(true);
+    expect(quiet.faces[0].userData.faceMaterialKind).toBe('physical');
+    expect(quiet.rims[0].geometry.type).toBe('TubeGeometry');
+    expect(quiet.halos[0].geometry.type).toBe('TubeGeometry');
+    expect((quiet.rims[0].geometry as THREE.TubeGeometry).parameters.radius).toBe(ARCH_APP_CHIP_RIM_INNER);
+    expect((quiet.halos[0].geometry as THREE.TubeGeometry).parameters.radius).toBe(ARCH_APP_CHIP_RIM_HALO);
     expect(quiet.rims.every((rim) => (
       (rim.material as THREE.MeshStandardMaterial).color.getHex() === ARCH_APP_CHIP_RIM_COLOR
+    ))).toBe(true);
+    expect(quiet.halos.every((halo) => (
+      (halo.material as THREE.MeshBasicMaterial).color.getHex() === ARCH_APP_CHIP_RIM_COLOR
     ))).toBe(true);
 
     expect(alarmed.dots).toHaveLength(0);
     expect(alarmed.faces[0].userData.hasAlarmDot).toBe(false);
-    expect(alarmed.rims).toHaveLength(12);
+    expect(alarmed.rims).toHaveLength(1);
+    expect(alarmed.halos).toHaveLength(1);
     expect(alarmed.rims.every((rim) => (
       (rim.material as THREE.MeshStandardMaterial).color.getHex() === ARCH_APP_CHIP_RIM_COLOR
     ))).toBe(true);

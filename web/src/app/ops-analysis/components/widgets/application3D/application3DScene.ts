@@ -1830,7 +1830,7 @@ export const createApplication3DScene = (
     setOrbitEnabled(false);
     focusedId = '';
     hideWallCards(true);
-    architectureView = createArchitectureTreeGroup(data, translate);
+    architectureView = createArchitectureTreeGroup(data, translate, renderer);
     architectureView.group.scale.setScalar(1);
     architectureView.planeGroups.forEach((planeGroup) => {
       planeGroup.scale.setScalar(0);
