@@ -143,7 +143,6 @@ import {
   ARCH_APP_CHIP_METALNESS,
   ARCH_APP_CHIP_OPACITY,
   ARCH_APP_CHIP_ROUGHNESS,
-  ARCH_APP_CHIP_RIM_ALARM_COLOR,
   ARCH_APP_CHIP_RIM_COLOR,
   ARCH_APP_CHIP_TITLE_FILL,
   appChipIconKind,
@@ -994,7 +993,9 @@ describe('application3D architecture view', () => {
     expect(labels.every((label) => label.userData.labelFill === ARCH_LABEL_FILL)).toBe(true);
     expect(ARCH_LABEL_HAS_BACKGROUND).toBe(false);
     expect(ARCH_LABEL_BILLBOARD).toBe(true);
-    expect(labels).toHaveLength(view.layout.nodes.filter((node) => node.kind === 'host').length);
+    expect(labels).toHaveLength(
+      view.layout.nodes.filter((node) => node.kind === 'host' || node.kind === 'application').length,
+    );
     expect(view.nodeLabels.size).toBe(labels.length);
     expect(view.billboardMeshes.length).toBe(titles.length + labels.length);
     expect(titles.every((title) => {
@@ -2028,7 +2029,6 @@ describe('application3D architecture view', () => {
     expect(ARCH_APP_CHIP_METALNESS).toBeGreaterThanOrEqual(0);
     expect(ARCH_APP_CHIP_METALNESS).toBeLessThanOrEqual(0.05);
     expect(ARCH_APP_CHIP_RIM_COLOR).toBe(ARCH_EDGE);
-    expect(ARCH_APP_CHIP_RIM_ALARM_COLOR).toBe(ARCH_EDGE_ALARM);
 
     const view = createArchitectureTreeGroup(tree({
       nodes: [
@@ -2062,8 +2062,8 @@ describe('application3D architecture view', () => {
     expect(appGroup?.userData.nodeId).toBe('app-1');
     expect(appGroup?.userData.yawBillboard).toBe(true);
     expect(hostGroup?.userData.yawBillboard).toBeUndefined();
-    expect(view.nodeLabels.has('app-1')).toBe(false);
-    expect(view.nodeLabels.has('app-alarm')).toBe(false);
+    expect(view.nodeLabels.has('app-1')).toBe(true);
+    expect(view.nodeLabels.has('app-alarm')).toBe(true);
     expect(view.nodeLabels.has('host-1')).toBe(true);
 
     const collect = (root: THREE.Object3D) => {
@@ -2097,7 +2097,7 @@ describe('application3D architecture view', () => {
     expect(quiet.dots).toHaveLength(0);
     expect(quiet.racks).toHaveLength(0);
     expect(quiet.leds).toHaveLength(0);
-    expect(quiet.labels).toHaveLength(0);
+    expect(quiet.labels).toHaveLength(1);
     expect(host.chips).toHaveLength(0);
     expect(host.racks).toHaveLength(1);
     expect(host.leds).toHaveLength(ARCH_RACK_LED_COUNT);
@@ -2121,19 +2121,45 @@ describe('application3D architecture view', () => {
       (rim.material as THREE.MeshStandardMaterial).color.getHex() === ARCH_APP_CHIP_RIM_COLOR
     ))).toBe(true);
 
-    expect(alarmed.dots).toHaveLength(1);
-    expect(alarmed.faces[0].userData.hasAlarmDot).toBe(true);
+    expect(alarmed.dots).toHaveLength(0);
+    expect(alarmed.faces[0].userData.hasAlarmDot).toBe(false);
     expect(alarmed.rims).toHaveLength(12);
     expect(alarmed.rims.every((rim) => (
-      (rim.material as THREE.MeshStandardMaterial).color.getHex() === ARCH_APP_CHIP_RIM_ALARM_COLOR
+      (rim.material as THREE.MeshStandardMaterial).color.getHex() === ARCH_APP_CHIP_RIM_COLOR
     ))).toBe(true);
     expect((alarmed.chips[0].material as THREE.MeshPhysicalMaterial).color.getHex()).toBe(
       ARCH_APP_CHIP_GLASS_COLOR,
     );
+    expect(alarmed.labels).toHaveLength(1);
+    const appLabel = view.nodeLabels.get('app-1');
+    const hostLabel = view.nodeLabels.get('host-1');
+    const appNode = view.layout.nodes.find((node) => node.id === 'app-1');
+    const hostNode = view.layout.nodes.find((node) => node.id === 'host-1');
+    expect(appLabel?.userData.archRole).toBe('node-label');
+    expect(appLabel?.userData.billboard).toBe(ARCH_LABEL_BILLBOARD);
+    expect(appLabel?.userData.labelHasBackground).toBe(ARCH_LABEL_HAS_BACKGROUND);
+    expect(appLabel?.userData.labelFill).toBe(ARCH_LABEL_FILL);
+    expect(appLabel?.userData.labelScale).toEqual(
+      new THREE.Vector3(Math.max((appNode?.width ?? 0) * 3.6, 1.4), 0.36, 1),
+    );
+    expect(appLabel?.position.y).toBeCloseTo((appNode?.height ?? 0) / 2 + 0.28);
+    expect(hostLabel?.userData.archRole).toBe('node-label');
+    expect(hostLabel?.userData.labelScale).toEqual(
+      new THREE.Vector3(Math.max((hostNode?.width ?? 0) * 3.6, 1.4), 0.36, 1),
+    );
+    expect(hostLabel?.position.y).toBeCloseTo((hostNode?.height ?? 0) / 2 + 0.28);
     expect(hostHasAlarm(view.layout.nodes.find((node) => node.id === 'app-alarm'))).toBe(false);
     expect(applicationHasAlarm(view.layout.nodes.find((node) => node.id === 'app-alarm'))).toBe(true);
     expect(architectureEdgeColor(view.layout.nodes.find((node) => node.id === 'app-alarm'))).toBe(ARCH_EDGE);
     expect(architectureEdgeColor(view.layout.nodes.find((node) => node.id === 'host-alarm'))).toBe(ARCH_EDGE_ALARM);
+
+    view.setHoveredNode?.('app-alarm');
+    const alarmAppRing = alarmApp?.userData.selectionRing as THREE.Mesh;
+    expect(alarmAppRing.visible).toBe(true);
+    expect((alarmAppRing.material as THREE.ShaderMaterial).uniforms.uColor.value.getHex()).toBe(
+      ARCH_RING_CYAN,
+    );
+    view.setHoveredNode?.(null);
 
     const viewSrc = readFileSync(
       resolve(process.cwd(), 'src/app/ops-analysis/components/widgets/application3D/application3DArchitectureView.ts'),
@@ -2141,6 +2167,10 @@ describe('application3D architecture view', () => {
     );
     expect(viewSrc).toContain('addAppChipMeshes');
     expect(viewSrc).toMatch(/if \(node\.kind === 'application'\) \{\s*addAppChipMeshes/);
+    expect(viewSrc).toContain("node.kind === 'host' || node.kind === 'application'");
+    expect(viewSrc).toContain('paintNodeLabel');
+    expect(viewSrc).not.toContain('app-chip-alarm-dot');
+    expect(viewSrc).not.toContain('rimAlarm');
     expect(viewSrc).toContain('yawObjectAroundYToCamera');
     expect(viewSrc).toContain('addRackMeshes(nodeGroup, node, rackGeos, rackMats, alarming)');
 

@@ -137,7 +137,10 @@ export const hostHasAlarm = (
   node: { kind: string; health?: { state: string } } | undefined,
 ) => node?.kind === 'host' && node.health?.state === 'alarming';
 
-/** Own-node alarm only. Applications never inherit host alarms. */
+/**
+ * Own-node alarm only. Applications never inherit host alarms.
+ * Backend may still mark app health alarming; chip visuals ignore this.
+ */
 export const applicationHasAlarm = (
   node: { kind: string; health?: { state: string } } | undefined,
 ) => node?.kind === 'application' && node.health?.state === 'alarming';
@@ -157,13 +160,11 @@ export const ARCH_APP_CHIP_ROUGHNESS = 0.35;
 export const ARCH_APP_CHIP_METALNESS = 0.03;
 export const ARCH_APP_CHIP_GLASS_COLOR = 0x8fe4ea;
 export const ARCH_APP_CHIP_RIM_COLOR = ARCH_EDGE;
-export const ARCH_APP_CHIP_RIM_ALARM_COLOR = ARCH_EDGE_ALARM;
 export const ARCH_APP_CHIP_TITLE_FILL = 'rgba(248, 252, 255, 0.96)';
 export const ARCH_APP_CHIP_ICON_STROKE = 'rgba(94, 232, 240, 0.96)';
 export const ARCH_APP_CHIP_NAME_MAX_CHARS = 6;
 export const ARCH_APP_CHIP_CORNER = 0.12;
 export const ARCH_APP_CHIP_RIM_WIDTH = 0.005;
-export const ARCH_APP_CHIP_ALARM_DOT_RADIUS = 0.012;
 
 const CHIP_YAW_WORLD = new THREE.Vector3();
 
@@ -888,7 +889,6 @@ const drawAppChipIcon = (
 export const paintAppChipFace = (
   node: Application3DArchitecturePlacedNode,
   icon: AppChipIconKind,
-  alarming: boolean,
 ) =>
   paintCanvasTexture(512, 384, (context, canvas) => {
     const width = canvas.width;
@@ -903,14 +903,6 @@ export const paintAppChipFace = (
     context.fillStyle = ARCH_APP_CHIP_TITLE_FILL;
     context.font = `600 42px ${CARD_GLASS.fontFamily}`;
     context.fillText(truncateAppChipName(node.name), width / 2, height * 0.82);
-    if (alarming) {
-      context.shadowColor = 'rgba(255, 70, 70, 0.85)';
-      context.shadowBlur = 10;
-      context.fillStyle = '#ff3b3b';
-      context.beginPath();
-      context.arc(36, 36, 11, 0, Math.PI * 2);
-      context.fill();
-    }
   });
 
 const createRoundedChipGeometry = () => {
@@ -940,8 +932,6 @@ const createRoundedChipGeometry = () => {
 interface AppChipMaterials {
   glass: THREE.MeshPhysicalMaterial;
   rimCyan: THREE.MeshStandardMaterial;
-  rimAlarm: THREE.MeshStandardMaterial;
-  alarmDot: THREE.MeshStandardMaterial;
 }
 
 const createAppChipMaterials = (): AppChipMaterials => ({
@@ -962,22 +952,6 @@ const createAppChipMaterials = (): AppChipMaterials => ({
     roughness: 0.28,
     emissive: ARCH_APP_CHIP_RIM_COLOR,
     emissiveIntensity: 0.85,
-    toneMapped: false,
-  }),
-  rimAlarm: new THREE.MeshStandardMaterial({
-    color: ARCH_APP_CHIP_RIM_ALARM_COLOR,
-    metalness: 0.08,
-    roughness: 0.28,
-    emissive: ARCH_APP_CHIP_RIM_ALARM_COLOR,
-    emissiveIntensity: 0.9,
-    toneMapped: false,
-  }),
-  alarmDot: new THREE.MeshStandardMaterial({
-    color: ARCH_RING_ALARM,
-    emissive: ARCH_RING_ALARM,
-    emissiveIntensity: 1,
-    roughness: 0.25,
-    metalness: 0.05,
     toneMapped: false,
   }),
 });
@@ -1016,7 +990,8 @@ const addChipRim = (
 
 /**
  * Frosted-cyan glass chip (Option B): icon + truncated name on the face.
- * No overhead billboard, no host-count / status bars, no rack language.
+ * Application chips never paint alarm chrome. Overhead name billboard is
+ * added with host labels in createArchitectureTreeGroup.
  */
 const addAppChipMeshes = (
   group: THREE.Group,
@@ -1030,7 +1005,6 @@ const addAppChipMeshes = (
   const width = node.width;
   const height = node.height;
   const depth = node.depth;
-  const alarming = applicationHasAlarm(node);
   const icon = appChipIconKind(node.id);
 
   const glass = new THREE.Mesh(chipGeo, materials.glass);
@@ -1042,7 +1016,7 @@ const addAppChipMeshes = (
   glass.userData.sharedMaterial = true;
   group.add(glass);
 
-  const faceTexture = paintAppChipFace(node, icon, alarming);
+  const faceTexture = paintAppChipFace(node, icon);
   const faceMaterial = new THREE.MeshBasicMaterial({
     map: faceTexture,
     transparent: true,
@@ -1054,31 +1028,12 @@ const addAppChipMeshes = (
   face.scale.set(width * 0.92, height * 0.92, 1);
   face.userData.archRole = 'app-chip-face';
   face.userData.chipIcon = icon;
-  face.userData.hasAlarmDot = alarming;
+  face.userData.hasAlarmDot = false;
   face.userData.chipTitle = truncateAppChipName(node.name);
   group.add(face);
   disposables.push(faceTexture, faceMaterial);
 
-  addChipRim(
-    group,
-    { width, height, depth },
-    geos,
-    alarming ? materials.rimAlarm : materials.rimCyan,
-  );
-
-  if (alarming) {
-    const dot = new THREE.Mesh(geos.led, materials.alarmDot);
-    const radius = ARCH_APP_CHIP_ALARM_DOT_RADIUS;
-    dot.scale.set(radius, radius * 0.45, radius);
-    dot.rotation.x = Math.PI / 2;
-    dot.position.set(
-      -width / 2 + 0.045,
-      height / 2 - 0.04,
-      depth / 2 + 0.004,
-    );
-    dot.userData.archRole = 'app-chip-alarm-dot';
-    group.add(dot);
-  }
+  addChipRim(group, { width, height, depth }, geos, materials.rimCyan);
 
   const shadow = new THREE.Mesh(geos.shadow, rackMaterials.shadow);
   shadow.rotation.x = -Math.PI / 2;
@@ -1391,8 +1346,6 @@ export const createArchitectureTreeGroup = (
     chipGeo,
     chipMats.glass,
     chipMats.rimCyan,
-    chipMats.rimAlarm,
-    chipMats.alarmDot,
     ...new Set(rackMats.faces),
     ...rackMats.textures,
     rackMats.led,
@@ -1527,7 +1480,7 @@ export const createArchitectureTreeGroup = (
     }
     // Y-up node sitting ON the horizontal XZ platform — do not pitch the body.
     nodeGroup.rotation.x = 0;
-    if (node.kind === 'host') {
+    if (node.kind === 'host' || node.kind === 'application') {
       const texture = paintNodeLabel(node);
       const labelMaterial = new THREE.MeshBasicMaterial({
         map: texture,
@@ -1659,7 +1612,7 @@ export const createArchitectureTreeGroup = (
       const isConnected = connectedNodeIds.has(nodeId);
       const ring = nodeGroup.userData.selectionRing as THREE.Mesh | undefined;
       const node = nodesById.get(nodeId);
-      const isAlarm = Boolean(node && (hostHasAlarm(node) || node.health?.state === 'alarming'));
+      const isAlarm = hostHasAlarm(node);
 
       if (ring) {
         if (isConnected) {
