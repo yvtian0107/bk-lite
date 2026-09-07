@@ -178,8 +178,14 @@ export const ARCH_APP_CHIP_TITLE_WEIGHT = 700;
 export const ARCH_APP_CHIP_TITLE_SIZE = 46;
 export const ARCH_APP_CHIP_CORNER = 0.12;
 export const ARCH_APP_CHIP_BEVEL = 0.032;
-export const ARCH_APP_CHIP_RIM_INNER = 0.007;
-export const ARCH_APP_CHIP_RIM_HALO = 0.02;
+/** Hairline + tight inward bloom — same world language as wall/plane rims. */
+export const ARCH_APP_CHIP_RIM_STROKE_WORLD = ARCH_PLANE_RIM_STROKE_WORLD;
+export const ARCH_APP_CHIP_RIM_HALO_WORLD = 0.036;
+export const ARCH_APP_CHIP_RIM_STROKE_OPACITY = ARCH_PLANE_RIM_STROKE_OPACITY;
+export const ARCH_APP_CHIP_RIM_OPACITY = 0.28;
+export const ARCH_APP_CHIP_RIM_FALLOFF = ARCH_PLANE_RIM_FALLOFF;
+export const ARCH_APP_CHIP_RIM_BLENDING = ARCH_PLANE_RIM_BLENDING;
+export const ARCH_APP_CHIP_RIM_HAS_EDGE_LINES = false;
 
 const CHIP_YAW_WORLD = new THREE.Vector3();
 
@@ -316,11 +322,29 @@ const createPlaneSideMaterial = () =>
     side: THREE.DoubleSide,
   });
 
+export const architectureAppChipRimCornerWorld = (
+  width: number,
+  height: number,
+) => ARCH_APP_CHIP_CORNER * Math.min(width, height);
+
 /**
  * Wall-card face rim: hairline stroke + tight inset glow in WORLD units.
  * Normal blending — additive bloom is what made 2% UV look like fat neon.
+ * `uCornerWorld = 0` is a sharp rect (boards); chips pass the rounded face.
  */
-const createPlaneRimMaterial = (worldWidth: number, worldDepth: number) =>
+const createInwardRimMaterial = (
+  worldWidth: number,
+  worldHeight: number,
+  options: {
+    color: number;
+    strokeWorld: number;
+    haloWorld: number;
+    cornerWorld?: number;
+    opacity: number;
+    strokeOpacity: number;
+    falloff: number;
+  },
+) =>
   new THREE.ShaderMaterial({
     transparent: true,
     depthWrite: false,
@@ -329,14 +353,15 @@ const createPlaneRimMaterial = (worldWidth: number, worldDepth: number) =>
     blending: THREE.NormalBlending,
     toneMapped: false,
     uniforms: {
-      uColor: { value: new THREE.Color(ARCH_PLANE_RIM_COLOR) },
-      uStrokeWorld: { value: ARCH_PLANE_RIM_STROKE_WORLD },
-      uHaloWorld: { value: ARCH_PLANE_RIM_HALO_WORLD },
+      uColor: { value: new THREE.Color(options.color) },
+      uStrokeWorld: { value: options.strokeWorld },
+      uHaloWorld: { value: options.haloWorld },
       uWorldWidth: { value: worldWidth },
-      uWorldDepth: { value: worldDepth },
-      uFalloff: { value: ARCH_PLANE_RIM_FALLOFF },
-      uOpacity: { value: ARCH_PLANE_RIM_OPACITY },
-      uStroke: { value: ARCH_PLANE_RIM_STROKE_OPACITY },
+      uWorldDepth: { value: worldHeight },
+      uCornerWorld: { value: options.cornerWorld ?? 0 },
+      uFalloff: { value: options.falloff },
+      uOpacity: { value: options.opacity },
+      uStroke: { value: options.strokeOpacity },
     },
     vertexShader: `
       varying vec2 vUv;
@@ -351,14 +376,24 @@ const createPlaneRimMaterial = (worldWidth: number, worldDepth: number) =>
       uniform float uHaloWorld;
       uniform float uWorldWidth;
       uniform float uWorldDepth;
+      uniform float uCornerWorld;
       uniform float uFalloff;
       uniform float uOpacity;
       uniform float uStroke;
       varying vec2 vUv;
+
+      float sdRoundedBox(vec2 p, vec2 b, float r) {
+        vec2 q = abs(p) - b + r;
+        return min(max(q.x, q.y), 0.0) + length(max(q, 0.0)) - r;
+      }
+
       void main() {
-        float worldEdgeX = min(vUv.x, 1.0 - vUv.x) * uWorldWidth;
-        float worldEdgeY = min(vUv.y, 1.0 - vUv.y) * uWorldDepth;
-        float edge = min(worldEdgeX, worldEdgeY);
+        vec2 p = (vUv - 0.5) * vec2(uWorldWidth, uWorldDepth);
+        vec2 b = vec2(uWorldWidth, uWorldDepth) * 0.5;
+        float r = min(max(uCornerWorld, 0.0), min(b.x, b.y) - 1e-4);
+        float sd = sdRoundedBox(p, b, r);
+        if (sd > 0.0) discard;
+        float edge = -sd;
         float stroke = 1.0 - smoothstep(0.0, uStrokeWorld, edge);
         float bloom = 1.0 - smoothstep(uStrokeWorld, uHaloWorld, edge);
         bloom = pow(max(bloom, 0.0), uFalloff);
@@ -367,6 +402,28 @@ const createPlaneRimMaterial = (worldWidth: number, worldDepth: number) =>
         gl_FragColor = vec4(uColor, alpha);
       }
     `,
+  });
+
+const createPlaneRimMaterial = (worldWidth: number, worldDepth: number) =>
+  createInwardRimMaterial(worldWidth, worldDepth, {
+    color: ARCH_PLANE_RIM_COLOR,
+    strokeWorld: ARCH_PLANE_RIM_STROKE_WORLD,
+    haloWorld: ARCH_PLANE_RIM_HALO_WORLD,
+    cornerWorld: 0,
+    opacity: ARCH_PLANE_RIM_OPACITY,
+    strokeOpacity: ARCH_PLANE_RIM_STROKE_OPACITY,
+    falloff: ARCH_PLANE_RIM_FALLOFF,
+  });
+
+const createChipRimMaterial = (worldWidth: number, worldHeight: number) =>
+  createInwardRimMaterial(worldWidth, worldHeight, {
+    color: ARCH_APP_CHIP_RIM_COLOR,
+    strokeWorld: ARCH_APP_CHIP_RIM_STROKE_WORLD,
+    haloWorld: ARCH_APP_CHIP_RIM_HALO_WORLD,
+    cornerWorld: architectureAppChipRimCornerWorld(worldWidth, worldHeight),
+    opacity: ARCH_APP_CHIP_RIM_OPACITY,
+    strokeOpacity: ARCH_APP_CHIP_RIM_STROKE_OPACITY,
+    falloff: ARCH_APP_CHIP_RIM_FALLOFF,
   });
 
 const stampRimUserData = (object: THREE.Object3D) => {
@@ -1060,38 +1117,15 @@ export const createRoundedRectCurve = (
   return path;
 };
 
-export const createAppChipRimGeometries = (size: {
-  width: number;
-  height: number;
-  depth: number;
-}) => {
-  const { width, height, depth } = size;
-  const corner = ARCH_APP_CHIP_CORNER * Math.min(width, height);
-  const z = depth / 2 + 0.002;
-  const inner = new THREE.TubeGeometry(
-    createRoundedRectCurve(width * 0.985, height * 0.985, corner, z),
-    96,
-    ARCH_APP_CHIP_RIM_INNER,
-    8,
-    true,
-  );
-  const halo = new THREE.TubeGeometry(
-    createRoundedRectCurve(width * 1.045, height * 1.045, corner + 0.01, z),
-    96,
-    ARCH_APP_CHIP_RIM_HALO,
-    8,
-    true,
-  );
-  return { inner, halo };
-};
-
 interface AppChipMaterials {
   glass: THREE.MeshPhysicalMaterial;
-  rimCyan: THREE.MeshStandardMaterial;
-  rimHalo: THREE.MeshBasicMaterial;
+  rim: THREE.ShaderMaterial;
 }
 
-const createAppChipMaterials = (): AppChipMaterials => {
+const createAppChipMaterials = (size: {
+  width: number;
+  height: number;
+}): AppChipMaterials => {
   const glass = new THREE.MeshPhysicalMaterial({
     color: ARCH_APP_CHIP_GLASS_COLOR,
     transparent: true,
@@ -1110,39 +1144,42 @@ const createAppChipMaterials = (): AppChipMaterials => {
   });
   return {
     glass,
-    rimCyan: new THREE.MeshStandardMaterial({
-      color: ARCH_APP_CHIP_RIM_COLOR,
-      metalness: 0.08,
-      roughness: 0.22,
-      emissive: ARCH_APP_CHIP_RIM_COLOR,
-      emissiveIntensity: 0.95,
-      toneMapped: false,
-    }),
-    rimHalo: new THREE.MeshBasicMaterial({
-      color: ARCH_APP_CHIP_RIM_COLOR,
-      transparent: true,
-      opacity: 0.32,
-      depthWrite: false,
-      blending: THREE.AdditiveBlending,
-      toneMapped: false,
-    }),
+    rim: createChipRimMaterial(size.width, size.height),
   };
+};
+
+const stampChipRimUserData = (object: THREE.Object3D, size: {
+  width: number;
+  height: number;
+  depth: number;
+}) => {
+  object.userData.archRole = 'app-chip-rim';
+  object.userData.rimColor = ARCH_APP_CHIP_RIM_COLOR;
+  object.userData.rimStyle = 'inward-bloom';
+  object.userData.rimOpacity = ARCH_APP_CHIP_RIM_OPACITY;
+  object.userData.rimStrokeOpacity = ARCH_APP_CHIP_RIM_STROKE_OPACITY;
+  object.userData.rimStrokeWorld = ARCH_APP_CHIP_RIM_STROKE_WORLD;
+  object.userData.rimHaloWorld = ARCH_APP_CHIP_RIM_HALO_WORLD;
+  object.userData.rimBlending = ARCH_APP_CHIP_RIM_BLENDING;
+  object.userData.rimFalloff = ARCH_APP_CHIP_RIM_FALLOFF;
+  object.userData.rimHasEdgeLines = ARCH_APP_CHIP_RIM_HAS_EDGE_LINES;
+  object.userData.rimCornerWorld = architectureAppChipRimCornerWorld(
+    size.width,
+    size.height,
+  );
 };
 
 const addChipRim = (
   group: THREE.Group,
-  geos: { inner: THREE.TubeGeometry; halo: THREE.TubeGeometry },
+  planeGeo: THREE.PlaneGeometry,
   materials: AppChipMaterials,
+  size: { width: number; height: number; depth: number },
 ) => {
-  const extra = { rimColor: ARCH_APP_CHIP_RIM_COLOR };
-  const halo = new THREE.Mesh(geos.halo, materials.rimHalo);
-  halo.userData.archRole = 'app-chip-rim-halo';
-  Object.assign(halo.userData, extra);
-  group.add(halo);
-  const inner = new THREE.Mesh(geos.inner, materials.rimCyan);
-  inner.userData.archRole = 'app-chip-rim';
-  Object.assign(inner.userData, extra);
-  group.add(inner);
+  const rim = new THREE.Mesh(planeGeo, materials.rim);
+  rim.position.set(0, 0, size.depth / 2 + 0.002);
+  rim.scale.set(size.width, size.height, 1);
+  stampChipRimUserData(rim, size);
+  group.add(rim);
 };
 
 /**
@@ -1155,7 +1192,6 @@ const addAppChipMeshes = (
   node: Application3DArchitecturePlacedNode,
   geos: RackKitGeometries,
   chipGeo: THREE.BufferGeometry,
-  rimGeos: { inner: THREE.TubeGeometry; halo: THREE.TubeGeometry },
   materials: AppChipMaterials,
   rackMaterials: RackKitMaterials,
   disposables: Array<{ dispose: () => void }>,
@@ -1200,7 +1236,7 @@ const addAppChipMeshes = (
   group.add(face);
   disposables.push(faceTexture, faceMaterial);
 
-  addChipRim(group, rimGeos, materials);
+  addChipRim(group, geos.shadow, materials, { width, height, depth });
 
   const shadow = new THREE.Mesh(geos.shadow, rackMaterials.shadow);
   shadow.rotation.x = -Math.PI / 2;
@@ -1505,18 +1541,14 @@ export const createArchitectureTreeGroup = (
   const rackGeos: RackKitGeometries = { box: chassisGeo, led: ledGeo, shadow: planeGeo };
   const rackMats = createRackMaterials();
   const chipGeo = createRoundedChipGeometry();
-  const chipRimGeos = createAppChipRimGeometries(ARCH_NODE_SIZE.application);
-  const chipMats = createAppChipMaterials();
+  const chipMats = createAppChipMaterials(ARCH_NODE_SIZE.application);
   disposables.push(
     chassisGeo,
     ledGeo,
     planeGeo,
     chipGeo,
-    chipRimGeos.inner,
-    chipRimGeos.halo,
     chipMats.glass,
-    chipMats.rimCyan,
-    chipMats.rimHalo,
+    chipMats.rim,
     ...new Set(rackMats.faces),
     ...rackMats.textures,
     rackMats.led,
@@ -1645,7 +1677,7 @@ export const createArchitectureTreeGroup = (
     nodeGroup.userData.alarming = alarming;
     nodeGroup.userData.plainMetal = !alarming;
     if (node.kind === 'application') {
-      addAppChipMeshes(nodeGroup, node, rackGeos, chipGeo, chipRimGeos, chipMats, rackMats, disposables);
+      addAppChipMeshes(nodeGroup, node, rackGeos, chipGeo, chipMats, rackMats, disposables);
     } else {
       addRackMeshes(nodeGroup, node, rackGeos, rackMats, alarming);
     }

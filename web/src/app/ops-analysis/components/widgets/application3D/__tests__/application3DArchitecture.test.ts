@@ -148,15 +148,21 @@ import {
   ARCH_APP_CHIP_METALNESS,
   ARCH_APP_CHIP_NAME_MAX_CHARS,
   ARCH_APP_CHIP_OPACITY,
-  ARCH_APP_CHIP_RIM_HALO,
-  ARCH_APP_CHIP_RIM_INNER,
+  ARCH_APP_CHIP_RIM_BLENDING,
+  ARCH_APP_CHIP_RIM_FALLOFF,
+  ARCH_APP_CHIP_RIM_HALO_WORLD,
+  ARCH_APP_CHIP_RIM_HAS_EDGE_LINES,
+  ARCH_APP_CHIP_RIM_OPACITY,
   ARCH_APP_CHIP_ROUGHNESS,
   ARCH_APP_CHIP_RIM_COLOR,
+  ARCH_APP_CHIP_RIM_STROKE_OPACITY,
+  ARCH_APP_CHIP_RIM_STROKE_WORLD,
   ARCH_APP_CHIP_THICKNESS,
   ARCH_APP_CHIP_TITLE_FILL,
   ARCH_APP_CHIP_TITLE_SIZE,
   ARCH_APP_CHIP_TITLE_WEIGHT,
   ARCH_APP_CHIP_TRANSMISSION,
+  architectureAppChipRimCornerWorld,
   appChipIconKind,
   applicationHasAlarm,
   architectureEdgeColor,
@@ -2075,8 +2081,17 @@ describe('application3D architecture view', () => {
     expect(ARCH_APP_CHIP_TRANSMISSION).toBeLessThanOrEqual(0.75);
     expect(ARCH_APP_CHIP_THICKNESS).toBeGreaterThan(0.1);
     expect(ARCH_APP_CHIP_BEVEL).toBeGreaterThan(0);
-    expect(ARCH_APP_CHIP_RIM_INNER).toBeLessThan(ARCH_APP_CHIP_RIM_HALO);
+    expect(ARCH_APP_CHIP_RIM_STROKE_WORLD).toBe(ARCH_PLANE_RIM_STROKE_WORLD);
+    expect(ARCH_APP_CHIP_RIM_STROKE_WORLD).toBeLessThan(0.02);
+    expect(ARCH_APP_CHIP_RIM_HALO_WORLD).toBeGreaterThan(ARCH_APP_CHIP_RIM_STROKE_WORLD);
+    expect(ARCH_APP_CHIP_RIM_HALO_WORLD).toBeLessThan(ARCH_NODE_SIZE.application.depth);
+    expect(ARCH_APP_CHIP_RIM_HALO_WORLD).toBeLessThan(ARCH_PLANE_RIM_HALO_WORLD);
     expect(ARCH_APP_CHIP_RIM_COLOR).toBe(ARCH_EDGE);
+    expect(ARCH_APP_CHIP_RIM_STROKE_OPACITY).toBe(ARCH_PLANE_RIM_STROKE_OPACITY);
+    expect(ARCH_APP_CHIP_RIM_OPACITY).toBeLessThan(ARCH_PLANE_RIM_OPACITY);
+    expect(ARCH_APP_CHIP_RIM_FALLOFF).toBe(ARCH_PLANE_RIM_FALLOFF);
+    expect(ARCH_APP_CHIP_RIM_BLENDING).toBe('normal');
+    expect(ARCH_APP_CHIP_RIM_HAS_EDGE_LINES).toBe(false);
 
     const view = createArchitectureTreeGroup(tree({
       nodes: [
@@ -2144,7 +2159,7 @@ describe('application3D architecture view', () => {
     expect(quiet.chips).toHaveLength(1);
     expect(quiet.faces).toHaveLength(1);
     expect(quiet.rims).toHaveLength(1);
-    expect(quiet.halos).toHaveLength(1);
+    expect(quiet.halos).toHaveLength(0);
     expect(quiet.dots).toHaveLength(0);
     expect(quiet.racks).toHaveLength(0);
     expect(quiet.leds).toHaveLength(0);
@@ -2182,24 +2197,43 @@ describe('application3D architecture view', () => {
     expect(quiet.faces[0].userData.iconFilled).toBe(true);
     expect(quiet.faces[0].userData.hasSeparator).toBe(true);
     expect(quiet.faces[0].userData.faceMaterialKind).toBe('physical');
-    expect(quiet.rims[0].geometry.type).toBe('TubeGeometry');
-    expect(quiet.halos[0].geometry.type).toBe('TubeGeometry');
-    expect((quiet.rims[0].geometry as THREE.TubeGeometry).parameters.radius).toBe(ARCH_APP_CHIP_RIM_INNER);
-    expect((quiet.halos[0].geometry as THREE.TubeGeometry).parameters.radius).toBe(ARCH_APP_CHIP_RIM_HALO);
-    expect(quiet.rims.every((rim) => (
-      (rim.material as THREE.MeshStandardMaterial).color.getHex() === ARCH_APP_CHIP_RIM_COLOR
-    ))).toBe(true);
-    expect(quiet.halos.every((halo) => (
-      (halo.material as THREE.MeshBasicMaterial).color.getHex() === ARCH_APP_CHIP_RIM_COLOR
-    ))).toBe(true);
+    expect(quiet.rims[0].geometry.type).toBe('PlaneGeometry');
+    expect(quiet.rims[0].material).toBeInstanceOf(THREE.ShaderMaterial);
+    const quietRimMat = quiet.rims[0].material as THREE.ShaderMaterial;
+    expect(quietRimMat.blending).toBe(THREE.NormalBlending);
+    expect(quietRimMat.blending).not.toBe(THREE.AdditiveBlending);
+    expect(quietRimMat.uniforms.uColor.value.getHex()).toBe(ARCH_APP_CHIP_RIM_COLOR);
+    expect(Number(quietRimMat.uniforms.uStrokeWorld.value)).toBe(ARCH_APP_CHIP_RIM_STROKE_WORLD);
+    expect(Number(quietRimMat.uniforms.uHaloWorld.value)).toBe(ARCH_APP_CHIP_RIM_HALO_WORLD);
+    expect(Number(quietRimMat.uniforms.uCornerWorld.value)).toBe(
+      architectureAppChipRimCornerWorld(
+        ARCH_NODE_SIZE.application.width,
+        ARCH_NODE_SIZE.application.height,
+      ),
+    );
+    expect(quiet.rims[0].userData.rimStyle).toBe('inward-bloom');
+    expect(quiet.rims[0].userData.rimStrokeWorld).toBe(ARCH_APP_CHIP_RIM_STROKE_WORLD);
+    expect(quiet.rims[0].userData.rimHaloWorld).toBe(ARCH_APP_CHIP_RIM_HALO_WORLD);
+    expect(quiet.rims[0].userData.rimBlending).toBe('normal');
+    expect(quiet.rims[0].userData.rimHasEdgeLines).toBe(false);
+    expect(quiet.rims[0].userData.rimColor).toBe(ARCH_APP_CHIP_RIM_COLOR);
+    expect(quiet.rims[0].scale.x).toBeCloseTo(ARCH_NODE_SIZE.application.width);
+    expect(quiet.rims[0].scale.y).toBeCloseTo(ARCH_NODE_SIZE.application.height);
+    expect(quiet.rims[0].position.z).toBeCloseTo(ARCH_NODE_SIZE.application.depth / 2 + 0.002);
 
     expect(alarmed.dots).toHaveLength(0);
     expect(alarmed.faces[0].userData.hasAlarmDot).toBe(false);
     expect(alarmed.rims).toHaveLength(1);
-    expect(alarmed.halos).toHaveLength(1);
-    expect(alarmed.rims.every((rim) => (
-      (rim.material as THREE.MeshStandardMaterial).color.getHex() === ARCH_APP_CHIP_RIM_COLOR
-    ))).toBe(true);
+    expect(alarmed.halos).toHaveLength(0);
+    expect(alarmed.rims.every((rim) => {
+      const material = rim.material as THREE.ShaderMaterial;
+      return (
+        rim.geometry.type === 'PlaneGeometry'
+        && material.blending === THREE.NormalBlending
+        && material.uniforms.uColor.value.getHex() === ARCH_APP_CHIP_RIM_COLOR
+        && Number(material.uniforms.uStrokeWorld.value) === ARCH_APP_CHIP_RIM_STROKE_WORLD
+      );
+    })).toBe(true);
     expect((alarmed.chips[0].material as THREE.MeshPhysicalMaterial).color.getHex()).toBe(
       ARCH_APP_CHIP_GLASS_COLOR,
     );
@@ -2245,6 +2279,10 @@ describe('application3D architecture view', () => {
     expect(viewSrc).toContain('paintNodeLabel');
     expect(viewSrc).not.toContain('app-chip-alarm-dot');
     expect(viewSrc).not.toContain('rimAlarm');
+    expect(viewSrc).not.toContain('createAppChipRimGeometries');
+    expect(viewSrc).not.toContain('app-chip-rim-halo');
+    expect(viewSrc).toContain('createChipRimMaterial');
+    expect(viewSrc).toContain('sdRoundedBox');
     expect(viewSrc).toContain('yawObjectAroundYToCamera');
     expect(viewSrc).toContain('addRackMeshes(nodeGroup, node, rackGeos, rackMats, alarming)');
 
