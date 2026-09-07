@@ -161,11 +161,13 @@ export const APP_CHIP_ICON_KINDS = [
 export type AppChipIconKind = (typeof APP_CHIP_ICON_KINDS)[number];
 
 export const ARCH_APP_CHIP_OPACITY = 0.66;
-export const ARCH_APP_CHIP_ROUGHNESS = 0.42;
-export const ARCH_APP_CHIP_METALNESS = 0.02;
-export const ARCH_APP_CHIP_TRANSMISSION = 0.64;
+export const ARCH_APP_CHIP_ROUGHNESS = 0.96;
+export const ARCH_APP_CHIP_METALNESS = 0;
+/** Kept for bevel body vocabulary; glass mesh itself is unlit Basic (no specular). */
+export const ARCH_APP_CHIP_TRANSMISSION = 0;
 export const ARCH_APP_CHIP_THICKNESS = 0.18;
-export const ARCH_APP_CHIP_IOR = 1.45;
+export const ARCH_APP_CHIP_IOR = 1.4;
+export const ARCH_APP_CHIP_SPECULAR_INTENSITY = 0;
 export const ARCH_APP_CHIP_GLASS_COLOR = 0x8fe4ea;
 export const ARCH_APP_CHIP_RIM_COLOR = ARCH_EDGE;
 export const ARCH_APP_CHIP_TITLE_FILL = 'rgba(248, 252, 255, 0.96)';
@@ -1086,48 +1088,34 @@ export const createAppChipRimGeometries = (size: {
 };
 
 interface AppChipMaterials {
-  glass: THREE.MeshPhysicalMaterial;
-  rimCyan: THREE.MeshStandardMaterial;
+  /** Unlit frosted body — scene lights must not wash the face at yaw angles. */
+  glass: THREE.MeshBasicMaterial;
+  rimCyan: THREE.MeshBasicMaterial;
   rimHalo: THREE.MeshBasicMaterial;
 }
 
-const createAppChipMaterials = (): AppChipMaterials => {
-  const glass = new THREE.MeshPhysicalMaterial({
+const createAppChipMaterials = (): AppChipMaterials => ({
+  glass: new THREE.MeshBasicMaterial({
     color: ARCH_APP_CHIP_GLASS_COLOR,
     transparent: true,
     opacity: ARCH_APP_CHIP_OPACITY,
-    roughness: ARCH_APP_CHIP_ROUGHNESS,
-    metalness: ARCH_APP_CHIP_METALNESS,
-    transmission: ARCH_APP_CHIP_TRANSMISSION,
-    thickness: ARCH_APP_CHIP_THICKNESS,
-    ior: ARCH_APP_CHIP_IOR,
-    attenuationColor: new THREE.Color(ARCH_APP_CHIP_GLASS_COLOR),
-    attenuationDistance: 0.42,
-    emissive: ARCH_EDGE,
-    emissiveIntensity: 0.08,
     depthWrite: false,
     side: THREE.DoubleSide,
-  });
-  return {
-    glass,
-    rimCyan: new THREE.MeshStandardMaterial({
-      color: ARCH_APP_CHIP_RIM_COLOR,
-      metalness: 0.08,
-      roughness: 0.22,
-      emissive: ARCH_APP_CHIP_RIM_COLOR,
-      emissiveIntensity: 0.95,
-      toneMapped: false,
-    }),
-    rimHalo: new THREE.MeshBasicMaterial({
-      color: ARCH_APP_CHIP_RIM_COLOR,
-      transparent: true,
-      opacity: 0.32,
-      depthWrite: false,
-      blending: THREE.AdditiveBlending,
-      toneMapped: false,
-    }),
-  };
-};
+    toneMapped: false,
+  }),
+  rimCyan: new THREE.MeshBasicMaterial({
+    color: ARCH_APP_CHIP_RIM_COLOR,
+    toneMapped: false,
+  }),
+  rimHalo: new THREE.MeshBasicMaterial({
+    color: ARCH_APP_CHIP_RIM_COLOR,
+    transparent: true,
+    opacity: 0.32,
+    depthWrite: false,
+    blending: THREE.AdditiveBlending,
+    toneMapped: false,
+  }),
+});
 
 const addChipRim = (
   group: THREE.Group,
@@ -1175,16 +1163,11 @@ const addAppChipMeshes = (
   group.add(glass);
 
   const faceTexture = paintAppChipFace(node, icon);
-  const faceMaterial = new THREE.MeshPhysicalMaterial({
+  // Basic — no scene-light specular wash at yaw angles (matches flat frosted target).
+  const faceMaterial = new THREE.MeshBasicMaterial({
     map: faceTexture,
     transparent: true,
     depthWrite: false,
-    roughness: 0.3,
-    metalness: ARCH_APP_CHIP_METALNESS,
-    emissive: ARCH_EDGE,
-    emissiveMap: faceTexture,
-    emissiveIntensity: 0.28,
-    opacity: 0.96,
     toneMapped: false,
   });
   const face = new THREE.Mesh(geos.shadow, faceMaterial);
@@ -1195,7 +1178,7 @@ const addAppChipMeshes = (
   face.userData.hasAlarmDot = false;
   face.userData.iconFilled = true;
   face.userData.hasSeparator = true;
-  face.userData.faceMaterialKind = 'physical';
+  face.userData.faceMaterialKind = 'basic';
   face.userData.chipTitle = truncateAppChipName(node.name);
   group.add(face);
   disposables.push(faceTexture, faceMaterial);
