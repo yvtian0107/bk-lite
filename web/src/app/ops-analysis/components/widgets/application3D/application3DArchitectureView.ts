@@ -1658,12 +1658,12 @@ export const createArchitectureTreeGroup = (
         updateArchitecturePulse(pulse, pulseElapsed);
       });
       if (!camera) return;
-      billboardMeshes.forEach((mesh) => {
-        mesh.lookAt(camera.position);
-      });
       nodeGroups.forEach((nodeGroup) => {
         if (nodeGroup.userData.nodeKind !== 'application') return;
         yawObjectAroundYToCamera(nodeGroup, camera);
+      });
+      billboardMeshes.forEach((mesh) => {
+        mesh.lookAt(camera.position);
       });
     },
     dispose: () => {

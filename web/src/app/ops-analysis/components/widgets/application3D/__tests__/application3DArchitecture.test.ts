@@ -1121,16 +1121,24 @@ describe('application3D architecture view', () => {
     ))).toBe(true);
     const hostTexts = paintCalls.filter((call) => ['web-1', 'shared'].includes(call.text));
     const appTexts = paintCalls.filter((call) => ['门户', '订单'].includes(call.text));
+    const appFaceTexts = appTexts.filter((call) => call.font.startsWith('600 42px '));
+    const appLabelTexts = appTexts.filter((call) => call.font.startsWith('600 58px '));
     expect(hostTexts.length).toBeGreaterThanOrEqual(2);
-    expect(appTexts.length).toBeGreaterThanOrEqual(2);
+    expect(appFaceTexts.length).toBeGreaterThanOrEqual(2);
+    expect(appLabelTexts.length).toBeGreaterThanOrEqual(2);
     expect(hostTexts.every((call) => (
       call.fillStyle === ARCH_LABEL_FILL
       && call.shadowBlur === 0
       && call.font.startsWith('600 58px ')
     ))).toBe(true);
-    expect(appTexts.every((call) => (
+    expect(appFaceTexts.every((call) => (
       call.fillStyle === ARCH_APP_CHIP_TITLE_FILL
       && call.font.startsWith('600 42px ')
+    ))).toBe(true);
+    expect(appLabelTexts.every((call) => (
+      call.fillStyle === ARCH_LABEL_FILL
+      && call.shadowBlur === 0
+      && call.font.startsWith('600 58px ')
     ))).toBe(true);
     expect(paintCalls.some((call) => call.text.includes('➤'))).toBe(false);
     expect(fillRectCalls.some((call) => call.fillStyle.includes('12, 32, 52'))).toBe(false);
