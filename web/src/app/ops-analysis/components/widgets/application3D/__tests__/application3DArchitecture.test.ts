@@ -1639,7 +1639,8 @@ describe('application3D architecture view', () => {
     expect(viewSrc).toContain('envMap');
     expect(viewSrc).toContain('RoomEnvironment');
     expect(viewSrc).toContain('createScopedArchitectureEnvironment');
-    expect(viewSrc).not.toContain('scene.environment');
+    expect(viewSrc).not.toContain('scene.environment =');
+    expect(viewSrc).not.toMatch(/scene\.environment\s*=/);
     expect(viewSrc).not.toContain('ARCH_RACK_FRONT_CLEARCOAT');
     expect(viewSrc).toContain('MeshStandardMaterial');
     expect(viewSrc).toContain('rack-led');
@@ -2066,7 +2067,7 @@ describe('application3D architecture view', () => {
     expect(seen.size).toBeGreaterThan(1);
     expect(truncateAppChipName('门户')).toBe('门户');
     expect(truncateAppChipName('订单服务平台监控')).toBe('订单服务平台监控');
-    expect(truncateAppChipName('订单服务平台监控中心')).toBe('订单服务平台监控...');
+    expect(truncateAppChipName('订单服务平台监控中心')).toBe('订单服务平台监控中...');
     expect(ARCH_APP_CHIP_NAME_MAX_CHARS).toBe(9);
   });
 

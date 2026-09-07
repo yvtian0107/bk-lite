@@ -563,8 +563,8 @@ const createFallbackChipEnvironment = () => {
 
 /**
  * RoomEnvironment IBL for cabinets + app chips only.
- * Never assign this to scene.environment — that leaks indoor reflections
- * onto boards/stairs. WebGL-less tests fall back to a cyan cube map.
+ * Never assign this as the scene-wide environment map — that leaks indoor
+ * reflections onto boards/stairs. WebGL-less tests fall back to a cyan cube.
  */
 export const createScopedArchitectureEnvironment = (
   renderer?: THREE.WebGLRenderer,
