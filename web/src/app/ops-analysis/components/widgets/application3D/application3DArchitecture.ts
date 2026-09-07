@@ -217,6 +217,16 @@ export const ARCH_LABEL_FILL = '#FFFFFF';
 export const ARCH_LABEL_HAS_BACKGROUND = false;
 /** Layer titles and node labels always face the camera. */
 export const ARCH_LABEL_BILLBOARD = true;
+/** Node-label canvas used by paintNodeLabel; aspect locks world width from height. */
+export const ARCH_LABEL_CANVAS_WIDTH = 640;
+export const ARCH_LABEL_CANVAS_HEIGHT = 160;
+/**
+ * Shared world height for host and application overhead name plates.
+ * Width follows the canvas aspect so glyph size stays identical across node kinds.
+ */
+export const ARCH_LABEL_WORLD_HEIGHT = 0.36;
+export const ARCH_LABEL_WORLD_WIDTH =
+  ARCH_LABEL_WORLD_HEIGHT * (ARCH_LABEL_CANVAS_WIDTH / ARCH_LABEL_CANVAS_HEIGHT);
 /**
  * Distance from the +Z front edge to the first cabinet row.
  * Low counts pack toward the camera instead of clustering at z=0.

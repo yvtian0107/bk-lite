@@ -8,8 +8,12 @@ import {
   ARCH_FRUSTUM_HEIGHT,
   ARCH_FRUSTUM_TAPER,
   ARCH_LABEL_BILLBOARD,
+  ARCH_LABEL_CANVAS_HEIGHT,
+  ARCH_LABEL_CANVAS_WIDTH,
   ARCH_LABEL_FILL,
   ARCH_LABEL_HAS_BACKGROUND,
+  ARCH_LABEL_WORLD_HEIGHT,
+  ARCH_LABEL_WORLD_WIDTH,
   ARCH_PLANE_DEPTH_WRITE,
   ARCH_PLANE_EMISSIVE_INTENSITY,
   ARCH_PLANE_OPACITY,
@@ -409,8 +413,12 @@ const paintCanvasTexture = (
   return texture;
 };
 
+/** Host and application overhead plates share one world glyph size. */
+export const architectureNodeLabelScale = () =>
+  new THREE.Vector3(ARCH_LABEL_WORLD_WIDTH, ARCH_LABEL_WORLD_HEIGHT, 1);
+
 const paintNodeLabel = (node: Application3DArchitecturePlacedNode) =>
-  paintCanvasTexture(640, 160, (context, canvas) => {
+  paintCanvasTexture(ARCH_LABEL_CANVAS_WIDTH, ARCH_LABEL_CANVAS_HEIGHT, (context, canvas) => {
     context.textAlign = 'center';
     context.textBaseline = 'middle';
     context.fillStyle = ARCH_LABEL_FILL;
@@ -1489,7 +1497,7 @@ export const createArchitectureTreeGroup = (
         toneMapped: false,
       });
       const label = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), labelMaterial);
-      const labelScale = new THREE.Vector3(Math.max(node.width * 3.6, 1.4), 0.36, 1);
+      const labelScale = architectureNodeLabelScale();
       label.userData.labelScale = labelScale;
       label.userData.archRole = 'node-label';
       label.userData.billboard = ARCH_LABEL_BILLBOARD;

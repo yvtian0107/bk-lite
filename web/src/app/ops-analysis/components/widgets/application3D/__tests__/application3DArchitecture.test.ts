@@ -15,8 +15,12 @@ import {
   ARCH_GRID_PITCH,
   ARCH_WRAP_COLS,
   ARCH_LABEL_BILLBOARD,
+  ARCH_LABEL_CANVAS_HEIGHT,
+  ARCH_LABEL_CANVAS_WIDTH,
   ARCH_LABEL_FILL,
   ARCH_LABEL_HAS_BACKGROUND,
+  ARCH_LABEL_WORLD_HEIGHT,
+  ARCH_LABEL_WORLD_WIDTH,
   ARCH_NODE_SIZE,
   ARCH_PLANE_COUNT,
   ARCH_PLANE_DEPTH_WRITE,
@@ -148,6 +152,7 @@ import {
   appChipIconKind,
   applicationHasAlarm,
   architectureEdgeColor,
+  architectureNodeLabelScale,
   architecturePulseProgress,
   createArchitectureEdgeCurve,
   createArchitectureTreeGroup,
@@ -991,8 +996,20 @@ describe('application3D architecture view', () => {
     expect(labels.every((label) => label.userData.billboard === true)).toBe(true);
     expect(labels.every((label) => label.userData.labelHasBackground === ARCH_LABEL_HAS_BACKGROUND)).toBe(true);
     expect(labels.every((label) => label.userData.labelFill === ARCH_LABEL_FILL)).toBe(true);
+    expect(labels.every((label) => {
+      const scale = label.userData.labelScale as THREE.Vector3;
+      return (
+        scale.x === ARCH_LABEL_WORLD_WIDTH
+        && scale.y === ARCH_LABEL_WORLD_HEIGHT
+        && Math.abs(scale.x / scale.y - ARCH_LABEL_CANVAS_WIDTH / ARCH_LABEL_CANVAS_HEIGHT) < 1e-6
+      );
+    })).toBe(true);
     expect(ARCH_LABEL_HAS_BACKGROUND).toBe(false);
     expect(ARCH_LABEL_BILLBOARD).toBe(true);
+    expect(ARCH_LABEL_WORLD_HEIGHT).toBe(0.36);
+    expect(ARCH_LABEL_WORLD_WIDTH).toBeCloseTo(
+      ARCH_LABEL_WORLD_HEIGHT * (ARCH_LABEL_CANVAS_WIDTH / ARCH_LABEL_CANVAS_HEIGHT),
+    );
     expect(labels).toHaveLength(
       view.layout.nodes.filter((node) => node.kind === 'host' || node.kind === 'application').length,
     );
@@ -2143,18 +2160,19 @@ describe('application3D architecture view', () => {
     const hostLabel = view.nodeLabels.get('host-1');
     const appNode = view.layout.nodes.find((node) => node.id === 'app-1');
     const hostNode = view.layout.nodes.find((node) => node.id === 'host-1');
+    const sharedLabelScale = architectureNodeLabelScale();
+    expect(sharedLabelScale.x).toBe(ARCH_LABEL_WORLD_WIDTH);
+    expect(sharedLabelScale.y).toBe(ARCH_LABEL_WORLD_HEIGHT);
     expect(appLabel?.userData.archRole).toBe('node-label');
     expect(appLabel?.userData.billboard).toBe(ARCH_LABEL_BILLBOARD);
     expect(appLabel?.userData.labelHasBackground).toBe(ARCH_LABEL_HAS_BACKGROUND);
     expect(appLabel?.userData.labelFill).toBe(ARCH_LABEL_FILL);
-    expect(appLabel?.userData.labelScale).toEqual(
-      new THREE.Vector3(Math.max((appNode?.width ?? 0) * 3.6, 1.4), 0.36, 1),
-    );
+    expect(appLabel?.userData.labelScale).toEqual(sharedLabelScale);
+    expect(hostLabel?.userData.labelScale).toEqual(sharedLabelScale);
+    expect(appLabel?.userData.labelScale).toEqual(hostLabel?.userData.labelScale);
+    expect(appNode?.width).not.toBe(hostNode?.width);
     expect(appLabel?.position.y).toBeCloseTo((appNode?.height ?? 0) / 2 + 0.28);
     expect(hostLabel?.userData.archRole).toBe('node-label');
-    expect(hostLabel?.userData.labelScale).toEqual(
-      new THREE.Vector3(Math.max((hostNode?.width ?? 0) * 3.6, 1.4), 0.36, 1),
-    );
     expect(hostLabel?.position.y).toBeCloseTo((hostNode?.height ?? 0) / 2 + 0.28);
     expect(hostHasAlarm(view.layout.nodes.find((node) => node.id === 'app-alarm'))).toBe(false);
     expect(applicationHasAlarm(view.layout.nodes.find((node) => node.id === 'app-alarm'))).toBe(true);
