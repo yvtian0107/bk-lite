@@ -493,6 +493,7 @@ const ViewConfig: React.FC<ViewConfigPropsWithManager> = ({
           referenceNow: Date.now(),
           timezone: getDateRangeTimezone(),
         },
+        t,
       });
 
       if (
