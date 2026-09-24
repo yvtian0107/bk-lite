@@ -63,6 +63,21 @@ def build_nats_user_info(request) -> dict:
 
 ORGANIZATION_PARAM_KEY = "organization_param"
 
+# 取数失败的身份是 code。展示文案由视图按 code 解析，不拿中文或插值后的句子做匹配。
+NATS_SOURCE_INVALID_NAMESPACE_PARAM = "invalid_namespace_param"
+NATS_SOURCE_DATASOURCE_UNLINKED = "datasource_namespace_unlinked"
+NATS_SOURCE_DATASOURCE_NOT_SELECTED = "datasource_namespace_not_selected"
+NATS_SOURCE_NAMESPACE_UNAVAILABLE = "namespace_unavailable"
+NATS_SOURCE_NAMESPACE_SERVER_MISSING = "namespace_server_missing"
+NATS_SOURCE_MODULE_NOT_FOUND = "module_not_found"
+
+
+class NatsSourceError(RuntimeError):
+    def __init__(self, code, **details):
+        self.code = code
+        self.details = details
+        super().__init__(code)
+
 
 def is_organization_param_spec(spec) -> bool:
     """参数定义是否为组织控件（inputConfig 优先，旧 inputMode 只读兼容）。"""
@@ -201,15 +216,15 @@ class GetNatsData:
             try:
                 namespace_id = int(namespace_id)
             except (TypeError, ValueError):
-                raise RuntimeError("命名空间参数无效")
+                raise NatsSourceError(NATS_SOURCE_INVALID_NAMESPACE_PARAM)
 
         if namespace_id is not None:
             if not self.namespace_list:
-                raise RuntimeError("数据源未关联命名空间")
+                raise NatsSourceError(NATS_SOURCE_DATASOURCE_UNLINKED)
             for ns in self.namespace_list:
                 if ns.id == namespace_id:
                     return ns
-            raise RuntimeError("数据源未关联所选命名空间")
+            raise NatsSourceError(NATS_SOURCE_DATASOURCE_NOT_SELECTED)
 
         # 未指定或未匹配到，返回第一个
         return self.namespace_list[0] if self.namespace_list else None
@@ -231,11 +246,15 @@ class GetNatsData:
 
         namespace = self._get_target_namespace()
         if namespace is None:
-            raise RuntimeError("未找到可用的命名空间")
+            raise NatsSourceError(NATS_SOURCE_NAMESPACE_UNAVAILABLE)
 
         server_url = self.namespace_server_map.get(namespace.id)
         if not server_url:
-            raise RuntimeError(f"命名空间 {namespace.name} 未配置服务器连接")
+            raise NatsSourceError(
+                NATS_SOURCE_NAMESPACE_SERVER_MISSING,
+                namespace_name=namespace.name,
+                namespace_id=namespace.id,
+            )
 
         nats_namespace = getattr(namespace, "namespace", "bk_lite")
         nats_client = self._get_client(server=server_url, namespace=nats_namespace)
@@ -251,7 +270,11 @@ class GetNatsData:
                 nats_namespace,
                 self.path,
             )
-            raise RuntimeError(f"NamePaces({self.namespace}) Module not found func({self.path})!")
+            raise NatsSourceError(
+                NATS_SOURCE_MODULE_NOT_FOUND,
+                namespace=self.namespace,
+                path=self.path,
+            )
 
         logger.debug(
             "[DataSourceQuery] 调用 NATS 取数 namespace=%s(id=%s) nats_namespace=%s path=%s",

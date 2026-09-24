@@ -23,7 +23,16 @@ from apps.operation_analysis.common.datasource_visibility import (
     expand_datasource_org_query,
     is_builtin_globally_visible,
 )
-from apps.operation_analysis.common.get_nats_source_data import GetNatsData
+from apps.operation_analysis.common.get_nats_source_data import (
+    NATS_SOURCE_DATASOURCE_NOT_SELECTED,
+    NATS_SOURCE_DATASOURCE_UNLINKED,
+    NATS_SOURCE_INVALID_NAMESPACE_PARAM,
+    NATS_SOURCE_MODULE_NOT_FOUND,
+    NATS_SOURCE_NAMESPACE_SERVER_MISSING,
+    NATS_SOURCE_NAMESPACE_UNAVAILABLE,
+    GetNatsData,
+    NatsSourceError,
+)
 from apps.operation_analysis.common.visibility_update import partial_update_groups_with_auth
 from apps.operation_analysis.constants.import_export import SENSITIVE_PLACEHOLDER, is_sensitive_field_name
 from apps.operation_analysis.filters.datasource_filters import DataSourceAPIModelFilter, DataSourceTagModelFilter, NameSpaceModelFilter
@@ -39,6 +48,7 @@ from apps.operation_analysis.serializers.datasource_serializers import (
 from apps.operation_analysis.services.data_connection import ConnectionResolveError, resolve_datasource_connection
 from apps.operation_analysis.services.datasource_preview import ConnectorError, get_preview_executor
 from apps.operation_analysis.services.table_query_list import apply_query_list_to_payload
+from apps.operation_analysis.services.user_messages import oa_message
 from apps.operation_analysis.views.data_connection_view import extract_inline_connection
 from config.drf.pagination import CustomPageNumberPagination
 from config.drf.viewsets import ModelViewSet
@@ -238,23 +248,33 @@ def _get_downstream_failure_status(result):
     return status.HTTP_502_BAD_GATEWAY
 
 
+_NATS_SOURCE_HTTP = {
+    NATS_SOURCE_INVALID_NAMESPACE_PARAM: status.HTTP_400_BAD_REQUEST,
+    NATS_SOURCE_DATASOURCE_UNLINKED: status.HTTP_400_BAD_REQUEST,
+    NATS_SOURCE_DATASOURCE_NOT_SELECTED: status.HTTP_400_BAD_REQUEST,
+    NATS_SOURCE_NAMESPACE_UNAVAILABLE: status.HTTP_500_INTERNAL_SERVER_ERROR,
+    NATS_SOURCE_NAMESPACE_SERVER_MISSING: status.HTTP_500_INTERNAL_SERVER_ERROR,
+    NATS_SOURCE_MODULE_NOT_FOUND: status.HTTP_500_INTERNAL_SERVER_ERROR,
+}
+
+_NATS_SOURCE_MESSAGES = {
+    NATS_SOURCE_INVALID_NAMESPACE_PARAM: ("messages.namespace_param_invalid", "命名空间参数无效"),
+    NATS_SOURCE_DATASOURCE_UNLINKED: ("messages.datasource_namespace_unlinked", "数据源未关联命名空间"),
+    NATS_SOURCE_DATASOURCE_NOT_SELECTED: ("messages.datasource_namespace_not_selected", "数据源未关联所选命名空间"),
+    NATS_SOURCE_NAMESPACE_UNAVAILABLE: ("messages.namespace_unavailable", "未找到可用命名空间"),
+    NATS_SOURCE_NAMESPACE_SERVER_MISSING: ("messages.namespace_server_missing", "命名空间未配置连接信息"),
+    NATS_SOURCE_MODULE_NOT_FOUND: ("messages.datasource_config_invalid", "数据源配置异常"),
+}
+
+
 def _classify_runtime_exception(error):
-    message = str(error).strip()
     if isinstance(error, NamespacePasswordDecryptionError):
-        return status.HTTP_500_INTERNAL_SERVER_ERROR, message
-    if message == "未找到可用的命名空间":
-        return status.HTTP_500_INTERNAL_SERVER_ERROR, "未找到可用命名空间"
-    if message == "数据源未关联命名空间":
-        return status.HTTP_400_BAD_REQUEST, "数据源未关联命名空间"
-    if message == "数据源未关联所选命名空间":
-        return status.HTTP_400_BAD_REQUEST, "数据源未关联所选命名空间"
-    if message == "命名空间参数无效":
-        return status.HTTP_400_BAD_REQUEST, "命名空间参数无效"
-    if "未配置服务器连接" in message:
-        return status.HTTP_500_INTERNAL_SERVER_ERROR, "命名空间未配置连接信息"
-    if "Module not found func" in message:
-        return status.HTTP_500_INTERNAL_SERVER_ERROR, "数据源配置异常"
-    return status.HTTP_500_INTERNAL_SERVER_ERROR, "数据查询失败"
+        return status.HTTP_500_INTERNAL_SERVER_ERROR, str(error).strip()
+    if isinstance(error, NatsSourceError):
+        http_status = _NATS_SOURCE_HTTP.get(error.code, status.HTTP_500_INTERNAL_SERVER_ERROR)
+        message_key, default = _NATS_SOURCE_MESSAGES.get(error.code, ("messages.datasource_query_failed", "数据查询失败"))
+        return http_status, oa_message(message_key, default)
+    return status.HTTP_500_INTERNAL_SERVER_ERROR, oa_message("messages.datasource_query_failed", "数据查询失败")
 
 
 def _parse_time_value(value):

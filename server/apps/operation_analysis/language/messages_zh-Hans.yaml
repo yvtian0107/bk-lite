@@ -1,0 +1,8 @@
+messages:
+  namespace_param_invalid: "命名空间参数无效"
+  datasource_namespace_unlinked: "数据源未关联命名空间"
+  datasource_namespace_not_selected: "数据源未关联所选命名空间"
+  namespace_unavailable: "未找到可用命名空间"
+  namespace_server_missing: "命名空间未配置连接信息"
+  datasource_config_invalid: "数据源配置异常"
+  datasource_query_failed: "数据查询失败"

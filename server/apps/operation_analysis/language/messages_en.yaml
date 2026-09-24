@@ -1,0 +1,8 @@
+messages:
+  namespace_param_invalid: "The namespace parameter is invalid"
+  datasource_namespace_unlinked: "The datasource is not linked to a namespace"
+  datasource_namespace_not_selected: "The datasource is not linked to the selected namespace"
+  namespace_unavailable: "No available namespace was found"
+  namespace_server_missing: "The namespace has no connection configured"
+  datasource_config_invalid: "The datasource configuration is invalid"
+  datasource_query_failed: "Data query failed"
