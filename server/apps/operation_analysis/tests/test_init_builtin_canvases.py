@@ -269,12 +269,16 @@ def test_builtin_alert_cmdb_datasource_contracts_are_complete():
         "get_instance_group_by": "主机操作系统分布",
         "cmdb/get_model_classification_options": "CMDB 模型分类列表（选项）",
         "cmdb/get_region_options": "CMDB 地区列表（选项）",
+        "cmdb/get_room_list": "CMDB 机房列表（选项）",
         "cmdb/get_change_trend": "CMDB 变更趋势",
     }
     for rest_api, expected_name in expected_names.items():
         assert by_api[rest_api]["name"] == expected_name
     assert "cmdb/get_room3d_layout" not in by_api
-    assert "cmdb/get_room_list" not in by_api
+    room_list = by_api["cmdb/get_room_list"]
+    assert room_list["key"] == "CMDB 机房列表::cmdb/get_room_list"
+    assert room_list["chart_type"] == []
+    assert {field["key"] for field in room_list["field_schema"]} == {"inst_uuid", "inst_name"}
     source_api_by_rest = {item["rest_api"]: item for item in source_api}
     assert source_api_by_rest["alert/get_alert_trend_data"]["key"] == "告警趋势::alert/get_alert_trend_data"
     assert source_api_by_rest["alert/get_alert_source_distribution"]["key"] == "告警来源分布::alert/get_alert_source_distribution"
@@ -1170,7 +1174,11 @@ def test_init_builtin_canvases_creates_builtin_alert_screen():
         },
     ]
     assert not DataSourceAPIModel.objects.filter(rest_api="cmdb/get_room3d_layout").exists()
-    assert not DataSourceAPIModel.objects.filter(rest_api="cmdb/get_room_list").exists()
+    room_list = DataSourceAPIModel.objects.get(rest_api="cmdb/get_room_list", is_build_in=True)
+    assert room_list.is_active is True
+    assert room_list.name == "CMDB 机房列表（选项）"
+    assert room_list.build_in_key == "CMDB 机房列表::cmdb/get_room_list"
+    assert room_list.chart_type == []
 
     application3d_screen = Screen.objects.get(name="3D应用大屏", is_build_in=True)
     assert application3d_screen.build_in_key == "screen::3D应用大屏_内置"

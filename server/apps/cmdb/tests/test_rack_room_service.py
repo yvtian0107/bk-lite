@@ -570,7 +570,7 @@ class TestListServerRooms:
 @pytest.mark.unit
 class TestGetRoomListNatsHandler:
     """NATS handler ``get_room_list`` 应：
-    1. 返回 ``{"items": [...]}`` 信封
+    1. 返回与其他选项源一致的信封 ``{"result": True, "data": [...]}``
     2. 走 ``_build_nats_permission_map`` 构造 permission_map 并透传给 list_server_rooms
     """
 
@@ -589,14 +589,16 @@ class TestGetRoomListNatsHandler:
         ]
         result = nats.get_room_list(user_info={"team": 1, "user": "alice"})
         assert result == {
-            "items": [
+            "result": True,
+            "message": "",
+            "data": [
                 {
                     "_id": 1,
                     "inst_uuid": "11111111-1111-4111-8111-111111111111",
                     "inst_name": "机房A",
                     "model_id": "server_room",
                 }
-            ]
+            ],
         }
 
     @patch("apps.cmdb.nats.nats.rack_room.list_server_rooms")

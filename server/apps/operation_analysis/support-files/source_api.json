@@ -846,6 +846,19 @@
     ]
 },
 {
+    "key": "CMDB 机房列表::cmdb/get_room_list",
+    "name": "CMDB 机房列表（选项）",
+    "desc": "当前权限范围内的机房列表，供画布筛选动态选项使用，本身不直接出图",
+    "rest_api": "cmdb/get_room_list",
+    "tag": ["cmdb"],
+    "chart_type": [],
+    "params": [],
+    "field_schema": [
+        {"key": "inst_uuid", "title": "机房 ID", "value_type": "string", "description": "机房实例 UUID，作为筛选值"},
+        {"key": "inst_name", "title": "机房名称", "value_type": "string", "description": "机房显示名称"}
+    ]
+},
+{
         "key": "地区资源概览::cmdb/get_region_resource_overview",
 "name": "地区分类实例数",
     "desc": "按地区标签统计各模型分类的实例总数；依赖地区参数",
