@@ -9,6 +9,9 @@ import {
   getOpsChartThemeByMode,
 } from '@/app/ops-analysis/utils/chartTheme';
 import WidgetRenderer from '@/app/ops-analysis/components/widgetRenderer';
+import WidgetCsvHoverButton from '@/app/ops-analysis/components/widgetCsvHoverButton';
+import { supportsWidgetCsvExport } from '@/app/ops-analysis/utils/widgetCsvExport';
+import { useTopologyCsvExportHoverEnabled } from '../utils/topologyCsvExportHover';
 import ScreenWidgetThemeProvider from '@/app/ops-analysis/components/screenWidgetThemeProvider';
 import WidgetErrorState from '@/app/ops-analysis/components/widgetErrorState';
 import {
@@ -28,6 +31,7 @@ interface ChartNodeProps {
 
 const ChartNodeContent: React.FC<ChartNodeProps> = ({ node }) => {
   const { t } = useTranslation();
+  const csvExportHoverEnabled = useTopologyCsvExportHoverEnabled();
   const [nodeData, setNodeData] = useState(() => node.getData() || {});
   const [chartChrome, setChartChrome] = useState(() =>
     getTopologyNodeChromeKind(node),
@@ -64,6 +68,7 @@ const ChartNodeContent: React.FC<ChartNodeProps> = ({ node }) => {
     description,
     dataSource,
     onTableQueryChange,
+    onExportCsv,
   } = nodeData;
 
   const chartTheme = getOpsChartThemeByMode(valueConfig?.chartThemeMode);
@@ -77,6 +82,7 @@ const ChartNodeContent: React.FC<ChartNodeProps> = ({ node }) => {
   }, [node.id, onTableQueryChange]);
 
   const chartType = valueConfig?.chartType;
+  const showCsvHover = csvExportHoverEnabled && supportsWidgetCsvExport(chartType);
   const isTableLikeChart = chartType === 'table' || chartType === 'eventTable';
 
   const widgetProps = {
@@ -101,6 +107,7 @@ const ChartNodeContent: React.FC<ChartNodeProps> = ({ node }) => {
   const isViewHoverChrome = chartChrome === 'view-hover';
   const chartChromeClassName = [
     TOPOLOGY_CHART_NODE_CLASS,
+    'group',
     isSelectedChrome ? TOPOLOGY_CHART_NODE_SELECTED_CLASS : '',
     isViewHoverChrome ? TOPOLOGY_CHART_NODE_HOVER_CLASS : '',
   ]
@@ -133,6 +140,16 @@ const ChartNodeContent: React.FC<ChartNodeProps> = ({ node }) => {
         position: 'relative',
       } as React.CSSProperties}
     >
+      {showCsvHover && (
+        <WidgetCsvHoverButton
+          label={t('dashboard.exportCsv')}
+          onClick={() => {
+            if (typeof onExportCsv === 'function') {
+              onExportCsv(node.id, componentName || '');
+            }
+          }}
+        />
+      )}
       {chartTheme.panelChromeBg && (
         <div
           style={{

@@ -1964,6 +1964,7 @@ const Dashboard = forwardRef<DashboardRef, DashboardProps>(
           appliedNamespaceId={appliedNamespaceId}
           selectedDashboardLocked={selectedDashboard?.is_build_in}
           shareMode={shareMode}
+          isFullscreen={isFullscreen}
           onOpenAddModal={openAddModal}
           onLayoutChange={handleLayoutCommit}
           onToggleCollapsedGroup={toggleCollapsedGroup}

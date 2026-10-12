@@ -1,7 +1,10 @@
 'use client';
 
 import React, { useMemo } from 'react';
+import { message } from 'antd';
 import WidgetWrapper from '@/app/ops-analysis/components/widgetDataRenderer';
+import { useWidgetCsvExportRegistry } from '@/app/ops-analysis/context/widgetCsvExportRegistry';
+import { useTranslation } from '@/utils/i18n';
 import type { FilterValue, UnifiedFilterDefinition } from '@/app/ops-analysis/types/dashBoard';
 import type { OpsChartThemeMode } from '@/app/ops-analysis/utils/chartTheme';
 import type { DatasourceItem } from '@/app/ops-analysis/types/dataSource';
@@ -33,6 +36,7 @@ interface ScreenWidgetRendererProps {
   ) => DatasourceItem | undefined;
   onRenderStatus?: (result: DashboardWidgetRenderResult) => void;
   layoutEditable?: boolean;
+  showCsvHover?: boolean;
   onTopologyLayoutChange?: (
     next: NonNullable<
       NonNullable<ScreenWidgetItem['valueConfig']>['networkStatusTopology']
@@ -59,8 +63,11 @@ const ScreenWidgetRenderer: React.FC<ScreenWidgetRendererProps> = ({
   dataSourceResolver,
   onRenderStatus,
   layoutEditable,
+  showCsvHover = false,
   onTopologyLayoutChange,
 }) => {
+  const { t } = useTranslation();
+  const csvExportRegistry = useWidgetCsvExportRegistry();
   const widgetConfig = useMemo(
     () => buildScreenWidgetConfig(item, chartThemeMode),
     [chartThemeMode, item],
@@ -86,6 +93,12 @@ const ScreenWidgetRenderer: React.FC<ScreenWidgetRendererProps> = ({
         editMode={editMode}
         screenDensity={screenDensity}
         screenUiScale={screenUiScale}
+        showCsvHover={showCsvHover}
+        onExportCsv={() => {
+          void csvExportRegistry?.run(item.id, { title: item.title || '' }).then((started) => {
+            if (!started) message.warning(t('dashboard.csvExportPending'));
+          });
+        }}
       >
         <WidgetWrapper
           dashboardId={screenId}

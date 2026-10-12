@@ -7,7 +7,7 @@ import React, {
 } from 'react';
 import type { RefObject } from 'react';
 import { createPortal } from 'react-dom';
-import { Button, Empty, Spin } from 'antd';
+import { Button, Empty, Spin, message } from 'antd';
 import { PlusOutlined } from '@ant-design/icons';
 import type {
   GridItemHTMLElement,
@@ -53,15 +53,14 @@ import GroupHeader from './groupHeader';
 import type { CanvasRuntimeRefreshCause } from '@/app/ops-analysis/utils/canvasRefreshTimer';
 import { WidgetHeaderRuntimeSlotProvider } from '@/app/ops-analysis/components/widgetHeaderRuntimeSlot';
 import WidgetWrapper from '@/app/ops-analysis/components/widgetDataRenderer';
+import WidgetCsvHoverButton from '@/app/ops-analysis/components/widgetCsvHoverButton';
+import { useWidgetCsvExportRegistry, WidgetCsvExportRegistryProvider } from '@/app/ops-analysis/context/widgetCsvExportRegistry';
+import { buildDashboardWidgetMenuKeys, resolveWidgetCsvExportEntry } from '@/app/ops-analysis/utils/widgetCsvMenu';
 import { DashboardRuntimeSchedulerProvider, useDashboardRuntimeScheduler } from '@/app/ops-analysis/context/dashboardRuntimeScheduler';
 import type { DashboardRuntimeScheduler, RuntimeRequestPriority } from '@/app/ops-analysis/utils/dashboardRuntimeScheduler';
 
 import 'gridstack/dist/gridstack.min.css';
 import type { DashboardWidgetRenderResult } from '@/app/ops-analysis/renderContract';
-import {
-  resolveAnalysisCanvasInteraction,
-  shouldShowAnalysisWidgetCopyAction,
-} from '@/app/ops-analysis/utils/widgetCopy';
 
 const DASHBOARD_GRID_COLS = 12;
 const DASHBOARD_GRID_ROW_HEIGHT = 60;
@@ -115,11 +114,13 @@ interface DashboardWidgetCardProps {
   appliedNamespaceId: number | undefined;
   selectedDashboardLocked?: boolean;
   shareMode: boolean;
+  isFullscreen?: boolean;
   onEditWidget: (id: string) => void;
   onCopyWidget?: (id: string) => void;
   onDeleteWidget: (id: string) => void;
   onTopologyLayoutChange?: DashboardCanvasProps['onTopologyLayoutChange'];
   onWidgetRenderStatus?: DashboardCanvasProps['onWidgetRenderStatus'];
+  renderMode?: boolean;
 }
 
 const DashboardWidgetCard = React.memo(function DashboardWidgetCard({
@@ -140,44 +141,80 @@ const DashboardWidgetCard = React.memo(function DashboardWidgetCard({
   appliedNamespaceId,
   selectedDashboardLocked,
   shareMode,
+  isFullscreen = false,
   onEditWidget,
   onCopyWidget,
   onDeleteWidget,
   onTopologyLayoutChange,
   onWidgetRenderStatus,
+  renderMode = false,
 }: DashboardWidgetCardProps) {
   const { t } = useTranslation();
-  const copyMenuItem = shouldShowAnalysisWidgetCopyAction({
-    interaction: resolveAnalysisCanvasInteraction({
-      editMode: isEditMode,
-      shareMode,
-      isBuiltIn: selectedDashboardLocked,
-    }),
+  const csvExportRegistry = useWidgetCsvExportRegistry();
+  const chartType = item.valueConfig?.chartType;
+  const menuKeys = buildDashboardWidgetMenuKeys({
+    isEditMode,
+    shareMode,
+    isBuiltIn: selectedDashboardLocked,
+    renderMode,
+    fullscreen: isFullscreen,
+    chartType,
     sceneWidgetType: item.valueConfig?.sceneWidgetType,
-    chartType: item.valueConfig?.chartType,
-  })
-    ? {
-      key: 'copy',
-      label: t('common.copy'),
-      onClick: () => onCopyWidget?.(item.i),
+  });
+  const showHoverExport = resolveWidgetCsvExportEntry({
+    surface: 'dashboard',
+    chartType,
+    editMode: isEditMode,
+    shareMode,
+    fullscreen: isFullscreen,
+    renderMode,
+  }) === 'hover';
+  const menuItems = menuKeys.map((key) => {
+    if (key === 'edit') {
+      return { key, label: t('common.edit'), onClick: () => onEditWidget(item.i) };
     }
-    : null;
-  const menuItems = [
-    { key: 'edit', label: t('common.edit'), onClick: () => onEditWidget(item.i) },
-    ...(copyMenuItem ? [copyMenuItem] : []),
-    { key: 'delete', label: t('common.delete'), danger: true, onClick: () => onDeleteWidget(item.i) },
-  ];
+    if (key === 'copy') {
+      return { key, label: t('common.copy'), onClick: () => onCopyWidget?.(item.i) };
+    }
+    if (key === 'exportCsv') {
+      return {
+        key,
+        label: t('dashboard.exportCsv'),
+        onClick: () => {
+          void csvExportRegistry?.run(item.i, { title: item.name || '' }).then((started) => {
+            if (!started) message.warning(t('dashboard.csvExportPending'));
+          });
+        },
+      };
+    }
+    return {
+      key,
+      label: t('common.delete'),
+      danger: true,
+      onClick: () => onDeleteWidget(item.i),
+    };
+  });
 
   return (
     <WidgetHeaderRuntimeSlotProvider>
       {(runtimeSlotRef) => (
         <div
-          className="widget rounded-lg overflow-hidden p-3 flex h-full flex-col"
+          className="widget group relative rounded-lg overflow-hidden p-3 flex h-full flex-col"
           style={{
             backgroundColor: chartTheme.panelBg,
             border: `1px solid ${chartTheme.panelBorderColor}`,
           }}
         >
+          {showHoverExport && (
+            <WidgetCsvHoverButton
+              label={t('dashboard.exportCsv')}
+              onClick={() => {
+                void csvExportRegistry?.run(item.i, { title: item.name || '' }).then((started) => {
+                  if (!started) message.warning(t('dashboard.csvExportPending'));
+                });
+              }}
+            />
+          )}
           <div className="widget-header mb-2 flex justify-between items-start gap-2">
             <div className="flex-1 min-w-0">
               <h4 className="truncate text-[14px] font-medium leading-5 text-(--color-text-2)">
@@ -193,14 +230,16 @@ const DashboardWidgetCard = React.memo(function DashboardWidgetCard({
               ref={runtimeSlotRef}
               className="no-drag ml-auto max-w-[70%] shrink-0 overflow-x-auto"
             />
-            {isEditMode && (
-              <MoreActionsDropdown
-                items={menuItems}
-                trigger={['hover']}
-                labelAlign="start"
-                buttonClassName="no-drag cursor-pointer text-(--color-text-2) transition-colors hover:!bg-transparent hover:text-(--color-text-1)"
-                iconStyle={{ fontSize: '18px' }}
-              />
+            {menuItems.length > 0 && (
+              <div data-export-hidden="true" className="no-drag shrink-0">
+                <MoreActionsDropdown
+                  items={menuItems}
+                  trigger={['hover']}
+                  labelAlign="start"
+                  buttonClassName="no-drag cursor-pointer text-(--color-text-2) transition-colors hover:!bg-transparent hover:text-(--color-text-1)"
+                  iconStyle={{ fontSize: '18px' }}
+                />
+              </div>
             )}
           </div>
           <div
@@ -265,6 +304,7 @@ interface DashboardCanvasProps {
   appliedNamespaceId: number | undefined;
   selectedDashboardLocked?: boolean;
   shareMode?: boolean;
+  isFullscreen?: boolean;
   onLayoutChange: (newLayout: DashboardLayoutItem[]) => void;
   onOpenAddModal: (groupId?: string) => void;
   onToggleCollapsedGroup: (groupId: string) => void;
@@ -304,6 +344,7 @@ const DashboardCanvas: React.FC<DashboardCanvasProps> = ({
   appliedNamespaceId,
   selectedDashboardLocked,
   shareMode = false,
+  isFullscreen = false,
   onOpenAddModal,
   onLayoutChange,
   onToggleCollapsedGroup,
@@ -1243,11 +1284,13 @@ const DashboardCanvas: React.FC<DashboardCanvasProps> = ({
         appliedNamespaceId={appliedNamespaceId}
         selectedDashboardLocked={selectedDashboardLocked}
         shareMode={shareMode}
+        isFullscreen={isFullscreen}
         onEditWidget={onEditWidget}
         onCopyWidget={onCopyWidget}
         onDeleteWidget={onDeleteWidget}
         onTopologyLayoutChange={onTopologyLayoutChange}
         onWidgetRenderStatus={onWidgetRenderStatus}
+        renderMode={renderMode}
       />,
       host,
       `widget:${id}`,
@@ -1255,6 +1298,7 @@ const DashboardCanvas: React.FC<DashboardCanvasProps> = ({
   });
 
   return (
+    <WidgetCsvExportRegistryProvider>
     <DashboardRuntimeSchedulerProvider>
       <SchedulerRefBinder schedulerRef={runtimeSchedulerRef} />
       <div
@@ -1331,6 +1375,7 @@ const DashboardCanvas: React.FC<DashboardCanvasProps> = ({
       {widgetPortals as unknown as React.ReactNode}
       </div>
     </DashboardRuntimeSchedulerProvider>
+    </WidgetCsvExportRegistryProvider>
   );
 };
 

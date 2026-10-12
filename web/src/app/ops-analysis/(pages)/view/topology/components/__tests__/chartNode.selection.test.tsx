@@ -1,8 +1,9 @@
 // @vitest-environment jsdom
 
 import React from 'react';
-import { act, cleanup, render } from '@testing-library/react';
+import { act, cleanup, fireEvent, render } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { setTopologyCsvExportHoverEnabled } from '../../utils/topologyCsvExportHover';
 import type { Node } from '@antv/x6';
 import ChartNode from '../chartNode';
 import {
@@ -105,6 +106,11 @@ const expectViewHoverChrome = (chrome: HTMLElement) => {
 afterEach(cleanup);
 
 describe('ChartNode selection chrome', () => {
+  afterEach(() => {
+    setTopologyCsvExportHoverEnabled(false);
+    cleanup();
+  });
+
   it('shows the selected border after topology highlight attrs are applied', () => {
     const node = createChartNode();
     const { container } = render(<ChartNode node={node} />);
@@ -217,5 +223,43 @@ describe('ChartNode selection chrome', () => {
       false,
     );
     expect(chrome.style.border).toBe('2px solid var(--color-primary)');
+  });
+
+  it('shows a hover csv icon for supported charts without swallowing wheel events', () => {
+    const onExportCsv = vi.fn();
+    const node = createChartNode();
+    const data = node.getData();
+    node.getData = () => ({ ...data, onExportCsv });
+    const { container } = render(<ChartNode node={node} />);
+    expect(container.querySelector('[data-csv-export-hover]')).toBeNull();
+
+    act(() => {
+      setTopologyCsvExportHoverEnabled(true);
+    });
+    const button = container.querySelector('[data-csv-export-hover]') as HTMLButtonElement;
+    expect(button).toBeTruthy();
+    expect(button.className).toContain('opacity-0');
+
+    const wheel = vi.fn();
+    const pointer = vi.fn();
+    document.addEventListener('wheel', wheel);
+    document.addEventListener('pointerdown', pointer);
+    fireEvent.wheel(button);
+    fireEvent.pointerDown(button);
+    fireEvent.click(button);
+    document.removeEventListener('wheel', wheel);
+    document.removeEventListener('pointerdown', pointer);
+    expect(wheel).toHaveBeenCalled();
+    expect(pointer).not.toHaveBeenCalled();
+    expect(onExportCsv).toHaveBeenCalledWith('chart-1', 'CPU');
+
+    cleanup();
+    const gauge = createChartNode();
+    gauge.getData = () => ({
+      ...data,
+      valueConfig: { chartType: 'gauge' },
+    });
+    const hidden = render(<ChartNode node={gauge} />);
+    expect(hidden.container.querySelector('[data-csv-export-hover]')).toBeNull();
   });
 });

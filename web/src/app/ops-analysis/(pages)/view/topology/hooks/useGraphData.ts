@@ -7,7 +7,8 @@
 import { useCallback, useMemo, useRef, useState } from 'react';
 import type { Graph as X6Graph, Node, Edge } from '@antv/x6';
 import { message } from 'antd';
-import { fetchWidgetData, resolveEffectiveFilterBindings } from '@/app/ops-analysis/utils/widgetDataTransform';
+import { deliverWidgetCsvExport } from '@/app/ops-analysis/context/widgetCsvExportRegistry';
+import { buildWidgetRequestParams, fetchWidgetData, resolveEffectiveFilterBindings } from '@/app/ops-analysis/utils/widgetDataTransform';
 import { getRequestErrorMessage } from '@/app/ops-analysis/utils/requestError';
 import { normalizeCanvasRefreshInterval } from '@/app/ops-analysis/utils/canvasRefreshInterval';
 import { normalizeStoredFilterDefinitions } from '@/app/ops-analysis/utils/unifiedFilterState';
@@ -205,6 +206,34 @@ export const useGraphData = (
     }
   }, [serializeTopologyData, saveTopology, handleSaveCallback]);
 
+  const exportChartCsv = useCallback(async (nodeId: string, title: string) => {
+    if (!graphInstance) return;
+    const cell = graphInstance.getCellById(nodeId);
+    if (!cell?.isNode()) return;
+    const data = cell.getData() || {};
+    const dataSourceId = data.valueConfig?.dataSource;
+    await deliverWidgetCsvExport(
+      {
+        chartType: data.valueConfig?.chartType,
+        rawData: data.rawData,
+        config: data.valueConfig,
+        dataSource: data.dataSource,
+        tableQueryParams: data.tableQueryParams,
+        requestParams: data.csvRequestParams,
+        loading: Boolean(data.isLoading),
+        dataSourceId: typeof dataSourceId === 'number' ? dataSourceId : undefined,
+        fetchSourceData: typeof dataSourceId === 'number'
+          ? async (params) => {
+            const result = await getRuntimeSourceDataByApiId(dataSourceId, params);
+            return result?.data;
+          }
+          : undefined,
+      },
+      { title },
+      t,
+    );
+  }, [getRuntimeSourceDataByApiId, graphInstance, t]);
+
   const loadChartNodeData = useCallback(async (
     nodeId: string,
     valueConfig: ValueConfig,
@@ -248,6 +277,16 @@ export const useGraphData = (
       if (tableQueryParams) {
         Object.assign(extraParams, tableQueryParams);
       }
+      const requestExtraParams = Object.keys(extraParams).length > 0 ? extraParams : undefined;
+      const csvRequestParams = buildWidgetRequestParams({
+        config: valueConfig,
+        dataSource,
+        extraParams: requestExtraParams,
+        unifiedFilterValues,
+        filterBindings: effectiveFilterBindings,
+        filterDefinitions,
+        t,
+      });
       
       const chartData = await fetchWidgetData({
         config: valueConfig,
@@ -255,7 +294,7 @@ export const useGraphData = (
         unifiedFilterValues,
         filterBindings: effectiveFilterBindings,
         filterDefinitions,
-        extraParams: Object.keys(extraParams).length > 0 ? extraParams : undefined,
+        extraParams: requestExtraParams,
         throwError: true,
       });
 
@@ -268,6 +307,9 @@ export const useGraphData = (
         hasError: false,
         errorMessage: undefined,
         dataSource,
+        csvRequestParams,
+        tableQueryParams: tableQueryParams ?? {},
+        onExportCsv: exportChartCsv,
       }, { overwrite: true });
     } catch (error) {
       if (!isCurrent()) return;
@@ -294,7 +336,7 @@ export const useGraphData = (
         generation,
       );
     }
-  }, [graphInstance, getRuntimeSourceDataByApiId, t]);
+  }, [exportChartCsv, graphInstance, getRuntimeSourceDataByApiId, t]);
 
   const handleTableQueryChange = useCallback((
     nodeId: string,
@@ -500,6 +542,7 @@ export const useGraphData = (
               errorMessage: undefined,
             }),
           onTableQueryChange: tableQueryHandler,
+          onExportCsv: exportChartCsv,
         }, { overwrite: true });
         const storedQueryParams = getEffectiveTableQueryParams(
           nodeData.valueConfig,
@@ -520,7 +563,7 @@ export const useGraphData = (
         );
       }
     });
-  }, [graphInstance, loadChartNodeData, createTableQueryHandler, getEffectiveTableQueryParams]);
+  }, [createTableQueryHandler, exportChartCsv, getEffectiveTableQueryParams, graphInstance, loadChartNodeData]);
 
   return {
     loading,
