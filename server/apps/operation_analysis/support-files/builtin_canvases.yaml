@@ -2397,7 +2397,7 @@ screens:
     namespace_keys: []
 - key: screen::3D机房大屏_内置
   name: 3D机房大屏
-  desc: 基于 CMDB 机房、机柜和设备数据展示的 3D 机房大屏，支持在组件内切换机房
+  desc: 基于 CMDB 机房、机柜和设备数据展示的 3D 机房大屏，两侧容量与告警图表跟随画布机房筛选
   other: {}
   view_sets:
     items:
@@ -2408,7 +2408,7 @@ screens:
       id: legacy-title-frame
       kind: titleFrame
       preset: hero-6
-      zIndex: 2
+      zIndex: 30
       content: 机柜全景
       textStyle:
         fontSize: 40
@@ -2419,25 +2419,440 @@ screens:
       id: legacy-clock
       kind: clock
       format: YYYY-MM-DD HH:mm:ss
-      zIndex: 3
+      zIndex: 31
       textStyle:
         color: canvas
         fontSize: 25
         fontWeight: 600
-    - h: 1000
-      w: 1920
-      x: 0
-      y: 80
+    - h: 204
+      w: 416
+      x: 8
+      y: 88
+      id: border-room-overview
+      kind: decoration
+      preset: border-22
+      zIndex: 1
+      decorationType: panelFrame
+    - h: 256
+      w: 416
+      x: 8
+      y: 288
+      id: border-room-u-usage
+      kind: decoration
+      preset: border-22
+      zIndex: 1
+      decorationType: panelFrame
+    - h: 256
+      w: 416
+      x: 8
+      y: 540
+      id: border-room-device-types
+      kind: decoration
+      preset: border-22
+      zIndex: 1
+      decorationType: panelFrame
+    - h: 284
+      w: 416
+      x: 8
+      y: 792
+      id: border-room-u-top
+      kind: decoration
+      preset: border-22
+      zIndex: 1
+      decorationType: panelFrame
+    - h: 204
+      w: 416
+      x: 1496
+      y: 88
+      id: border-room-coverage
+      kind: decoration
+      preset: border-22
+      zIndex: 1
+      decorationType: panelFrame
+    - h: 256
+      w: 416
+      x: 1496
+      y: 288
+      id: border-room-alarm-level
+      kind: decoration
+      preset: border-22
+      zIndex: 1
+      decorationType: panelFrame
+    - h: 256
+      w: 416
+      x: 1496
+      y: 540
+      id: border-room-alarm-top
+      kind: decoration
+      preset: border-22
+      zIndex: 1
+      decorationType: panelFrame
+    - h: 284
+      w: 416
+      x: 1496
+      y: 792
+      id: border-room-alarm-devices
+      kind: decoration
+      preset: border-22
+      zIndex: 1
+      decorationType: panelFrame
+    - h: 188
+      w: 124
+      x: 16
+      y: 96
+      id: room-kpi-racks
+      type: widget
+      title: 机柜数
+      zIndex: 20
+      chartType: single
+      valueConfig:
+        chartType: single
+        appearance:
+          frame: bare
+        dataSource: 机房机柜容量::cmdb/get_room_rack_capacity
+        chartThemeMode: screen-dark
+        filterBindings:
+          server_room_id__string: true
+        selectedFields:
+        - rack_count
+        thresholdColors:
+        - color: '#36cfc9'
+          value: '0'
+        dataSourceParams:
+        - name: server_room_id
+          type: string
+          value: ''
+          alias_name: 机房
+          filterType: filter
+        - name: view
+          type: string
+          value: summary
+          alias_name: 视图
+          filterType: fixed
+    - h: 188
+      w: 124
+      x: 148
+      y: 96
+      id: room-kpi-devices
+      type: widget
+      title: 设备数
+      zIndex: 20
+      chartType: single
+      valueConfig:
+        chartType: single
+        appearance:
+          frame: bare
+        dataSource: 机房机柜容量::cmdb/get_room_rack_capacity
+        chartThemeMode: screen-dark
+        filterBindings:
+          server_room_id__string: true
+        selectedFields:
+        - device_count
+        thresholdColors:
+        - color: '#366ce4'
+          value: '0'
+        dataSourceParams:
+        - name: server_room_id
+          type: string
+          value: ''
+          alias_name: 机房
+          filterType: filter
+        - name: view
+          type: string
+          value: summary
+          alias_name: 视图
+          filterType: fixed
+    - h: 188
+      w: 124
+      x: 280
+      y: 96
+      id: room-kpi-unracked
+      type: widget
+      title: 未上架设备数
+      zIndex: 20
+      chartType: single
+      valueConfig:
+        chartType: single
+        appearance:
+          frame: bare
+        dataSource: 机房机柜容量::cmdb/get_room_rack_capacity
+        chartThemeMode: screen-dark
+        filterBindings:
+          server_room_id__string: true
+        selectedFields:
+        - unracked_device_count
+        thresholdColors:
+        - color: '#EAB839'
+          value: '0'
+        dataSourceParams:
+        - name: server_room_id
+          type: string
+          value: ''
+          alias_name: 机房
+          filterType: filter
+        - name: view
+          type: string
+          value: summary
+          alias_name: 视图
+          filterType: fixed
+    - h: 240
+      w: 400
+      x: 16
+      y: 296
+      id: room-u-usage
+      type: widget
+      title: U 位使用率
+      zIndex: 20
+      chartType: gauge
+      valueConfig:
+        unit: '%'
+        chartType: gauge
+        gaugeMin: 0
+        gaugeMax: 100
+        decimalPlaces: 0
+        appearance:
+          frame: bare
+        dataSource: 机房机柜容量::cmdb/get_room_rack_capacity
+        chartThemeMode: screen-dark
+        filterBindings:
+          server_room_id__string: true
+        selectedFields:
+        - u_usage_percent
+        dataSourceParams:
+        - name: server_room_id
+          type: string
+          value: ''
+          alias_name: 机房
+          filterType: filter
+        - name: view
+          type: string
+          value: summary
+          alias_name: 视图
+          filterType: fixed
+    - h: 240
+      w: 400
+      x: 16
+      y: 548
+      id: room-device-types
+      type: widget
+      title: 设备类型分布
+      zIndex: 20
+      chartType: pie
+      valueConfig:
+        chartType: pie
+        appearance:
+          frame: bare
+        dataSource: 机房设备类型分布::cmdb/get_room_device_type_distribution
+        chartThemeMode: screen-dark
+        filterBindings:
+          server_room_id__string: true
+        dataSourceParams:
+        - name: server_room_id
+          type: string
+          value: ''
+          alias_name: 机房
+          filterType: filter
+    - h: 268
+      w: 400
+      x: 16
+      y: 800
+      id: room-u-top
+      type: widget
+      title: 机柜 U 位使用率 TOP5
+      zIndex: 20
+      chartType: topN
+      valueConfig:
+        chartType: topN
+        appearance:
+          frame: bare
+        dataSource: 机房机柜容量::cmdb/get_room_rack_capacity
+        chartThemeMode: screen-dark
+        filterBindings:
+          server_room_id__string: true
+        topNLabelField: name
+        topNValueField: value
+        dataSourceParams:
+        - name: server_room_id
+          type: string
+          value: ''
+          alias_name: 机房
+          filterType: filter
+        - name: view
+          type: string
+          value: rack_top
+          alias_name: 视图
+          filterType: fixed
+        - name: limit
+          type: number
+          value: 5
+          alias_name: 返回条数
+          filterType: fixed
+    - h: 188
+      w: 400
+      x: 1504
+      y: 96
+      id: room-coverage
+      type: widget
+      title: 监控覆盖状态
+      zIndex: 20
+      chartType: pie
+      valueConfig:
+        chartType: pie
+        appearance:
+          frame: bare
+        dataSource: 机房活跃告警::cmdb/get_room_active_alarms
+        chartThemeMode: screen-dark
+        filterBindings:
+          server_room_id__string: true
+        dataSourceParams:
+        - name: server_room_id
+          type: string
+          value: ''
+          alias_name: 机房
+          filterType: filter
+        - name: view
+          type: string
+          value: coverage
+          alias_name: 视图
+          filterType: fixed
+    - h: 240
+      w: 400
+      x: 1504
+      y: 296
+      id: room-alarm-level
+      type: widget
+      title: 活跃告警等级分布
+      zIndex: 20
+      chartType: pie
+      valueConfig:
+        chartType: pie
+        appearance:
+          frame: bare
+        dataSource: 机房活跃告警::cmdb/get_room_active_alarms
+        chartThemeMode: screen-dark
+        filterBindings:
+          server_room_id__string: true
+        dataSourceParams:
+        - name: server_room_id
+          type: string
+          value: ''
+          alias_name: 机房
+          filterType: filter
+        - name: view
+          type: string
+          value: level_distribution
+          alias_name: 视图
+          filterType: fixed
+    - h: 240
+      w: 400
+      x: 1504
+      y: 548
+      id: room-alarm-top
+      type: widget
+      title: 机柜告警 TOP5
+      zIndex: 20
+      chartType: topN
+      valueConfig:
+        chartType: topN
+        appearance:
+          frame: bare
+        dataSource: 机房活跃告警::cmdb/get_room_active_alarms
+        chartThemeMode: screen-dark
+        filterBindings:
+          server_room_id__string: true
+        topNLabelField: name
+        topNValueField: value
+        dataSourceParams:
+        - name: server_room_id
+          type: string
+          value: ''
+          alias_name: 机房
+          filterType: filter
+        - name: view
+          type: string
+          value: rack_top
+          alias_name: 视图
+          filterType: fixed
+        - name: limit
+          type: number
+          value: 5
+          alias_name: 返回条数
+          filterType: fixed
+    - h: 268
+      w: 400
+      x: 1504
+      y: 800
+      id: room-alarm-devices
+      type: widget
+      title: 告警设备列表
+      zIndex: 20
+      chartType: table
+      valueConfig:
+        chartType: table
+        appearance:
+          frame: bare
+        dataSource: 机房活跃告警::cmdb/get_room_active_alarms
+        chartThemeMode: screen-dark
+        filterBindings:
+          server_room_id__string: true
+        tableConfig:
+          columns:
+          - key: device_name
+            order: 0
+            title: 设备
+            visible: true
+          - key: model_name
+            order: 1
+            title: 型号
+            visible: true
+          - key: rack_name
+            order: 2
+            title: 机柜
+            visible: true
+          - key: u_position
+            order: 3
+            title: U位
+            visible: true
+          - key: highest_severity
+            order: 4
+            title: 最高级别
+            visible: true
+          - key: active_alarm_count
+            order: 5
+            title: 活跃告警数
+            visible: true
+        dataSourceParams:
+        - name: server_room_id
+          type: string
+          value: ''
+          alias_name: 机房
+          filterType: filter
+        - name: view
+          type: string
+          value: device_list
+          alias_name: 视图
+          filterType: fixed
+        - name: limit
+          type: number
+          value: 20
+          alias_name: 返回条数
+          filterType: fixed
+    - h: 972
+      w: 1056
+      x: 432
+      y: 96
       id: builtin-room3d-main
       type: widget
       title: 3D机房
-      zIndex: 1
+      zIndex: 4
       chartType: room3D
       valueConfig:
         chartType: room3D
         sceneWidgetType: room3D
         appearance:
           frame: bare
+        filterBindings:
+          server_room_id__string: true
     viewport:
       theme: screen-dark
       width: 1920
@@ -2449,8 +2864,28 @@ screens:
       title: 机柜全景
       showClock: false
       showTitle: false
+    filters:
+    - id: server_room_id__string
+      key: server_room_id
+      name: Room
+      type: string
+      order: 0
+      enabled: true
+      defaultValue: null
+      inputConfig:
+        control: select
+        optionsSource:
+          type: dynamic
+          sourceRef:
+            type: rest_api
+            value: cmdb/get_room_list
+          valueField: inst_uuid
+          labelField: inst_name
   refs:
-    datasource_keys: []
+    datasource_keys:
+    - 机房机柜容量::cmdb/get_room_rack_capacity
+    - 机房设备类型分布::cmdb/get_room_device_type_distribution
+    - 机房活跃告警::cmdb/get_room_active_alarms
     namespace_keys: []
 - key: screen::3D应用大屏_内置
   name: 3D应用大屏

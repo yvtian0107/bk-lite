@@ -13,6 +13,7 @@ import type { UnifiedFilterDefinition } from '@/app/ops-analysis/types/dashBoard
 import type { LayoutItem } from '@/app/ops-analysis/types/dashBoard';
 
 const ROOM_A = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
+const ROOM_B = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
 
 const { getDataSourceList, getSourceDataByApiId } = vi.hoisted(() => ({
   getDataSourceList: vi.fn(),
@@ -118,6 +119,7 @@ describe('room3D canvas filter UI', () => {
     getSourceDataByApiId.mockResolvedValue({
       data: {
         items: [
+          { inst_uuid: ROOM_B, inst_name: '二号机房', _id: 2 },
           { inst_uuid: ROOM_A, inst_name: '一号机房', _id: 1 },
           { id: 'legacy', name: '旧字段' },
         ],
@@ -131,23 +133,41 @@ describe('room3D canvas filter UI', () => {
   });
 
   it('loads room options on the filter bar from the catalog and inst_uuid/inst_name', async () => {
+    const onSearch = vi.fn();
     render(
       <UnifiedFilterBar
         definitions={[roomFilter()]}
         values={{}}
+        onSearch={onSearch}
       />,
     );
 
     expect(screen.getByText('机房:')).not.toBeNull();
-    await openRoomSelect();
-
-    expect(await screen.findByText('一号机房')).not.toBeNull();
-    expect(screen.queryByText('暂无数据')).toBeNull();
-    expect(screen.queryByText('旧字段')).toBeNull();
+    expect(await screen.findByText('二号机房')).not.toBeNull();
     await waitFor(() => {
+      expect(onSearch).toHaveBeenCalledWith({ [ROOM3D_FILTER_ID]: ROOM_B });
       expect(getDataSourceList).toHaveBeenCalledWith({ page_size: -1 });
       expect(getSourceDataByApiId).toHaveBeenCalledWith(17, {}, undefined);
     });
+    expect(screen.queryByText('暂无数据')).toBeNull();
+    expect(screen.queryByText('旧字段')).toBeNull();
+  });
+
+  it('keeps an invisible room default instead of selecting the first option', async () => {
+    const missing = 'cccccccc-cccc-4ccc-8ccc-cccccccccccc';
+    const onSearch = vi.fn();
+    render(
+      <UnifiedFilterBar
+        definitions={[roomFilter({ defaultValue: missing })]}
+        values={{}}
+        onSearch={onSearch}
+      />,
+    );
+
+    await waitFor(() => {
+      expect(onSearch).toHaveBeenCalledWith({ [ROOM3D_FILTER_ID]: missing });
+    });
+    expect(onSearch.mock.calls.some((call) => call[0]?.[ROOM3D_FILTER_ID] === ROOM_B)).toBe(false);
   });
 
   it('shows the room filter in the global filter modal when the canvas has room3D', async () => {

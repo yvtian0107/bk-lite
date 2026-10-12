@@ -3,6 +3,7 @@
 对照 specs/capabilities/legacy-prd-运营分析-运营分析.md：内置画布从 YAML 导入并标记为内置只读对象。
 """
 
+import copy
 import json
 from pathlib import Path
 
@@ -123,11 +124,48 @@ def test_builtin_room3d_screen_yaml_is_self_fetch_scene():
         "background": {"key": "tech-grid", "type": "builtIn"},
     }
     assert screen["view_sets"]["decorations"] == {"title": "机柜全景", "showClock": False, "showTitle": False}
-    assert screen["refs"] == {"datasource_keys": [], "namespace_keys": []}
-    assert len(screen["view_sets"]["items"]) == 3
-    title = screen["view_sets"]["items"][0]
-    clock = screen["view_sets"]["items"][1]
-    widget = screen["view_sets"]["items"][2]
+    assert screen["refs"]["namespace_keys"] == []
+    assert set(screen["refs"]["datasource_keys"]) == {
+        "机房机柜容量::cmdb/get_room_rack_capacity",
+        "机房设备类型分布::cmdb/get_room_device_type_distribution",
+        "机房活跃告警::cmdb/get_room_active_alarms",
+    }
+    items = screen["view_sets"]["items"]
+    assert screen["view_sets"]["filters"] == [
+        {
+            "id": "server_room_id__string",
+            "key": "server_room_id",
+            "name": "Room",
+            "type": "string",
+            "order": 0,
+            "enabled": True,
+            "defaultValue": None,
+            "inputConfig": {
+                "control": "select",
+                "optionsSource": {
+                    "type": "dynamic",
+                    "sourceRef": {"type": "rest_api", "value": "cmdb/get_room_list"},
+                    "valueField": "inst_uuid",
+                    "labelField": "inst_name",
+                },
+            },
+        }
+    ]
+    title = next(item for item in items if item["id"] == "legacy-title-frame")
+    clock = next(item for item in items if item["id"] == "legacy-clock")
+    widget = next(item for item in items if item["id"] == "builtin-room3d-main")
+    widgets = [item for item in items if item.get("type") == "widget"]
+    chart_widgets = [item for item in widgets if item["id"] != "builtin-room3d-main"]
+    # 机房概况是 3 张单值卡，其余 7 个图表，一共 10 个组件。
+    assert len(chart_widgets) == 10
+    assert {item["chartType"] for item in chart_widgets} == {"single", "gauge", "pie", "topN", "table"}
+    assert all(item["valueConfig"]["filterBindings"] == {"server_room_id__string": True} for item in widgets)
+    assert all(item["valueConfig"]["appearance"]["frame"] == "bare" for item in widgets)
+    assert all(item.get("chartType") != "multiValue" for item in widgets)
+    singles = [item for item in chart_widgets if item["chartType"] == "single"]
+    assert [item["valueConfig"]["selectedFields"] for item in singles] == [["rack_count"], ["device_count"], ["unracked_device_count"]]
+    assert widget["x"] > singles[0]["x"]
+    assert widget["x"] + widget["w"] < next(item["x"] for item in chart_widgets if item["id"] == "room-coverage")
     assert title == {
         "h": 94,
         "w": 1911,
@@ -136,7 +174,7 @@ def test_builtin_room3d_screen_yaml_is_self_fetch_scene():
         "id": "legacy-title-frame",
         "kind": "titleFrame",
         "preset": "hero-6",
-        "zIndex": 2,
+        "zIndex": 30,
         "content": "机柜全景",
         "textStyle": {"fontSize": 40},
     }
@@ -148,19 +186,14 @@ def test_builtin_room3d_screen_yaml_is_self_fetch_scene():
         "id": "legacy-clock",
         "kind": "clock",
         "format": "YYYY-MM-DD HH:mm:ss",
-        "zIndex": 3,
+        "zIndex": 31,
         "textStyle": {"color": "canvas", "fontSize": 25, "fontWeight": 600},
     }
-    assert widget["x"] == 0
-    assert widget["y"] == 80
-    assert widget["w"] == 1920
-    assert widget["h"] == 1000
     assert widget["chartType"] == "room3D"
-    assert widget["valueConfig"] == {
-        "chartType": "room3D",
-        "sceneWidgetType": "room3D",
-        "appearance": {"frame": "bare"},
-    }
+    assert widget["w"] < 1920
+    assert widget["valueConfig"]["chartType"] == "room3D"
+    assert widget["valueConfig"]["sceneWidgetType"] == "room3D"
+    assert widget["valueConfig"]["appearance"] == {"frame": "bare"}
     assert "dataSource" not in widget["valueConfig"]
     assert all(item["key"] != "CMDB 3D机房布局::cmdb/get_room3d_layout" for item in payload["datasources"])
     assert all(item.get("rest_api") != "cmdb/get_room_list" for item in payload["datasources"])
@@ -1132,47 +1165,15 @@ def test_init_builtin_canvases_creates_builtin_alert_screen():
     assert room3d_screen.build_in_key == "screen::3D机房大屏_内置"
     assert room3d_screen.directory.build_in_key == "__builtin__"
     assert room3d_screen.view_sets["decorations"] == {"title": "机柜全景", "showClock": False, "showTitle": False}
-    assert room3d_screen.view_sets["items"] == [
-        {
-            "h": 94,
-            "w": 1911,
-            "x": 2,
-            "y": 1,
-            "id": "legacy-title-frame",
-            "kind": "titleFrame",
-            "preset": "hero-6",
-            "zIndex": 2,
-            "content": "机柜全景",
-            "textStyle": {"fontSize": 40},
-        },
-        {
-            "h": 56,
-            "w": 360,
-            "x": 1544,
-            "y": 19,
-            "id": "legacy-clock",
-            "kind": "clock",
-            "format": "YYYY-MM-DD HH:mm:ss",
-            "zIndex": 3,
-            "textStyle": {"color": "canvas", "fontSize": 25, "fontWeight": 600},
-        },
-        {
-            "h": 1000,
-            "w": 1920,
-            "x": 0,
-            "y": 80,
-            "id": "builtin-room3d-main",
-            "type": "widget",
-            "title": "3D机房",
-            "zIndex": 1,
-            "chartType": "room3D",
-            "valueConfig": {
-                "chartType": "room3D",
-                "sceneWidgetType": "room3D",
-                "appearance": {"frame": "bare"},
-            },
-        },
-    ]
+    room3d_yaml = _load_builtin_room3d_screen()
+    imported_items = copy.deepcopy(room3d_screen.view_sets["items"])
+    for item in imported_items:
+        value_config = item.get("valueConfig") or {}
+        data_source = value_config.get("dataSource")
+        if isinstance(data_source, int):
+            value_config["dataSource"] = DataSourceAPIModel.objects.get(id=data_source).build_in_key
+    assert imported_items == room3d_yaml["view_sets"]["items"]
+    assert room3d_screen.view_sets["filters"] == room3d_yaml["view_sets"]["filters"]
     assert not DataSourceAPIModel.objects.filter(rest_api="cmdb/get_room3d_layout").exists()
     room_list = DataSourceAPIModel.objects.get(rest_api="cmdb/get_room_list", is_build_in=True)
     assert room_list.is_active is True

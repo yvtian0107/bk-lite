@@ -3041,3 +3041,7 @@ def topo_search_expand_by_uuid(inst_uuid=None, parent_uuids=None, depth=2, user_
         return _topo_search_lite_failure("not_found", "实例不存在")
 
     return {"result": True, "data": result, "message": ""}
+
+
+# 注册机房大屏统计。apps.py 只导入本模块，这里再把处理函数挂上。
+from apps.cmdb.nats import room_screen_stats  # noqa: E402,F401

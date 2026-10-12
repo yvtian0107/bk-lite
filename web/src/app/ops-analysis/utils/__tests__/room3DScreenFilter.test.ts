@@ -13,6 +13,7 @@ import {
   includeRoom3DCanvasFilter,
   relabelBuiltinRoom3DFilter,
   resolveRoom3DCanvasSelection,
+  resolveRoomFilterAppliedValue,
 } from '../room3DScreenFilter';
 
 const ROOM_A = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
@@ -370,5 +371,54 @@ describe('resolveRoom3DCanvasSelection', () => {
         unifiedFilterValues: { [ROOM3D_FILTER_ID]: ROOM_B },
       }),
     ).toEqual({ savedRoomId: ROOM_A, runtimeRoomId: ROOM_B });
+  });
+});
+
+describe('resolveRoomFilterAppliedValue', () => {
+  const definition = {
+    id: ROOM3D_FILTER_ID,
+    key: 'server_room_id',
+    type: 'string' as const,
+    defaultValue: null,
+    enabled: true,
+  };
+  const options = [
+    { label: '二号机房', value: ROOM_B },
+    { label: '一号机房', value: ROOM_A },
+  ];
+
+  it('selects the first room when no default is set', () => {
+    expect(resolveRoomFilterAppliedValue(definition, null, options)).toBe(ROOM_B);
+  });
+
+  it('keeps an invisible default instead of the first room', () => {
+    const missing = 'cccccccc-cccc-4ccc-8ccc-cccccccccccc';
+    expect(
+      resolveRoomFilterAppliedValue(
+        { ...definition, defaultValue: missing },
+        null,
+        options,
+      ),
+    ).toBe(missing);
+  });
+
+  it('keeps a visible default ahead of the first option', () => {
+    expect(
+      resolveRoomFilterAppliedValue(
+        { ...definition, defaultValue: ROOM_A },
+        null,
+        options,
+      ),
+    ).toBe(ROOM_A);
+  });
+
+  it('does not choose a first option for other filters', () => {
+    expect(
+      resolveRoomFilterAppliedValue(
+        { ...definition, id: 'region__string', key: 'region' },
+        null,
+        options,
+      ),
+    ).not.toBe(ROOM_B);
   });
 });

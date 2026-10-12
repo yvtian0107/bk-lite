@@ -1,7 +1,9 @@
 import type {
   FilterBindings,
+  FilterValue,
   UnifiedFilterDefinition,
 } from '@/app/ops-analysis/types/dashBoard';
+import type { InputOption } from '@/app/ops-analysis/types/dataSource';
 import type { InputControlConfig } from '@/app/ops-analysis/types/dataSource';
 import type { ScreenItem, ScreenWidgetItem } from '@/app/ops-analysis/types/screen';
 import { isScreenWidgetItem } from '@/app/ops-analysis/(pages)/view/screen/utils/screenItems';
@@ -180,6 +182,50 @@ export const mergeRoom3DFilterBinding = (
 const normalizeFilterRoomId = (value: unknown): string => {
   if (typeof value !== 'string') return '';
   return value.trim();
+};
+
+/** 非机房筛选项交给通用校正，不在这里选第一项。 */
+export const ROOM_FILTER_PASSTHROUGH = Symbol('room-filter-passthrough');
+
+const roomOptionValues = (options: Array<Pick<InputOption, 'value'>>) =>
+  options
+    .map((option) => option.value)
+    .filter((value): value is string | number => typeof value === 'string' || typeof value === 'number');
+
+const optionHasValue = (
+  options: Array<Pick<InputOption, 'value'>>,
+  value: string,
+) => roomOptionValues(options).some((option) => String(option) === value);
+
+/**
+ * 只处理机房筛选。没设默认值时选中下拉第一项；设了默认值但不在选项里时保留该值，不改成第一项。
+ * 返回 undefined 表示当前值不用改。
+ */
+export const resolveRoomFilterAppliedValue = (
+  definition: Pick<UnifiedFilterDefinition, 'id' | 'key' | 'type' | 'defaultValue' | 'enabled'>,
+  current: FilterValue | null | undefined,
+  options: Array<Pick<InputOption, 'value'>>,
+): FilterValue | undefined | typeof ROOM_FILTER_PASSTHROUGH => {
+  const isRoomFilter = definition.id === ROOM3D_FILTER_ID
+    || (definition.key === ROOM3D_FILTER_KEY && definition.type === 'string');
+  if (!isRoomFilter || definition.enabled === false) {
+    return ROOM_FILTER_PASSTHROUGH;
+  }
+  const defaultId = normalizeFilterRoomId(definition.defaultValue);
+  const currentId = normalizeFilterRoomId(current);
+  if (defaultId) {
+    const defaultVisible = optionHasValue(options, defaultId);
+    if (!options.length || !defaultVisible) {
+      return (current ?? null) === defaultId ? undefined : defaultId;
+    }
+    if (currentId && optionHasValue(options, currentId)) return undefined;
+    return (current ?? null) === defaultId ? undefined : defaultId;
+  }
+  if (currentId && optionHasValue(options, currentId)) return undefined;
+  if (!options.length) return undefined;
+  const first = roomOptionValues(options)[0];
+  if (first === undefined || (current ?? null) === first) return undefined;
+  return first;
 };
 
 /** room3D 读画布筛选：默认值走定义，已应用值走运行时。历史绑定 false 也视为开启。 */
