@@ -6,7 +6,7 @@ import { supportsWidgetCsvExport } from '@/app/ops-analysis/utils/widgetCsvExpor
 
 export type DashboardWidgetMenuKey = 'edit' | 'copy' | 'delete' | 'exportCsv';
 
-export type WidgetCsvExportSurface = 'dashboard' | 'screen' | 'topology';
+export type WidgetCsvExportSurface = 'dashboard' | 'screen' | 'topology' | 'report';
 
 export type WidgetCsvExportEntry = 'hover' | 'menu' | 'none';
 

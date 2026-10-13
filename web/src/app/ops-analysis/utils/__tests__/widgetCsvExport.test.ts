@@ -352,7 +352,7 @@ describe('csv export entry', () => {
   });
 
   it('keeps export off the canvas in fullscreen, share, and screenshot modes', () => {
-    const surfaces: WidgetCsvExportSurface[] = ['dashboard', 'screen', 'topology'];
+    const surfaces: WidgetCsvExportSurface[] = ['dashboard', 'screen', 'topology', 'report'];
     const supported = ['table', 'eventTable', 'line', 'bar', 'pie', 'topN', 'radar', 'multiValue'];
     const blocked = ['single', 'gauge', 'topologyMap', 'nodeGraph'];
     surfaces.forEach((surface) => {

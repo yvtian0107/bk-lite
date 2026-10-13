@@ -94,7 +94,7 @@ export const useRegisterWidgetCsvExport = (
 
   useEffect(() => {
     if (!registry) return undefined;
-    if (surface !== 'dashboard' && surface !== 'screen') return undefined;
+    if (surface !== 'dashboard' && surface !== 'screen' && surface !== 'report') return undefined;
     if (!supportsWidgetCsvExport(chartType)) return undefined;
     return registry.register(widgetId, (request) => (
       deliverWidgetCsvExport(getRuntimeRef.current(), request, tRef.current)
