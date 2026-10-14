@@ -8,6 +8,7 @@ import { useCallback, useMemo, useRef, useState } from 'react';
 import type { Graph as X6Graph, Node, Edge } from '@antv/x6';
 import { message } from 'antd';
 import { deliverWidgetCsvExport } from '@/app/ops-analysis/context/widgetCsvExportRegistry';
+import { isTablePageOnlyChange } from '@/app/ops-analysis/utils/widgetCsvExport';
 import { buildWidgetRequestParams, fetchWidgetData, resolveEffectiveFilterBindings } from '@/app/ops-analysis/utils/widgetDataTransform';
 import { getRequestErrorMessage } from '@/app/ops-analysis/utils/requestError';
 import { normalizeCanvasRefreshInterval } from '@/app/ops-analysis/utils/canvasRefreshInterval';
@@ -253,7 +254,7 @@ export const useGraphData = (
     dataSource?: DatasourceItem,
     namespaceId?: number,
     tableQueryParams?: TableQueryParams,
-    options?: { silent?: boolean },
+    options?: { silent?: boolean; pageOnly?: boolean },
   ) => {
     if (!graphInstance || !valueConfig.dataSource) return;
 
@@ -273,7 +274,7 @@ export const useGraphData = (
     const isCurrent = () =>
       chartFetchGenerationRef.current.get(nodeId) === generation;
     const previousData = node.getData();
-    if (!silent) {
+    if (!silent && !options?.pageOnly) {
       const nextGeneration = (Number(previousData?.csvRequestGeneration) || 0) + 1;
       node.setData({
         ...previousData,
@@ -389,6 +390,7 @@ export const useGraphData = (
     }
 
     tableQueryParamsRef.current.set(nodeId, nextQueryParams);
+    const pageOnly = isTablePageOnlyChange(previousQueryParams, nextQueryParams);
 
     node.setData({ ...nodeData, isLoading: true, hasError: false, errorMessage: undefined }, { overwrite: true });
 
@@ -403,7 +405,8 @@ export const useGraphData = (
       filterDefinitions,
       dataSource,
       namespaceId,
-      nextQueryParams
+      nextQueryParams,
+      { pageOnly },
     );
   }, [graphInstance, loadChartNodeData, getEffectiveTableQueryParams]);
 

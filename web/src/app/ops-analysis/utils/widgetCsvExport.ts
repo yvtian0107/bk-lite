@@ -44,6 +44,11 @@ export const supportsWidgetCsvExport = (chartType?: string): boolean =>
 export const isRadarMultiSeriesUnsupported = (rawData: unknown): boolean =>
   resolveRadarSeriesData(rawData).unsupported === 'multi_series';
 
+export const isWidgetCsvExportDataBlocked = (
+  chartType: string | undefined,
+  rawData: unknown,
+): boolean => chartType === 'radar' && isRadarMultiSeriesUnsupported(rawData);
+
 export interface WidgetCsvLabels {
   time: string;
   dimension: string;
@@ -79,7 +84,7 @@ export interface WidgetCsvExportRuntime {
   loading?: boolean;
   dataSourceId?: number;
   fetchSourceData?: (params: Record<string, unknown>) => Promise<unknown>;
-  /** 拓扑取数代号。存在时，加载中的新请求也会让进行中的导出过期。 */
+  /** 拓扑非翻页取数代号。翻页不加这个数，筛选和搜索才会加。 */
   requestGeneration?: number;
 }
 
@@ -112,12 +117,19 @@ const withoutTablePage = (
   return rest;
 };
 
+export const isTablePageOnlyChange = (
+  previous: Record<string, unknown> | null | undefined,
+  next: Record<string, unknown> | null | undefined,
+): boolean => {
+  if (!previous || !next) return false;
+  return JSON.stringify(withoutTablePage(previous)) === JSON.stringify(withoutTablePage(next));
+};
+
 const exportQueryFingerprint = (runtime: WidgetCsvExportRuntime): string => JSON.stringify({
   tableQueryParams: withoutTablePage(runtime.tableQueryParams),
   filters: withoutTablePage(runtime.requestParams),
   ...(runtime.requestGeneration === undefined ? {} : {
     requestGeneration: runtime.requestGeneration,
-    loading: Boolean(runtime.loading),
   }),
 });
 
@@ -578,7 +590,7 @@ export const createWidgetCsvExport = async (
   if (!supportsWidgetCsvExport(runtime.chartType)) {
     return { kind: 'unsupported' };
   }
-  if (runtime.chartType === 'radar' && isRadarMultiSeriesUnsupported(runtime.rawData)) {
+  if (isWidgetCsvExportDataBlocked(runtime.chartType, runtime.rawData)) {
     return { kind: 'unsupported' };
   }
   if (runtime.loading) {

@@ -2,7 +2,7 @@ import {
   resolveAnalysisCanvasInteraction,
   shouldShowAnalysisWidgetCopyAction,
 } from '@/app/ops-analysis/utils/widgetCopy';
-import { isRadarMultiSeriesUnsupported, supportsWidgetCsvExport } from '@/app/ops-analysis/utils/widgetCsvExport';
+import { isWidgetCsvExportDataBlocked, supportsWidgetCsvExport } from '@/app/ops-analysis/utils/widgetCsvExport';
 
 export type DashboardWidgetMenuKey = 'edit' | 'copy' | 'delete' | 'exportCsv';
 
@@ -43,7 +43,7 @@ export const resolveWidgetCsvExportEntry = ({
 }): WidgetCsvExportEntry => {
   if (isWidgetCsvExportBlocked({ shareMode, fullscreen, renderMode })) return 'none';
   if (!supportsWidgetCsvExport(chartType)) return 'none';
-  if (chartType === 'radar' && isRadarMultiSeriesUnsupported(rawData)) return 'none';
+  if (isWidgetCsvExportDataBlocked(chartType, rawData)) return 'none';
   if (surface === 'screen') return editMode ? 'menu' : 'none';
   return editMode ? 'menu' : 'hover';
 };

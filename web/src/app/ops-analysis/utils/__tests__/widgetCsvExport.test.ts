@@ -691,14 +691,14 @@ describe('csv export entry', () => {
     expect(outcome.kind).toBe('downloaded');
   });
 
-  it('cancels a topology export when a new chart request starts loading', async () => {
-    let loading = false;
-    let requestGeneration = 0;
+  it('keeps a topology export going when only the table page changes', async () => {
+    let page = 1;
+    const query = [{ field: 'host', type: 'str*', value: '上海' }];
     const runtime = {
       chartType: 'table' as const,
       rawData: { items: [{ host: '上海-1' }], count: 2 },
       loading: false,
-      requestGeneration: 0,
+      requestGeneration: 3,
       dataSourceId: 7,
       dataSource: {
         params: [
@@ -706,11 +706,10 @@ describe('csv export entry', () => {
           { name: 'page_size', type: 'number' },
         ],
       } as never,
-      requestParams: { page: 1, page_size: 20 },
-      tableQueryParams: { page: 1, page_size: 20 },
+      requestParams: { page: 1, page_size: 20, query_list: query },
+      tableQueryParams: { page: 1, page_size: 20, query_list: query },
       fetchSourceData: async () => {
-        loading = true;
-        requestGeneration = 1;
+        page = 2;
         return {
           items: [{ host: '上海-1' }],
           count: 2,
@@ -726,8 +725,69 @@ describe('csv export entry', () => {
       {
         readLatest: () => ({
           ...runtime,
-          loading,
+          loading: true,
+          requestGeneration: 3,
+          requestParams: { page, page_size: 20, query_list: query },
+          tableQueryParams: { page, page_size: 20, query_list: query },
+        }),
+      },
+    );
+    expect(outcome.kind).toBe('downloaded');
+  });
+
+  it('cancels a topology export when the table filter changes', async () => {
+    let requestGeneration = 3;
+    const runtime = {
+      chartType: 'table' as const,
+      rawData: { items: [{ host: '上海-1' }], count: 2 },
+      loading: false,
+      requestGeneration,
+      dataSourceId: 7,
+      dataSource: {
+        params: [
+          { name: 'page', type: 'number' },
+          { name: 'page_size', type: 'number' },
+        ],
+      } as never,
+      requestParams: {
+        page: 1,
+        page_size: 20,
+        query_list: [{ field: 'host', type: 'str*', value: '上海' }],
+      },
+      tableQueryParams: {
+        page: 1,
+        page_size: 20,
+        query_list: [{ field: 'host', type: 'str*', value: '上海' }],
+      },
+      fetchSourceData: async () => {
+        requestGeneration = 4;
+        return {
+          items: [{ host: '上海-1' }],
+          count: 2,
+          page_size: 1,
+        };
+      },
+    };
+    const outcome = await createWidgetCsvExport(
+      runtime,
+      { title: '主机表' },
+      labels,
+      CSV_EXPORT_ROW_LIMIT,
+      {
+        readLatest: () => ({
+          ...runtime,
+          loading: true,
           requestGeneration,
+          requestParams: {
+            page: 1,
+            page_size: 20,
+            query_list: [{ field: 'host', type: 'str*', value: '北京' }],
+          },
+          tableQueryParams: {
+            page: 1,
+            page_size: 20,
+            query_list: [{ field: 'host', type: 'str*', value: '北京' }],
+          },
         }),
       },
     );

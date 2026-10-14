@@ -10,7 +10,7 @@ import {
 } from '@/app/ops-analysis/utils/chartTheme';
 import WidgetRenderer from '@/app/ops-analysis/components/widgetRenderer';
 import WidgetCsvHoverButton from '@/app/ops-analysis/components/widgetCsvHoverButton';
-import { isRadarMultiSeriesUnsupported, supportsWidgetCsvExport } from '@/app/ops-analysis/utils/widgetCsvExport';
+import { isWidgetCsvExportDataBlocked, supportsWidgetCsvExport } from '@/app/ops-analysis/utils/widgetCsvExport';
 import { useTopologyCsvExportHoverEnabled } from '../utils/topologyCsvExportHover';
 import ScreenWidgetThemeProvider from '@/app/ops-analysis/components/screenWidgetThemeProvider';
 import WidgetErrorState from '@/app/ops-analysis/components/widgetErrorState';
@@ -85,7 +85,7 @@ const ChartNodeContent: React.FC<ChartNodeProps> = ({ node }) => {
   const showCsvHover = Boolean(componentName)
     && csvExportHoverEnabled
     && supportsWidgetCsvExport(chartType)
-    && !(chartType === 'radar' && isRadarMultiSeriesUnsupported(rawData));
+    && !isWidgetCsvExportDataBlocked(chartType, rawData);
   const isTableLikeChart = chartType === 'table' || chartType === 'eventTable';
 
   const widgetProps = {
