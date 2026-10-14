@@ -6,6 +6,8 @@ import type {
   UnifiedFilterDefinition,
 } from '@/app/ops-analysis/types/dashBoard';
 import {
+  areFilterTemplateLabelsSettled,
+  filterTemplateAsyncDependencies,
   listFilterTemplateVariables,
   listUnmatchedFilterTokens,
   resolveFilterTemplate,
@@ -269,5 +271,36 @@ describe('统一筛选标题模板', () => {
     ]);
     expect(listUnmatchedFilterTokens('$room$ \\$gone$', [disabled, biz])).toEqual(['$room$']);
     expect(listUnmatchedFilterTokens('\\$gone$', [biz])).toEqual([]);
+  });
+
+  it('标题依赖只在动态选项和机构树进入终态后算完成', () => {
+    const dynamicBiz = filter({
+      id: 'biz__string',
+      key: 'biz',
+      name: '业务',
+      type: 'string',
+      inputConfig: {
+        control: 'select',
+        optionsSource: { type: 'dynamic', valueField: 'id', labelField: 'name' },
+      },
+    });
+    const org = filter({
+      id: 'org__string',
+      key: 'org',
+      name: '组织',
+      type: 'string',
+      inputConfig: { control: 'organization' },
+    });
+    const dependencies = filterTemplateAsyncDependencies(['$biz$ / $org$'], [dynamicBiz, org]);
+
+    expect(dependencies).toEqual({
+      dynamicFilterIds: ['biz__string'],
+      needsOrganization: true,
+    });
+    expect(areFilterTemplateLabelsSettled(dependencies, labels())).toBe(false);
+    expect(areFilterTemplateLabelsSettled(dependencies, labels({
+      optionLabelsByFilterId: { 'biz__string': {} },
+      orgNamesById: {},
+    }))).toBe(true);
   });
 });

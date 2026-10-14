@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect, useLayoutEffect, useMemo, useRef } from 'react';
+import React, { useState, useEffect, useLayoutEffect, useMemo, useRef, useSyncExternalStore } from 'react';
 import { Input, InputNumber, Button, ConfigProvider } from 'antd';
 import { SearchOutlined, ReloadOutlined } from '@ant-design/icons';
 import dayjs from 'dayjs';
@@ -11,6 +11,7 @@ import { convertGroupTreeToTreeSelectData } from '@/utils/index';
 import { normalizeUnifiedFilterInputMode } from '@/app/ops-analysis/utils/widgetDataTransform';
 import { ParamInputControl } from '@/app/ops-analysis/components/paramInputControl';
 import { useFilterOptionLabelStore } from '@/app/ops-analysis/context/filterTemplate';
+import { createFilterOptionLabelStore } from '@/app/ops-analysis/context/filterOptionLabelStore';
 import { mapOptionLabels } from '@/app/ops-analysis/utils/filterTemplate';
 import { normalizeInputConfig, toSingleOrganizationValue } from '@/app/ops-analysis/utils/paramInputConfigUtils';
 import { isMultipleSelectInputConfig } from '@/app/ops-analysis/utils/stringParamMultipleMigrate';
@@ -54,6 +55,8 @@ interface UnifiedFilterBarProps {
   popupZIndex?: number;
 }
 
+const EMPTY_LABEL_STORE = createFilterOptionLabelStore();
+
 const toFilterValue = (value: number | number[] | undefined): FilterValue => {
   if (Array.isArray(value)) return value[0] ?? null;
   return value ?? null;
@@ -78,6 +81,11 @@ const UnifiedFilterBar: React.FC<UnifiedFilterBarProps> = ({
 }) => {
   const { t } = useTranslation();
   const labelStore = useFilterOptionLabelStore();
+  const labelSnapshot = useSyncExternalStore(
+    labelStore?.subscribe ?? EMPTY_LABEL_STORE.subscribe,
+    labelStore?.getSnapshot ?? EMPTY_LABEL_STORE.getSnapshot,
+    labelStore?.getServerSnapshot ?? EMPTY_LABEL_STORE.getServerSnapshot,
+  );
   const shareMode = useShareMode();
   const shareOrganization = useShareOrganization();
   const organizationSeed = useShareOrganizationSeed();
@@ -329,6 +337,12 @@ const UnifiedFilterBar: React.FC<UnifiedFilterBarProps> = ({
             inputConfig={inputConfig}
             fallback={fallbackInput}
             value={controlValue}
+            optionsNotifyKey={String(labelSnapshot.revision)}
+            onOptionsFailed={() => {
+              if (isDynamicOptionFilter(definition)) {
+                labelStore?.publish(definition.id, {});
+              }
+            }}
             onOptionsResolved={(options) => {
               if (isDynamicOptionFilter(definition)) {
                 labelStore?.publish(definition.id, mapOptionLabels(options));

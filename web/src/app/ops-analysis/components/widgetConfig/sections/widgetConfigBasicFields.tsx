@@ -1,5 +1,5 @@
 import React from 'react';
-import { Form, Select } from 'antd';
+import { Form, Input, Select } from 'antd';
 import { FilterTokenInput } from '@/app/ops-analysis/components/filterTokenInput';
 import type { OpsAnalysisWidgetSurface } from '@/app/ops-analysis/utils/chartTypeSurface';
 import { ConfigSectionTitle } from '../configTitles';
@@ -14,6 +14,7 @@ interface WidgetConfigBasicFieldsProps {
   showChartThemeMode: boolean;
   isNetworkStatusTopology: boolean;
   surface?: OpsAnalysisWidgetSurface;
+  filterTemplateTokens?: boolean;
 }
 
 export const WidgetConfigBasicFields: React.FC<WidgetConfigBasicFieldsProps> = ({
@@ -21,6 +22,7 @@ export const WidgetConfigBasicFields: React.FC<WidgetConfigBasicFieldsProps> = (
   showChartThemeMode,
   isNetworkStatusTopology,
   surface,
+  filterTemplateTokens = true,
 }) => (
   <section>
     <ConfigSectionTitle>
@@ -32,17 +34,28 @@ export const WidgetConfigBasicFields: React.FC<WidgetConfigBasicFieldsProps> = (
       name="name"
       rules={[{ required: true, message: t('dashboard.inputName') }]}
     >
-      <FilterTokenInput t={t} placeholder={t('dashboard.inputName')} />
+      {filterTemplateTokens ? (
+        <FilterTokenInput t={t} placeholder={t('dashboard.inputName')} />
+      ) : (
+        <Input placeholder={t('dashboard.inputName')} />
+      )}
     </Form.Item>
 
     {surface === 'screen' ? null : (
       <Form.Item label={t('dataSource.describe')} name="description">
-        <FilterTokenInput
-          t={t}
-          multiline
-          placeholder={t('common.inputMsg')}
-          autoSize={{ minRows: 2, maxRows: 3 }}
-        />
+        {filterTemplateTokens ? (
+          <FilterTokenInput
+            t={t}
+            multiline
+            placeholder={t('common.inputMsg')}
+            autoSize={{ minRows: 2, maxRows: 3 }}
+          />
+        ) : (
+          <Input.TextArea
+            placeholder={t('common.inputMsg')}
+            autoSize={{ minRows: 2, maxRows: 3 }}
+          />
+        )}
       </Form.Item>
     )}
 

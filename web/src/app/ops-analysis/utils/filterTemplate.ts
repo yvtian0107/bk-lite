@@ -13,6 +13,7 @@ import {
   normalizeInputConfig,
 } from '@/app/ops-analysis/utils/paramInputConfigUtils';
 import { isMultipleSelectInputConfig } from '@/app/ops-analysis/utils/stringParamMultipleMigrate';
+import { isDynamicOptionFilter } from '@/app/ops-analysis/utils/optionBackedFilterValue';
 import { isOrganizationFilterDefinition } from '@/app/ops-analysis/utils/unifiedFilterState';
 
 const FILTER_TYPES = new Set(['string', 'number', 'timeRange', 'dateRange']);
@@ -268,6 +269,48 @@ const filterDisplayName = (definition: UnifiedFilterDefinition) =>
  * 文本里匹配不到当前启用筛选的 `$key$` / `$key:type$`。
  * `\$` 是字面量，不参与检测；同一个变量只返回一次。
  */
+export interface FilterTemplateAsyncDependencies {
+  dynamicFilterIds: string[];
+  needsOrganization: boolean;
+}
+
+/** 标题里实际引用到的、需要等加载结束的筛选。 */
+export const filterTemplateAsyncDependencies = (
+  texts: string[],
+  definitions: UnifiedFilterDefinition[],
+): FilterTemplateAsyncDependencies => {
+  const dynamic = new Set<string>();
+  let needsOrganization = false;
+  texts.forEach((text) => {
+    if (!text) return;
+    for (let cursor = 0; cursor < text.length; cursor += 1) {
+      if (text[cursor] === '\\' && text[cursor + 1] === '$') {
+        cursor += 1;
+        continue;
+      }
+      if (text[cursor] !== '$') continue;
+      const token = readFilterToken(text, cursor);
+      if (!token) continue;
+      cursor = token.end - 1;
+      const definition = findEnabledFilter(definitions, token.key, token.type);
+      if (!definition) continue;
+      if (isDynamicOptionFilter(definition)) dynamic.add(definition.id);
+      if (isOrganizationFilterDefinition(definition)) needsOrganization = true;
+    }
+  });
+  return { dynamicFilterIds: [...dynamic], needsOrganization };
+};
+
+export const areFilterTemplateLabelsSettled = (
+  dependencies: FilterTemplateAsyncDependencies,
+  labels: Pick<FilterTemplateLabels, 'optionLabelsByFilterId' | 'orgNamesById'>,
+) => {
+  if (dependencies.needsOrganization && labels.orgNamesById === undefined) return false;
+  return dependencies.dynamicFilterIds.every((id) =>
+    Object.prototype.hasOwnProperty.call(labels.optionLabelsByFilterId, id),
+  );
+};
+
 export const listUnmatchedFilterTokens = (
   text: string,
   definitions: UnifiedFilterDefinition[],

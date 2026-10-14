@@ -42,6 +42,22 @@ const typeLabel = (
   return t('dashboard.filterTokenTypeString', '文本');
 };
 
+const isEscapedDollar = (text: string, index: number) =>
+  index > 0 && text[index - 1] === '\\';
+
+/** 锚点 `$` 之后第一个未转义的 `$`，用来收尾当前变量。 */
+const closingDollarIndex = (text: string, anchor: number) => {
+  if (text[anchor] !== '$') return -1;
+  for (let index = anchor + 1; index < text.length; index += 1) {
+    if (text[index] !== '$' || isEscapedDollar(text, index)) continue;
+    return index;
+  }
+  return -1;
+};
+
+const isImeKey = (event: React.KeyboardEvent) =>
+  event.nativeEvent.isComposing || event.keyCode === 229;
+
 const focusCaret = (field: HTMLDivElement | null, caret: number) => {
   const node = field?.querySelector('input, textarea');
   if (!(node instanceof HTMLInputElement) && !(node instanceof HTMLTextAreaElement)) return;
@@ -119,8 +135,21 @@ export const FilterTokenInput: React.FC<FilterTokenInputProps> = ({
     const previous = value ?? '';
     cursorRef.current = cursor;
     onChange?.(next);
+    const insertedAt = cursor - 1;
+    const insertedDollar = insertedAt >= 0
+      && next[insertedAt] === '$'
+      && !isEscapedDollar(next, insertedAt)
+      && previous[insertedAt] !== '$';
+    const anchor = anchorRef.current;
+    const closesCurrentToken = insertedDollar && insertedAt === closingDollarIndex(next, anchor);
+    // 锚点后的第一个未转义 $ 只收尾。这里即使 open 还没刷新也要关掉，
+    // 避免开头的 setOpen(true) 在组字结束后把菜单重新打开。
+    if (closesCurrentToken) {
+      setOpen(false);
+      return;
+    }
+
     if (open) {
-      const anchor = anchorRef.current;
       if (cursor <= anchor || next[anchor] !== '$') {
         setOpen(false);
         return;
@@ -129,20 +158,15 @@ export const FilterTokenInput: React.FC<FilterTokenInputProps> = ({
       setActiveIndex(0);
       return;
     }
-    const insertedDollar = cursor > 0
-      && next[cursor - 1] === '$'
-      && next[cursor - 2] !== '\\'
-      && previous[cursor - 1] !== '$';
-    if (insertedDollar && variables.length > 0) {
-      anchorRef.current = cursor - 1;
-      setQuery('');
-      setActiveIndex(0);
-      setOpen(true);
-    }
+    if (!insertedDollar || variables.length === 0) return;
+    anchorRef.current = insertedAt;
+    setQuery('');
+    setActiveIndex(0);
+    setOpen(true);
   };
 
   const handleKeyDown = (event: React.KeyboardEvent<HTMLTextAreaElement | HTMLInputElement>) => {
-    if (!menuOpen) return;
+    if (!menuOpen || isImeKey(event)) return;
     if (event.key === 'ArrowDown') {
       event.preventDefault();
       setActiveIndex((currentIndex + 1) % filtered.length);

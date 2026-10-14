@@ -150,7 +150,7 @@ const ReportWidgetCard: React.FC<ReportWidgetCardProps> = ({
   });
   const exportCsv = () => {
     void csvExportRegistry?.run(section.id, {
-      title: section.valueConfig.name || '',
+      title: title || '',
     }).then((started) => {
       notifyWidgetCsvExportNotStarted(started, t);
     });

@@ -206,6 +206,7 @@ const ScreenDataConfig = memo(
 const Screen = forwardRef<ScreenRef, ScreenProps>(({ selectedScreen, shareMode = false }, ref) => {
   const { t } = useTranslation();
   const csvExportRegistry = useWidgetCsvExportRegistryState();
+  const resolveFilterTextRef = useRef<(text?: string | null) => string>((text) => text ?? '');
   const { getScreenDetail, saveScreen } = useScreenApi();
   const { updateItem } = useDirectoryApi();
   const { hasPermission } = useBtnPermissions();
@@ -1078,7 +1079,8 @@ const Screen = forwardRef<ScreenRef, ScreenProps>(({ selectedScreen, shareMode =
       }
       if (key === "exportCsv") {
         const target = draftViewSetsRef.current.items.find((item) => item.id === itemId);
-        const title = target && isScreenWidgetItem(target) ? target.title || "" : "";
+        const rawTitle = target && isScreenWidgetItem(target) ? target.title || "" : "";
+        const title = resolveFilterTextRef.current(rawTitle);
         void csvExportRegistry.run(itemId, { title }).then((started) => {
           notifyWidgetCsvExportNotStarted(started, t);
         });
@@ -1289,6 +1291,7 @@ const Screen = forwardRef<ScreenRef, ScreenProps>(({ selectedScreen, shareMode =
         onDismissInspector={
           editMode && !shareMode ? handleDismissInspector : undefined
         }
+        resolveFilterTextRef={resolveFilterTextRef}
       />
     ),
     [
@@ -1312,6 +1315,7 @@ const Screen = forwardRef<ScreenRef, ScreenProps>(({ selectedScreen, shareMode =
       handleSelectCanvasItem,
       isFullscreen,
       selectedItemId,
+      resolveFilterTextRef,
       selectedScreen?.data_id,
       shareMode,
     ],
@@ -1358,6 +1362,7 @@ const Screen = forwardRef<ScreenRef, ScreenProps>(({ selectedScreen, shareMode =
       definitions={queryState.definitions}
       appliedValues={queryState.appliedFilterValues}
       resolveEnabled={false}
+      canvasId={selectedScreen?.data_id}
     >
     <>
       <div

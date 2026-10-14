@@ -72,14 +72,21 @@ const Probe = ({ text }: { text: string }) => {
 const renderCanvas = ({
   withBar,
   nested = false,
+  canvasId = 'canvas-a',
 }: {
   withBar: boolean;
   nested?: boolean;
+  canvasId?: string;
 }) => {
   const applied = { 'biz__string': '42', 'room__string': '7' };
   const probe = <Probe text="$biz$ / $room$" />;
   const canvas = nested ? (
-    <FilterTemplateProvider definitions={[biz, room]} appliedValues={applied} resolveEnabled>
+    <FilterTemplateProvider
+      definitions={[biz, room]}
+      appliedValues={applied}
+      resolveEnabled
+      canvasId={canvasId}
+    >
       {probe}
     </FilterTemplateProvider>
   ) : probe;
@@ -89,6 +96,7 @@ const renderCanvas = ({
       definitions={[biz, room]}
       appliedValues={applied}
       resolveEnabled={!nested}
+      canvasId={canvasId}
     >
       {withBar && (
         <UnifiedFilterBar
@@ -161,5 +169,58 @@ describe('筛选标题复用筛选栏选项', () => {
     const sourceIds = getSourceDataByApiId.mock.calls.map((call) => call[0]).sort();
     expect(sourceIds).toEqual([8, 9]);
     expect(getDataSourceList).toHaveBeenCalledTimes(2);
+  });
+
+  it('切换画布后先显示筛选项名称，再显示新画布的选项', async () => {
+    let releaseNext: (() => void) | undefined;
+    getSourceDataByApiId.mockImplementation((id: number) => {
+      if (id !== 9) {
+        return Promise.resolve({
+          data: { items: [{ id: '7', name: '一号机房' }] },
+          warnings: [],
+        });
+      }
+      const callCount = getSourceDataByApiId.mock.calls.filter((call) => call[0] === 9).length;
+      if (callCount === 1) {
+        return Promise.resolve({
+          data: { items: [{ id: '42', name: '蓝鲸' }] },
+          warnings: [],
+        });
+      }
+      return new Promise((resolve) => {
+        releaseNext = () => resolve({
+          data: { items: [{ id: '42', name: '织云' }] },
+          warnings: [],
+        });
+      });
+    });
+
+    const view = renderCanvas({ withBar: false, canvasId: 'canvas-a' });
+    await waitFor(() => {
+      expect(screen.getByTestId('resolved').textContent).toBe('蓝鲸 / 一号机房');
+    });
+
+    view.rerender(
+      <FilterTemplateProvider
+        definitions={[biz, room]}
+        appliedValues={{ 'biz__string': '42', 'room__string': '7' }}
+        resolveEnabled
+        canvasId="canvas-b"
+      >
+        <Probe text="$biz$ / $room$" />
+      </FilterTemplateProvider>,
+    );
+
+    await waitFor(() => {
+      const text = screen.getByTestId('resolved').textContent ?? '';
+      expect(text.startsWith('业务')).toBe(true);
+      expect(text.includes('蓝鲸')).toBe(false);
+    });
+    expect(getSourceDataByApiId.mock.calls.filter((call) => call[0] === 9)).toHaveLength(2);
+
+    releaseNext?.();
+    await waitFor(() => {
+      expect(screen.getByTestId('resolved').textContent).toBe('织云 / 一号机房');
+    });
   });
 });

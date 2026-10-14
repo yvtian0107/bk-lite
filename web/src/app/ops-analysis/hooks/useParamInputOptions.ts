@@ -18,6 +18,7 @@ export type UseParamInputOptionsState = ParamInputOptionsState & { resultKey?: s
 
 interface UseParamInputOptionsRuntime {
   enabled?: boolean;
+  reloadKey?: string;
   getSourceDataByApiId?: (
     id: number,
     params?: unknown,
@@ -52,6 +53,7 @@ export const useParamInputOptions = (
   const configRef = useRef(inputConfig);
   configRef.current = inputConfig;
   const enabled = runtime.enabled ?? true;
+  const reloadKey = runtime.reloadKey ?? '';
   const inputKey = getParamInputConfigKey(inputConfig);
   const knownSourcesKey = (loaderOptions?.knownDataSources ?? [])
     .map((item) => `${item.id}:${item.rest_api ?? ''}`)
@@ -72,6 +74,12 @@ export const useParamInputOptions = (
     state: getSynchronousState(),
   }));
   const knownSourcesKeyRef = useRef(knownSourcesKey);
+  const reloadKeyRef = useRef(reloadKey);
+  const reloadChanged = reloadKeyRef.current !== reloadKey;
+  if (reloadChanged) {
+    reloadKeyRef.current = reloadKey;
+    loaderRef.current!.reset();
+  }
 
   useEffect(() => {
     if (!enabled) {
@@ -95,9 +103,11 @@ export const useParamInputOptions = (
     return () => {
       active = false;
     };
-  }, [enabled, inputKey, knownSourcesKey]);
+  }, [enabled, inputKey, knownSourcesKey, reloadKey]);
 
-  const state = resolved.key === inputKey ? resolved.state : getSynchronousState();
+  const state = reloadChanged
+    ? { status: 'loading' as const, options: [] as [] }
+    : (resolved.key === inputKey ? resolved.state : getSynchronousState());
   return {
     ...state,
     resultKey: state.status === 'success'

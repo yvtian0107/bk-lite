@@ -180,7 +180,7 @@ const DashboardWidgetCard = React.memo(function DashboardWidgetCard({
     rawData: exportRawData,
   }) === 'hover';
   const exportCsv = () => {
-    void csvExportRegistry?.run(item.i, { title: item.name || '' }).then((started) => {
+    void csvExportRegistry?.run(item.i, { title: title || '' }).then((started) => {
       notifyWidgetCsvExportNotStarted(started, t);
     });
   };

@@ -1,7 +1,8 @@
 import React, { useState } from 'react';
 import '@ant-design/v5-patch-for-react-19';
-import { cleanup, render, screen } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import { ConfigProvider } from 'antd';
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 
 import { FilterTokenInput } from '@/app/ops-analysis/components/filterTokenInput';
@@ -115,5 +116,59 @@ describe('FilterTokenInput', () => {
     );
 
     expect(screen.getByRole('status').textContent).toBe('$gone$、$room:number$ 未匹配到筛选项');
+  });
+
+  it('补上变量结尾的 $ 只关闭菜单，不再当作新的 $', async () => {
+    const user = userEvent.setup();
+    render(
+      <ConfigProvider theme={{ token: { motion: false } }}>
+        <Harness />
+      </ConfigProvider>,
+    );
+    const input = screen.getByRole('textbox');
+
+    await user.type(input, '$biz$');
+
+    expect(input).toHaveProperty('value', '$biz$');
+    expect(screen.queryByRole('listbox')).toBeNull();
+  });
+
+  it('菜单关掉之后，变量结尾的 $ 不再打开新菜单', async () => {
+    const user = userEvent.setup();
+    render(
+      <ConfigProvider theme={{ token: { motion: false } }}>
+        <Harness />
+      </ConfigProvider>,
+    );
+    const input = screen.getByRole('textbox');
+
+    await user.type(input, '$biz');
+    expect(await screen.findByRole('listbox')).toBeTruthy();
+    await user.keyboard('{Escape}');
+    expect(screen.queryByRole('listbox')).toBeNull();
+
+    await user.type(input, '$');
+
+    expect(input).toHaveProperty('value', '$biz$');
+    expect(screen.queryByRole('listbox')).toBeNull();
+  });
+
+  it('组字过程中的回车留给输入法，不插入高亮变量', async () => {
+    const user = userEvent.setup();
+    render(<Harness />);
+    const input = screen.getByRole('textbox');
+
+    await user.type(input, '$');
+    expect(await screen.findByRole('listbox')).toBeTruthy();
+
+    fireEvent.keyDown(input, { key: 'Enter', isComposing: true });
+    expect(input).toHaveProperty('value', '$');
+    expect(screen.getByRole('listbox')).toBeTruthy();
+
+    fireEvent.keyDown(input, { key: 'Enter', keyCode: 229 });
+    expect(input).toHaveProperty('value', '$');
+
+    fireEvent.keyDown(input, { key: 'ArrowDown', keyCode: 229 });
+    expect(screen.getByRole('option', { name: '业务（$biz$ · 文本）' }).getAttribute('aria-selected')).toBe('true');
   });
 });

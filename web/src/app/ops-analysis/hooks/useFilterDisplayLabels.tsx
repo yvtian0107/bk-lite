@@ -22,8 +22,15 @@ import {
   mapOptionLabels,
   type FilterTemplateLabels,
 } from '@/app/ops-analysis/utils/filterTemplate';
+import { getParamInputConfigKey } from '@/app/ops-analysis/utils/paramInputOptionsLoader';
 import { isDynamicOptionFilter } from '@/app/ops-analysis/utils/optionBackedFilterValue';
 import { isOrganizationFilterDefinition } from '@/app/ops-analysis/utils/unifiedFilterState';
+
+const EMPTY_OPTION_LABELS: Record<string, Record<string, string> | undefined> = {};
+const EMPTY_TIME_LABELS: Record<number, string> = {};
+const EMPTY_DATE_LABELS: Record<string, string> = {};
+
+const subscribeNop = () => () => {};
 
 const collectOrgNames = (groups: Group[] | undefined) => {
   const names: Record<string, string> = {};
@@ -43,13 +50,14 @@ const collectOrgNames = (groups: Group[] | undefined) => {
 };
 
 const hasPublishedLabels = (
-  store: FilterOptionLabelStore,
+  labelsByFilterId: Record<string, Record<string, string> | undefined>,
   filterId: string,
-) => Object.prototype.hasOwnProperty.call(store.getSnapshot().labelsByFilterId, filterId);
+) => Object.prototype.hasOwnProperty.call(labelsByFilterId, filterId);
 
 /**
  * 筛选栏已经渲染并声明覆盖的筛选不再自己请求。
  * 等布局阶段登记完成后再决定，避免和筛选栏抢同一轮请求。
+ * 标签被 invalidate 清掉后会重新加载，不能把上一块画布的结果当成当前结果。
  */
 const DynamicOptionLabelLoader = ({
   definition,
@@ -59,11 +67,15 @@ const DynamicOptionLabelLoader = ({
   store: FilterOptionLabelStore;
 }) => {
   const [active, setActive] = useState(false);
+  const [reloadKey, setReloadKey] = useState('0');
 
   useEffect(() => {
     const decide = () => {
-      const covered = store.getSnapshot().coveredIds.has(definition.id);
-      setActive(!covered && !hasPublishedLabels(store, definition.id));
+      const snapshot = store.getSnapshot();
+      setReloadKey(String(snapshot.revision));
+      const covered = snapshot.coveredIds.has(definition.id);
+      const published = hasPublishedLabels(snapshot.labelsByFilterId, definition.id);
+      setActive(!covered && !published);
     };
     decide();
     return store.subscribe(decide);
@@ -71,7 +83,7 @@ const DynamicOptionLabelLoader = ({
 
   const state = useParamInputOptions(definition.inputConfig, {
     suppressErrorNotification: true,
-  }, { enabled: active });
+  }, { enabled: active, reloadKey });
 
   useEffect(() => {
     if (!active) return;
@@ -91,17 +103,19 @@ export const FilterDisplayLabelLoaders = ({
   definitions,
   enabled,
   store,
+  canvasId = '',
 }: {
   definitions: UnifiedFilterDefinition[];
   enabled: boolean;
   store: FilterOptionLabelStore;
+  canvasId?: string;
 }) => {
   if (!enabled) return null;
   return definitions
     .filter((definition) => definition.enabled && isDynamicOptionFilter(definition))
     .map((definition) => (
       <DynamicOptionLabelLoader
-        key={definition.id}
+        key={`${canvasId}:${definition.id}:${getParamInputConfigKey(definition.inputConfig)}`}
         definition={definition}
         store={store}
       />
@@ -120,9 +134,16 @@ export const useFilterDisplayLabels = (
   const shareOrganization = useShareOrganization();
   const userInfo = useContext(UserInfoContext);
   const timeRanges = useTimeRangeList();
+  const subscribe = useCallback((listener: () => void) => (
+    enabled ? store.subscribe(listener) : subscribeNop()
+  ), [enabled, store]);
+  const getSnapshot = useCallback(
+    () => (enabled ? store.getSnapshot() : store.getServerSnapshot()),
+    [enabled, store],
+  );
   const labelSnapshot = useSyncExternalStore(
-    store.subscribe,
-    store.getSnapshot,
+    subscribe,
+    getSnapshot,
     store.getServerSnapshot,
   );
 
@@ -170,7 +191,7 @@ export const useFilterDisplayLabels = (
   }, [definitions, shareMode, shareOrganization, userInfo]);
 
   const optionLabelsByFilterId = useMemo(() => {
-    if (!enabled) return {};
+    if (!enabled) return EMPTY_OPTION_LABELS;
     const allowed = new Set(
       definitions
         .filter((definition) => definition.enabled && isDynamicOptionFilter(definition))
@@ -184,18 +205,31 @@ export const useFilterDisplayLabels = (
     }, {});
   }, [definitions, enabled, labelSnapshot.labelsByFilterId]);
 
-  const labels = useMemo<FilterTemplateLabels>(() => ({
-    optionLabelsByFilterId,
-    orgNamesById: enabled ? orgNamesById : undefined,
-    timeRangeLabels: enabled ? timeRangeLabels : {},
-    dateRangeLabels: enabled ? dateRangeLabels : {},
+  const idleLabels = useMemo<FilterTemplateLabels>(() => ({
+    optionLabelsByFilterId: EMPTY_OPTION_LABELS,
+    orgNamesById: undefined,
+    timeRangeLabels: EMPTY_TIME_LABELS,
+    dateRangeLabels: EMPTY_DATE_LABELS,
     formatPair,
     formatMultiSelect,
-  }), [
+  }), [formatMultiSelect, formatPair]);
+
+  const labels = useMemo<FilterTemplateLabels>(() => {
+    if (!enabled) return idleLabels;
+    return {
+      optionLabelsByFilterId,
+      orgNamesById,
+      timeRangeLabels,
+      dateRangeLabels,
+      formatPair,
+      formatMultiSelect,
+    };
+  }, [
     dateRangeLabels,
     enabled,
     formatMultiSelect,
     formatPair,
+    idleLabels,
     optionLabelsByFilterId,
     orgNamesById,
     timeRangeLabels,
