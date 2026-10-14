@@ -76,10 +76,6 @@ export const useParamInputOptions = (
   const knownSourcesKeyRef = useRef(knownSourcesKey);
   const reloadKeyRef = useRef(reloadKey);
   const reloadChanged = reloadKeyRef.current !== reloadKey;
-  if (reloadChanged) {
-    reloadKeyRef.current = reloadKey;
-    loaderRef.current!.reset();
-  }
 
   useEffect(() => {
     if (!enabled) {
@@ -87,6 +83,11 @@ export const useParamInputOptions = (
         loaderRef.current!.reset();
       }
       return undefined;
+    }
+    if (reloadKeyRef.current !== reloadKey) {
+      const nextKey = getParamInputConfigKey(configRef.current);
+      reloadKeyRef.current = reloadKey;
+      loaderRef.current!.dropSettledCache(nextKey);
     }
     if (knownSourcesKeyRef.current !== knownSourcesKey) {
       knownSourcesKeyRef.current = knownSourcesKey;

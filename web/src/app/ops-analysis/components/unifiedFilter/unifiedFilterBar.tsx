@@ -337,7 +337,11 @@ const UnifiedFilterBar: React.FC<UnifiedFilterBarProps> = ({
             inputConfig={inputConfig}
             fallback={fallbackInput}
             value={controlValue}
-            optionsNotifyKey={String(labelSnapshot.revision)}
+            optionsNotifyKey={
+              isDynamicOptionFilter(definition)
+                ? String(labelSnapshot.revisions[definition.id] ?? 0)
+                : undefined
+            }
             onOptionsFailed={() => {
               if (isDynamicOptionFilter(definition)) {
                 labelStore?.publish(definition.id, {});

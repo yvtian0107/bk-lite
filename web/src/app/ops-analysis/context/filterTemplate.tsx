@@ -101,11 +101,10 @@ export const FilterTemplateProvider = ({
       store.invalidate(null);
       return;
     }
-    const previousConfig = new Map(previous.filters);
     const nextConfig = new Map(scope.filters);
     const stale: string[] = [];
-    new Set([...previousConfig.keys(), ...nextConfig.keys()]).forEach((id) => {
-      if (previousConfig.get(id) !== nextConfig.get(id)) stale.push(id);
+    previous.filters.forEach(([id, configKey]) => {
+      if (nextConfig.get(id) !== configKey) stale.push(id);
     });
     store.invalidate(stale);
   }, [ownsStore, scope, store]);

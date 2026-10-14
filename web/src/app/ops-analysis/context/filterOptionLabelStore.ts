@@ -1,14 +1,17 @@
 export interface FilterOptionLabelSnapshot {
   coveredIds: ReadonlySet<string>;
   labelsByFilterId: Record<string, Record<string, string> | undefined>;
-  /** 画布或动态筛选配置变化时递增，用来迫使筛选栏重新发布当前结果。 */
-  revision: number;
+  /** 该筛选已发布的标签被清掉的次数。没有标签时不增加。 */
+  revisions: Readonly<Record<string, number>>;
 }
 
 export interface FilterOptionLabelStore {
   claim: (ids: string[]) => () => void;
   publish: (filterId: string, labels: Record<string, string>) => void;
-  /** 删掉标签并递增 revision。`null` 表示清空全部。空数组不做事。 */
+  /**
+   * 删掉已经发布的标签，并只递增这些 id 的 revision。
+   * 从未发布过的 id 不动。`null` 表示处理全部已发布标签。空数组不做事。
+   */
   invalidate: (filterIds: readonly string[] | null) => void;
   subscribe: (listener: () => void) => () => void;
   getSnapshot: () => FilterOptionLabelSnapshot;
@@ -30,20 +33,20 @@ const sameLabelMap = (
 const snapshotOf = (
   coveredIds: ReadonlySet<string>,
   labelsByFilterId: Record<string, Record<string, string> | undefined>,
-  revision: number,
-): FilterOptionLabelSnapshot => ({ coveredIds, labelsByFilterId, revision });
+  revisions: Readonly<Record<string, number>>,
+): FilterOptionLabelSnapshot => ({ coveredIds, labelsByFilterId, revisions });
 
 /** 一块画布上的动态选项标签。筛选栏和标题解析共用，避免同一筛选再拉一次数据源。 */
 export const createFilterOptionLabelStore = (): FilterOptionLabelStore => {
   const coveredCounts = new Map<string, number>();
   let labelsByFilterId: Record<string, Record<string, string> | undefined> = {};
-  let revision = 0;
-  let snapshot = snapshotOf(new Set<string>(), labelsByFilterId, revision);
+  let revisions: Record<string, number> = {};
+  let snapshot = snapshotOf(new Set<string>(), labelsByFilterId, revisions);
   const serverSnapshot = snapshot;
   const listeners = new Set<() => void>();
 
   const emit = (coveredIds: Set<string>) => {
-    snapshot = snapshotOf(coveredIds, labelsByFilterId, revision);
+    snapshot = snapshotOf(coveredIds, labelsByFilterId, revisions);
     listeners.forEach((listener) => listener());
   };
 
@@ -73,16 +76,18 @@ export const createFilterOptionLabelStore = (): FilterOptionLabelStore => {
     },
     invalidate: (filterIds) => {
       if (filterIds && filterIds.length === 0) return;
-      if (filterIds == null) {
-        labelsByFilterId = {};
-      } else {
-        const next = { ...labelsByFilterId };
-        filterIds.forEach((id) => {
-          delete next[id];
-        });
-        labelsByFilterId = next;
-      }
-      revision += 1;
+      const ids = (filterIds ?? Object.keys(labelsByFilterId)).filter((id) => (
+        Object.prototype.hasOwnProperty.call(labelsByFilterId, id)
+      ));
+      if (ids.length === 0) return;
+      const nextLabels = { ...labelsByFilterId };
+      const nextRevisions = { ...revisions };
+      ids.forEach((id) => {
+        delete nextLabels[id];
+        nextRevisions[id] = (nextRevisions[id] ?? 0) + 1;
+      });
+      labelsByFilterId = nextLabels;
+      revisions = nextRevisions;
       emit(new Set(snapshot.coveredIds));
     },
     publish: (filterId, nextLabels) => {

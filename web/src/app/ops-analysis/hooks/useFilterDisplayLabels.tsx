@@ -72,7 +72,7 @@ const DynamicOptionLabelLoader = ({
   useEffect(() => {
     const decide = () => {
       const snapshot = store.getSnapshot();
-      setReloadKey(String(snapshot.revision));
+      setReloadKey(String(snapshot.revisions[definition.id] ?? 0));
       const covered = snapshot.coveredIds.has(definition.id);
       const published = hasPublishedLabels(snapshot.labelsByFilterId, definition.id);
       setActive(!covered && !published);

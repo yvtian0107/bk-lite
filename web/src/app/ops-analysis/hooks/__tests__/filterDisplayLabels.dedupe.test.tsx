@@ -223,4 +223,152 @@ describe('筛选标题复用筛选栏选项', () => {
       expect(screen.getByTestId('resolved').textContent).toBe('织云 / 一号机房');
     });
   });
+
+  it('从没有筛选变成有筛选时，每个动态数据源只请求一次', async () => {
+    const view = render(
+      <FilterTemplateProvider
+        definitions={[]}
+        appliedValues={{}}
+        resolveEnabled
+        canvasId="canvas-a"
+      >
+        <UnifiedFilterBar definitions={[]} values={{}} onSearch={vi.fn()} />
+        <Probe text="$biz$ / $room$" />
+      </FilterTemplateProvider>,
+    );
+
+    view.rerender(
+      <FilterTemplateProvider
+        definitions={[biz, room]}
+        appliedValues={{ biz__string: '42', room__string: '7' }}
+        resolveEnabled
+        canvasId="canvas-a"
+      >
+        <UnifiedFilterBar
+          definitions={[biz, room]}
+          values={{ biz__string: '42', room__string: '7' }}
+          onSearch={vi.fn()}
+        />
+        <Probe text="$biz$ / $room$" />
+      </FilterTemplateProvider>,
+    );
+
+    await waitFor(() => {
+      expect(screen.getByTestId('resolved').textContent).toBe('蓝鲸 / 一号机房');
+    });
+    expect(getSourceDataByApiId.mock.calls.filter((call) => call[0] === 9)).toHaveLength(1);
+    expect(getSourceDataByApiId.mock.calls.filter((call) => call[0] === 8)).toHaveLength(1);
+  });
+
+  it('改一个动态筛选配置只重载该筛选，其他控件和静态选项不进入 loading', async () => {
+    const env: UnifiedFilterDefinition = {
+      id: 'env__string',
+      key: 'env',
+      name: '环境',
+      type: 'string',
+      order: 3,
+      enabled: true,
+      inputConfig: {
+        control: 'select',
+        optionsSource: {
+          type: 'static',
+          staticItems: [{ label: '生产', value: 'prod' }],
+        },
+      },
+    };
+    const bizV2: UnifiedFilterDefinition = {
+      ...biz,
+      inputConfig: {
+        control: 'select',
+        optionsSource: {
+          type: 'dynamic',
+          sourceRef: { type: 'rest_api', value: 'cmdb/biz_list_v2' },
+          valueField: 'id',
+          labelField: 'name',
+        },
+      },
+    };
+    getDataSourceList.mockImplementation(async () => ({
+      items: [
+        { id: 9, name: '业务列表', rest_api: 'cmdb/biz_list' },
+        { id: 11, name: '业务列表二', rest_api: 'cmdb/biz_list_v2' },
+        { id: 8, name: '机房列表', rest_api: 'cmdb/room_list' },
+      ],
+    }));
+    let releaseV2: (() => void) | undefined;
+    getSourceDataByApiId.mockImplementation((id: number) => {
+      if (id === 11) {
+        return new Promise((resolve) => {
+          releaseV2 = () => resolve({
+            data: { items: [{ id: '42', name: '织云' }] },
+            warnings: [],
+          });
+        });
+      }
+      return Promise.resolve({
+        data: {
+          items: id === 9
+            ? [{ id: '42', name: '蓝鲸' }]
+            : [{ id: '7', name: '一号机房' }],
+        },
+        warnings: [],
+      });
+    });
+
+    const applied = { biz__string: '42', room__string: '7', env__string: 'prod' };
+    const view = render(
+      <FilterTemplateProvider
+        definitions={[biz, room, env]}
+        appliedValues={applied}
+        resolveEnabled
+        canvasId="canvas-a"
+      >
+        <UnifiedFilterBar
+          definitions={[biz, room, env]}
+          values={applied}
+          onSearch={vi.fn()}
+        />
+        <Probe text="$biz$ / $room$" />
+      </FilterTemplateProvider>,
+    );
+    await waitFor(() => {
+      expect(screen.getByTestId('resolved').textContent).toBe('蓝鲸 / 一号机房');
+    });
+
+    view.rerender(
+      <FilterTemplateProvider
+        definitions={[bizV2, room, env]}
+        appliedValues={applied}
+        resolveEnabled
+        canvasId="canvas-a"
+      >
+        <UnifiedFilterBar
+          definitions={[bizV2, room, env]}
+          values={applied}
+          onSearch={vi.fn()}
+        />
+        <Probe text="$biz$ / $room$" />
+      </FilterTemplateProvider>,
+    );
+
+    await waitFor(() => {
+      expect(getSourceDataByApiId.mock.calls.filter((call) => call[0] === 11)).toHaveLength(1);
+    });
+    const spinCount = (label: string) => (
+      screen.getByText(`${label}:`).parentElement?.querySelectorAll('.ant-spin').length ?? 0
+    );
+    expect(spinCount('业务')).toBe(1);
+    expect(spinCount('机房')).toBe(0);
+    expect(spinCount('环境')).toBe(0);
+    expect(screen.getByTestId('resolved').textContent).toBe('业务 / 一号机房');
+    expect(getSourceDataByApiId.mock.calls.filter((call) => call[0] === 9)).toHaveLength(1);
+    expect(getSourceDataByApiId.mock.calls.filter((call) => call[0] === 8)).toHaveLength(1);
+
+    releaseV2?.();
+    await waitFor(() => {
+      expect(screen.getByTestId('resolved').textContent).toBe('织云 / 一号机房');
+    });
+    expect(getSourceDataByApiId.mock.calls.filter((call) => call[0] === 11)).toHaveLength(1);
+    expect(getSourceDataByApiId.mock.calls.filter((call) => call[0] === 8)).toHaveLength(1);
+  });
 });
