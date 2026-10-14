@@ -63,7 +63,7 @@ import WidgetRenderer from "@/app/ops-analysis/components/widgetRenderer";
 import WidgetErrorState from "@/app/ops-analysis/components/widgetErrorState";
 import WidgetState from "@/app/ops-analysis/components/widget-state";
 import { useWidgetHeaderRuntimeSlot } from "@/app/ops-analysis/components/widgetHeaderRuntimeSlot";
-import { useRegisterWidgetCsvExport } from "@/app/ops-analysis/context/widgetCsvExportRegistry";
+import { useRegisterWidgetCsvExport, useWidgetCsvExportRegistry } from "@/app/ops-analysis/context/widgetCsvExportRegistry";
 import ComponentParamSwitchControl from "@/app/ops-analysis/components/componentParamSwitchControl";
 import ScreenWidgetThemeProvider from "@/app/ops-analysis/components/screenWidgetThemeProvider";
 import { getDateRangeTimezone } from "@/app/ops-analysis/utils/dateRange";
@@ -1180,6 +1180,14 @@ const WidgetWrapper: React.FC<WidgetWrapperProps> = ({
     tableLoading,
     widgetId,
   ]);
+
+  const csvExportRegistry = useWidgetCsvExportRegistry();
+  useEffect(() => {
+    csvExportRegistry?.publishWidgetRawData(widgetId, rawData);
+    return () => {
+      csvExportRegistry?.publishWidgetRawData(widgetId, undefined);
+    };
+  }, [csvExportRegistry, rawData, widgetId]);
 
   useRegisterWidgetCsvExport(widgetId, surface, chartType, () => ({
     chartType,

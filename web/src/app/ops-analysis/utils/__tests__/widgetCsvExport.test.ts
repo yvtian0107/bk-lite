@@ -58,6 +58,7 @@ describe('csv escaping', () => {
     expect(escapeCsvCell('+cmd')).toBe("'+cmd");
     expect(escapeCsvCell('-2')).toBe('-2');
     expect(escapeCsvCell('-3.5')).toBe('-3.5');
+    expect(escapeCsvCell('-1.5%')).toBe('-1.5%');
     expect(escapeCsvCell('-2+3')).toBe("'-2+3");
     expect(escapeCsvCell('@sum')).toBe("'@sum");
     expect(escapeCsvCell(' =1+1')).toBe("' =1+1");
@@ -152,7 +153,7 @@ describe('widget csv rows', () => {
     ]);
   });
 
-  it('exports a multi-series radar instead of an empty table', () => {
+  it('does not build a multi-series radar table', () => {
     const table = buildRadarCsvTable(
       {
         hostA: [
@@ -167,12 +168,7 @@ describe('widget csv rows', () => {
       { unit: 'ms' },
       labels,
     );
-    expect(table.rows.length).toBeGreaterThan(0);
-    expect(table.headers).toEqual(['指标', 'hostA', 'hostB']);
-    expect(table.rows).toEqual([
-      ['CPU', '70 ms', '60 ms'],
-      ['Memory', '55 ms', '48 ms'],
-    ]);
+    expect(table.rows).toEqual([]);
   });
 
   it('exports multi-value rows with aliases and formatted values', () => {
@@ -418,6 +414,34 @@ describe('csv export entry', () => {
       chartType: 'line',
       editMode: false,
     })).toBe('hover');
+    const multiSeriesRadar = {
+      hostA: [{ name: 'CPU', value: 70 }],
+      hostB: [{ name: 'CPU', value: 60 }],
+    };
+    expect(resolveWidgetCsvExportEntry({
+      surface: 'dashboard',
+      chartType: 'radar',
+      editMode: false,
+      rawData: multiSeriesRadar,
+    })).toBe('none');
+    expect(resolveWidgetCsvExportEntry({
+      surface: 'report',
+      chartType: 'radar',
+      editMode: true,
+      rawData: multiSeriesRadar,
+    })).toBe('none');
+    expect(buildDashboardWidgetMenuKeys({
+      surface: 'dashboard',
+      isEditMode: true,
+      chartType: 'radar',
+      rawData: multiSeriesRadar,
+    })).toEqual(['edit', 'copy', 'delete']);
+    expect(buildDashboardWidgetMenuKeys({
+      surface: 'report',
+      isEditMode: true,
+      chartType: 'radar',
+      rawData: { latency: 1, error: 2 },
+    })).toEqual(['edit', 'copy', 'exportCsv', 'delete']);
     expect(buildDashboardWidgetMenuKeys({
       surface: 'dashboard',
       isEditMode: true,
@@ -623,5 +647,105 @@ describe('csv export entry', () => {
       (id) => (id === 'dashboard.csvExportStale' ? '筛选条件已变化，已取消本次导出' : id),
     );
     expect(notice).toEqual({ level: 'warning', text: '筛选条件已变化，已取消本次导出' });
+  });
+
+  it('keeps exporting when only the table page changes', async () => {
+    let page = 1;
+    const query = [{ field: 'host', type: 'str*', value: '上海' }];
+    const runtime = {
+      chartType: 'table' as const,
+      rawData: { items: [{ host: '上海-1' }], count: 2 },
+      loading: false,
+      dataSourceId: 7,
+      dataSource: {
+        params: [
+          { name: 'page', type: 'number' },
+          { name: 'page_size', type: 'number' },
+        ],
+      } as never,
+      requestParams: { page: 1, page_size: 20, query_list: query },
+      tableQueryParams: { page: 1, page_size: 20, query_list: query },
+      fetchSourceData: async () => {
+        page = 2;
+        return {
+          items: [{ host: '上海-1' }],
+          count: 2,
+          page_size: 1,
+        };
+      },
+    };
+    const outcome = await createWidgetCsvExport(
+      runtime,
+      { title: '主机表' },
+      labels,
+      CSV_EXPORT_ROW_LIMIT,
+      {
+        readLatest: () => ({
+          ...runtime,
+          loading: true,
+          requestParams: { page, page_size: 20, query_list: query },
+          tableQueryParams: { page, page_size: 20, query_list: query },
+        }),
+      },
+    );
+    expect(outcome.kind).toBe('downloaded');
+  });
+
+  it('cancels a topology export when a new chart request starts loading', async () => {
+    let loading = false;
+    let requestGeneration = 0;
+    const runtime = {
+      chartType: 'table' as const,
+      rawData: { items: [{ host: '上海-1' }], count: 2 },
+      loading: false,
+      requestGeneration: 0,
+      dataSourceId: 7,
+      dataSource: {
+        params: [
+          { name: 'page', type: 'number' },
+          { name: 'page_size', type: 'number' },
+        ],
+      } as never,
+      requestParams: { page: 1, page_size: 20 },
+      tableQueryParams: { page: 1, page_size: 20 },
+      fetchSourceData: async () => {
+        loading = true;
+        requestGeneration = 1;
+        return {
+          items: [{ host: '上海-1' }],
+          count: 2,
+          page_size: 1,
+        };
+      },
+    };
+    const outcome = await createWidgetCsvExport(
+      runtime,
+      { title: '主机表' },
+      labels,
+      CSV_EXPORT_ROW_LIMIT,
+      {
+        readLatest: () => ({
+          ...runtime,
+          loading,
+          requestGeneration,
+        }),
+      },
+    );
+    expect(outcome.kind).toBe('stale');
+  });
+
+  it('refuses a multi-series radar export', async () => {
+    const outcome = await createWidgetCsvExport(
+      {
+        chartType: 'radar',
+        rawData: {
+          hostA: [{ name: 'CPU', value: 70 }],
+          hostB: [{ name: 'CPU', value: 60 }],
+        },
+      },
+      { title: '雷达' },
+      labels,
+    );
+    expect(outcome.kind).toBe('unsupported');
   });
 });

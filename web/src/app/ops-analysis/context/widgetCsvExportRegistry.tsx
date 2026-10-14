@@ -21,12 +21,15 @@ export type WidgetCsvExporter = (request: WidgetCsvExportRequest) => Promise<voi
 export interface WidgetCsvExportRegistry {
   register: (widgetId: string, exporter: WidgetCsvExporter) => () => void;
   run: (widgetId: string, request: WidgetCsvExportRequest) => Promise<boolean>;
+  publishWidgetRawData: (widgetId: string, rawData: unknown) => void;
+  readWidgetRawData: (widgetId: string) => unknown;
 }
 
 const WidgetCsvExportRegistryContext = createContext<WidgetCsvExportRegistry | null>(null);
 
 export const useWidgetCsvExportRegistryState = (): WidgetCsvExportRegistry => {
   const exportersRef = useRef(new Map<string, WidgetCsvExporter>());
+  const rawDataRef = useRef(new Map<string, unknown>());
   return useMemo<WidgetCsvExportRegistry>(() => ({
     register: (widgetId, exporter) => {
       exportersRef.current.set(widgetId, exporter);
@@ -42,6 +45,14 @@ export const useWidgetCsvExportRegistryState = (): WidgetCsvExportRegistry => {
       await exporter(request);
       return true;
     },
+    publishWidgetRawData: (widgetId, rawData) => {
+      if (rawData === undefined) {
+        rawDataRef.current.delete(widgetId);
+        return;
+      }
+      rawDataRef.current.set(widgetId, rawData);
+    },
+    readWidgetRawData: (widgetId) => rawDataRef.current.get(widgetId),
   }), []);
 };
 

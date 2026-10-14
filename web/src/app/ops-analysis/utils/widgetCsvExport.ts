@@ -41,6 +41,9 @@ const CSV_EXPORT_CHART_TYPES = new Set([
 export const supportsWidgetCsvExport = (chartType?: string): boolean =>
   Boolean(chartType && CSV_EXPORT_CHART_TYPES.has(chartType));
 
+export const isRadarMultiSeriesUnsupported = (rawData: unknown): boolean =>
+  resolveRadarSeriesData(rawData).unsupported === 'multi_series';
+
 export interface WidgetCsvLabels {
   time: string;
   dimension: string;
@@ -76,6 +79,8 @@ export interface WidgetCsvExportRuntime {
   loading?: boolean;
   dataSourceId?: number;
   fetchSourceData?: (params: Record<string, unknown>) => Promise<unknown>;
+  /** 拓扑取数代号。存在时，加载中的新请求也会让进行中的导出过期。 */
+  requestGeneration?: number;
 }
 
 export type WidgetCsvExportOutcome =
@@ -95,20 +100,26 @@ class WidgetCsvExportStaleError extends Error {
   }
 }
 
-const exportQueryFingerprint = (runtime: WidgetCsvExportRuntime): string => {
-  const requestParams = runtime.requestParams;
-  const filters: Record<string, unknown> = {};
-  if (requestParams) {
-    Object.keys(requestParams).sort().forEach((key) => {
-      if (key === 'page' || key === 'page_size') return;
-      filters[key] = requestParams[key];
-    });
-  }
-  return JSON.stringify({
-    tableQueryParams: runtime.tableQueryParams ?? null,
-    filters,
+const withoutTablePage = (
+  params: Record<string, unknown> | null | undefined,
+): Record<string, unknown> | null => {
+  if (!params) return null;
+  const rest: Record<string, unknown> = {};
+  Object.keys(params).sort().forEach((key) => {
+    if (key === 'page' || key === 'page_size') return;
+    rest[key] = params[key];
   });
+  return rest;
 };
+
+const exportQueryFingerprint = (runtime: WidgetCsvExportRuntime): string => JSON.stringify({
+  tableQueryParams: withoutTablePage(runtime.tableQueryParams),
+  filters: withoutTablePage(runtime.requestParams),
+  ...(runtime.requestGeneration === undefined ? {} : {
+    requestGeneration: runtime.requestGeneration,
+    loading: Boolean(runtime.loading),
+  }),
+});
 
 const fieldDisplayName = (
   schema: ResponseFieldDefinition[] | undefined,
@@ -273,35 +284,12 @@ export const buildRadarCsvTable = (
     config?.radar,
     config?.selectedFields || [],
   );
-  if (series.indicatorLabels.length > 0) {
-    return {
-      headers: [labels.indicator, appendUnit(labels.value, config)],
-      rows: series.indicatorLabels.map((label, index) => [
-        label,
-        formatChartCell(series.indicatorValues[index], config),
-      ]),
-    };
-  }
-
-  if (ChartDataTransformer.isMultiSeriesData(rawData)) {
-    const chart = ChartDataTransformer.transformToLineBarData(rawData);
-    if (chart.series?.length && chart.categories.length > 0) {
-      return {
-        headers: [
-          labels.indicator,
-          ...chart.series.map((item) => appendUnit(item.name || labels.seriesValue, config)),
-        ],
-        rows: chart.categories.map((category, index) => [
-          category,
-          ...chart.series!.map((item) => formatChartCell(item.data[index], config)),
-        ]),
-      };
-    }
-  }
-
   return {
     headers: [labels.indicator, appendUnit(labels.value, config)],
-    rows: [],
+    rows: series.indicatorLabels.map((label, index) => [
+      label,
+      formatChartCell(series.indicatorValues[index], config),
+    ]),
   };
 };
 
@@ -588,6 +576,9 @@ export const createWidgetCsvExport = async (
   options?: { readLatest?: () => WidgetCsvExportRuntime },
 ): Promise<WidgetCsvExportOutcome> => {
   if (!supportsWidgetCsvExport(runtime.chartType)) {
+    return { kind: 'unsupported' };
+  }
+  if (runtime.chartType === 'radar' && isRadarMultiSeriesUnsupported(runtime.rawData)) {
     return { kind: 'unsupported' };
   }
   if (runtime.loading) {

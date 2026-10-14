@@ -1,7 +1,7 @@
 import { formatOpsDisplayTime } from '@/app/ops-analysis/utils/dateTime';
 
 const FORMULA_LEAD = /^[\t\r\n ]*[=+\-@]/;
-const PURE_NUMBER = /^[\t\r\n ]*[+-]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?$/;
+const PURE_NUMBER = /^[\t\r\n ]*[+-]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?%?$/;
 const ILLEGAL_FILENAME = /[\\/:*?"<>|\u0000-\u001f]/g;
 
 export const sanitizeCsvCell = (value: unknown): string => {

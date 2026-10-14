@@ -51,6 +51,7 @@ export const buildScreenItemMenu = (
     fullscreen?: boolean;
     renderMode?: boolean;
     mode?: 'edit' | 'view';
+    rawData?: unknown;
   } = {},
 ): ScreenItemMenuEntry[] => {
   if (options.mode === 'view') {
@@ -63,6 +64,7 @@ export const buildScreenItemMenu = (
     shareMode: options.shareMode,
     fullscreen: options.fullscreen,
     renderMode: options.renderMode,
+    rawData: options.rawData,
   }) === 'menu';
 
   const ordered = orderScreenItemsByLayer(items);

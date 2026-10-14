@@ -153,6 +153,7 @@ const DashboardWidgetCard = React.memo(function DashboardWidgetCard({
 }: DashboardWidgetCardProps) {
   const { t } = useTranslation();
   const csvExportRegistry = useWidgetCsvExportRegistry();
+  const [exportRawData, setExportRawData] = useState<unknown>(undefined);
   const chartType = item.valueConfig?.chartType;
   const csvRenderMode = renderMode || pdfExportPreparing;
   const menuKeys = buildDashboardWidgetMenuKeys({
@@ -164,6 +165,7 @@ const DashboardWidgetCard = React.memo(function DashboardWidgetCard({
     fullscreen: isFullscreen,
     chartType,
     sceneWidgetType: item.valueConfig?.sceneWidgetType,
+    rawData: exportRawData,
   });
   const showHoverExport = resolveWidgetCsvExportEntry({
     surface: 'dashboard',
@@ -172,6 +174,7 @@ const DashboardWidgetCard = React.memo(function DashboardWidgetCard({
     shareMode,
     fullscreen: isFullscreen,
     renderMode: csvRenderMode,
+    rawData: exportRawData,
   }) === 'hover';
   const exportCsv = () => {
     void csvExportRegistry?.run(item.i, { title: item.name || '' }).then((started) => {
@@ -252,6 +255,7 @@ const DashboardWidgetCard = React.memo(function DashboardWidgetCard({
               filterDefinitions={appliedFilterDefinitions}
               builtinNamespaceId={appliedNamespaceId}
               onRenderStatus={onWidgetRenderStatus}
+              onRawData={setExportRawData}
               runtimeActive={runtimeActive}
               runtimePriority={runtimePriority}
               layoutEditable={isEditMode}

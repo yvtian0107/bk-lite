@@ -2,7 +2,7 @@ import {
   resolveAnalysisCanvasInteraction,
   shouldShowAnalysisWidgetCopyAction,
 } from '@/app/ops-analysis/utils/widgetCopy';
-import { supportsWidgetCsvExport } from '@/app/ops-analysis/utils/widgetCsvExport';
+import { isRadarMultiSeriesUnsupported, supportsWidgetCsvExport } from '@/app/ops-analysis/utils/widgetCsvExport';
 
 export type DashboardWidgetMenuKey = 'edit' | 'copy' | 'delete' | 'exportCsv';
 
@@ -31,6 +31,7 @@ export const resolveWidgetCsvExportEntry = ({
   shareMode = false,
   fullscreen = false,
   renderMode = false,
+  rawData,
 }: {
   surface: WidgetCsvExportSurface;
   chartType?: string;
@@ -38,9 +39,11 @@ export const resolveWidgetCsvExportEntry = ({
   shareMode?: boolean;
   fullscreen?: boolean;
   renderMode?: boolean;
+  rawData?: unknown;
 }): WidgetCsvExportEntry => {
   if (isWidgetCsvExportBlocked({ shareMode, fullscreen, renderMode })) return 'none';
   if (!supportsWidgetCsvExport(chartType)) return 'none';
+  if (chartType === 'radar' && isRadarMultiSeriesUnsupported(rawData)) return 'none';
   if (surface === 'screen') return editMode ? 'menu' : 'none';
   return editMode ? 'menu' : 'hover';
 };
@@ -64,6 +67,7 @@ export const buildDashboardWidgetMenuKeys = ({
   fullscreen = false,
   chartType,
   sceneWidgetType,
+  rawData,
 }: {
   surface: WidgetCsvExportSurface;
   isEditMode: boolean;
@@ -73,6 +77,7 @@ export const buildDashboardWidgetMenuKeys = ({
   fullscreen?: boolean;
   chartType?: string;
   sceneWidgetType?: string;
+  rawData?: unknown;
 }): DashboardWidgetMenuKey[] => {
   const keys: DashboardWidgetMenuKey[] = [];
   const exportCsv = resolveWidgetCsvExportEntry({
@@ -82,6 +87,7 @@ export const buildDashboardWidgetMenuKeys = ({
     shareMode,
     fullscreen,
     renderMode,
+    rawData,
   }) === 'menu';
   if (isEditMode) {
     keys.push('edit');

@@ -94,6 +94,19 @@ describe('screen item context menu', () => {
 
   it('keeps csv export out of the view-mode context menu and off the view canvas', () => {
     expect(buildScreenItemMenu(dataWidget, [dataWidget], { mode: 'view' })).toEqual([]);
+    const radar = {
+      ...dataWidget,
+      id: 'w-radar',
+      chartType: 'radar' as const,
+      valueConfig: { chartType: 'radar' as const },
+    };
+    expect(buildScreenItemMenu(radar, [radar]).map((entry) => entry.key)).toContain('exportCsv');
+    expect(buildScreenItemMenu(radar, [radar], {
+      rawData: {
+        hostA: [{ name: 'CPU', value: 1 }],
+        hostB: [{ name: 'CPU', value: 2 }],
+      },
+    }).map((entry) => entry.key)).not.toContain('exportCsv');
     expect(resolveWidgetCsvExportEntry({
       surface: 'screen',
       chartType: 'line',

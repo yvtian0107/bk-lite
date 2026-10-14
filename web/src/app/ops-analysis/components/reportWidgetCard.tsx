@@ -85,6 +85,7 @@ const ReportWidgetCard: React.FC<ReportWidgetCardProps> = ({
   const [runtimeActive, setRuntimeActive] = useState(eagerRuntime);
   const [localReloadVersion, setLocalReloadVersion] = useState(0);
   const [renderStatus, setRenderStatus] = useState<DashboardWidgetRenderStatus>('loading');
+  const [exportRawData, setExportRawData] = useState<unknown>(undefined);
   const { attributes, listeners, setNodeRef, transform, transition } =
     useSortable({ id: section.id, disabled: !editing });
 
@@ -131,6 +132,7 @@ const ReportWidgetCard: React.FC<ReportWidgetCardProps> = ({
     shareMode,
     fullscreen: isFullscreen,
     renderMode: renderMode || pdfExportPreparing,
+    rawData: exportRawData,
   });
   const menuKeys = buildDashboardWidgetMenuKeys({
     surface: 'report',
@@ -141,6 +143,7 @@ const ReportWidgetCard: React.FC<ReportWidgetCardProps> = ({
     fullscreen: isFullscreen,
     chartType: section.valueConfig.chartType,
     sceneWidgetType: section.valueConfig.sceneWidgetType,
+    rawData: exportRawData,
   });
   const exportCsv = () => {
     void csvExportRegistry?.run(section.id, {
@@ -238,6 +241,7 @@ const ReportWidgetCard: React.FC<ReportWidgetCardProps> = ({
                 refreshCause={refreshCause}
                 runtimeActive={runtimeActive}
                 runtimePriority={{ cause: 1, visibility: 0, distance: 0, order: index }}
+                onRawData={setExportRawData}
                 onRenderStatus={(result) => {
                   setRenderStatus(result.status);
                   onWidgetRenderStatus?.(result);

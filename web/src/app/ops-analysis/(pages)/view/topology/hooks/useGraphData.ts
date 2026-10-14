@@ -220,6 +220,7 @@ export const useGraphData = (
       tableQueryParams: data.tableQueryParams,
       requestParams: data.csvRequestParams,
       loading: Boolean(data.isLoading),
+      requestGeneration: Number(data.csvRequestGeneration) || 0,
       dataSourceId: typeof dataSourceId === 'number' ? dataSourceId : undefined,
       fetchSourceData: typeof dataSourceId === 'number'
         ? async (params: Record<string, unknown>) => {
@@ -272,6 +273,14 @@ export const useGraphData = (
     const isCurrent = () =>
       chartFetchGenerationRef.current.get(nodeId) === generation;
     const previousData = node.getData();
+    if (!silent) {
+      const nextGeneration = (Number(previousData?.csvRequestGeneration) || 0) + 1;
+      node.setData({
+        ...previousData,
+        isLoading: true,
+        csvRequestGeneration: nextGeneration,
+      }, { overwrite: true });
+    }
 
     try {
       const effectiveFilterBindings = resolveEffectiveFilterBindings(

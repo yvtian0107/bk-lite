@@ -1108,8 +1108,10 @@ const Screen = forwardRef<ScreenRef, ScreenProps>(({ selectedScreen, shareMode =
         shareMode,
         fullscreen: isFullscreen,
       }),
+      rawData: isScreenWidgetItem(target) ? csvExportRegistry.readWidgetRawData(target.id) : undefined,
     });
   }, [
+    csvExportRegistry,
     draftViewSets.items,
     editMode,
     isFullscreen,

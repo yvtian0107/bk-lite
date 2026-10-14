@@ -281,4 +281,23 @@ describe('ChartNode selection chrome', () => {
     expect(withoutTitle.container.querySelector('[data-csv-export-hover]')).toBeNull();
     expect(withoutTitle.container.textContent).not.toContain('CPU');
   });
+
+  it('hides the csv icon when radar data is multi-series', () => {
+    const node = createChartNode();
+    const data = node.getData();
+    node.getData = () => ({
+      ...data,
+      name: '雷达',
+      valueConfig: { chartType: 'radar' },
+      rawData: {
+        hostA: [{ name: 'CPU', value: 70 }],
+        hostB: [{ name: 'CPU', value: 60 }],
+      },
+    });
+    const { container } = render(<ChartNode node={node} />);
+    act(() => {
+      setTopologyCsvExportHoverEnabled(true);
+    });
+    expect(container.querySelector('[data-csv-export-hover]')).toBeNull();
+  });
 });
