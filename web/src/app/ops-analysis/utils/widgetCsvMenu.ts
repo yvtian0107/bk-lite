@@ -56,6 +56,7 @@ export const resolveTopologyCsvExportHoverEnabled = ({
 }): boolean => !editMode && !isWidgetCsvExportBlocked({ shareMode, fullscreen });
 
 export const buildDashboardWidgetMenuKeys = ({
+  surface,
   isEditMode,
   shareMode = false,
   isBuiltIn = false,
@@ -64,6 +65,7 @@ export const buildDashboardWidgetMenuKeys = ({
   chartType,
   sceneWidgetType,
 }: {
+  surface: WidgetCsvExportSurface;
   isEditMode: boolean;
   shareMode?: boolean;
   isBuiltIn?: boolean;
@@ -74,7 +76,7 @@ export const buildDashboardWidgetMenuKeys = ({
 }): DashboardWidgetMenuKey[] => {
   const keys: DashboardWidgetMenuKey[] = [];
   const exportCsv = resolveWidgetCsvExportEntry({
-    surface: 'dashboard',
+    surface,
     chartType,
     editMode: isEditMode,
     shareMode,
@@ -100,6 +102,45 @@ export const buildDashboardWidgetMenuKeys = ({
   }
   return keys;
 };
+
+export interface AnalysisWidgetMenuItem {
+  key: DashboardWidgetMenuKey;
+  label: string;
+  danger?: boolean;
+  onClick: () => void;
+}
+
+export const buildAnalysisWidgetMenuItems = ({
+  keys,
+  t,
+  onEdit,
+  onCopy,
+  onDelete,
+  onExportCsv,
+}: {
+  keys: DashboardWidgetMenuKey[];
+  t: (id: string) => string;
+  onEdit: () => void;
+  onCopy?: () => void;
+  onDelete: () => void;
+  onExportCsv: () => void;
+}): AnalysisWidgetMenuItem[] => keys.map((key) => {
+  if (key === 'edit') {
+    return { key, label: t('common.edit'), onClick: onEdit };
+  }
+  if (key === 'copy') {
+    return { key, label: t('common.copy'), onClick: () => onCopy?.() };
+  }
+  if (key === 'exportCsv') {
+    return { key, label: t('dashboard.exportCsv'), onClick: onExportCsv };
+  }
+  return {
+    key,
+    label: t('common.delete'),
+    danger: true,
+    onClick: onDelete,
+  };
+});
 
 export const resolveScreenItemMenuMode = ({
   editMode,

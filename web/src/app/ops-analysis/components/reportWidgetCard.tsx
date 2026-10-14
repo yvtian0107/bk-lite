@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useEffect, useRef, useState } from 'react';
-import { Button, message, Tooltip } from 'antd';
+import { Button, Tooltip } from 'antd';
 import {
   HolderOutlined,
   ReloadOutlined,
@@ -13,7 +13,7 @@ import MoreActionsDropdown from '@/components/more-actions-dropdown';
 import WidgetCsvHoverButton from '@/app/ops-analysis/components/widgetCsvHoverButton';
 import WidgetDataRenderer from '@/app/ops-analysis/components/widgetDataRenderer';
 import { WidgetHeaderRuntimeSlotProvider } from '@/app/ops-analysis/components/widgetHeaderRuntimeSlot';
-import { useWidgetCsvExportRegistry } from '@/app/ops-analysis/context/widgetCsvExportRegistry';
+import { notifyWidgetCsvExportNotStarted, useWidgetCsvExportRegistry } from '@/app/ops-analysis/context/widgetCsvExportRegistry';
 import type { DatasourceItem } from '@/app/ops-analysis/types/dataSource';
 import type { FilterValue, UnifiedFilterDefinition } from '@/app/ops-analysis/types/dashBoard';
 import type { ReportSection } from '@/app/ops-analysis/types/report';
@@ -24,6 +24,7 @@ import type {
 import type { CanvasRuntimeRefreshCause } from '@/app/ops-analysis/utils/canvasRefreshTimer';
 import { useTranslation } from '@/utils/i18n';
 import {
+  buildAnalysisWidgetMenuItems,
   buildDashboardWidgetMenuKeys,
   resolveWidgetCsvExportEntry,
 } from '@/app/ops-analysis/utils/widgetCsvMenu';
@@ -132,6 +133,7 @@ const ReportWidgetCard: React.FC<ReportWidgetCardProps> = ({
     renderMode: renderMode || pdfExportPreparing,
   });
   const menuKeys = buildDashboardWidgetMenuKeys({
+    surface: 'report',
     isEditMode: editing,
     shareMode,
     isBuiltIn,
@@ -144,9 +146,17 @@ const ReportWidgetCard: React.FC<ReportWidgetCardProps> = ({
     void csvExportRegistry?.run(section.id, {
       title: section.valueConfig.name || '',
     }).then((started) => {
-      if (!started) message.warning(t('dashboard.csvExportPending'));
+      notifyWidgetCsvExportNotStarted(started, t);
     });
   };
+  const menuItems = buildAnalysisWidgetMenuItems({
+    keys: menuKeys,
+    t,
+    onEdit: () => onEdit(section.id),
+    onCopy: () => onCopy?.(section.id),
+    onDelete: () => onDelete(section.id),
+    onExportCsv: exportCsv,
+  });
 
   return (
     <div
@@ -184,12 +194,6 @@ const ReportWidgetCard: React.FC<ReportWidgetCardProps> = ({
                 )}
               </div>
               <div ref={runtimeSlotRef} className="ml-auto min-w-0 max-w-[55%] overflow-x-auto" />
-              {exportEntry === 'hover' && (
-                <WidgetCsvHoverButton
-                  label={t('dashboard.exportCsv')}
-                  onClick={exportCsv}
-                />
-              )}
               {renderStatus === 'failed' && (
                 <Tooltip title={t('common.retry')}>
                   <Button
@@ -202,41 +206,19 @@ const ReportWidgetCard: React.FC<ReportWidgetCardProps> = ({
                   />
                 </Tooltip>
               )}
-              {menuKeys.length > 0 && (
+              {exportEntry === 'hover' && (
+                <WidgetCsvHoverButton
+                  label={t('dashboard.exportCsv')}
+                  onClick={exportCsv}
+                />
+              )}
+              {menuItems.length > 0 && (
                 <div data-export-hidden="true">
                   <MoreActionsDropdown
                     trigger={['hover']}
                     labelAlign="start"
                     buttonClassName="cursor-pointer text-(--color-text-2) transition-colors hover:!bg-transparent hover:text-(--color-text-1)"
-                    items={menuKeys.map((key) => {
-                      if (key === 'edit') {
-                        return {
-                          key,
-                          label: t('common.edit'),
-                          onClick: () => onEdit(section.id),
-                        };
-                      }
-                      if (key === 'copy') {
-                        return {
-                          key,
-                          label: t('common.copy'),
-                          onClick: () => onCopy?.(section.id),
-                        };
-                      }
-                      if (key === 'exportCsv') {
-                        return {
-                          key,
-                          label: t('dashboard.exportCsv'),
-                          onClick: exportCsv,
-                        };
-                      }
-                      return {
-                        key,
-                        label: t('common.delete'),
-                        danger: true,
-                        onClick: () => onDelete(section.id),
-                      };
-                    })}
+                    items={menuItems}
                   />
                 </div>
               )}

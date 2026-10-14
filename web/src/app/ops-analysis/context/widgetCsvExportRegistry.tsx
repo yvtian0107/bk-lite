@@ -59,15 +59,25 @@ export const WidgetCsvExportRegistryProvider: React.FC<{
 
 export const useWidgetCsvExportRegistry = () => useContext(WidgetCsvExportRegistryContext);
 
+export const notifyWidgetCsvExportNotStarted = (
+  started: boolean,
+  t: (id: string) => string,
+) => {
+  if (!started) message.warning(t('dashboard.csvExportPending'));
+};
+
 export const deliverWidgetCsvExport = async (
   runtime: WidgetCsvExportRuntime,
   request: WidgetCsvExportRequest,
   t: (id: string, defaultMessage?: string, values?: Record<string, string | number>) => string,
+  readLatest?: () => WidgetCsvExportRuntime,
 ) => {
   const outcome = await createWidgetCsvExport(
     runtime,
     request,
     buildWidgetCsvLabels((id) => t(id)),
+    undefined,
+    readLatest ? { readLatest } : undefined,
   );
   if (outcome.kind === 'downloaded' || outcome.kind === 'truncated') {
     downloadCsvFile(outcome.filename, outcome.csv);
@@ -97,7 +107,12 @@ export const useRegisterWidgetCsvExport = (
     if (surface !== 'dashboard' && surface !== 'screen' && surface !== 'report') return undefined;
     if (!supportsWidgetCsvExport(chartType)) return undefined;
     return registry.register(widgetId, (request) => (
-      deliverWidgetCsvExport(getRuntimeRef.current(), request, tRef.current)
+      deliverWidgetCsvExport(
+        getRuntimeRef.current(),
+        request,
+        tRef.current,
+        () => getRuntimeRef.current(),
+      )
     ));
   }, [chartType, registry, surface, widgetId]);
 };

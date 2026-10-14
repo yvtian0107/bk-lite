@@ -1978,6 +1978,7 @@ const Dashboard = forwardRef<DashboardRef, DashboardProps>(
             isEditMode && !shareMode ? handleTopologyLayoutChange : undefined
           }
           renderMode={renderMode}
+          pdfExportPreparing={exporting}
           scrollRootRef={canvasScrollRef}
           onWidgetRenderStatus={handleWidgetRenderStatus}
         />

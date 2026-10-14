@@ -165,27 +165,10 @@ const ChartNodeContent: React.FC<ChartNodeProps> = ({ node }) => {
             borderBottom: `1px solid ${panelChromeBorderColor}`,
           }}
         >
-          <div
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: 8,
-              minWidth: 0,
-              marginBottom: normalizedDescription ? '4px' : 0,
-            }}
-          >
+          <div className={`flex min-w-0 items-center gap-2 ${normalizedDescription ? 'mb-1' : ''}`}>
             <div
-              style={{
-                flex: '1 1 auto',
-                minWidth: 0,
-                overflow: 'hidden',
-                textOverflow: 'ellipsis',
-                whiteSpace: 'nowrap',
-                fontSize: '14px',
-                fontWeight: '600',
-                color: chartTheme.panelTitleColor,
-                lineHeight: '20px',
-              }}
+              className="min-w-0 flex-1 truncate text-sm font-semibold leading-5"
+              style={{ color: chartTheme.panelTitleColor }}
             >
               {componentName}
             </div>

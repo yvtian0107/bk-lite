@@ -86,7 +86,29 @@ export type WidgetCsvExportOutcome =
     exportedCount: number;
     limit: number;
   }
-  | { kind: 'pending' | 'failed' | 'unconfigured' | 'unsupported' };
+  | { kind: 'pending' | 'failed' | 'unconfigured' | 'unsupported' | 'stale' };
+
+class WidgetCsvExportStaleError extends Error {
+  constructor() {
+    super('widget csv export stale');
+    this.name = 'WidgetCsvExportStaleError';
+  }
+}
+
+const exportQueryFingerprint = (runtime: WidgetCsvExportRuntime): string => {
+  const requestParams = runtime.requestParams;
+  const filters: Record<string, unknown> = {};
+  if (requestParams) {
+    Object.keys(requestParams).sort().forEach((key) => {
+      if (key === 'page' || key === 'page_size') return;
+      filters[key] = requestParams[key];
+    });
+  }
+  return JSON.stringify({
+    tableQueryParams: runtime.tableQueryParams ?? null,
+    filters,
+  });
+};
 
 const fieldDisplayName = (
   schema: ResponseFieldDefinition[] | undefined,
@@ -251,12 +273,35 @@ export const buildRadarCsvTable = (
     config?.radar,
     config?.selectedFields || [],
   );
+  if (series.indicatorLabels.length > 0) {
+    return {
+      headers: [labels.indicator, appendUnit(labels.value, config)],
+      rows: series.indicatorLabels.map((label, index) => [
+        label,
+        formatChartCell(series.indicatorValues[index], config),
+      ]),
+    };
+  }
+
+  if (ChartDataTransformer.isMultiSeriesData(rawData)) {
+    const chart = ChartDataTransformer.transformToLineBarData(rawData);
+    if (chart.series?.length && chart.categories.length > 0) {
+      return {
+        headers: [
+          labels.indicator,
+          ...chart.series.map((item) => appendUnit(item.name || labels.seriesValue, config)),
+        ],
+        rows: chart.categories.map((category, index) => [
+          category,
+          ...chart.series!.map((item) => formatChartCell(item.data[index], config)),
+        ]),
+      };
+    }
+  }
+
   return {
     headers: [labels.indicator, appendUnit(labels.value, config)],
-    rows: series.indicatorLabels.map((label, index) => [
-      label,
-      formatChartCell(series.indicatorValues[index], config),
-    ]),
+    rows: [],
   };
 };
 
@@ -362,38 +407,88 @@ export const readTableQueryList = (
   return value.filter(isQueryCondition);
 };
 
+const positivePageSize = (value: unknown): number | undefined => {
+  const size = typeof value === 'number' ? value : Number(value);
+  if (!Number.isFinite(size) || size <= 0) return undefined;
+  return Math.floor(size);
+};
+
+/**
+ * 告警列表会把 page_size 钳到 100 并回显。云账单接受 1000。
+ * 非 NATS 预览钳到 1000。LLM 实例列表钳到 100 但不回显 page_size。
+ */
+const readEchoedPageSize = (payload: unknown, requested: number): number | undefined => {
+  if (!payload || typeof payload !== 'object' || Array.isArray(payload)) return undefined;
+  const echoed = positivePageSize((payload as Record<string, unknown>).page_size);
+  if (echoed === undefined) return undefined;
+  return Math.min(echoed, requested);
+};
+
 const fetchTablePages = async (
   fetchPage: (page: number, pageSize: number) => Promise<unknown>,
   limit: number,
-): Promise<{ rows: Record<string, unknown>[]; total: number }> => {
+  queryListActive: boolean,
+): Promise<{ rows: Record<string, unknown>[]; total: number | null; exhausted: boolean }> => {
   const firstPayload = await fetchPage(1, limit);
   const first = parseTableLikeData<Record<string, unknown>>(
     firstPayload,
     { current: 1, pageSize: limit },
     true,
   );
-  const total = first.isPaginated ? first.pagination.total : first.rows.length;
-  if (first.rows.length === 0 || first.rows.length >= Math.min(total || first.rows.length, limit)) {
-    return { rows: first.rows.slice(0, limit), total };
+  if (!first.isPaginated) {
+    const rows = first.rows.slice(0, limit);
+    return {
+      rows,
+      total: null,
+      exhausted: first.rows.length < limit,
+    };
   }
 
-  const pageSize = first.rows.length;
+  const total = first.pagination.total;
+  const echoed = readEchoedPageSize(firstPayload, limit);
+  let pageSize = echoed ?? limit;
+  if (
+    !echoed
+    && !queryListActive
+    && first.rows.length > 0
+    && first.rows.length < limit
+    && total > first.rows.length
+  ) {
+    pageSize = first.rows.length;
+  }
+
   const rows = [...first.rows];
+  let covered = queryListActive ? pageSize : first.rows.length;
+  const finish = (exhausted: boolean) => ({
+    rows: rows.slice(0, limit),
+    total,
+    exhausted: exhausted && rows.length <= limit,
+  });
+  if (first.rows.length === 0 || rows.length >= limit || covered >= total) {
+    return finish(covered >= total || first.rows.length === 0);
+  }
+  if (!queryListActive && first.rows.length < pageSize) {
+    return finish(true);
+  }
+
   let page = 2;
-  const maxPages = Math.ceil(limit / pageSize) + 1;
-  while (rows.length < Math.min(total, limit) && page <= maxPages) {
+  const maxPages = Math.ceil(Math.max(total, 1) / pageSize) + 1;
+  while (rows.length < limit && covered < total && page <= maxPages) {
     const nextPayload = await fetchPage(page, pageSize);
+    const nextEcho = readEchoedPageSize(nextPayload, pageSize);
+    if (nextEcho && nextEcho < pageSize) pageSize = nextEcho;
     const next = parseTableLikeData<Record<string, unknown>>(
       nextPayload,
       { current: page, pageSize },
       true,
     );
-    if (next.rows.length === 0) break;
+    if (next.rows.length === 0) return finish(true);
     rows.push(...next.rows);
-    if (next.rows.length < pageSize) break;
+    covered += queryListActive ? pageSize : next.rows.length;
+    if (!queryListActive && next.rows.length < pageSize) return finish(true);
     page += 1;
   }
-  return { rows: rows.slice(0, limit), total };
+  return finish(covered >= total);
 };
 
 export const loadTableExportRows = async ({
@@ -414,20 +509,23 @@ export const loadTableExportRows = async ({
     { current: 1, pageSize: limit },
     supportsPagination,
   );
-  const needsMore = initial.isPaginated && initial.pagination.total > initial.rows.length;
   let sourceRows = initial.rows;
   let total = initial.isPaginated ? initial.pagination.total : initial.rows.length;
+  let exhausted = initial.isPaginated
+    ? initial.pagination.total <= initial.rows.length
+    : !supportsPagination;
 
-  if (needsMore && fetchPage) {
-    const loaded = await fetchTablePages(fetchPage, limit);
+  if ((!initial.isPaginated || !exhausted) && supportsPagination && fetchPage) {
+    const loaded = await fetchTablePages(fetchPage, limit, queryList.length > 0);
     sourceRows = loaded.rows;
-    total = loaded.total;
+    if (loaded.total != null) total = loaded.total;
+    else total = sourceRows.length;
+    exhausted = loaded.exhausted;
   }
 
   const filtered = applyTableQueryList(sourceRows, queryList);
   const exported = filtered.slice(0, limit);
-  const incomplete = filtered.length > exported.length
-    || (needsMore && sourceRows.length < total);
+  const incomplete = filtered.length > exported.length || !exhausted;
   return {
     rows: exported,
     truncated: incomplete && exported.length > 0,
@@ -473,6 +571,9 @@ export const describeWidgetCsvExportNotice = (
   if (outcome.kind === 'unconfigured') {
     return { level: 'warning', text: t('dashboard.configureDisplayFieldsFirst') };
   }
+  if (outcome.kind === 'stale') {
+    return { level: 'warning', text: t('dashboard.csvExportStale') };
+  }
   if (outcome.kind === 'failed' || outcome.kind === 'unsupported') {
     return { level: 'error', text: t('dashboard.csvExportFailed') };
   }
@@ -484,6 +585,7 @@ export const createWidgetCsvExport = async (
   request: { title: string; now?: Date },
   labels: WidgetCsvLabels,
   limit = CSV_EXPORT_ROW_LIMIT,
+  options?: { readLatest?: () => WidgetCsvExportRuntime },
 ): Promise<WidgetCsvExportOutcome> => {
   if (!supportsWidgetCsvExport(runtime.chartType)) {
     return { kind: 'unsupported' };
@@ -491,6 +593,20 @@ export const createWidgetCsvExport = async (
   if (runtime.loading) {
     return { kind: 'pending' };
   }
+
+  const fingerprint = exportQueryFingerprint(runtime);
+  const assertFresh = () => {
+    if (!options?.readLatest) return;
+    let latest: WidgetCsvExportRuntime;
+    try {
+      latest = options.readLatest();
+    } catch {
+      throw new WidgetCsvExportStaleError();
+    }
+    if (exportQueryFingerprint(latest) !== fingerprint) {
+      throw new WidgetCsvExportStaleError();
+    }
+  };
 
   try {
     let table: CsvTable;
@@ -508,6 +624,7 @@ export const createWidgetCsvExport = async (
         limit,
         fetchPage: supportsPagination && runtime.fetchSourceData && runtime.requestParams && runtime.dataSourceId
           ? async (page, pageSize) => {
+            assertFresh();
             const fetchSourceData = runtime.fetchSourceData;
             const requestParams = runtime.requestParams;
             if (!fetchSourceData || !requestParams) return null;
@@ -519,6 +636,7 @@ export const createWidgetCsvExport = async (
           }
           : undefined,
       });
+      assertFresh();
       const built = buildTableCsvTable(
         runtime.chartType,
         loaded.rows,
@@ -530,6 +648,7 @@ export const createWidgetCsvExport = async (
       truncated = loaded.truncated;
     } else {
       table = buildChartTable(runtime, labels);
+      assertFresh();
     }
 
     const filename = buildCsvFilename(request.title, request.now);
@@ -541,7 +660,8 @@ export const createWidgetCsvExport = async (
       exportedCount: table.rows.length,
       limit,
     };
-  } catch {
+  } catch (error) {
+    if (error instanceof WidgetCsvExportStaleError) return { kind: 'stale' };
     return { kind: 'failed' };
   }
 };

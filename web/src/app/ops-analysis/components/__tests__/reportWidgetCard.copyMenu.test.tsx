@@ -23,8 +23,19 @@ vi.mock('@/utils/i18n', () => ({
   }),
 }));
 
+let failWidgetRender = false;
+
 vi.mock('@/app/ops-analysis/components/widgetDataRenderer', () => ({
-  default: () => <div data-testid="widget-runtime" />,
+  default: function WidgetRuntimeMock(props: {
+    widgetId: string;
+    onRenderStatus?: (result: { widgetId: string; status: string }) => void;
+  }) {
+    React.useEffect(() => {
+      if (!failWidgetRender) return;
+      props.onRenderStatus?.({ widgetId: props.widgetId, status: 'failed' });
+    }, [props]);
+    return <div data-testid="widget-runtime" />;
+  },
 }));
 
 const section = {
@@ -61,6 +72,7 @@ beforeAll(() => {
 });
 
 afterEach(() => {
+  failWidgetRender = false;
   cleanup();
 });
 
@@ -209,6 +221,16 @@ describe('ReportWidgetCard csv export', () => {
     expect(slot!.compareDocumentPosition(button) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     expect(screen.queryByRole('button', { name: 'common.more' })).toBeNull();
     expect(screen.queryByRole('menuitem')).toBeNull();
+  });
+
+  it('keeps retry to the left of the export icon when the widget failed', async () => {
+    failWidgetRender = true;
+    renderCard();
+    const retry = await screen.findByRole('button', { name: 'common.retry' });
+    const exportButton = screen.getByRole('button', { name: 'dashboard.exportCsv' });
+    expect(
+      retry.compareDocumentPosition(exportButton) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
   });
 
   it('puts export between copy and delete in the edit menu and hides the menu from export', async () => {

@@ -7,7 +7,7 @@ import React, {
 } from 'react';
 import type { RefObject } from 'react';
 import { createPortal } from 'react-dom';
-import { Button, Empty, Spin, message } from 'antd';
+import { Button, Empty, Spin } from 'antd';
 import { PlusOutlined } from '@ant-design/icons';
 import type {
   GridItemHTMLElement,
@@ -54,8 +54,8 @@ import type { CanvasRuntimeRefreshCause } from '@/app/ops-analysis/utils/canvasR
 import { WidgetHeaderRuntimeSlotProvider } from '@/app/ops-analysis/components/widgetHeaderRuntimeSlot';
 import WidgetWrapper from '@/app/ops-analysis/components/widgetDataRenderer';
 import WidgetCsvHoverButton from '@/app/ops-analysis/components/widgetCsvHoverButton';
-import { useWidgetCsvExportRegistry, WidgetCsvExportRegistryProvider } from '@/app/ops-analysis/context/widgetCsvExportRegistry';
-import { buildDashboardWidgetMenuKeys, resolveWidgetCsvExportEntry } from '@/app/ops-analysis/utils/widgetCsvMenu';
+import { notifyWidgetCsvExportNotStarted, useWidgetCsvExportRegistry, WidgetCsvExportRegistryProvider } from '@/app/ops-analysis/context/widgetCsvExportRegistry';
+import { buildAnalysisWidgetMenuItems, buildDashboardWidgetMenuKeys, resolveWidgetCsvExportEntry } from '@/app/ops-analysis/utils/widgetCsvMenu';
 import { DashboardRuntimeSchedulerProvider, useDashboardRuntimeScheduler } from '@/app/ops-analysis/context/dashboardRuntimeScheduler';
 import type { DashboardRuntimeScheduler, RuntimeRequestPriority } from '@/app/ops-analysis/utils/dashboardRuntimeScheduler';
 
@@ -121,6 +121,7 @@ interface DashboardWidgetCardProps {
   onTopologyLayoutChange?: DashboardCanvasProps['onTopologyLayoutChange'];
   onWidgetRenderStatus?: DashboardCanvasProps['onWidgetRenderStatus'];
   renderMode?: boolean;
+  pdfExportPreparing?: boolean;
 }
 
 const DashboardWidgetCard = React.memo(function DashboardWidgetCard({
@@ -148,15 +149,18 @@ const DashboardWidgetCard = React.memo(function DashboardWidgetCard({
   onTopologyLayoutChange,
   onWidgetRenderStatus,
   renderMode = false,
+  pdfExportPreparing = false,
 }: DashboardWidgetCardProps) {
   const { t } = useTranslation();
   const csvExportRegistry = useWidgetCsvExportRegistry();
   const chartType = item.valueConfig?.chartType;
+  const csvRenderMode = renderMode || pdfExportPreparing;
   const menuKeys = buildDashboardWidgetMenuKeys({
+    surface: 'dashboard',
     isEditMode,
     shareMode,
     isBuiltIn: selectedDashboardLocked,
-    renderMode,
+    renderMode: csvRenderMode,
     fullscreen: isFullscreen,
     chartType,
     sceneWidgetType: item.valueConfig?.sceneWidgetType,
@@ -167,32 +171,20 @@ const DashboardWidgetCard = React.memo(function DashboardWidgetCard({
     editMode: isEditMode,
     shareMode,
     fullscreen: isFullscreen,
-    renderMode,
+    renderMode: csvRenderMode,
   }) === 'hover';
-  const menuItems = menuKeys.map((key) => {
-    if (key === 'edit') {
-      return { key, label: t('common.edit'), onClick: () => onEditWidget(item.i) };
-    }
-    if (key === 'copy') {
-      return { key, label: t('common.copy'), onClick: () => onCopyWidget?.(item.i) };
-    }
-    if (key === 'exportCsv') {
-      return {
-        key,
-        label: t('dashboard.exportCsv'),
-        onClick: () => {
-          void csvExportRegistry?.run(item.i, { title: item.name || '' }).then((started) => {
-            if (!started) message.warning(t('dashboard.csvExportPending'));
-          });
-        },
-      };
-    }
-    return {
-      key,
-      label: t('common.delete'),
-      danger: true,
-      onClick: () => onDeleteWidget(item.i),
-    };
+  const exportCsv = () => {
+    void csvExportRegistry?.run(item.i, { title: item.name || '' }).then((started) => {
+      notifyWidgetCsvExportNotStarted(started, t);
+    });
+  };
+  const menuItems = buildAnalysisWidgetMenuItems({
+    keys: menuKeys,
+    t,
+    onEdit: () => onEditWidget(item.i),
+    onCopy: () => onCopyWidget?.(item.i),
+    onDelete: () => onDeleteWidget(item.i),
+    onExportCsv: exportCsv,
   });
 
   return (
@@ -223,11 +215,7 @@ const DashboardWidgetCard = React.memo(function DashboardWidgetCard({
             {showHoverExport && (
               <WidgetCsvHoverButton
                 label={t('dashboard.exportCsv')}
-                onClick={() => {
-                  void csvExportRegistry?.run(item.i, { title: item.name || '' }).then((started) => {
-                    if (!started) message.warning(t('dashboard.csvExportPending'));
-                  });
-                }}
+                onClick={exportCsv}
               />
             )}
             {menuItems.length > 0 && (
@@ -321,6 +309,7 @@ interface DashboardCanvasProps {
     >,
   ) => void;
   renderMode?: boolean;
+  pdfExportPreparing?: boolean;
   scrollRootRef: RefObject<HTMLDivElement | null>;
   onWidgetRenderStatus?: (result: DashboardWidgetRenderResult) => void;
 }
@@ -356,6 +345,7 @@ const DashboardCanvas: React.FC<DashboardCanvasProps> = ({
   onDeleteWidget,
   onTopologyLayoutChange,
   renderMode = false,
+  pdfExportPreparing = false,
   scrollRootRef,
   onWidgetRenderStatus,
 }) => {
@@ -1291,6 +1281,7 @@ const DashboardCanvas: React.FC<DashboardCanvasProps> = ({
         onTopologyLayoutChange={onTopologyLayoutChange}
         onWidgetRenderStatus={onWidgetRenderStatus}
         renderMode={renderMode}
+        pdfExportPreparing={pdfExportPreparing}
       />,
       host,
       `widget:${id}`,

@@ -62,11 +62,11 @@ const ScreenWidgetFrame: React.FC<ScreenWidgetFrameProps> = ({
 
   return (
     <section
-      className={`${getScreenWidgetFrameClassName(item, {
+      className={getScreenWidgetFrameClassName(item, {
         selected,
         editMode,
         frame,
-      })} group`}
+      })}
       style={{
         '--screen-widget-scale': screenDensity,
         '--screen-widget-ui-scale': screenUiScale,

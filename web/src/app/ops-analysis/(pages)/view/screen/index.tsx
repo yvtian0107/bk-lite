@@ -12,7 +12,7 @@ import {
   type SetStateAction,
 } from "react";
 import { message, Modal, Select, Tabs } from "antd";
-import { WidgetCsvExportRegistryProvider, useWidgetCsvExportRegistryState } from "@/app/ops-analysis/context/widgetCsvExportRegistry";
+import { WidgetCsvExportRegistryProvider, notifyWidgetCsvExportNotStarted, useWidgetCsvExportRegistryState } from "@/app/ops-analysis/context/widgetCsvExportRegistry";
 import { useTranslation } from "@/utils/i18n";
 import { useScreenApi } from "@/app/ops-analysis/api/screen";
 import { useDirectoryApi } from "@/app/ops-analysis/api";
@@ -1079,7 +1079,7 @@ const Screen = forwardRef<ScreenRef, ScreenProps>(({ selectedScreen, shareMode =
         const target = draftViewSetsRef.current.items.find((item) => item.id === itemId);
         const title = target && isScreenWidgetItem(target) ? target.title || "" : "";
         void csvExportRegistry.run(itemId, { title }).then((started) => {
-          if (!started) message.warning(t("dashboard.csvExportPending"));
+          notifyWidgetCsvExportNotStarted(started, t);
         });
         return;
       }

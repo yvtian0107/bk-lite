@@ -56,7 +56,9 @@ describe('csv escaping', () => {
   it('prefixes formula-leading cells so Excel treats them as text', () => {
     expect(escapeCsvCell('=1+1')).toBe("'=1+1");
     expect(escapeCsvCell('+cmd')).toBe("'+cmd");
-    expect(escapeCsvCell('-2')).toBe("'-2");
+    expect(escapeCsvCell('-2')).toBe('-2');
+    expect(escapeCsvCell('-3.5')).toBe('-3.5');
+    expect(escapeCsvCell('-2+3')).toBe("'-2+3");
     expect(escapeCsvCell('@sum')).toBe("'@sum");
     expect(escapeCsvCell(' =1+1')).toBe("' =1+1");
     expect(escapeCsvCell('安全')).toBe('安全');
@@ -147,6 +149,29 @@ describe('widget csv rows', () => {
     expect(table.rows).toEqual([
       ['延迟', '12 ms'],
       ['错误数', '3 ms'],
+    ]);
+  });
+
+  it('exports a multi-series radar instead of an empty table', () => {
+    const table = buildRadarCsvTable(
+      {
+        hostA: [
+          { name: 'CPU', value: 70 },
+          { name: 'Memory', value: 55 },
+        ],
+        hostB: [
+          { name: 'CPU', value: 60 },
+          { name: 'Memory', value: 48 },
+        ],
+      },
+      { unit: 'ms' },
+      labels,
+    );
+    expect(table.rows.length).toBeGreaterThan(0);
+    expect(table.headers).toEqual(['指标', 'hostA', 'hostB']);
+    expect(table.rows).toEqual([
+      ['CPU', '70 ms', '60 ms'],
+      ['Memory', '55 ms', '48 ms'],
     ]);
   });
 
@@ -246,14 +271,86 @@ describe('table export limit', () => {
       fetchPage: async (page, pageSize) => {
         calls.push(pageSize);
         if (page === 1 && pageSize === CSV_EXPORT_ROW_LIMIT) {
-          return { items: all.slice(0, 100), count: 250 };
+          return { items: all.slice(0, 100), count: 250, page_size: 100 };
         }
+        const start = (page - 1) * pageSize;
+        return { items: all.slice(start, start + pageSize), count: 250, page_size: pageSize };
+      },
+    });
+    expect(calls).toEqual([1000, 100, 100]);
+    expect(loaded.rows.map((row) => row.name)).toEqual(['row-1', 'row-10', 'row-11', 'row-12', 'row-13', 'row-14', 'row-15', 'row-16', 'row-17', 'row-18', 'row-19', 'row-100', 'row-101', 'row-102', 'row-103', 'row-104', 'row-105', 'row-106', 'row-107', 'row-108', 'row-109', 'row-110', 'row-111', 'row-112', 'row-113', 'row-114', 'row-115', 'row-116', 'row-117', 'row-118', 'row-119', 'row-120', 'row-121', 'row-122', 'row-123', 'row-124', 'row-125', 'row-126', 'row-127', 'row-128', 'row-129', 'row-130', 'row-131', 'row-132', 'row-133', 'row-134', 'row-135', 'row-136', 'row-137', 'row-138', 'row-139', 'row-140', 'row-141', 'row-142', 'row-143', 'row-144', 'row-145', 'row-146', 'row-147', 'row-148', 'row-149', 'row-150', 'row-151', 'row-152', 'row-153', 'row-154', 'row-155', 'row-156', 'row-157', 'row-158', 'row-159', 'row-160', 'row-161', 'row-162', 'row-163', 'row-164', 'row-165', 'row-166', 'row-167', 'row-168', 'row-169', 'row-170', 'row-171', 'row-172', 'row-173', 'row-174', 'row-175', 'row-176', 'row-177', 'row-178', 'row-179', 'row-180', 'row-181', 'row-182', 'row-183', 'row-184', 'row-185', 'row-186', 'row-187', 'row-188', 'row-189', 'row-190', 'row-191', 'row-192', 'row-193', 'row-194', 'row-195', 'row-196', 'row-197', 'row-198', 'row-199']);
+    expect(loaded.truncated).toBe(false);
+  });
+
+  it('keeps the requested page size when search filters rows inside the page', async () => {
+    const calls: number[] = [];
+    const all = Array.from({ length: 1500 }, (_, index) => ({
+      name: index % 50 === 0 ? `hit-${index}` : `row-${index}`,
+    }));
+    const loaded = await loadTableExportRows({
+      rawData: { items: all.slice(0, 20).filter((row) => row.name.startsWith('hit-')), count: 1500 },
+      supportsPagination: true,
+      queryList: [{ field: 'name', type: 'str*', value: 'hit-' }],
+      fetchPage: async (page, pageSize) => {
+        calls.push(pageSize);
+        const start = (page - 1) * pageSize;
+        const window = all.slice(start, start + pageSize);
+        return {
+          items: window.filter((row) => row.name.startsWith('hit-')),
+          count: all.length,
+        };
+      },
+    });
+    expect(calls).toEqual([CSV_EXPORT_ROW_LIMIT, CSV_EXPORT_ROW_LIMIT]);
+    expect(loaded.rows).toHaveLength(30);
+    expect(loaded.rows[0]).toEqual({ name: 'hit-0' });
+    expect(loaded.rows[29]).toEqual({ name: 'hit-1450' });
+    expect(loaded.truncated).toBe(false);
+  });
+
+  it('refetches a plain array at the export cap and warns when that cap is filled', async () => {
+    const calls: number[] = [];
+    const capped = await loadTableExportRows({
+      rawData: [{ name: 'page-only' }],
+      supportsPagination: true,
+      queryList: [],
+      fetchPage: async (_page, pageSize) => {
+        calls.push(pageSize);
+        return Array.from({ length: pageSize }, (_, index) => ({ name: `r${index}` }));
+      },
+    });
+    expect(calls).toEqual([CSV_EXPORT_ROW_LIMIT]);
+    expect(capped.rows).toHaveLength(CSV_EXPORT_ROW_LIMIT);
+    expect(capped.rows[0]).toEqual({ name: 'r0' });
+    expect(capped.truncated).toBe(true);
+
+    const short = await loadTableExportRows({
+      rawData: [{ name: 'page-only' }],
+      supportsPagination: true,
+      queryList: [],
+      fetchPage: async () => [{ name: 'a' }, { name: 'b' }],
+    });
+    expect(short.rows).toEqual([{ name: 'a' }, { name: 'b' }]);
+    expect(short.truncated).toBe(false);
+  });
+
+  it('pages with the returned length when a datasource caps page size without echoing it', async () => {
+    const calls: number[] = [];
+    const all = Array.from({ length: 250 }, (_, index) => ({ name: `row-${index}` }));
+    const loaded = await loadTableExportRows({
+      rawData: { items: all.slice(0, 20), count: 250 },
+      supportsPagination: true,
+      queryList: [],
+      fetchPage: async (page, pageSize) => {
+        calls.push(pageSize);
+        if (pageSize > 100) return { items: all.slice(0, 100), count: 250 };
         const start = (page - 1) * pageSize;
         return { items: all.slice(start, start + pageSize), count: 250 };
       },
     });
     expect(calls).toEqual([1000, 100, 100]);
-    expect(loaded.rows.map((row) => row.name)).toEqual(['row-1', 'row-10', 'row-11', 'row-12', 'row-13', 'row-14', 'row-15', 'row-16', 'row-17', 'row-18', 'row-19', 'row-100', 'row-101', 'row-102', 'row-103', 'row-104', 'row-105', 'row-106', 'row-107', 'row-108', 'row-109', 'row-110', 'row-111', 'row-112', 'row-113', 'row-114', 'row-115', 'row-116', 'row-117', 'row-118', 'row-119', 'row-120', 'row-121', 'row-122', 'row-123', 'row-124', 'row-125', 'row-126', 'row-127', 'row-128', 'row-129', 'row-130', 'row-131', 'row-132', 'row-133', 'row-134', 'row-135', 'row-136', 'row-137', 'row-138', 'row-139', 'row-140', 'row-141', 'row-142', 'row-143', 'row-144', 'row-145', 'row-146', 'row-147', 'row-148', 'row-149', 'row-150', 'row-151', 'row-152', 'row-153', 'row-154', 'row-155', 'row-156', 'row-157', 'row-158', 'row-159', 'row-160', 'row-161', 'row-162', 'row-163', 'row-164', 'row-165', 'row-166', 'row-167', 'row-168', 'row-169', 'row-170', 'row-171', 'row-172', 'row-173', 'row-174', 'row-175', 'row-176', 'row-177', 'row-178', 'row-179', 'row-180', 'row-181', 'row-182', 'row-183', 'row-184', 'row-185', 'row-186', 'row-187', 'row-188', 'row-189', 'row-190', 'row-191', 'row-192', 'row-193', 'row-194', 'row-195', 'row-196', 'row-197', 'row-198', 'row-199']);
+    expect(loaded.rows).toHaveLength(250);
+    expect(loaded.truncated).toBe(false);
   });
 
   it('follows the latest search conditions instead of an earlier page', async () => {
@@ -312,6 +409,7 @@ describe('csv export entry', () => {
     expect(['single', 'gauge', 'topologyMap', 'nodeGraph', 'room3D', 'eventTimeline'].some(supportsWidgetCsvExport)).toBe(false);
 
     expect(buildDashboardWidgetMenuKeys({
+      surface: 'dashboard',
       isEditMode: false,
       chartType: 'line',
     })).toEqual([]);
@@ -321,27 +419,38 @@ describe('csv export entry', () => {
       editMode: false,
     })).toBe('hover');
     expect(buildDashboardWidgetMenuKeys({
+      surface: 'dashboard',
       isEditMode: true,
       chartType: 'table',
     })).toEqual(['edit', 'copy', 'exportCsv', 'delete']);
     expect(buildDashboardWidgetMenuKeys({
+      surface: 'report',
+      isEditMode: true,
+      chartType: 'table',
+    })).toEqual(['edit', 'copy', 'exportCsv', 'delete']);
+    expect(buildDashboardWidgetMenuKeys({
+      surface: 'dashboard',
       isEditMode: false,
       chartType: 'single',
     })).toEqual([]);
     expect(buildDashboardWidgetMenuKeys({
+      surface: 'dashboard',
       isEditMode: true,
       chartType: 'gauge',
     })).toEqual(['edit', 'copy', 'delete']);
     expect(buildDashboardWidgetMenuKeys({
+      surface: 'dashboard',
       isEditMode: true,
       chartType: 'nodeGraph',
     })).toEqual(['edit', 'copy', 'delete']);
     expect(buildDashboardWidgetMenuKeys({
+      surface: 'dashboard',
       isEditMode: true,
       shareMode: true,
       chartType: 'pie',
     })).toEqual(['edit', 'delete']);
     expect(buildDashboardWidgetMenuKeys({
+      surface: 'dashboard',
       isEditMode: false,
       renderMode: true,
       chartType: 'line',
@@ -455,5 +564,64 @@ describe('csv export entry', () => {
     expect(outcome.csv).toContain('上海-1');
     expect(outcome.csv).not.toContain('北京');
     expect(outcome.csv).not.toContain('当前页');
+  });
+
+  it('aborts when filters change while later pages are loading', async () => {
+    let query = '上海';
+    const seen: number[] = [];
+    const runtime = {
+      chartType: 'table' as const,
+      rawData: { items: [{ host: '上海-1' }], count: 3 },
+      loading: false,
+      dataSourceId: 7,
+      dataSource: {
+        params: [
+          { name: 'page', type: 'number' },
+          { name: 'page_size', type: 'number' },
+        ],
+      } as never,
+      requestParams: {
+        page: 1,
+        page_size: 20,
+        query_list: [{ field: 'host', type: 'str*', value: query }],
+      },
+      tableQueryParams: {
+        query_list: [{ field: 'host', type: 'str*', value: query }],
+      },
+      fetchSourceData: async (params: Record<string, unknown>) => {
+        seen.push(Number(params.page));
+        if (params.page === 1) query = '北京';
+        return {
+          items: [{ host: `${query}-p${params.page}` }],
+          count: 3,
+          page_size: 1,
+        };
+      },
+    };
+    const outcome = await createWidgetCsvExport(
+      runtime,
+      { title: '主机表' },
+      labels,
+      CSV_EXPORT_ROW_LIMIT,
+      {
+        readLatest: () => ({
+          ...runtime,
+          requestParams: {
+            ...runtime.requestParams,
+            query_list: [{ field: 'host', type: 'str*', value: query }],
+          },
+          tableQueryParams: {
+            query_list: [{ field: 'host', type: 'str*', value: query }],
+          },
+        }),
+      },
+    );
+    expect(seen).toEqual([1]);
+    expect(outcome.kind).toBe('stale');
+    const notice = describeWidgetCsvExportNotice(
+      outcome,
+      (id) => (id === 'dashboard.csvExportStale' ? '筛选条件已变化，已取消本次导出' : id),
+    );
+    expect(notice).toEqual({ level: 'warning', text: '筛选条件已变化，已取消本次导出' });
   });
 });

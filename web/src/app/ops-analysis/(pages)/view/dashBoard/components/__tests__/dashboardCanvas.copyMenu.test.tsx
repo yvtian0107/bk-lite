@@ -92,6 +92,7 @@ const renderCanvas = (
     shareMode?: boolean;
     renderMode?: boolean;
     isFullscreen?: boolean;
+    pdfExportPreparing?: boolean;
   } = {},
 ) => {
   const scrollRootRef = createRef<HTMLDivElement | null>();
@@ -126,6 +127,7 @@ const renderCanvas = (
       onCopyWidget={vi.fn()}
       onDeleteWidget={vi.fn()}
       renderMode={options.renderMode ?? true}
+      pdfExportPreparing={options.pdfExportPreparing}
       scrollRootRef={scrollRootRef}
     />,
   );
@@ -232,6 +234,13 @@ describe('DashboardCanvas copy menu', () => {
     renderCanvas([dataWidget], { isEditMode: true, renderMode: true });
     await openMoreMenu();
     expect(screen.queryByText('dashboard.exportCsv')).toBeNull();
+
+    cleanup();
+    renderCanvas([dataWidget], { isEditMode: false, renderMode: false, pdfExportPreparing: true });
+    await waitFor(() => {
+      expect(screen.getByText('CPU')).toBeTruthy();
+    });
+    expect(screen.queryByRole('button', { name: 'dashboard.exportCsv' })).toBeNull();
   });
 
   it('adds csv export to the edit menu outside render snapshots', async () => {

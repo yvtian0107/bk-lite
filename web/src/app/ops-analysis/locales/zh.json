@@ -1496,6 +1496,7 @@
     "csvExportTruncated": "已导出前 {count} 条",
     "csvExportFailed": "导出失败",
     "csvExportPending": "数据还在加载，请稍后再导出",
+    "csvExportStale": "筛选条件已变化，已取消本次导出",
     "csvTime": "时间",
     "csvIndicator": "指标",
     "csvName": "名称",

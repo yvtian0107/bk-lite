@@ -206,33 +206,43 @@ export const useGraphData = (
     }
   }, [serializeTopologyData, saveTopology, handleSaveCallback]);
 
-  const exportChartCsv = useCallback(async (nodeId: string, title: string) => {
-    if (!graphInstance) return;
+  const readChartCsvRuntime = useCallback((nodeId: string) => {
+    if (!graphInstance) return null;
     const cell = graphInstance.getCellById(nodeId);
-    if (!cell?.isNode()) return;
+    if (!cell?.isNode()) return null;
     const data = cell.getData() || {};
     const dataSourceId = data.valueConfig?.dataSource;
+    return {
+      chartType: data.valueConfig?.chartType,
+      rawData: data.rawData,
+      config: data.valueConfig,
+      dataSource: data.dataSource,
+      tableQueryParams: data.tableQueryParams,
+      requestParams: data.csvRequestParams,
+      loading: Boolean(data.isLoading),
+      dataSourceId: typeof dataSourceId === 'number' ? dataSourceId : undefined,
+      fetchSourceData: typeof dataSourceId === 'number'
+        ? async (params: Record<string, unknown>) => {
+          const result = await getRuntimeSourceDataByApiId(dataSourceId, params);
+          return result?.data;
+        }
+        : undefined,
+    };
+  }, [getRuntimeSourceDataByApiId, graphInstance]);
+
+  const exportChartCsv = useCallback(async (nodeId: string, title: string) => {
+    const runtime = readChartCsvRuntime(nodeId);
+    if (!runtime) return;
     await deliverWidgetCsvExport(
-      {
-        chartType: data.valueConfig?.chartType,
-        rawData: data.rawData,
-        config: data.valueConfig,
-        dataSource: data.dataSource,
-        tableQueryParams: data.tableQueryParams,
-        requestParams: data.csvRequestParams,
-        loading: Boolean(data.isLoading),
-        dataSourceId: typeof dataSourceId === 'number' ? dataSourceId : undefined,
-        fetchSourceData: typeof dataSourceId === 'number'
-          ? async (params) => {
-            const result = await getRuntimeSourceDataByApiId(dataSourceId, params);
-            return result?.data;
-          }
-          : undefined,
-      },
+      runtime,
       { title },
       t,
+      () => readChartCsvRuntime(nodeId) ?? {
+        ...runtime,
+        tableQueryParams: { stale: true },
+      },
     );
-  }, [getRuntimeSourceDataByApiId, graphInstance, t]);
+  }, [readChartCsvRuntime, t]);
 
   const loadChartNodeData = useCallback(async (
     nodeId: string,
