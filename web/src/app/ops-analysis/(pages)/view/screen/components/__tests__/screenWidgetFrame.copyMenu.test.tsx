@@ -92,13 +92,18 @@ describe('screen item context menu', () => {
     expect(buildScreenItemMenu(text, [text]).map((entry) => entry.key)).not.toContain('exportCsv');
   });
 
-  it('keeps csv export out of the view-mode context menu and uses a hover entry instead', () => {
+  it('keeps csv export out of the view-mode context menu and off the view canvas', () => {
     expect(buildScreenItemMenu(dataWidget, [dataWidget], { mode: 'view' })).toEqual([]);
     expect(resolveWidgetCsvExportEntry({
       surface: 'screen',
       chartType: 'line',
       editMode: false,
-    })).toBe('hover');
+    })).toBe('none');
+    expect(resolveWidgetCsvExportEntry({
+      surface: 'screen',
+      chartType: 'line',
+      editMode: true,
+    })).toBe('menu');
     (['single', 'gauge', 'topologyMap', 'nodeGraph'] as const).forEach((chartType) => {
       const item = { ...dataWidget, id: chartType, chartType, valueConfig: { chartType } };
       expect(buildScreenItemMenu(item, [item], { mode: 'view' })).toEqual([]);

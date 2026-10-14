@@ -21,10 +21,11 @@ export const isWidgetCsvExportBlocked = ({
 }): boolean => Boolean(shareMode || fullscreen || renderMode);
 
 /**
- * 查看态用悬浮入口，编辑态放进已有菜单。
- * 分享、全屏、订阅截图都不出现入口。
+ * 仪表盘、报表、拓扑查看态把图标放进标题栏；编辑态放进已有菜单。
+ * 大屏查看态没有入口。分享、全屏、订阅截图和打印准备都不出现入口。
  */
 export const resolveWidgetCsvExportEntry = ({
+  surface,
   chartType,
   editMode = false,
   shareMode = false,
@@ -40,7 +41,25 @@ export const resolveWidgetCsvExportEntry = ({
 }): WidgetCsvExportEntry => {
   if (isWidgetCsvExportBlocked({ shareMode, fullscreen, renderMode })) return 'none';
   if (!supportsWidgetCsvExport(chartType)) return 'none';
+  if (surface === 'screen') return editMode ? 'menu' : 'none';
   return editMode ? 'menu' : 'hover';
+};
+
+export const shouldOpenTopologyNodeContextMenu = ({
+  editMode,
+  nodeType,
+  chartType,
+  exportHoverEnabled,
+}: {
+  editMode: boolean;
+  nodeType?: string;
+  chartType?: string;
+  exportHoverEnabled: boolean;
+}): boolean => {
+  if (editMode) return true;
+  return nodeType === 'chart'
+    && supportsWidgetCsvExport(chartType)
+    && exportHoverEnabled;
 };
 
 export const resolveTopologyCsvExportHoverEnabled = ({

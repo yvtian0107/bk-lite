@@ -12,6 +12,8 @@ import {
   applyTopologyNodeHoverChrome,
   clearTopologyNodeHoverChrome,
 } from '../utils/topologySelectionChrome';
+import { isTopologyCsvExportHoverEnabled } from '../utils/topologyCsvExportHover';
+import { shouldOpenTopologyNodeContextMenu } from '@/app/ops-analysis/utils/widgetCsvMenu';
 import {
   addEdgeTools,
   createPortConfig,
@@ -188,7 +190,13 @@ export const useGraphInitializer = ({
 
     graph.on('node:contextmenu', ({ e, node }) => {
       e.preventDefault();
-      if (!isEditModeRef.current) {
+      const nodeData = node.getData() || {};
+      if (!shouldOpenTopologyNodeContextMenu({
+        editMode: Boolean(isEditModeRef.current),
+        nodeType: nodeData.type,
+        chartType: nodeData.valueConfig?.chartType,
+        exportHoverEnabled: isTopologyCsvExportHoverEnabled(),
+      })) {
         return;
       }
       setContextMenuVisible(true);

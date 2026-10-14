@@ -8,6 +8,7 @@ import {
   resolveScreenItemMenuMode,
   resolveTopologyCsvExportHoverEnabled,
   resolveWidgetCsvExportEntry,
+  shouldOpenTopologyNodeContextMenu,
   type WidgetCsvExportSurface,
 } from '@/app/ops-analysis/utils/widgetCsvMenu';
 import {
@@ -357,7 +358,9 @@ describe('csv export entry', () => {
     const blocked = ['single', 'gauge', 'topologyMap', 'nodeGraph'];
     surfaces.forEach((surface) => {
       supported.forEach((chartType) => {
-        expect(resolveWidgetCsvExportEntry({ surface, chartType, editMode: false })).toBe('hover');
+        expect(resolveWidgetCsvExportEntry({ surface, chartType, editMode: false })).toBe(
+          surface === 'screen' ? 'none' : 'hover',
+        );
         expect(resolveWidgetCsvExportEntry({ surface, chartType, editMode: true })).toBe('menu');
         expect(resolveWidgetCsvExportEntry({ surface, chartType, editMode: false, fullscreen: true })).toBe('none');
         expect(resolveWidgetCsvExportEntry({ surface, chartType, editMode: true, fullscreen: true })).toBe('none');
@@ -375,6 +378,35 @@ describe('csv export entry', () => {
     expect(resolveTopologyCsvExportHoverEnabled({ editMode: true })).toBe(false);
     expect(resolveTopologyCsvExportHoverEnabled({ editMode: false, shareMode: true })).toBe(false);
     expect(resolveTopologyCsvExportHoverEnabled({ editMode: false, fullscreen: true })).toBe(false);
+    expect(shouldOpenTopologyNodeContextMenu({
+      editMode: true,
+      nodeType: 'single-value',
+      exportHoverEnabled: false,
+    })).toBe(true);
+    expect(shouldOpenTopologyNodeContextMenu({
+      editMode: false,
+      nodeType: 'chart',
+      chartType: 'line',
+      exportHoverEnabled: true,
+    })).toBe(true);
+    expect(shouldOpenTopologyNodeContextMenu({
+      editMode: false,
+      nodeType: 'chart',
+      chartType: 'gauge',
+      exportHoverEnabled: true,
+    })).toBe(false);
+    expect(shouldOpenTopologyNodeContextMenu({
+      editMode: false,
+      nodeType: 'icon',
+      chartType: 'line',
+      exportHoverEnabled: true,
+    })).toBe(false);
+    expect(shouldOpenTopologyNodeContextMenu({
+      editMode: false,
+      nodeType: 'chart',
+      chartType: 'table',
+      exportHoverEnabled: false,
+    })).toBe(false);
   });
 
   it('builds a downloadable csv from the current line result and refuses unsupported charts', async () => {

@@ -3,8 +3,6 @@
 import React from 'react';
 import type { ScreenWidgetItem } from '@/app/ops-analysis/types/screen';
 import type { ScreenWidgetFrame } from '@/app/ops-analysis/types/dashBoard';
-import WidgetCsvHoverButton from '@/app/ops-analysis/components/widgetCsvHoverButton';
-import { useTranslation } from '@/utils/i18n';
 import { resolveScreenWidgetAppearance } from '../utils/layoutUtils';
 
 interface ScreenWidgetFrameOptions {
@@ -17,8 +15,6 @@ interface ScreenWidgetFrameProps extends ScreenWidgetFrameOptions {
   item: ScreenWidgetItem;
   screenDensity?: number;
   screenUiScale?: number;
-  showCsvHover?: boolean;
-  onExportCsv?: () => void;
   children: React.ReactNode;
 }
 
@@ -55,11 +51,8 @@ const ScreenWidgetFrame: React.FC<ScreenWidgetFrameProps> = ({
   editMode = false,
   screenDensity = 1,
   screenUiScale = 1,
-  showCsvHover = false,
-  onExportCsv,
   children,
 }) => {
-  const { t } = useTranslation();
   const appearance = resolveScreenWidgetAppearance(
     item.chartType,
     item.valueConfig?.appearance,
@@ -79,12 +72,6 @@ const ScreenWidgetFrame: React.FC<ScreenWidgetFrameProps> = ({
         '--screen-widget-ui-scale': screenUiScale,
       } as React.CSSProperties}
     >
-      {showCsvHover && (
-        <WidgetCsvHoverButton
-          label={t('dashboard.exportCsv')}
-          onClick={() => onExportCsv?.()}
-        />
-      )}
       {!isBare && (
         <header
           key="header"

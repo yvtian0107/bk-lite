@@ -175,11 +175,18 @@ describe('DashboardCanvas copy menu', () => {
     expect(screen.getByText('common.delete')).toBeTruthy();
   });
 
-  it('shows a hover-only csv export icon for a line chart in view mode and hides it for unsupported charts', async () => {
+  it('shows a hover-only csv export icon in the title row for a line chart in view mode and hides it for unsupported charts', async () => {
     renderCanvas([dataWidget], { isEditMode: false, renderMode: false });
     const button = await screen.findByRole('button', { name: 'dashboard.exportCsv' });
     expect(button.getAttribute('data-csv-export-hover')).toBe('true');
+    expect(button.getAttribute('data-export-hidden')).toBe('true');
     expect(button.className).toContain('opacity-0');
+    expect(button.className).toContain('shrink-0');
+    expect(button.className).not.toContain('absolute');
+    const header = button.closest('.widget-header');
+    const slot = header?.querySelector('.overflow-x-auto');
+    expect(slot).toBeTruthy();
+    expect(slot!.compareDocumentPosition(button) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     expect(screen.queryByRole('menuitem')).toBeNull();
 
     cleanup();

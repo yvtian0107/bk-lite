@@ -31,7 +31,6 @@ import {
 } from "../utils/screenItems";
 import { getScreenTheme } from "../utils/screenTheme";
 import { resolveScreenDisplayAdapter } from "../utils/viewport";
-import { resolveWidgetCsvExportEntry } from "@/app/ops-analysis/utils/widgetCsvMenu";
 import ScreenChromeRenderer from "./screenChromeRenderer";
 import { ScreenChromeSkinStyles } from "./screenChromeSkins";
 import ScreenWidgetRenderer from "./screenWidgetRenderer";
@@ -484,7 +483,6 @@ interface ScreenCanvasNodeProps {
   onOpenItemMenu?: (itemId: string, point: { x: number; y: number }) => void;
   onTopologyLayoutChange?: ScreenCanvasProps["onTopologyLayoutChange"];
   layoutEditable: boolean;
-  showCsvHover?: boolean;
 }
 
 const ScreenCanvasNode = React.memo(function ScreenCanvasNode({
@@ -513,7 +511,6 @@ const ScreenCanvasNode = React.memo(function ScreenCanvasNode({
   onOpenItemMenu,
   onTopologyLayoutChange,
   layoutEditable,
-  showCsvHover = false,
 }: ScreenCanvasNodeProps) {
   const isWidget = isScreenWidgetItem(item);
   const content = isWidget ? (
@@ -536,7 +533,6 @@ const ScreenCanvasNode = React.memo(function ScreenCanvasNode({
       builtinNamespaceId={builtinNamespaceId}
       onRenderStatus={onWidgetRenderStatus}
       layoutEditable={layoutEditable}
-      showCsvHover={showCsvHover}
       onTopologyLayoutChange={
         layoutEditable && onTopologyLayoutChange
           ? (next) => onTopologyLayoutChange(item.id, next)
@@ -793,13 +789,6 @@ const ScreenCanvas: React.FC<ScreenCanvasProps> = ({
                 onOpenItemMenu={onOpenItemMenu}
                 onTopologyLayoutChange={onTopologyLayoutChange}
                 layoutEditable={Boolean(editMode && !shareMode)}
-                showCsvHover={resolveWidgetCsvExportEntry({
-                  surface: 'screen',
-                  chartType: isScreenWidgetItem(item) ? item.chartType : undefined,
-                  editMode,
-                  shareMode,
-                  fullscreen,
-                }) === 'hover'}
               />
             ))
           )}

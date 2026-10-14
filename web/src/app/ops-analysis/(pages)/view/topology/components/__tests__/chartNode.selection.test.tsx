@@ -239,6 +239,10 @@ describe('ChartNode selection chrome', () => {
     const button = container.querySelector('[data-csv-export-hover]') as HTMLButtonElement;
     expect(button).toBeTruthy();
     expect(button.className).toContain('opacity-0');
+    expect(button.className).toContain('shrink-0');
+    expect(button.className).not.toContain('absolute');
+    expect(button.parentElement?.textContent).toContain('CPU');
+    expect(button.getAttribute('data-export-hidden')).toBe('true');
 
     const wheel = vi.fn();
     const pointer = vi.fn();
@@ -261,5 +265,13 @@ describe('ChartNode selection chrome', () => {
     });
     const hidden = render(<ChartNode node={gauge} />);
     expect(hidden.container.querySelector('[data-csv-export-hover]')).toBeNull();
+
+    cleanup();
+    const untitled = createChartNode();
+    const untitledData = untitled.getData();
+    untitled.getData = () => ({ ...untitledData, name: '' });
+    const withoutTitle = render(<ChartNode node={untitled} />);
+    expect(withoutTitle.container.querySelector('[data-csv-export-hover]')).toBeNull();
+    expect(withoutTitle.container.textContent).not.toContain('CPU');
   });
 });

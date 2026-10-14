@@ -205,18 +205,8 @@ const DashboardWidgetCard = React.memo(function DashboardWidgetCard({
             border: `1px solid ${chartTheme.panelBorderColor}`,
           }}
         >
-          {showHoverExport && (
-            <WidgetCsvHoverButton
-              label={t('dashboard.exportCsv')}
-              onClick={() => {
-                void csvExportRegistry?.run(item.i, { title: item.name || '' }).then((started) => {
-                  if (!started) message.warning(t('dashboard.csvExportPending'));
-                });
-              }}
-            />
-          )}
-          <div className="widget-header mb-2 flex justify-between items-start gap-2">
-            <div className="flex-1 min-w-0">
+          <div className="widget-header mb-2 flex min-w-0 items-start gap-2">
+            <div className="min-w-0 flex-1">
               <h4 className="truncate text-[14px] font-medium leading-5 text-(--color-text-2)">
                 {item.name}
               </h4>
@@ -228,8 +218,18 @@ const DashboardWidgetCard = React.memo(function DashboardWidgetCard({
             </div>
             <div
               ref={runtimeSlotRef}
-              className="no-drag ml-auto max-w-[70%] shrink-0 overflow-x-auto"
+              className="no-drag ml-auto min-w-0 max-w-[70%] overflow-x-auto"
             />
+            {showHoverExport && (
+              <WidgetCsvHoverButton
+                label={t('dashboard.exportCsv')}
+                onClick={() => {
+                  void csvExportRegistry?.run(item.i, { title: item.name || '' }).then((started) => {
+                    if (!started) message.warning(t('dashboard.csvExportPending'));
+                  });
+                }}
+              />
+            )}
             {menuItems.length > 0 && (
               <div data-export-hidden="true" className="no-drag shrink-0">
                 <MoreActionsDropdown

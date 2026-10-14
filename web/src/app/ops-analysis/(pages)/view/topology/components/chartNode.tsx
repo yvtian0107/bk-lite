@@ -82,7 +82,9 @@ const ChartNodeContent: React.FC<ChartNodeProps> = ({ node }) => {
   }, [node.id, onTableQueryChange]);
 
   const chartType = valueConfig?.chartType;
-  const showCsvHover = csvExportHoverEnabled && supportsWidgetCsvExport(chartType);
+  const showCsvHover = Boolean(componentName)
+    && csvExportHoverEnabled
+    && supportsWidgetCsvExport(chartType);
   const isTableLikeChart = chartType === 'table' || chartType === 'eventTable';
 
   const widgetProps = {
@@ -140,16 +142,6 @@ const ChartNodeContent: React.FC<ChartNodeProps> = ({ node }) => {
         position: 'relative',
       } as React.CSSProperties}
     >
-      {showCsvHover && (
-        <WidgetCsvHoverButton
-          label={t('dashboard.exportCsv')}
-          onClick={() => {
-            if (typeof onExportCsv === 'function') {
-              onExportCsv(node.id, componentName || '');
-            }
-          }}
-        />
-      )}
       {chartTheme.panelChromeBg && (
         <div
           style={{
@@ -175,14 +167,38 @@ const ChartNodeContent: React.FC<ChartNodeProps> = ({ node }) => {
         >
           <div
             style={{
-              fontSize: '14px',
-              fontWeight: '600',
-              color: chartTheme.panelTitleColor,
+              display: 'flex',
+              alignItems: 'center',
+              gap: 8,
+              minWidth: 0,
               marginBottom: normalizedDescription ? '4px' : 0,
-              lineHeight: '20px',
             }}
           >
-            {componentName}
+            <div
+              style={{
+                flex: '1 1 auto',
+                minWidth: 0,
+                overflow: 'hidden',
+                textOverflow: 'ellipsis',
+                whiteSpace: 'nowrap',
+                fontSize: '14px',
+                fontWeight: '600',
+                color: chartTheme.panelTitleColor,
+                lineHeight: '20px',
+              }}
+            >
+              {componentName}
+            </div>
+            {showCsvHover && (
+              <WidgetCsvHoverButton
+                label={t('dashboard.exportCsv')}
+                onClick={() => {
+                  if (typeof onExportCsv === 'function') {
+                    onExportCsv(node.id, componentName || '');
+                  }
+                }}
+              />
+            )}
           </div>
           {normalizedDescription && (
             <div

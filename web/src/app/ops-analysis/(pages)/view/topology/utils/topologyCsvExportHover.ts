@@ -3,6 +3,8 @@ import { useSyncExternalStore } from 'react';
 let hoverEnabled = false;
 const listeners = new Set<() => void>();
 
+export const isTopologyCsvExportHoverEnabled = (): boolean => hoverEnabled;
+
 export const setTopologyCsvExportHoverEnabled = (enabled: boolean): void => {
   if (hoverEnabled === enabled) return;
   hoverEnabled = enabled;

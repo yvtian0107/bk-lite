@@ -191,15 +191,17 @@ const renderCard = (
 );
 
 describe('ReportWidgetCard csv export', () => {
-  it('shows a hover-only export icon at the card corner in view mode', () => {
+  it('shows a hover-only export icon after the runtime slot in view mode', () => {
     renderCard();
     const button = screen.getByRole('button', { name: 'dashboard.exportCsv' });
     expect(button.getAttribute('data-csv-export-hover')).toBe('true');
     expect(button.getAttribute('data-export-hidden')).toBe('true');
-    expect(button.className).toContain('absolute');
-    expect(button.className).toContain('top-2');
-    expect(button.className).toContain('right-2');
     expect(button.className).toContain('opacity-0');
+    expect(button.className).toContain('shrink-0');
+    expect(button.className).not.toContain('absolute');
+    const slot = button.parentElement?.querySelector('.overflow-x-auto');
+    expect(slot).toBeTruthy();
+    expect(slot!.compareDocumentPosition(button) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     expect(screen.queryByRole('button', { name: 'common.more' })).toBeNull();
     expect(screen.queryByRole('menuitem')).toBeNull();
   });

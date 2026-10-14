@@ -161,13 +161,7 @@ const ReportWidgetCard: React.FC<ReportWidgetCardProps> = ({
       <WidgetHeaderRuntimeSlotProvider>
         {(runtimeSlotRef) => (
           <>
-            {exportEntry === 'hover' && (
-              <WidgetCsvHoverButton
-                label={t('dashboard.exportCsv')}
-                onClick={exportCsv}
-              />
-            )}
-            <div className="mb-2 flex min-h-8 items-start gap-2">
+            <div className="mb-2 flex min-h-8 min-w-0 items-start gap-2">
               {editing && (
                 <Button
                   type="text"
@@ -189,7 +183,13 @@ const ReportWidgetCard: React.FC<ReportWidgetCardProps> = ({
                   </p>
                 )}
               </div>
-              <div ref={runtimeSlotRef} className="ml-auto max-w-[55%] shrink-0 overflow-x-auto" />
+              <div ref={runtimeSlotRef} className="ml-auto min-w-0 max-w-[55%] overflow-x-auto" />
+              {exportEntry === 'hover' && (
+                <WidgetCsvHoverButton
+                  label={t('dashboard.exportCsv')}
+                  onClick={exportCsv}
+                />
+              )}
               {renderStatus === 'failed' && (
                 <Tooltip title={t('common.retry')}>
                   <Button

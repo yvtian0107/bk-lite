@@ -82,10 +82,18 @@ const ContextMenu: React.FC<ContextMenuProps> = ({
 
   const getViewMenu = () => (
     <Menu onClick={onMenuClick}>
-      <Menu.Item key="viewAlarms">{t('topology.viewAlarmList')}</Menu.Item>
-      <Menu.Item key="viewMonitor">
-        {t('topology.viewMonitorDetails')}
-      </Menu.Item>
+      {showExport ? (
+        <Menu.Item key="exportCsv" icon={<DownloadOutlined />}>
+          {t('dashboard.exportCsv')}
+        </Menu.Item>
+      ) : (
+        <>
+          <Menu.Item key="viewAlarms">{t('topology.viewAlarmList')}</Menu.Item>
+          <Menu.Item key="viewMonitor">
+            {t('topology.viewMonitorDetails')}
+          </Menu.Item>
+        </>
+      )}
     </Menu>
   );
 
