@@ -191,14 +191,19 @@ const renderCard = (
 );
 
 describe('ReportWidgetCard csv export', () => {
-  it('shows a hover-only export icon after the runtime slot in view mode', () => {
+  it('shows a hover-only export icon after the runtime slot in view mode', async () => {
     renderCard();
     const button = screen.getByRole('button', { name: 'dashboard.exportCsv' });
     expect(button.getAttribute('data-csv-export-hover')).toBe('true');
     expect(button.getAttribute('data-export-hidden')).toBe('true');
     expect(button.className).toContain('opacity-0');
     expect(button.className).toContain('shrink-0');
+    expect(button.className).toContain('cursor-pointer');
     expect(button.className).not.toContain('absolute');
+    fireEvent.mouseEnter(button);
+    const tooltip = await screen.findByRole('tooltip');
+    expect(tooltip.textContent).toBe('dashboard.exportCsv');
+    expect(button.closest('.group')?.contains(tooltip)).toBe(false);
     const slot = button.parentElement?.querySelector('.overflow-x-auto');
     expect(slot).toBeTruthy();
     expect(slot!.compareDocumentPosition(button) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();

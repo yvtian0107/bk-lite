@@ -45,23 +45,6 @@ export const resolveWidgetCsvExportEntry = ({
   return editMode ? 'menu' : 'hover';
 };
 
-export const shouldOpenTopologyNodeContextMenu = ({
-  editMode,
-  nodeType,
-  chartType,
-  exportHoverEnabled,
-}: {
-  editMode: boolean;
-  nodeType?: string;
-  chartType?: string;
-  exportHoverEnabled: boolean;
-}): boolean => {
-  if (editMode) return true;
-  return nodeType === 'chart'
-    && supportsWidgetCsvExport(chartType)
-    && exportHoverEnabled;
-};
-
 export const resolveTopologyCsvExportHoverEnabled = ({
   editMode = false,
   shareMode = false,

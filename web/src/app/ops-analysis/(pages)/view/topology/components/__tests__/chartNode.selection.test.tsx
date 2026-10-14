@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 
 import React from 'react';
-import { act, cleanup, fireEvent, render } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, waitFor } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { setTopologyCsvExportHoverEnabled } from '../../utils/topologyCsvExportHover';
 import type { Node } from '@antv/x6';
@@ -225,7 +225,7 @@ describe('ChartNode selection chrome', () => {
     expect(chrome.style.border).toBe('2px solid var(--color-primary)');
   });
 
-  it('shows a hover csv icon for supported charts without swallowing wheel events', () => {
+  it('shows a hover csv icon for supported charts without swallowing wheel events', async () => {
     const onExportCsv = vi.fn();
     const node = createChartNode();
     const data = node.getData();
@@ -240,7 +240,14 @@ describe('ChartNode selection chrome', () => {
     expect(button).toBeTruthy();
     expect(button.className).toContain('opacity-0');
     expect(button.className).toContain('shrink-0');
+    expect(button.className).toContain('cursor-pointer');
     expect(button.className).not.toContain('absolute');
+    fireEvent.mouseEnter(button);
+    await waitFor(() => {
+      const tooltip = document.querySelector('[role="tooltip"]');
+      expect(tooltip?.textContent).toBe('dashboard.exportCsv');
+      expect(button.parentElement?.contains(tooltip)).toBe(false);
+    });
     expect(button.parentElement?.textContent).toContain('CPU');
     expect(button.getAttribute('data-export-hidden')).toBe('true');
 

@@ -1,6 +1,6 @@
 import React, { createRef } from 'react';
 import '@ant-design/v5-patch-for-react-19';
-import { cleanup, render, screen, waitFor } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 
@@ -182,7 +182,12 @@ describe('DashboardCanvas copy menu', () => {
     expect(button.getAttribute('data-export-hidden')).toBe('true');
     expect(button.className).toContain('opacity-0');
     expect(button.className).toContain('shrink-0');
+    expect(button.className).toContain('cursor-pointer');
     expect(button.className).not.toContain('absolute');
+    fireEvent.mouseEnter(button);
+    const tooltip = await screen.findByRole('tooltip');
+    expect(tooltip.textContent).toBe('dashboard.exportCsv');
+    expect(button.closest('.widget')?.contains(tooltip)).toBe(false);
     const header = button.closest('.widget-header');
     const slot = header?.querySelector('.overflow-x-auto');
     expect(slot).toBeTruthy();

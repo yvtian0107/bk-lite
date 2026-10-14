@@ -205,7 +205,7 @@ const Topology = forwardRef<TopologyRef, TopologyProps>(
         editMode: state.isEditMode,
         shareMode,
         fullscreen: isFullscreen,
-      }) !== 'none';
+      }) === 'menu';
     })();
     const { namespaceOptions, syncTopologyCanvasResources } =
       useTopologyResources({
