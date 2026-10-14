@@ -5,7 +5,10 @@ import { Dropdown, Input } from 'antd';
 
 import { useFilterTemplateVariables } from '@/app/ops-analysis/context/filterTemplate';
 import type { UnifiedFilterDefinition } from '@/app/ops-analysis/types/dashBoard';
-import { listFilterTemplateVariables } from '@/app/ops-analysis/utils/filterTemplate';
+import {
+  listFilterTemplateVariables,
+  listUnmatchedFilterTokens,
+} from '@/app/ops-analysis/utils/filterTemplate';
 
 type FilterTokenTranslate = (
   key: string,
@@ -64,6 +67,10 @@ export const FilterTokenInput: React.FC<FilterTokenInputProps> = ({
   const contextDefinitions = useFilterTemplateVariables();
   const source = definitions ?? contextDefinitions;
   const variables = useMemo(() => listFilterTemplateVariables(source), [source]);
+  const unmatchedTokens = useMemo(
+    () => listUnmatchedFilterTokens(value ?? '', source),
+    [source, value],
+  );
   const fieldRef = useRef<HTMLDivElement>(null);
   const anchorRef = useRef(0);
   const cursorRef = useRef(0);
@@ -82,7 +89,16 @@ export const FilterTokenInput: React.FC<FilterTokenInputProps> = ({
     });
   }, [query, t, variables]);
   const currentIndex = Math.min(activeIndex, Math.max(filtered.length - 1, 0));
-  const menuOpen = open && filtered.length > 0;
+  const menuOpen = open && filtered.length > 0 && variables.length > 0;
+  const unmatchedMessage = unmatchedTokens.length
+    ? t(
+      'dashboard.filterTokenUnmatched',
+      '{tokens} 未匹配到筛选项',
+      {
+        tokens: unmatchedTokens.join(t('dashboard.filterTokenSeparator', '、')),
+      },
+    )
+    : '';
 
   const insertToken = (token: string) => {
     const current = value ?? '';
@@ -157,7 +173,7 @@ export const FilterTokenInput: React.FC<FilterTokenInputProps> = ({
     maxLength,
     placeholder,
     className,
-    'aria-describedby': hintId,
+    'aria-describedby': variables.length > 0 ? hintId : undefined,
     onChange: (event: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
       handleValueChange(event.target.value, event.target.selectionStart ?? event.target.value.length);
     },
@@ -172,7 +188,7 @@ export const FilterTokenInput: React.FC<FilterTokenInputProps> = ({
   );
 
   return (
-    <div className="flex w-full flex-wrap items-start gap-2">
+    <div className="group flex w-full flex-col gap-1">
       <Dropdown
         open={menuOpen}
         trigger={[]}
@@ -219,11 +235,21 @@ export const FilterTokenInput: React.FC<FilterTokenInputProps> = ({
           </div>
         )}
       >
-        <div ref={fieldRef} className="min-w-0 flex-1">{control}</div>
+        <div ref={fieldRef} className="w-full">{control}</div>
       </Dropdown>
-      <span id={hintId} className="pt-1 text-xs leading-5 text-(--color-text-3)">
-        {t('dashboard.filterTokenHint', '输入 $ 插入筛选')}
-      </span>
+      {variables.length > 0 && (
+        <span
+          id={hintId}
+          className="hidden text-xs leading-5 text-(--color-text-3) group-focus-within:block"
+        >
+          {t('dashboard.filterTokenHint', '输入 $ 插入筛选')}
+        </span>
+      )}
+      {unmatchedMessage && (
+        <span role="status" className="text-xs leading-5 text-(--color-warning)">
+          {unmatchedMessage}
+        </span>
+      )}
     </div>
   );
 };

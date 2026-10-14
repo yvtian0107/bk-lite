@@ -1,7 +1,15 @@
 'use client';
 
-import { useCallback, useContext, useEffect, useMemo, useState } from 'react';
+import {
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useState,
+  useSyncExternalStore,
+} from 'react';
 
+import type { FilterOptionLabelStore } from '@/app/ops-analysis/context/filterOptionLabelStore';
 import { useParamInputOptions } from '@/app/ops-analysis/hooks/useParamInputOptions';
 import { useShareMode } from '@/app/ops-analysis/context/shareMode';
 import { useShareOrganization } from '@/app/ops-analysis/context/shareOrganization';
@@ -16,18 +24,6 @@ import {
 } from '@/app/ops-analysis/utils/filterTemplate';
 import { isDynamicOptionFilter } from '@/app/ops-analysis/utils/optionBackedFilterValue';
 import { isOrganizationFilterDefinition } from '@/app/ops-analysis/utils/unifiedFilterState';
-
-const sameLabelMap = (
-  left: Record<string, string> | undefined,
-  right: Record<string, string> | undefined,
-) => {
-  if (left === right) return true;
-  if (!left || !right) return false;
-  const leftKeys = Object.keys(left);
-  const rightKeys = Object.keys(right);
-  if (leftKeys.length !== rightKeys.length) return false;
-  return leftKeys.every((key) => left[key] === right[key]);
-};
 
 const collectOrgNames = (groups: Group[] | undefined) => {
   const names: Record<string, string> = {};
@@ -46,28 +42,47 @@ const collectOrgNames = (groups: Group[] | undefined) => {
   return names;
 };
 
+const hasPublishedLabels = (
+  store: FilterOptionLabelStore,
+  filterId: string,
+) => Object.prototype.hasOwnProperty.call(store.getSnapshot().labelsByFilterId, filterId);
+
+/**
+ * 筛选栏已经渲染并声明覆盖的筛选不再自己请求。
+ * 等布局阶段登记完成后再决定，避免和筛选栏抢同一轮请求。
+ */
 const DynamicOptionLabelLoader = ({
   definition,
-  onUpdate,
+  store,
 }: {
   definition: UnifiedFilterDefinition;
-  onUpdate: (filterId: string, labels: Record<string, string> | undefined) => void;
+  store: FilterOptionLabelStore;
 }) => {
-  const state = useParamInputOptions(definition.inputConfig, {
-    suppressErrorNotification: true,
-  });
+  const [active, setActive] = useState(false);
 
   useEffect(() => {
+    const decide = () => {
+      const covered = store.getSnapshot().coveredIds.has(definition.id);
+      setActive(!covered && !hasPublishedLabels(store, definition.id));
+    };
+    decide();
+    return store.subscribe(decide);
+  }, [definition.id, store]);
+
+  const state = useParamInputOptions(definition.inputConfig, {
+    suppressErrorNotification: true,
+  }, { enabled: active });
+
+  useEffect(() => {
+    if (!active) return;
     if (state.status === 'success') {
-      onUpdate(definition.id, mapOptionLabels(state.options));
+      store.publish(definition.id, mapOptionLabels(state.options));
       return;
     }
     if (state.status === 'error') {
-      onUpdate(definition.id, {});
-      return;
+      store.publish(definition.id, {});
     }
-    onUpdate(definition.id, undefined);
-  }, [definition.id, onUpdate, state.options, state.status]);
+  }, [active, definition.id, state.options, state.status, store]);
 
   return null;
 };
@@ -75,11 +90,11 @@ const DynamicOptionLabelLoader = ({
 export const FilterDisplayLabelLoaders = ({
   definitions,
   enabled,
-  onUpdate,
+  store,
 }: {
   definitions: UnifiedFilterDefinition[];
   enabled: boolean;
-  onUpdate: (filterId: string, labels: Record<string, string> | undefined) => void;
+  store: FilterOptionLabelStore;
 }) => {
   if (!enabled) return null;
   return definitions
@@ -88,7 +103,7 @@ export const FilterDisplayLabelLoaders = ({
       <DynamicOptionLabelLoader
         key={definition.id}
         definition={definition}
-        onUpdate={onUpdate}
+        store={store}
       />
     ));
 };
@@ -96,49 +111,20 @@ export const FilterDisplayLabelLoaders = ({
 export const useFilterDisplayLabels = (
   definitions: UnifiedFilterDefinition[],
   enabled: boolean,
+  store: FilterOptionLabelStore,
 ): {
   labels: FilterTemplateLabels;
-  reportDynamicLabels: (filterId: string, labels: Record<string, string> | undefined) => void;
 } => {
   const { t } = useTranslation();
   const shareMode = useShareMode();
   const shareOrganization = useShareOrganization();
   const userInfo = useContext(UserInfoContext);
   const timeRanges = useTimeRangeList();
-  const [dynamicLabels, setDynamicLabels] = useState<Record<string, Record<string, string> | undefined>>({});
-
-  const reportDynamicLabels = useCallback((
-    filterId: string,
-    nextLabels: Record<string, string> | undefined,
-  ) => {
-    setDynamicLabels((current) => {
-      if (nextLabels === undefined) {
-        if (!(filterId in current)) return current;
-        const next = { ...current };
-        delete next[filterId];
-        return next;
-      }
-      if (sameLabelMap(current[filterId], nextLabels)) return current;
-      return { ...current, [filterId]: nextLabels };
-    });
-  }, []);
-
-  useEffect(() => {
-    if (!enabled) return;
-    const allowed = new Set(
-      definitions
-        .filter((definition) => definition.enabled && isDynamicOptionFilter(definition))
-        .map((definition) => definition.id),
-    );
-    setDynamicLabels((current) => {
-      const keys = Object.keys(current);
-      if (keys.every((key) => allowed.has(key))) return current;
-      return keys.reduce<Record<string, Record<string, string> | undefined>>((next, key) => {
-        if (allowed.has(key)) next[key] = current[key];
-        return next;
-      }, {});
-    });
-  }, [definitions, enabled]);
+  const labelSnapshot = useSyncExternalStore(
+    store.subscribe,
+    store.getSnapshot,
+    store.getServerSnapshot,
+  );
 
   const timeRangeLabels = useMemo(() => {
     const next: Record<number, string> = {};
@@ -161,6 +147,10 @@ export const useFilterDisplayLabels = (
     last_90_days: t('dateRange.last_90_days'),
   }), [t]);
 
+  const separator = t('dashboard.filterTokenSeparator', '、');
+  const formatPair = useCallback((left: string, right: string) => (
+    `${left}${separator}${right}`
+  ), [separator]);
   const formatMultiSelect = useCallback((first: string, count: number) => (
     t('dashboard.filterTokenMulti', '{first} 等 {count} 项', { first, count })
   ), [t]);
@@ -179,20 +169,37 @@ export const useFilterDisplayLabels = (
     return collectOrgNames(userInfo.groupTree);
   }, [definitions, shareMode, shareOrganization, userInfo]);
 
+  const optionLabelsByFilterId = useMemo(() => {
+    if (!enabled) return {};
+    const allowed = new Set(
+      definitions
+        .filter((definition) => definition.enabled && isDynamicOptionFilter(definition))
+        .map((definition) => definition.id),
+    );
+    return Object.entries(labelSnapshot.labelsByFilterId).reduce<
+      Record<string, Record<string, string> | undefined>
+    >((next, [filterId, labels]) => {
+      if (allowed.has(filterId)) next[filterId] = labels;
+      return next;
+    }, {});
+  }, [definitions, enabled, labelSnapshot.labelsByFilterId]);
+
   const labels = useMemo<FilterTemplateLabels>(() => ({
-    optionLabelsByFilterId: enabled ? dynamicLabels : {},
+    optionLabelsByFilterId,
     orgNamesById: enabled ? orgNamesById : undefined,
     timeRangeLabels: enabled ? timeRangeLabels : {},
     dateRangeLabels: enabled ? dateRangeLabels : {},
+    formatPair,
     formatMultiSelect,
   }), [
     dateRangeLabels,
-    dynamicLabels,
     enabled,
     formatMultiSelect,
+    formatPair,
+    optionLabelsByFilterId,
     orgNamesById,
     timeRangeLabels,
   ]);
 
-  return { labels, reportDynamicLabels };
+  return { labels };
 };

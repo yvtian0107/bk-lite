@@ -24,6 +24,7 @@ export interface FilterTemplateLabels {
   orgNamesById?: Record<string, string>;
   timeRangeLabels: Record<number, string>;
   dateRangeLabels: Record<string, string>;
+  formatPair: (left: string, right: string) => string;
   formatMultiSelect: (first: string, count: number) => string;
 }
 
@@ -163,7 +164,7 @@ const formatOptionNames = (
 ): string | null => {
   if (!names.length || names.some((name) => !name)) return null;
   if (names.length === 1) return names[0] ?? null;
-  if (names.length === 2) return `${names[0]}、${names[1]}`;
+  if (names.length === 2) return labels.formatPair(names[0] ?? '', names[1] ?? '') || null;
   const formatted = labels.formatMultiSelect(names[0] ?? '', names.length);
   return formatted || null;
 };
@@ -185,6 +186,23 @@ const renderOptionValue = (
   return formatOptionNames(names, labels);
 };
 
+const hasClock = (
+  value: dayjs.Dayjs,
+  hour: number,
+  minute: number,
+  second: number,
+) => value.hour() === hour && value.minute() === minute && value.second() === second;
+
+/** 整天（开始 00:00:00，结束 23:59:59 或 00:00:00）只显示日期，其余精确到分钟。 */
+const formatCustomTimeRange = (start: dayjs.Dayjs, end: dayjs.Dayjs) => {
+  const wholeDay = hasClock(start, 0, 0, 0)
+    && (hasClock(end, 23, 59, 59) || hasClock(end, 0, 0, 0));
+  if (wholeDay) {
+    return `${start.format('YYYY-MM-DD')} ~ ${end.format('YYYY-MM-DD')}`;
+  }
+  return `${start.format('YYYY-MM-DD HH:mm')} ~ ${end.format('YYYY-MM-DD HH:mm')}`;
+};
+
 const renderTimeRange = (
   value: FilterValue,
   labels: FilterTemplateLabels,
@@ -197,7 +215,7 @@ const renderTimeRange = (
   const start = dayjs(normalized.start);
   const end = dayjs(normalized.end);
   if (!start.isValid() || !end.isValid()) return null;
-  return `${start.format('YYYY-MM-DD HH:mm:ss')} ~ ${end.format('YYYY-MM-DD HH:mm:ss')}`;
+  return formatCustomTimeRange(start, end);
 };
 
 const renderDateRange = (
@@ -243,9 +261,42 @@ const renderFilterValue = (
   return null;
 };
 
+const filterDisplayName = (definition: UnifiedFilterDefinition) =>
+  definition.name?.trim() || definition.key;
+
+/**
+ * 文本里匹配不到当前启用筛选的 `$key$` / `$key:type$`。
+ * `\$` 是字面量，不参与检测；同一个变量只返回一次。
+ */
+export const listUnmatchedFilterTokens = (
+  text: string,
+  definitions: UnifiedFilterDefinition[],
+): string[] => {
+  if (!text) return [];
+  const unmatched: string[] = [];
+  const seen = new Set<string>();
+  for (let cursor = 0; cursor < text.length; cursor += 1) {
+    if (text[cursor] === '\\' && text[cursor + 1] === '$') {
+      cursor += 1;
+      continue;
+    }
+    if (text[cursor] !== '$') continue;
+    const token = readFilterToken(text, cursor);
+    if (!token) continue;
+    const raw = text.slice(cursor, token.end);
+    cursor = token.end - 1;
+    if (findEnabledFilter(definitions, token.key, token.type)) continue;
+    if (seen.has(raw)) continue;
+    seen.add(raw);
+    unmatched.push(raw);
+  }
+  return unmatched;
+};
+
 /**
  * 把 `$key$` / `$key:type$` 换成已应用筛选的显示名。
- * 无法确定显示名时保留原占位符；`\$` 只输出字面量 `$`。
+ * 启用筛选没有值、还在加载或选项对不上时，显示筛选项名称。
+ * 已删除或已禁用的变量保留原文；`\$` 只输出字面量 `$`。
  */
 export const resolveFilterTemplate = (
   text: string,
@@ -272,14 +323,13 @@ export const resolveFilterTemplate = (
       continue;
     }
     const definition = findEnabledFilter(definitions, token.key, token.type);
-    const display = definition
-      ? renderFilterValue(definition, appliedValues[definition.id], labels)
-      : null;
-    if (display == null) {
+    if (!definition) {
       resolved += text.slice(cursor, token.end);
-    } else {
-      resolved += display;
+      cursor = token.end - 1;
+      continue;
     }
+    resolved += renderFilterValue(definition, appliedValues[definition.id], labels)
+      ?? filterDisplayName(definition);
     cursor = token.end - 1;
   }
   return resolved;

@@ -970,6 +970,8 @@
     "filterTokenTypeTimeRange": "Time",
     "filterTokenTypeDateRange": "Date",
     "filterTokenMulti": "{first} ({count} items)",
+    "filterTokenSeparator": ", ",
+    "filterTokenUnmatched": "{tokens} did not match a filter",
     "title": "Select",
     "dataComponents": "Data Source",
     "sceneComponents": "Built-in Scenes",

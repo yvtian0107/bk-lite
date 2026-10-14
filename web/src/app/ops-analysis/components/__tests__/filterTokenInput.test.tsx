@@ -53,6 +53,10 @@ const translate = (
   }
   if (key === 'dashboard.filterTokenTypeString') return '文本';
   if (key === 'dashboard.filterTokenHint') return '输入 $ 插入筛选';
+  if (key === 'dashboard.filterTokenSeparator') return '、';
+  if (key === 'dashboard.filterTokenUnmatched' && values) {
+    return `${values.tokens} 未匹配到筛选项`;
+  }
   return fallback ?? key;
 };
 
@@ -69,11 +73,14 @@ const Harness = () => {
 };
 
 describe('FilterTokenInput', () => {
-  it('输入 $ 后插入启用筛选的变量，并显示提示', async () => {
+  it('输入 $ 后插入启用筛选的变量，提示只在聚焦时挂在输入框下方', async () => {
     const user = userEvent.setup();
     render(<Harness />);
 
-    expect(screen.getByText('输入 $ 插入筛选')).toBeTruthy();
+    const hint = screen.getByText('输入 $ 插入筛选');
+    expect(hint.className).toContain('hidden');
+    expect(hint.className).toContain('group-focus-within:block');
+    expect(hint.parentElement?.className).toContain('flex-col');
     await user.type(screen.getByRole('textbox'), '$');
 
     const option = await screen.findByRole('option', { name: '业务（$biz$ · 文本）' });
@@ -81,5 +88,32 @@ describe('FilterTokenInput', () => {
     await user.click(option);
 
     expect(screen.getByRole('textbox')).toHaveProperty('value', '$biz$');
+  });
+
+  it('没有启用筛选时不提示，输入 $ 也不打开菜单', async () => {
+    const user = userEvent.setup();
+    render(
+      <FilterTokenInput
+        t={translate}
+        value=""
+        definitions={[disabledBiz]}
+      />,
+    );
+
+    expect(screen.queryByText('输入 $ 插入筛选')).toBeNull();
+    await user.type(screen.getByRole('textbox'), '$');
+    expect(screen.queryByRole('listbox')).toBeNull();
+  });
+
+  it('把匹配不到的变量合并显示在输入框下方', () => {
+    render(
+      <FilterTokenInput
+        t={translate}
+        value="$gone$ $biz$ $gone$ $room:number$"
+        definitions={[biz, disabledBiz]}
+      />,
+    );
+
+    expect(screen.getByRole('status').textContent).toBe('$gone$、$room:number$ 未匹配到筛选项');
   });
 });

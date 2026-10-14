@@ -1688,7 +1688,7 @@ export const ScreenStyleInspector: React.FC<ScreenStyleInspectorProps> = ({
             <FilterTokenInput
               t={t}
               multiline
-              rows={4}
+              rows={1}
               value={item.content}
               placeholder={t('opsAnalysis.screen.textPlaceholder')}
               className="text-xs"

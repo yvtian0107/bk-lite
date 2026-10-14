@@ -3,6 +3,10 @@
 import { createContext, useContext, useMemo, type ReactNode } from 'react';
 
 import {
+  createFilterOptionLabelStore,
+  type FilterOptionLabelStore,
+} from '@/app/ops-analysis/context/filterOptionLabelStore';
+import {
   FilterDisplayLabelLoaders,
   useFilterDisplayLabels,
 } from '@/app/ops-analysis/hooks/useFilterDisplayLabels';
@@ -24,6 +28,9 @@ interface FilterTemplateContextValue {
 }
 
 const FilterTemplateContext = createContext<FilterTemplateContextValue | null>(null);
+const FilterOptionLabelStoreContext = createContext<FilterOptionLabelStore | null>(null);
+
+export const useFilterOptionLabelStore = () => useContext(FilterOptionLabelStoreContext);
 
 export const FilterTemplateProvider = ({
   definitions,
@@ -39,7 +46,10 @@ export const FilterTemplateProvider = ({
   children: ReactNode;
 }) => {
   const source = resolveDefinitions ?? definitions;
-  const { labels, reportDynamicLabels } = useFilterDisplayLabels(source, resolveEnabled);
+  const parentStore = useContext(FilterOptionLabelStoreContext);
+  const createdStore = useMemo(() => createFilterOptionLabelStore(), []);
+  const store = parentStore ?? createdStore;
+  const { labels } = useFilterDisplayLabels(source, resolveEnabled, store);
   const value = useMemo<FilterTemplateContextValue>(() => ({
     definitions,
     resolveDefinitions: source,
@@ -49,14 +59,16 @@ export const FilterTemplateProvider = ({
   }), [appliedValues, definitions, labels, resolveEnabled, source]);
 
   return (
-    <FilterTemplateContext.Provider value={value}>
-      <FilterDisplayLabelLoaders
-        definitions={source}
-        enabled={resolveEnabled}
-        onUpdate={reportDynamicLabels}
-      />
-      {children}
-    </FilterTemplateContext.Provider>
+    <FilterOptionLabelStoreContext.Provider value={store}>
+      <FilterTemplateContext.Provider value={value}>
+        <FilterDisplayLabelLoaders
+          definitions={source}
+          enabled={resolveEnabled}
+          store={store}
+        />
+        {children}
+      </FilterTemplateContext.Provider>
+    </FilterOptionLabelStoreContext.Provider>
   );
 };
 
