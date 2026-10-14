@@ -15,7 +15,9 @@ import DashboardCanvas from './components/dashboardCanvas';
 import DashboardToolbar from './components/dashboardToolbar';
 import DashboardSubscriptionModal from '@/app/ops-analysis/components/dashboardSubscriptionModal';
 import ViewWorkspace from '../components/viewWorkspace';
-import { Input, Modal, message, Select } from 'antd';
+import { Modal, message, Select } from 'antd';
+import { FilterTokenInput } from '@/app/ops-analysis/components/filterTokenInput';
+import { FilterTemplateProvider } from '@/app/ops-analysis/context/filterTemplate';
 import { useTranslation } from '@/utils/i18n';
 import { useOpsAnalysis } from '@/app/ops-analysis/context/common';
 import { useCanvasResources } from '@/app/ops-analysis/hooks/useCanvasResources';
@@ -1986,6 +1988,12 @@ const Dashboard = forwardRef<DashboardRef, DashboardProps>(
     );
 
     return (
+      <FilterTemplateProvider
+        definitions={definitions}
+        resolveDefinitions={appliedFilterDefinitions}
+        appliedValues={appliedFilterValues}
+        resolveEnabled={!isEditMode || isFullscreen || exporting || renderMode}
+      >
       <div
         className={`flex flex-col ${
           isFullscreen
@@ -2072,14 +2080,16 @@ const Dashboard = forwardRef<DashboardRef, DashboardProps>(
           okButtonProps={{ disabled: !groupNameDraft.trim() }}
           centered
         >
-          <Input
+          <FilterTokenInput
+            t={t}
             value={groupNameDraft}
-            onChange={(event) => setGroupNameDraft(event.target.value)}
+            onChange={setGroupNameDraft}
             placeholder={t('dashboard.groupNamePlaceholder')}
             maxLength={50}
           />
         </Modal>
       </div>
+      </FilterTemplateProvider>
     );
   },
 );

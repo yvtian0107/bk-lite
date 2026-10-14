@@ -13,6 +13,7 @@ import {
 } from "react";
 import { message, Modal, Select, Tabs } from "antd";
 import { WidgetCsvExportRegistryProvider, notifyWidgetCsvExportNotStarted, useWidgetCsvExportRegistryState } from "@/app/ops-analysis/context/widgetCsvExportRegistry";
+import { FilterTemplateProvider } from "@/app/ops-analysis/context/filterTemplate";
 import { useTranslation } from "@/utils/i18n";
 import { useScreenApi } from "@/app/ops-analysis/api/screen";
 import { useDirectoryApi } from "@/app/ops-analysis/api";
@@ -1353,6 +1354,11 @@ const Screen = forwardRef<ScreenRef, ScreenProps>(({ selectedScreen, shareMode =
 
   return (
     <WidgetCsvExportRegistryProvider registry={csvExportRegistry}>
+    <FilterTemplateProvider
+      definitions={queryState.definitions}
+      appliedValues={queryState.appliedFilterValues}
+      resolveEnabled={false}
+    >
     <>
       <div
         className={
@@ -1591,6 +1597,7 @@ const Screen = forwardRef<ScreenRef, ScreenProps>(({ selectedScreen, shareMode =
         />
       )}
     </>
+    </FilterTemplateProvider>
     </WidgetCsvExportRegistryProvider>
   );
 });

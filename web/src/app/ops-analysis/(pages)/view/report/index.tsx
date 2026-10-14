@@ -7,6 +7,7 @@ import { closestCenter, DndContext, PointerSensor, useSensor, useSensors, type D
 import { SortableContext, verticalListSortingStrategy } from '@dnd-kit/sortable';
 
 import { HandledRequestError } from '@/utils/request';
+import { FilterTemplateProvider } from '@/app/ops-analysis/context/filterTemplate';
 import { useTranslation } from '@/utils/i18n';
 import useBtnPermissions from '@/hooks/usePermissions';
 import { useReportApi } from '@/app/ops-analysis/api/report';
@@ -794,6 +795,12 @@ const Report = forwardRef<ReportRef, ReportProps>(({
   );
 
   return (
+    <FilterTemplateProvider
+      definitions={visibleViewSets.filters}
+      resolveDefinitions={appliedFilterDefinitions}
+      appliedValues={appliedFilterValues}
+      resolveEnabled={!editing || isFullscreen || exporting || pdfExportPreparing || renderMode}
+    >
     <WidgetCsvExportRegistryProvider>
       <div
         className={`flex flex-col ${
@@ -851,6 +858,7 @@ const Report = forwardRef<ReportRef, ReportProps>(({
         )}
       </div>
     </WidgetCsvExportRegistryProvider>
+    </FilterTemplateProvider>
   );
 });
 

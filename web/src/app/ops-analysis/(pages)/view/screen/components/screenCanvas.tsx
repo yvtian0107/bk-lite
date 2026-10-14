@@ -3,6 +3,7 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { Empty } from "antd";
 import { Rnd } from "react-rnd";
+import { FilterTemplateProvider } from "@/app/ops-analysis/context/filterTemplate";
 import { useTranslation } from "@/utils/i18n";
 import type {
   FilterValue,
@@ -673,6 +674,11 @@ const ScreenCanvas: React.FC<ScreenCanvasProps> = ({
         : "items-center justify-center overflow-hidden";
 
   return (
+    <FilterTemplateProvider
+      definitions={filterDefinitions ?? []}
+      appliedValues={unifiedFilterValues ?? {}}
+      resolveEnabled={!editMode || fullscreen || Boolean(shareMode)}
+    >
     <div
       ref={containerRef}
       className={`screen-canvas-workbench flex h-full min-h-0 w-full ${workbenchAlign} ${
@@ -1231,6 +1237,7 @@ const ScreenCanvas: React.FC<ScreenCanvasProps> = ({
         }
       `}</style>
     </div>
+    </FilterTemplateProvider>
   );
 };
 
