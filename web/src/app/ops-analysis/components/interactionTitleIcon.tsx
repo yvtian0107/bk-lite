@@ -2,20 +2,21 @@
 
 import React, { useCallback } from 'react';
 import { LinkOutlined } from '@ant-design/icons';
-import { message } from 'antd';
+import { Button, message } from 'antd';
 
 import { useFilterTemplateSnapshot } from '@/app/ops-analysis/context/filterTemplate';
 import { useInteractionSurface } from '@/app/ops-analysis/context/interactionSurface';
 import { useTranslation } from '@/utils/i18n';
-import { applySameOriginNavigation } from '@/console-layout';
-import type { ValueConfig } from '@/app/ops-analysis/types/dashBoard';
-import type { ChartLinkPoint } from '@/app/ops-analysis/utils/interactionLink';
+import type { ValueConfig, WidgetInteractionLink } from '@/app/ops-analysis/types/dashBoard';
+import type { ChartLinkPoint, InteractionSurface } from '@/app/ops-analysis/utils/interactionLink';
+import { openPreparedInteractionNavigation } from '@/app/ops-analysis/utils/interactionBehavior';
 import {
   prepareInteractionNavigation,
   readChartClickPoint,
   readWidgetInteraction,
   resolveInteractionUrl,
   shouldNavigateInteraction,
+  shouldRenderInteractionActionButton,
   shouldShowInteractionEntry,
   type ChartClickParams,
 } from '@/app/ops-analysis/utils/interactionLink';
@@ -45,10 +46,8 @@ export const useOpenInteractionLink = (config?: object | null) => {
       }
       return;
     }
-    applySameOriginNavigation(resolved, {
-      currentSearch: typeof window === 'undefined' ? '' : window.location.search,
-      explicitNewWindow: link.openMode === 'newTab',
-    });
+    if (typeof window === 'undefined') return;
+    openPreparedInteractionNavigation(prepared, window);
   }, [filters.definitions, filters.values, link, surface, t]);
 
   return { link, surface, open };
@@ -103,6 +102,29 @@ const InteractionTitleIcon: React.FC<InteractionTitleIconProps> = ({
     >
       <LinkOutlined aria-hidden />
     </button>
+  );
+};
+
+export const InteractionActionCell = ({
+  link,
+  surface,
+  isFirst,
+  label,
+  onOpen,
+}: {
+  link: WidgetInteractionLink | undefined;
+  surface: InteractionSurface;
+  isFirst: boolean;
+  label: string;
+  onOpen: () => void;
+}) => {
+  if (!shouldRenderInteractionActionButton(link, surface, isFirst)) {
+    return <>-</>;
+  }
+  return (
+    <Button type="link" size="small" className="p-0" onClick={onOpen}>
+      {label}
+    </Button>
   );
 };
 

@@ -171,6 +171,9 @@ const ChartNodeContent: React.FC<ChartNodeProps> = ({ node }) => {
           }}
         />
       )}
+      {componentName ? null : (
+        <InteractionTitleIcon config={valueConfig} floating />
+      )}
       {componentName && (
         <div
           style={{

@@ -5,7 +5,7 @@ import React, {
   useRef,
   useState,
 } from 'react';
-import { Button, Tooltip } from 'antd';
+import { Tooltip } from 'antd';
 import type { ColumnsType } from 'antd/es/table';
 import CompactEmptyState from '@/components/compact-empty-state';
 import type {
@@ -23,11 +23,10 @@ import { useTranslation } from '@/utils/i18n';
 import { supportsServerPagination } from '@/app/ops-analysis/utils/tablePagination';
 import { useTableBodyScrollY } from '@/app/ops-analysis/components/widgets/shared/useTableBodyScrollY';
 import { useInteractionSurface } from '@/app/ops-analysis/context/interactionSurface';
-import { useWidgetDataLink } from '@/app/ops-analysis/components/interactionTitleIcon';
+import { InteractionActionCell, useWidgetDataLink } from '@/app/ops-analysis/components/interactionTitleIcon';
 import {
   isFirstActionColumn,
   readWidgetInteraction,
-  shouldRenderInteractionActionButton,
   tableRowLinkPoint,
   withInteractionActionColumn,
 } from '@/app/ops-analysis/utils/interactionLink';
@@ -134,22 +133,14 @@ const OpsAnalysisEventTable: React.FC<OpsAnalysisEventTableProps> = ({
         ellipsis: { showTitle: false },
         render: (text: any, record: EventTableRow) => {
           if (col.columnType === 'actions') {
-            if (!shouldRenderInteractionActionButton(
-              dataLink,
-              surface,
-              isFirstActionColumn(columnConfigs, columnIndex),
-            )) {
-              return '-';
-            }
             return (
-              <Button
-                type="link"
-                size="small"
-                className="p-0"
-                onClick={() => openPoint(tableRowLinkPoint(record))}
-              >
-                {dataLinkName || t('dashboard.interactionOpen', '打开链接')}
-              </Button>
+              <InteractionActionCell
+                link={dataLink}
+                surface={surface}
+                isFirst={isFirstActionColumn(columnConfigs, columnIndex)}
+                label={dataLinkName || t('dashboard.interactionOpen', '打开链接')}
+                onOpen={() => openPoint(tableRowLinkPoint(record))}
+              />
             );
           }
           return (

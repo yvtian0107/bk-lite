@@ -108,6 +108,8 @@ import { Room3DRackTopFields } from './widgetConfig/sections/room3DRackTopFields
 import Room3DFilterLinkage from './widgetConfig/sections/room3DFilterLinkage';
 import { ConfigGroupTitle } from './widgetConfig/configTitles';
 import { getDefaultScreenWidgetAppearance } from '@/app/ops-analysis/(pages)/view/screen/utils/layoutUtils';
+import { useWidgetCsvExportRegistry } from '@/app/ops-analysis/context/widgetCsvExportRegistry';
+import { interactionKindForChartType } from '@/app/ops-analysis/utils/interactionLink';
 import { isSceneWidgetType } from '@/app/ops-analysis/types/sceneWidgetCapability';
 import { ensurePrometheusQueryRequired } from '@/app/ops-analysis/utils/dataSourceParamContract';
 import {
@@ -152,6 +154,7 @@ const ViewConfig: React.FC<ViewConfigPropsWithManager> = ({
   onDirtyChange,
 }) => {
   const { t } = useTranslation();
+  const canvasRawDataRegistry = useWidgetCsvExportRegistry();
   const guardClose = useUnsavedConfirm();
   const [form] = Form.useForm();
   const handleClose = () => guardClose(form.isFieldsTouched(), onClose);
@@ -543,6 +546,34 @@ const ViewConfig: React.FC<ViewConfigPropsWithManager> = ({
     t,
   ]);
 
+  const interactionSampleKeyRef = useRef('');
+  useEffect(() => {
+    if (!open || activeSection !== 'interaction') return;
+    if (previewRawData != null) return;
+    const widgetId = widgetItem && 'i' in widgetItem ? String(widgetItem.i || '') : '';
+    const rendered = widgetId
+      ? canvasRawDataRegistry?.readWidgetRawData(widgetId)
+      : undefined;
+    if (rendered != null) {
+      setPreviewRawData(rendered);
+      return;
+    }
+    const sourceId = canonicalSelectedDataSource?.id;
+    if (sourceId == null) return;
+    const sampleKey = `${widgetId}:${sourceId}`;
+    if (interactionSampleKeyRef.current === sampleKey) return;
+    interactionSampleKeyRef.current = sampleKey;
+    void fetchRoleFields();
+  }, [
+    activeSection,
+    canvasRawDataRegistry,
+    canonicalSelectedDataSource?.id,
+    fetchRoleFields,
+    open,
+    previewRawData,
+    widgetItem,
+  ]);
+
   const displayColumnOptions = useMemo(
     () =>
       buildDisplayColumnFieldOptions({
@@ -638,6 +669,13 @@ const ViewConfig: React.FC<ViewConfigPropsWithManager> = ({
         getDefaultScreenWidgetAppearance(newChartType),
       );
     }
+    form.setFieldValue(
+      ['interaction', 'kind'],
+      interactionKindForChartType(
+        newChartType,
+        form.getFieldValue(['interaction', 'kind']),
+      ),
+    );
     if (!supportsComponentSwitch(newChartType)) {
       setWidgetParamOverrides((previous) =>
         previous.map(clearComponentParamSwitch),
@@ -1432,12 +1470,10 @@ const ViewConfig: React.FC<ViewConfigPropsWithManager> = ({
                     tableConfig.createDefaultFilterField(),
                   ])
                 }
-                onAddNewDisplayColumn={(columnType = 'data') =>
+                onAddNewDisplayColumn={() =>
                   tableConfig.setDisplayColumns([
                     ...tableConfig.displayColumns,
-                    columnType === 'actions'
-                      ? tableConfig.createDefaultOperationColumn()
-                      : tableConfig.createDefaultDisplayColumn(),
+                    tableConfig.createDefaultDisplayColumn(),
                   ])
                 }
               />

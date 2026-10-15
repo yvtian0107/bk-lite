@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo } from 'react';
 import { useWidgetDataLink } from '@/app/ops-analysis/components/interactionTitleIcon';
-import { buildInteractionPoints } from '@/app/ops-analysis/utils/interactionPoints';
+import { cardListLinkPoints } from '@/app/ops-analysis/utils/interactionPoints';
 import { Alert } from 'antd';
 import ChartSurface from '@/components/chart-surface';
 import type { ValueConfig } from '@/app/ops-analysis/types/dashBoard';
@@ -26,15 +26,15 @@ const ComCardList: React.FC<ComCardListProps> = ({
 }) => {
   const { t } = useTranslation();
   const { active: dataLinkActive, openPoint } = useWidgetDataLink(config);
-  const points = useMemo(
-    () => buildInteractionPoints('cardList', rawData, config),
-    [config, rawData],
-  );
   const cardListConfig = config?.cardList;
   const parsed = parseCardListItems(rawData, {
     ...cardListConfig,
     titleField: cardListConfig?.titleField || '',
   });
+  const points = useMemo(
+    () => cardListLinkPoints(parsed.items),
+    [parsed.items],
+  );
   const layout = cardListConfig?.layout === 'grid' ? 'grid' : 'list';
   const hasData = parsed.status === 'ready' && parsed.items.length > 0;
   const leadingStyle = cardListConfig?.leading?.style;

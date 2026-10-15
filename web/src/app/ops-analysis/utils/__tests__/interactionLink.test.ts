@@ -3,8 +3,10 @@ import test from 'node:test';
 
 import type { UnifiedFilterDefinition } from '@/app/ops-analysis/types/dashBoard';
 import { ChartDataTransformer } from '@/app/ops-analysis/utils/chartDataTransform';
-import { buildInteractionPoints } from '@/app/ops-analysis/utils/interactionPoints';
+import { buildInteractionPoints, cardListLinkPoints } from '@/app/ops-analysis/utils/interactionPoints';
+import { parseCardListItems, DEFAULT_CARD_LIST_MAX_ITEMS } from '@/app/ops-analysis/utils/cardList';
 import {
+  interactionKindForChartType,
   isAllowedInteractionUrl,
   isFirstActionColumn,
   listInteractionVariables,
@@ -188,7 +190,7 @@ test('keeps only the first legacy action and turns mappings into a query', () =>
   );
 });
 
-test('stored interaction wins over legacy actions and title-only widgets drop data links', () => {
+test('stored interaction wins and title-only widgets keep the link as a title link', () => {
   const stored = readWidgetInteraction({
     chartType: 'line',
     interaction: {
@@ -201,13 +203,34 @@ test('stored interaction wins over legacy actions and title-only widgets drop da
   });
   assert.equal(stored?.kind, 'title');
   assert.equal(stored?.url, '/ops?env=$env$');
-  assert.equal(
-    readWidgetInteraction({
-      chartType: 'topologyMap',
+  for (const chartType of ['text', 'networkStatusTopology', 'relatedTopology', 'topologyMap']) {
+    const kept = readWidgetInteraction({
+      chartType,
       interaction: { kind: 'data', name: '点', url: '/x', openMode: 'sameTab' },
-    }),
-    undefined,
-  );
+    });
+    assert.equal(kept?.kind, 'title');
+    assert.equal(kept?.url, '/x');
+    assert.equal(interactionKindForChartType(chartType, 'data'), 'title');
+  }
+  assert.equal(interactionKindForChartType('line', 'data'), 'data');
+  assert.equal(interactionKindForChartType('bar', 'title'), 'title');
+});
+
+test('empty legacy action urls are not turned into a query-only link', () => {
+  assert.equal(migrateActionsToInteraction([
+    {
+      columnKey: 'op',
+      text: '查看',
+      url: '   ',
+      params: [{ key: 'id', source: 'rowField', sourceKey: 'host' }],
+    },
+  ]), undefined);
+  assert.equal(migrateActionsToInteraction([
+    { columnKey: 'op', text: '查看', url: '' },
+  ]), undefined);
+  assert.equal(migrateActionsToInteraction([
+    { columnKey: 'op', text: '查看', url: 'javascript:alert(1)' },
+  ]), undefined);
 });
 
 test('edit shows the entry without navigation and share hides it', () => {
@@ -329,6 +352,12 @@ test('chart clicks expose the fields that exist on each widget', () => {
     event: { target: { __dimIdx: 1 } },
   });
   assert.equal(radarPoint?.seriesName, 'mem');
+  const radarArea = readChartClickPoint({
+    data: { __links: [{ seriesName: 'cpu', numeric: 1 }, { seriesName: 'mem', numeric: 2 }, { seriesName: 'disk', numeric: 3 }, { seriesName: 'net', numeric: 4 }] },
+    event: { offsetX: 40, offsetY: 100 },
+    radar: { centerX: 100, centerY: 100, indicatorCount: 4 },
+  });
+  assert.equal(radarArea?.seriesName, 'mem');
 
   const tableColumns = withInteractionActionColumn(
     [{ key: 'host', columnType: 'data' }],
@@ -407,4 +436,84 @@ test('event table and event timeline expose the clicked row fields', () => {
   assert.equal(shouldRenderInteractionActionButton(dataLink, 'share', true), false);
   assert.equal(shouldShowInteractionEntry('share', true), false);
   assert.equal(shouldNavigateInteraction('edit'), false);
+});
+
+test('dropdown falls back to series, numeric and time only before sample rows arrive', () => {
+  const labels = {
+    valueGroup: '值',
+    fieldGroup: '字段',
+    fieldLabel: (field: string) => field,
+    seriesName: '系列',
+    numeric: '数值',
+    time: '时间',
+  };
+  for (const chartType of ['pie', 'line', 'bar', 'gauge', 'single']) {
+    assert.deepEqual(
+      listPresentDataVariables(chartType, null, labels).map((item) => item.token),
+      ['$__series.name$', '$__value.numeric$', '$__value.time$'],
+    );
+  }
+  assert.deepEqual(listPresentDataVariables('table', null, labels), []);
+  assert.equal(
+    listPresentDataVariables('line', null, labels).some((item) => item.token.includes('__data.fields')),
+    false,
+  );
+});
+
+test('card list click points follow the same filtered and truncated cards', () => {
+  const rows = [
+    { title: '   ', host: 'skip' },
+    ...Array.from({ length: DEFAULT_CARD_LIST_MAX_ITEMS + 1 }, (_, index) => ({
+      title: `R${index}`,
+      host: `h${index}`,
+    })),
+  ];
+  const parsed = parseCardListItems(rows, { titleField: 'title' });
+  const points = cardListLinkPoints(parsed.items);
+  assert.equal(points.length, DEFAULT_CARD_LIST_MAX_ITEMS);
+  assert.equal(points[0]?.seriesName, parsed.items[0]?.primary);
+  assert.equal(points[0]?.fields?.host, 'h0');
+  assert.equal(points[99]?.fields?.host, 'h99');
+  assert.equal(points.some((point) => point.fields?.host === 'skip'), false);
+  assert.equal(points.some((point) => point.fields?.host === 'h100'), false);
+});
+
+test('multi value field rows come from the same extracted items', () => {
+  const points = buildInteractionPoints('multiValue', {
+    data: { items: [{ label: 'cpu', value: '12', host: 'web-01' }] },
+  }, {});
+  assert.equal(points[0]?.seriesName, 'cpu');
+  assert.equal(points[0]?.numeric, 12);
+  assert.equal(points[0]?.fields?.host, 'web-01');
+});
+
+test('node graph edge clicks carry the parallel index and service port', () => {
+  const ip = buildInteractionPoints('nodeGraph', [
+    { src: '10.0.0.1', dst: '10.0.0.2', value: 7 },
+    { src: '10.0.0.2', dst: '10.0.0.1', value: 2 },
+  ], {
+    nodeGraphIdentityMode: 'ip',
+    nodeGraphSourceField: 'src',
+    nodeGraphTargetField: 'dst',
+    nodeGraphValueField: 'value',
+  });
+  const ipEdges = ip.filter((point) => point.fields?.source);
+  assert.deepEqual(
+    ipEdges.map((edge) => edge.fields?.parallelIndex),
+    [0, 1],
+  );
+
+  const service = buildInteractionPoints('nodeGraph', [
+    { src: '10.0.0.1', dst: '10.0.0.9', dst_port: 443, value: 7 },
+    { src: '10.0.0.1', dst: '10.0.0.9', dst_port: 80, value: 2 },
+  ], {
+    nodeGraphIdentityMode: 'service',
+    nodeGraphSourceField: 'src',
+    nodeGraphTargetField: 'dst',
+    nodeGraphTargetPortField: 'dst_port',
+    nodeGraphValueField: 'value',
+  });
+  const serviceEdges = service.filter((point) => point.fields?.source);
+  assert.equal(serviceEdges.find((edge) => edge.fields?.target === '10.0.0.9:443')?.fields?.port, '443');
+  assert.equal(serviceEdges.find((edge) => edge.fields?.target === '10.0.0.9:80')?.fields?.port, '80');
 });

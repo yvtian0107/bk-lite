@@ -108,6 +108,64 @@ test('table submit persists column cell style fields', () => {
   );
 });
 
+test('table submit drops leftover action columns and keeps a title-only link', () => {
+  const result = buildWidgetSubmitConfig({
+    ...baseInput,
+    selectedFields: [],
+    values: {
+      name: '主机表',
+      chartType: 'table',
+      interaction: {
+        kind: 'data',
+        name: '查看',
+        url: '/ops/host',
+        openMode: 'sameTab',
+      },
+    },
+    chartType: 'table',
+    displayColumns: [
+      {
+        id: 'c1',
+        key: 'host',
+        title: '主机',
+        visible: true,
+        order: 0,
+      },
+      {
+        id: 'c2',
+        key: '__actions__',
+        title: '操作',
+        visible: true,
+        order: 1,
+        columnType: 'actions',
+      },
+    ],
+  });
+  assert.equal(result.error, undefined);
+  assert.deepEqual(
+    result.config?.tableConfig?.columns?.map((column) => column.columnType),
+    [undefined],
+  );
+  assert.equal(result.config?.tableConfig?.columns?.[0]?.key, 'host');
+
+  const text = buildWidgetSubmitConfig({
+    ...baseInput,
+    values: {
+      name: '说明',
+      chartType: 'text',
+      interaction: {
+        kind: 'data',
+        name: '详情',
+        url: '/ops/text',
+        openMode: 'newTab',
+      },
+    },
+    chartType: 'text',
+  });
+  assert.equal(text.config?.interaction?.kind, 'title');
+  assert.equal(text.config?.interaction?.url, '/ops/text');
+});
+
 test('eventTable submit strips table-only cell style fields and keeps column config', () => {
   const result = buildWidgetSubmitConfig({
     ...baseInput,

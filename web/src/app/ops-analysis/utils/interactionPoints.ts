@@ -2,11 +2,14 @@ import type { ValueConfig } from '@/app/ops-analysis/types/dashBoard';
 import { ChartDataTransformer } from '@/app/ops-analysis/utils/chartDataTransform';
 import { extractComparableValue } from '@/app/ops-analysis/utils/compareQuery';
 import { getValueByPath } from '@/app/ops-analysis/utils/objectPath';
-import { validateMultiValueData } from '@/app/ops-analysis/utils/multiValueData';
+import { extractMultiValueItems, validateMultiValueData } from '@/app/ops-analysis/utils/multiValueData';
+import { parseCardListItems } from '@/app/ops-analysis/utils/cardList';
 import { resolveRadarSeriesData } from '@/app/ops-analysis/utils/radarData';
 import {
   buildNodeGraph,
+  nodeGraphEdgeFields,
   toNodeGraphMapping,
+  withNodeGraphParallelIndex,
 } from '@/app/ops-analysis/utils/nodeGraphData';
 import { unwrapTopNData } from '@/app/ops-analysis/utils/topNData';
 import { parseEventTimelineItems } from '@/app/ops-analysis/utils/eventTimeline';
@@ -36,6 +39,13 @@ const numericPoint = (
     ...(raw !== undefined ? { raw } : {}),
   };
 };
+
+export const cardListLinkPoints = (
+  items: Array<{ primary?: string; source?: Record<string, unknown> }>,
+): ChartLinkPoint[] => items.map((item) => ({
+  ...(item.primary ? { seriesName: item.primary, text: item.primary } : {}),
+  ...(item.source ? { raw: item.source, fields: chartLinkFields(item.source) } : {}),
+}));
 
 export const buildInteractionPoints = (
   chartType: string | undefined,
@@ -129,7 +139,8 @@ export const buildInteractionPoints = (
       labelField: config?.multiValueLabelField,
       valueField: config?.multiValueValueField,
     });
-    const rows = rowsFromUnknown(rawData);
+    const extracted = extractMultiValueItems(rawData);
+    const rows = Array.isArray(extracted) ? extracted.filter(isRecord) : [];
     return result.items.map((item, index) => numericPoint(item.value, {
       seriesName: item.label,
       text: item.label,
@@ -154,17 +165,10 @@ export const buildInteractionPoints = (
   }
 
   if (chartType === 'cardList') {
-    const titleField = config?.cardList?.titleField;
-    return rowsFromUnknown(rawData).flatMap((row) => {
-      const title = titleField ? getValueByPath(row, titleField) : undefined;
-      const text = title == null ? '' : String(title);
-      if (titleField && !text.trim()) return [];
-      return [{
-        ...(text ? { seriesName: text, text } : {}),
-        raw: row,
-        fields: chartLinkFields(row),
-      }];
-    });
+    return cardListLinkPoints(parseCardListItems(rawData, {
+      ...config?.cardList,
+      titleField: config?.cardList?.titleField || '',
+    }).items);
   }
 
   if (chartType === 'nodeGraph') {
@@ -178,13 +182,9 @@ export const buildInteractionPoints = (
         outbound: node.outbound,
       },
     }));
-    const edges = model.edges.map((edge) => numericPoint(edge.value, {
+    const edges = withNodeGraphParallelIndex(model.edges).map((edge) => numericPoint(edge.value, {
       seriesName: `${edge.source} → ${edge.target}`,
-      fields: {
-        source: edge.source,
-        target: edge.target,
-        value: edge.value,
-      },
+      fields: nodeGraphEdgeFields(edge, config?.nodeGraphIdentityMode),
     }));
     return [...nodes, ...edges];
   }

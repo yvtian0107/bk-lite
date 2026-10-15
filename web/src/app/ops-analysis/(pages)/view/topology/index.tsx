@@ -134,13 +134,17 @@ const Topology = forwardRef<TopologyRef, TopologyProps>(
       setLocaleData(intl.locale, intl.messages as Record<string, string>);
     }, [intl.locale, intl.messages]);
 
+    const interactionOwnerRef = useRef(
+      `topology-${Math.random().toString(36).slice(2)}`,
+    );
     useEffect(() => {
+      const owner = interactionOwnerRef.current;
       setInteractionRuntime({
         surface: shareMode ? 'share' : state.isEditMode ? 'edit' : 'view',
         definitions,
         values: appliedFilterValues,
-      });
-      return () => resetInteractionRuntime();
+      }, owner);
+      return () => resetInteractionRuntime(owner);
     }, [appliedFilterValues, definitions, shareMode, state.isEditMode]);
 
     const handleNodeRemovedCallback = useCallback(() => {

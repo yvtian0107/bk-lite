@@ -5,7 +5,7 @@ import React, {
   useCallback,
   useRef,
 } from 'react';
-import { Button, Input, Select, DatePicker, Tooltip } from 'antd';
+import { Input, Select, DatePicker, Tooltip } from 'antd';
 import { SearchOutlined } from '@ant-design/icons';
 import type { ColumnsType } from 'antd/es/table';
 import { useTranslation } from '@/utils/i18n';
@@ -28,11 +28,10 @@ import type {
   TableFilterFieldConfig,
 } from '@/app/ops-analysis/types/dashBoard';
 import { useInteractionSurface } from '@/app/ops-analysis/context/interactionSurface';
-import { useWidgetDataLink } from '@/app/ops-analysis/components/interactionTitleIcon';
+import { InteractionActionCell, useWidgetDataLink } from '@/app/ops-analysis/components/interactionTitleIcon';
 import {
   isFirstActionColumn,
   readWidgetInteraction,
-  shouldRenderInteractionActionButton,
   tableRowLinkPoint,
   withInteractionActionColumn,
 } from '@/app/ops-analysis/utils/interactionLink';
@@ -208,22 +207,14 @@ const ComTable: React.FC<ComTableProps> = ({
         ellipsis: { showTitle: false },
         render: (text: any, record: TableDataItem) => {
           if (col.columnType === 'actions') {
-            if (!shouldRenderInteractionActionButton(
-              dataLink,
-              surface,
-              isFirstActionColumn(columnConfigs, columnIndex),
-            )) {
-              return '-';
-            }
             return (
-              <Button
-                type="link"
-                size="small"
-                className="p-0"
-                onClick={() => openPoint(tableRowLinkPoint(record))}
-              >
-                {dataLinkName || t('dashboard.interactionOpen', '打开链接')}
-              </Button>
+              <InteractionActionCell
+                link={dataLink}
+                surface={surface}
+                isFirst={isFirstActionColumn(columnConfigs, columnIndex)}
+                label={dataLinkName || t('dashboard.interactionOpen', '打开链接')}
+                onOpen={() => openPoint(tableRowLinkPoint(record))}
+              />
             );
           }
 

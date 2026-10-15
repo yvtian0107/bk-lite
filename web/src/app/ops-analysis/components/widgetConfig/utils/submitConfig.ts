@@ -256,7 +256,7 @@ const buildTableConfig = ({
       key: column.key.trim(),
       title: column.title?.trim() || column.key.trim(),
     }))
-    .filter((column) => column.key);
+    .filter((column) => column.key && column.columnType !== 'actions');
 
   const duplicateKeySet = new Set<string>();
   const hasDuplicateKeys = validDisplayColumns.some((column) => {

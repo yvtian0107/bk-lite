@@ -2,7 +2,6 @@ import React, { useState } from 'react';
 import {
   AutoComplete,
   Button,
-  Dropdown,
   Input,
   Select,
   Switch,
@@ -14,7 +13,6 @@ import {
   MinusCircleOutlined,
   ExclamationCircleOutlined,
   SettingOutlined,
-  DownOutlined,
 } from '@ant-design/icons';
 import CustomTable from '@/components/custom-table';
 import type {
@@ -332,30 +330,14 @@ export const TableSettingsSection: React.FC<TableSettingsSectionProps> = ({
                   {t('dashboard.reProbeColumns')}
                 </Button>
               </Tooltip>
-              <Dropdown
-                trigger={['click']}
-                menu={{
-                  items: [
-                    {
-                      key: 'data',
-                      label: t('dashboard.addDataColumn'),
-                    },
-                    {
-                      key: 'actions',
-                      label: t('dashboard.addOperationColumn'),
-                    },
-                  ],
-                  onClick: ({ key }) =>
-                    onAddNewDisplayColumn(
-                      key === 'actions' ? 'actions' : 'data',
-                    ),
-                }}
+              <Button
+                type="dashed"
+                size="small"
+                icon={<PlusCircleOutlined />}
+                onClick={() => onAddNewDisplayColumn('data')}
               >
-                <Button type="dashed" size="small" icon={<PlusCircleOutlined />}>
-                  {t('common.add')}
-                  <DownOutlined />
-                </Button>
-              </Dropdown>
+                {t('common.add')}
+              </Button>
             </div>
           }
         >

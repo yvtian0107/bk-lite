@@ -10,6 +10,7 @@ import type {
   Application3DWallItem,
 } from '@/app/ops-analysis/types/sceneWidget';
 import type { Application3DPageEffect } from '@/app/ops-analysis/utils/application3DWallConfig';
+import { createRightClickGesture } from '@/app/ops-analysis/utils/interactionBehavior';
 import {
   APPLICATION3D_CAMERA_FOV,
   buildApplication3DLayout,
@@ -2471,39 +2472,40 @@ export const createApplication3DScene = (
     requestRender();
   };
 
+  const rightClickGesture = createRightClickGesture();
+  const handleRightPointerDown = (event: PointerEvent) => {
+    rightClickGesture.pointerDown(event);
+  };
   const handleContextMenu = (event: MouseEvent) => {
     event.preventDefault();
-    if (!options.onLinkContextMenu) return;
     const point = { x: event.clientX, y: event.clientY };
+    let payload: {
+      x: number;
+      y: number;
+      host?: { id: string; name: string };
+      system?: { id: string; name: string };
+    } | null = null;
     if (phase === 'architecture') {
       const node = pickArchitectureNode(event.clientX, event.clientY);
       if (node?.kind === 'host') {
-        options.onLinkContextMenu({
-          ...point,
-          host: { id: node.id, name: node.name },
-        });
-        return;
+        payload = { ...point, host: { id: node.id, name: node.name } };
+      } else if (node?.kind === 'system') {
+        payload = { ...point, system: { id: node.id, name: node.name } };
       }
-      if (node?.kind === 'system') {
-        options.onLinkContextMenu({
-          ...point,
-          system: { id: node.id, name: node.name },
-        });
-        return;
+    } else {
+      const applicationId = pickApplicationId(event.clientX, event.clientY);
+      const item = applicationId ? visuals.get(applicationId)?.item : undefined;
+      if (item) payload = { ...point, system: { id: item.id, name: item.name } };
+    }
+    const decision = rightClickGesture.decide(event, Boolean(payload));
+    if (!options.onLinkContextMenu || !decision.open || !payload) {
+      if (options.onLinkContextMenu && !decision.dragged && !payload) {
+        options.onLinkContextMenu(null);
       }
-      options.onLinkContextMenu(null);
       return;
     }
-    const applicationId = pickApplicationId(event.clientX, event.clientY);
-    const item = applicationId ? visuals.get(applicationId)?.item : undefined;
-    if (!item) {
-      options.onLinkContextMenu(null);
-      return;
-    }
-    options.onLinkContextMenu({
-      ...point,
-      system: { id: item.id, name: item.name },
-    });
+    event.stopImmediatePropagation();
+    options.onLinkContextMenu(payload);
   };
 
   const handleWheel = () => {
@@ -2646,6 +2648,7 @@ export const createApplication3DScene = (
     pixelRatioMediaQuery?.addEventListener('change', handlePixelRatioChange);
   }
 
+  renderer.domElement.addEventListener('pointerdown', handleRightPointerDown, true);
   renderer.domElement.addEventListener('contextmenu', handleContextMenu);
   if (options.interactive) {
     renderer.domElement.addEventListener('pointerdown', handlePointerDown);
@@ -2698,6 +2701,7 @@ export const createApplication3DScene = (
       if (resizeRaf !== null) window.cancelAnimationFrame(resizeRaf);
       resizeObserver.disconnect();
       pixelRatioMediaQuery?.removeEventListener('change', handlePixelRatioChange);
+      renderer.domElement.removeEventListener('pointerdown', handleRightPointerDown, true);
       renderer.domElement.removeEventListener('contextmenu', handleContextMenu);
       renderer.domElement.removeEventListener('pointerdown', handlePointerDown);
       renderer.domElement.removeEventListener('pointermove', handlePointerMove);

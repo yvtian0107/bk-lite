@@ -18,6 +18,10 @@ import {
 } from '@/app/ops-analysis/utils/dateRange';
 import { normalizeTimeRangeFilterValue } from '@/app/ops-analysis/utils/filterValue';
 import { listFilterTemplateVariables } from '@/app/ops-analysis/utils/filterTemplate';
+import {
+  nearestRadarIndicatorIndex,
+  type RadarClickGeometry,
+} from '@/app/ops-analysis/utils/interactionBehavior';
 
 dayjs.extend(utc);
 dayjs.extend(timezone);
@@ -52,6 +56,8 @@ const DATA_VALUE_TOKENS = new Set([
 ]);
 
 const DATA_FIELD_PREFIX = '__data.fields.';
+
+const CLICK_VALUE_FALLBACK = new Set(['pie', 'line', 'bar', 'gauge', 'single']);
 
 const CLICK_CHARTS = new Set([
   'line',
@@ -130,10 +136,20 @@ export const readChartLinkPoint = (data: unknown): ChartLinkPoint | undefined =>
 export interface ChartClickParams {
   data?: unknown;
   event?: {
+    offsetX?: number;
+    offsetY?: number;
+    event?: { offsetX?: number; offsetY?: number };
     target?: { __dimIdx?: number };
     topTarget?: { __dimIdx?: number };
   };
+  radar?: RadarClickGeometry;
 }
+
+const readClickOffset = (event: ChartClickParams['event']) => {
+  const x = typeof event?.offsetX === 'number' ? event.offsetX : event?.event?.offsetX;
+  const y = typeof event?.offsetY === 'number' ? event.offsetY : event?.event?.offsetY;
+  return { x, y };
+};
 
 export const readChartClickPoint = (
   params: ChartClickParams | undefined,
@@ -146,6 +162,20 @@ export const readChartClickPoint = (
     const links = data.__links as ChartLinkPoint[];
     if (typeof dimension === 'number' && links[dimension]) {
       return links[dimension];
+    }
+    const offset = readClickOffset(params.event);
+    if (
+      params.radar
+      && typeof offset.x === 'number'
+      && typeof offset.y === 'number'
+    ) {
+      const index = nearestRadarIndicatorIndex(
+        { x: offset.x, y: offset.y },
+        { x: params.radar.centerX, y: params.radar.centerY },
+        params.radar.indicatorCount || links.length,
+        params.radar,
+      );
+      if (typeof index === 'number' && links[index]) return links[index];
     }
   }
   return readChartLinkPoint(data);
@@ -488,12 +518,12 @@ export const migrateActionsToInteraction = (
   const first = actions?.[0];
   if (!first) return undefined;
   const base = first.url?.trim() || '';
+  if (!base || !isAllowedInteractionUrl(base)) return undefined;
   const url = appendQuery(base, legacyParamQuery(first.params)).trim();
-  const name = first.text?.trim() || '';
-  if (!url && !name) return undefined;
+  if (!isAllowedInteractionUrl(url)) return undefined;
   return {
     kind: 'data',
-    name,
+    name: first.text?.trim() || '',
     url,
     openMode: first.openMode === 'newTab' ? 'newTab' : 'sameTab',
   };
@@ -506,9 +536,9 @@ export const normalizeInteractionLink = (
   if (!link) return undefined;
   const url = link.url?.trim() || '';
   if (!url) return undefined;
-  const kind: WidgetInteractionKind = link.kind === 'data' ? 'data' : 'title';
+  let kind: WidgetInteractionKind = link.kind === 'data' ? 'data' : 'title';
   const capability = interactionCapability(chartType);
-  if (kind === 'data' && !capability.data) return undefined;
+  if (kind === 'data' && !capability.data) kind = 'title';
   return {
     kind,
     name: link.name?.trim() || '',
@@ -531,6 +561,13 @@ export const readWidgetInteraction = (
   const migrated = migrateActionsToInteraction(valueConfig?.actions);
   return normalizeInteractionLink(migrated, chartType);
 };
+
+export const interactionKindForChartType = (
+  chartType: string | undefined,
+  currentKind: unknown,
+): WidgetInteractionKind => (
+  currentKind === 'data' && interactionCapability(chartType).data ? 'data' : 'title'
+);
 
 const hasOwn = (row: Record<string, unknown>, key: string) =>
   Object.prototype.hasOwnProperty.call(row, key);
@@ -641,6 +678,14 @@ export const listPresentDataVariables = (
   }
   if (chartType === 'room3D' || chartType === 'application3D') {
     return listSceneVariables(chartType, rawData, labels);
+  }
+  if (named.length === 0 && CLICK_VALUE_FALLBACK.has(chartType || '')) {
+    const group = labels.valueGroup;
+    return [
+      { token: '$__series.name$', label: labels.seriesName || '$__series.name$', group },
+      { token: '$__value.numeric$', label: labels.numeric || '$__value.numeric$', group },
+      { token: '$__value.time$', label: labels.time || '$__value.time$', group },
+    ];
   }
   return named;
 };

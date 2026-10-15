@@ -23,7 +23,9 @@ import {
   buildNodeGraph,
   isNodeGraphMappingComplete,
   layoutNodeGraphBipartite,
+  nodeGraphEdgeFields,
   toNodeGraphMapping,
+  withNodeGraphParallelIndex,
 } from '@/app/ops-analysis/utils/nodeGraphData';
 
 interface NodeGraphProps {
@@ -226,9 +228,15 @@ const NodeGraph: React.FC<NodeGraphProps> = ({
     });
     graph.on('edge:click', ({ edge, e }) => {
       e.stopPropagation();
-      const data = edge.getData() as { source?: string; target?: string } | undefined;
+      const data = edge.getData() as {
+        source?: string;
+        target?: string;
+        parallelIndex?: number;
+      } | undefined;
       const point = linkPointsRef.current.find(
-        (item) => item.fields?.source === data?.source && item.fields?.target === data?.target,
+        (item) => item.fields?.source === data?.source
+          && item.fields?.target === data?.target
+          && item.fields?.parallelIndex === data?.parallelIndex,
       );
       openPointRef.current(point);
     });
@@ -284,16 +292,16 @@ const NodeGraph: React.FC<NodeGraphProps> = ({
         };
       }),
     );
+    const parallelEdges = withNodeGraphParallelIndex(graphModel.edges);
     graph.addEdges(
       placed.edges.map((edge, index) => ({
         id: `node-graph-edge-${index}`,
         source: { cell: edge.source, anchor: { name: 'right' } },
         target: { cell: edge.target, anchor: { name: 'left' } },
-        data: {
-          source: graphModel.edges[index].source,
-          target: graphModel.edges[index].target,
-          value: edge.value,
-        },
+        data: nodeGraphEdgeFields(
+          { ...parallelEdges[index], value: edge.value },
+          config?.nodeGraphIdentityMode,
+        ),
         connector: { name: 'smooth' },
         attrs: {
           line: {
@@ -328,6 +336,7 @@ const NodeGraph: React.FC<NodeGraphProps> = ({
     };
   }, [
     chartTheme.panelTitleColor,
+    config?.nodeGraphIdentityMode,
     errorMessage,
     graphModel,
     loading,

@@ -7,6 +7,7 @@ import type {
 } from "./room3DData";
 import { getRoom3DSceneRacks } from "./room3DData";
 import type { Room3DRackTopLines } from "@/app/ops-analysis/types/sceneWidget";
+import { createRightClickGesture } from "@/app/ops-analysis/utils/interactionBehavior";
 import {
   ROOM3D_COL_GAP,
   ROOM3D_FRONT_AISLE_EXTRA,
@@ -776,13 +777,19 @@ export const createRoom3DScene = (
     updateVisualStates();
   };
 
+  const rightClickGesture = createRightClickGesture();
+  const handleRightPointerDown = (event: PointerEvent) => {
+    rightClickGesture.pointerDown(event);
+  };
   const handleContextMenu = (event: MouseEvent) => {
     event.preventDefault();
     const picked = pickRack(event);
-    if (!picked) {
-      callbacks.onContextMenu?.(null);
+    const decision = rightClickGesture.decide(event, Boolean(picked));
+    if (!decision.open || !picked) {
+      if (!decision.dragged) callbacks.onContextMenu?.(null);
       return;
     }
+    event.stopImmediatePropagation();
     callbacks.onContextMenu?.({
       rack: picked.rack,
       device: picked.device,
@@ -791,6 +798,7 @@ export const createRoom3DScene = (
     });
   };
 
+  renderer.domElement.addEventListener("pointerdown", handleRightPointerDown, true);
   renderer.domElement.addEventListener("pointermove", handlePointerMove);
   renderer.domElement.addEventListener("pointerleave", handlePointerLeave);
   renderer.domElement.addEventListener("click", handleClick);
@@ -827,6 +835,7 @@ export const createRoom3DScene = (
         "change",
         handlePixelRatioChange,
       );
+      renderer.domElement.removeEventListener("pointerdown", handleRightPointerDown, true);
       renderer.domElement.removeEventListener("pointermove", handlePointerMove);
       renderer.domElement.removeEventListener(
         "pointerleave",

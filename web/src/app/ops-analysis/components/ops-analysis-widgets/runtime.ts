@@ -720,9 +720,3 @@ export const buildFallbackSparkline = (
     return Number(value.toFixed(2));
   });
 };
-
-export {
-  prepareInteractionNavigation,
-  readWidgetInteraction,
-  resolveInteractionUrl,
-} from '@/app/ops-analysis/utils/interactionLink';

@@ -73,5 +73,7 @@ describe('TableSettingsSection cell style visibility', () => {
       screen.queryByRole('button', { name: 'dashboard.columnCellStyleConfig' }),
     ).toBeNull();
     expect(screen.getByDisplayValue('status')).toBeTruthy();
+    expect(screen.queryByText('dashboard.addOperationColumn')).toBeNull();
+    expect(screen.getByText('common.add')).toBeTruthy();
   });
 });

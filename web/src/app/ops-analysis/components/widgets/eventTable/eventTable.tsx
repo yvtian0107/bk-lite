@@ -5,7 +5,7 @@ import React, {
   useRef,
   useState,
 } from 'react';
-import { Button, Tooltip } from 'antd';
+import { Tooltip } from 'antd';
 import type { ColumnsType } from 'antd/es/table';
 import type { DatasourceItem } from '@/app/ops-analysis/types/dataSource';
 import type {
@@ -30,11 +30,10 @@ import WidgetState from '@/app/ops-analysis/components/widget-state';
 import { supportsServerPagination } from '@/app/ops-analysis/utils/tablePagination';
 import { useTableBodyScrollY } from '../shared/useTableBodyScrollY';
 import { useInteractionSurface } from '@/app/ops-analysis/context/interactionSurface';
-import { useWidgetDataLink } from '@/app/ops-analysis/components/interactionTitleIcon';
+import { InteractionActionCell, useWidgetDataLink } from '@/app/ops-analysis/components/interactionTitleIcon';
 import {
   isFirstActionColumn,
   readWidgetInteraction,
-  shouldRenderInteractionActionButton,
   tableRowLinkPoint,
   withInteractionActionColumn,
 } from '@/app/ops-analysis/utils/interactionLink';
@@ -173,22 +172,14 @@ const EventTable: React.FC<EventTableProps> = ({
         ellipsis: { showTitle: false },
         render: (text: any, record: EventTableRow) => {
           if (col.columnType === 'actions') {
-            if (!shouldRenderInteractionActionButton(
-              dataLink,
-              surface,
-              isFirstActionColumn(columnConfigs, columnIndex),
-            )) {
-              return '-';
-            }
             return (
-              <Button
-                type="link"
-                size="small"
-                className="p-0"
-                onClick={() => openPoint(tableRowLinkPoint(record))}
-              >
-                {dataLinkName || t('dashboard.interactionOpen', '打开链接')}
-              </Button>
+              <InteractionActionCell
+                link={dataLink}
+                surface={surface}
+                isFirst={isFirstActionColumn(columnConfigs, columnIndex)}
+                label={dataLinkName || t('dashboard.interactionOpen', '打开链接')}
+                onOpen={() => openPoint(tableRowLinkPoint(record))}
+              />
             );
           }
           return (

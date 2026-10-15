@@ -24,6 +24,7 @@ import { useEchartsFinishedReady } from '@/app/ops-analysis/hooks/useEchartsFini
 import { formatVisibleChartValue } from '@/app/ops-analysis/utils/chartValueFormat';
 import { useTranslation } from '@/utils/i18n';
 import { useWidgetDataLink } from '@/app/ops-analysis/components/interactionTitleIcon';
+import { pieSectorSelectedMode } from '@/app/ops-analysis/utils/interactionBehavior';
 
 interface OsPieProps {
   rawData: any;
@@ -81,7 +82,8 @@ const OsPie: React.FC<OsPieProps> = ({
     isDataReady,
     onReady,
   });
-  const { active: dataLinkActive, onChartClick } = useWidgetDataLink(config);
+  const { link, surface, onChartClick } = useWidgetDataLink(config);
+  const sectorSelectedMode = pieSectorSelectedMode(surface, link?.kind);
   const onEvents = useMemo(
     () => ({ ...finishedEvents, click: onChartClick }),
     [finishedEvents, onChartClick],
@@ -132,7 +134,7 @@ const OsPie: React.FC<OsPieProps> = ({
         center: ['50%', '50%'],
         radius: ['50%', '78%'],
         avoidLabelOverlap: false,
-        selectedMode: dataLinkActive ? false : 'single',
+        selectedMode: sectorSelectedMode,
         label: {
           show: true,
           position: 'center',
@@ -183,7 +185,7 @@ const OsPie: React.FC<OsPieProps> = ({
     ],
   }), [
     chartColors,
-    dataLinkActive,
+    sectorSelectedMode,
     chartData,
     chartTheme,
     config,

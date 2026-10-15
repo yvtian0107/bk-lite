@@ -19,6 +19,7 @@ import { Modal, message, Select } from 'antd';
 import { FilterTokenInput } from '@/app/ops-analysis/components/filterTokenInput';
 import { FilterTemplateProvider, FilterTemplateTitleGate } from '@/app/ops-analysis/context/filterTemplate';
 import { InteractionSurfaceProvider } from '@/app/ops-analysis/context/interactionSurface';
+import { WidgetCsvExportRegistryProvider } from '@/app/ops-analysis/context/widgetCsvExportRegistry';
 import { filterTemplateAsyncDependencies } from '@/app/ops-analysis/utils/filterTemplate';
 import { useTranslation } from '@/utils/i18n';
 import { useOpsAnalysis } from '@/app/ops-analysis/context/common';
@@ -2027,6 +2028,7 @@ const Dashboard = forwardRef<DashboardRef, DashboardProps>(
     );
 
     return (
+      <WidgetCsvExportRegistryProvider>
       <FilterTemplateProvider
         definitions={definitions}
         resolveDefinitions={appliedFilterDefinitions}
@@ -2137,6 +2139,7 @@ const Dashboard = forwardRef<DashboardRef, DashboardProps>(
       </div>
       </InteractionSurfaceProvider>
       </FilterTemplateProvider>
+      </WidgetCsvExportRegistryProvider>
     );
   },
 );

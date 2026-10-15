@@ -56,7 +56,7 @@ import type { CanvasRuntimeRefreshCause } from '@/app/ops-analysis/utils/canvasR
 import { WidgetHeaderRuntimeSlotProvider } from '@/app/ops-analysis/components/widgetHeaderRuntimeSlot';
 import WidgetWrapper from '@/app/ops-analysis/components/widgetDataRenderer';
 import WidgetCsvHoverButton from '@/app/ops-analysis/components/widgetCsvHoverButton';
-import { notifyWidgetCsvExportNotStarted, useWidgetCsvExportRegistry, WidgetCsvExportRegistryProvider } from '@/app/ops-analysis/context/widgetCsvExportRegistry';
+import { notifyWidgetCsvExportNotStarted, useWidgetCsvExportRegistry, useWidgetCsvExportRegistryState, WidgetCsvExportRegistryProvider } from '@/app/ops-analysis/context/widgetCsvExportRegistry';
 import { buildAnalysisWidgetMenuItems, buildDashboardWidgetMenuKeys, resolveWidgetCsvExportEntry } from '@/app/ops-analysis/utils/widgetCsvMenu';
 import { DashboardRuntimeSchedulerProvider, useDashboardRuntimeScheduler } from '@/app/ops-analysis/context/dashboardRuntimeScheduler';
 import type { DashboardRuntimeScheduler, RuntimeRequestPriority } from '@/app/ops-analysis/utils/dashboardRuntimeScheduler';
@@ -361,6 +361,9 @@ const DashboardCanvas: React.FC<DashboardCanvasProps> = ({
   onWidgetRenderStatus,
 }) => {
   const { t } = useTranslation();
+  const parentCsvRegistry = useWidgetCsvExportRegistry();
+  const ownedCsvRegistry = useWidgetCsvExportRegistryState();
+  const csvRegistry = parentCsvRegistry ?? ownedCsvRegistry;
   const gridRootRef = useRef<HTMLDivElement>(null);
   const rootGridRef = useRef<GridStackInstance | null>(null);
   const subGridRefs = useRef<Map<string, GridStackInstance>>(new Map());
@@ -1300,7 +1303,7 @@ const DashboardCanvas: React.FC<DashboardCanvasProps> = ({
   });
 
   return (
-    <WidgetCsvExportRegistryProvider>
+    <WidgetCsvExportRegistryProvider registry={csvRegistry}>
     <DashboardRuntimeSchedulerProvider>
       <SchedulerRefBinder schedulerRef={runtimeSchedulerRef} />
       <div
