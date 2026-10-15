@@ -30,6 +30,8 @@ interface InteractionLinkSectionProps {
   definitions: UnifiedFilterDefinition[];
   rawData: unknown;
   fieldConfig?: ValueConfig | null;
+  /** 大屏无边框没有标题，标题链接不可新选，已有配置保留。 */
+  titleLinkUnavailable?: boolean;
 }
 
 const InteractionLinkSection: React.FC<InteractionLinkSectionProps> = ({
@@ -38,6 +40,7 @@ const InteractionLinkSection: React.FC<InteractionLinkSectionProps> = ({
   definitions,
   rawData,
   fieldConfig,
+  titleLinkUnavailable = false,
 }) => {
   const form = Form.useFormInstance();
   const watchedKind = Form.useWatch(['interaction', 'kind'], form) as InteractionChoice | undefined;
@@ -85,6 +88,7 @@ const InteractionLinkSection: React.FC<InteractionLinkSectionProps> = ({
   }, [chartType, definitions, fieldConfig, rawData, selectedKind, t]);
 
   const selectKind = (next: InteractionChoice) => {
+    if (next === 'title' && titleLinkUnavailable) return;
     if (next === 'data' && !capability.data) return;
     form.setFieldValue(['interaction', 'kind'], next);
   };
@@ -123,12 +127,25 @@ const InteractionLinkSection: React.FC<InteractionLinkSectionProps> = ({
             }}
             options={[
               { label: t('dashboard.interactionNone', '无'), value: 'none' },
-              { label: t('dashboard.interactionTitleLink', '标题链接'), value: 'title' },
+              {
+                label: titleLinkUnavailable ? (
+                  <Tooltip title={t('dashboard.interactionTitleLinkBareDisabled', '无边框样式不显示标题，无法使用标题链接')}>
+                    <span>{t('dashboard.interactionTitleLink', '标题链接')}</span>
+                  </Tooltip>
+                ) : t('dashboard.interactionTitleLink', '标题链接'),
+                value: 'title',
+                disabled: titleLinkUnavailable,
+              },
               ...(capability.data
                 ? [{ label: t('dashboard.interactionDataLink', '数据链接'), value: 'data' }]
                 : []),
             ]}
           />
+          {selectedKind === 'title' && titleLinkUnavailable ? (
+            <p className="mb-0 mt-2 text-xs text-(--color-warning)">
+              {t('dashboard.interactionTitleLinkBareWarning', '当前为无边框样式，标题链接不会显示，切换为标准样式后生效')}
+            </p>
+          ) : null}
         </div>
         {selectedKind === 'none' ? (
           <p className="mb-0 text-xs text-(--color-text-3)">

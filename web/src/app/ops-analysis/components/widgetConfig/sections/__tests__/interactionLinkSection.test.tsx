@@ -33,7 +33,11 @@ const KindValue = () => {
   return <div data-testid="kind">{kind}</div>;
 };
 
-const renderSection = (chartType: string, kind = 'title') => {
+const renderSection = (
+  chartType: string,
+  kind = 'title',
+  titleLinkUnavailable = false,
+) => {
   const formRef = createRef<FormInstance>();
   render(
     <ConfigProvider theme={{ token: { motion: false } }}>
@@ -49,6 +53,7 @@ const renderSection = (chartType: string, kind = 'title') => {
           chartType={chartType}
           definitions={[]}
           rawData={null}
+          titleLinkUnavailable={titleLinkUnavailable}
         />
         <KindValue />
       </Form>
@@ -193,5 +198,89 @@ describe('InteractionLinkSection', () => {
         interaction: { kind: 'title', url: 'https://example.com/a' },
       });
     });
+  });
+
+  it('无边框时标题链接置灰，已配置则保留并提示，仍可改成数据链接或无', async () => {
+    const user = userEvent.setup();
+    const formRef = renderSection('line', 'title', true);
+    const titleRadio = screen.getByRole('radio', { name: '标题链接' }) as HTMLInputElement;
+
+    expect(titleRadio.disabled).toBe(true);
+    expect(titleRadio.closest('.ant-segmented-item')?.className).toContain('ant-segmented-item-selected');
+    expect(formRef.current?.getFieldValue(['interaction', 'kind'])).toBe('title');
+    expect(screen.getByText('当前为无边框样式，标题链接不会显示，切换为标准样式后生效')).toBeTruthy();
+
+    await user.hover(screen.getByText('标题链接'));
+    expect(await screen.findByText('无边框样式不显示标题，无法使用标题链接')).toBeTruthy();
+
+    await user.click(screen.getByText('数据链接'));
+    await waitFor(() => {
+      expect(screen.getByTestId('kind').textContent).toBe('data');
+    });
+    expect(screen.queryByText('当前为无边框样式，标题链接不会显示，切换为标准样式后生效')).toBeNull();
+    expect(titleRadio.disabled).toBe(true);
+
+    await user.click(screen.getByText('标题链接'));
+    expect(screen.getByTestId('kind').textContent).toBe('data');
+
+    await user.click(screen.getByText('无'));
+    await waitFor(() => {
+      expect(screen.getByText('未设置交互，组件不可点击跳转')).toBeTruthy();
+    });
+    expect(formRef.current?.getFieldValue(['interaction', 'kind'])).toBe('none');
+  });
+
+  it('无边框的标题链接组件只剩无可选，切回标准样式后标题链接恢复', async () => {
+    const user = userEvent.setup();
+    const formRef = createRef<FormInstance>();
+    const tree = (titleLinkUnavailable: boolean) => (
+      <ConfigProvider theme={{ token: { motion: false } }}>
+        <Form
+          ref={formRef}
+          layout="vertical"
+          initialValues={{
+            interaction: { kind: 'title', name: '查看详情', url: '/ops', openMode: 'sameTab' },
+          }}
+        >
+          <InteractionLinkSection
+            t={translate}
+            chartType="text"
+            definitions={[]}
+            rawData={null}
+            titleLinkUnavailable={titleLinkUnavailable}
+          />
+          <KindValue />
+        </Form>
+      </ConfigProvider>
+    );
+    const view = render(tree(true));
+
+    expect(screen.queryByRole('radio', { name: '数据链接' })).toBeNull();
+    const titleRadio = screen.getByRole('radio', { name: '标题链接' }) as HTMLInputElement;
+    expect(titleRadio.disabled).toBe(true);
+    expect(titleRadio.closest('.ant-segmented-item')?.className).toContain('ant-segmented-item-selected');
+    expect(formRef.current?.getFieldValue(['interaction', 'kind'])).toBe('title');
+    expect(screen.getByText('当前为无边框样式，标题链接不会显示，切换为标准样式后生效')).toBeTruthy();
+    expect((screen.getByPlaceholderText('输入 URL，键入 $ 插入变量') as HTMLInputElement).value).toBe('/ops');
+
+    await user.click(screen.getByText('无'));
+    await waitFor(() => {
+      expect(screen.getByTestId('kind').textContent).toBe('none');
+    });
+    expect(screen.queryByText('当前为无边框样式，标题链接不会显示，切换为标准样式后生效')).toBeNull();
+
+    await user.click(screen.getByText('标题链接'));
+    expect(screen.getByTestId('kind').textContent).toBe('none');
+
+    view.rerender(tree(false));
+    const restored = screen.getByRole('radio', { name: '标题链接' }) as HTMLInputElement;
+    expect(restored.disabled).toBe(false);
+    await user.click(screen.getByText('标题链接'));
+    await waitFor(() => {
+      expect(screen.getByTestId('kind').textContent).toBe('title');
+    });
+    expect(screen.queryByText('当前为无边框样式，标题链接不会显示，切换为标准样式后生效')).toBeNull();
+    expect((screen.getByPlaceholderText('输入 URL，键入 $ 插入变量') as HTMLInputElement).value).toBe('/ops');
+    expect(formRef.current?.getFieldValue(['interaction', 'url'])).toBe('/ops');
   });
 });

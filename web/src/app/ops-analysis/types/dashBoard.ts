@@ -274,6 +274,8 @@ export interface ViewConfigProps {
   configSection?: 'data' | 'interaction';
   /** 面板模式的页签在外部，交互校验失败时切回交互页。 */
   onConfigSectionChange?: (section: 'data' | 'interaction') => void;
+  /** 大屏当前容器样式。样式页切换时单独传入，避免整表重开。 */
+  screenFrame?: ScreenWidgetFrame;
   onDirtyChange?: (dirty: boolean) => void;
 }
 

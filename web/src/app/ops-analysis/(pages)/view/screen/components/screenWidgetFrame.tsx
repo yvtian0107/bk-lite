@@ -86,7 +86,6 @@ const ScreenWidgetFrame: React.FC<ScreenWidgetFrameProps> = ({
           <InteractionTitleIcon config={item.valueConfig} variant="screen" />
         </header>
       )}
-      {isBare ? <InteractionTitleIcon config={item.valueConfig} variant="screenFloating" /> : null}
       {isBare && editMode && (
         <div
           key="drag-surface"

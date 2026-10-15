@@ -171,6 +171,7 @@ const ViewConfig: React.FC<ViewConfigPropsWithManager> = ({
   variant = 'drawer',
   configSection,
   onConfigSectionChange,
+  screenFrame,
   onDirtyChange,
 }) => {
   const { t } = useTranslation();
@@ -1692,6 +1693,7 @@ const ViewConfig: React.FC<ViewConfigPropsWithManager> = ({
             definitions={filterDefinitions}
             rawData={previewRawData}
             fieldConfig={watchedFormValues}
+            titleLinkUnavailable={surface === 'screen' && screenFrame === 'bare'}
           />
         </div>
 

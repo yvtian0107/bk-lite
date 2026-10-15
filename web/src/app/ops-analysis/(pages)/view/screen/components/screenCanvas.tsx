@@ -1140,25 +1140,6 @@ const ScreenCanvas: React.FC<ScreenCanvasProps> = ({
           filter: drop-shadow(0 0 calc(6px * var(--screen-widget-ui-scale)) var(--screen-chrome-glow));
         }
 
-        .screen-widget-frame__title-link--floating {
-          position: absolute;
-          top: calc(8px * var(--screen-widget-ui-scale));
-          right: calc(8px * var(--screen-widget-ui-scale));
-          z-index: 20;
-          width: calc(20px * var(--screen-widget-ui-scale));
-          height: calc(20px * var(--screen-widget-ui-scale));
-          border: 1px solid color-mix(in srgb, var(--screen-chrome-accent) 48%, transparent);
-          border-radius: 999px;
-          background: color-mix(in srgb, var(--screen-widget-bg) 72%, transparent);
-          font-size: calc(12px * var(--screen-widget-ui-scale));
-        }
-
-        .screen-widget-frame__title-link--floating:hover {
-          border-color: var(--screen-chrome-accent);
-          box-shadow: 0 0 calc(8px * var(--screen-widget-ui-scale)) var(--screen-chrome-glow);
-          filter: none;
-        }
-
         .screen-widget-frame__body {
           position: relative;
           z-index: 1;

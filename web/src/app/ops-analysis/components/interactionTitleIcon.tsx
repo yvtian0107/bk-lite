@@ -2,7 +2,7 @@
 
 import React, { useCallback } from 'react';
 import { LinkOutlined } from '@ant-design/icons';
-import { Button, message, Tooltip } from 'antd';
+import { Button, message } from 'antd';
 
 import { useFilterTemplateSnapshot } from '@/app/ops-analysis/context/filterTemplate';
 import { useInteractionSurface } from '@/app/ops-analysis/context/interactionSurface';
@@ -69,7 +69,7 @@ export const useWidgetDataLink = (config?: object | null) => {
 interface InteractionTitleIconProps {
   config?: ValueConfig | null;
   floating?: boolean;
-  variant?: 'default' | 'screen' | 'screenFloating';
+  variant?: 'default' | 'screen';
 }
 
 const InteractionTitleIcon: React.FC<InteractionTitleIconProps> = ({
@@ -82,22 +82,20 @@ const InteractionTitleIcon: React.FC<InteractionTitleIconProps> = ({
   const titleLink = link?.kind === 'title' ? link : undefined;
   if (!shouldShowInteractionEntry(surface, Boolean(titleLink))) return null;
   const label = titleLink?.name || t('dashboard.interactionOpen', '打开链接');
-  const layoutClass = variant === 'screenFloating'
-    ? 'screen-widget-frame__title-link screen-widget-frame__title-link--floating'
-    : variant === 'screen'
-      ? 'screen-widget-frame__title-link'
-      : `inline-flex shrink-0 items-center justify-center text-(--color-text-2) hover:text-(--color-text-1) ${
-        floating
-          ? 'absolute right-2 top-2 z-20 h-6 w-6 rounded-full bg-(--color-bg-1)/80 shadow-sm'
-          : 'h-5 w-5'
-      }`;
+  const layoutClass = variant === 'screen'
+    ? 'screen-widget-frame__title-link'
+    : `inline-flex shrink-0 items-center justify-center text-(--color-text-2) hover:text-(--color-text-1) ${
+      floating
+        ? 'absolute right-2 top-2 z-20 h-6 w-6 rounded-full bg-(--color-bg-1)/80 shadow-sm'
+        : 'h-5 w-5'
+    }`;
 
-  const button = (
+  return (
     <button
       type="button"
       data-export-hidden="true"
       aria-label={label}
-      title={variant === 'screenFloating' ? undefined : label}
+      title={label}
       className={`no-drag ${layoutClass}`}
       onClick={(event) => {
         event.preventDefault();
@@ -108,8 +106,6 @@ const InteractionTitleIcon: React.FC<InteractionTitleIconProps> = ({
       <LinkOutlined aria-hidden />
     </button>
   );
-  if (variant !== 'screenFloating') return button;
-  return <Tooltip title={label}>{button}</Tooltip>;
 };
 
 export const InteractionActionCell = ({

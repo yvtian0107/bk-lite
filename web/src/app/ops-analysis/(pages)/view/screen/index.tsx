@@ -173,6 +173,7 @@ const ScreenDataConfig = memo(
     unifiedFilterValues,
     configSection,
     onConfigSectionChange,
+    screenFrame,
     onDirtyChange,
     onConfirm,
     onClose,
@@ -184,6 +185,7 @@ const ScreenDataConfig = memo(
     unifiedFilterValues?: Record<string, FilterValue>;
     configSection?: "data" | "interaction";
     onConfigSectionChange?: (section: "data" | "interaction") => void;
+    screenFrame?: "panel" | "bare";
     onDirtyChange?: (dirty: boolean) => void;
     onConfirm?: (values: WidgetConfig) => void;
     onClose?: () => void;
@@ -194,6 +196,7 @@ const ScreenDataConfig = memo(
         variant="panel"
         configSection={configSection}
         onConfigSectionChange={onConfigSectionChange}
+        screenFrame={screenFrame}
         item={item}
         dataSourceManager={dataSourceManager}
         showChartThemeMode={false}
@@ -1345,6 +1348,14 @@ const Screen = forwardRef<ScreenRef, ScreenProps>(({ selectedScreen, shareMode =
     />
   ) : null;
   const dataConfigItem = pendingViewConfigItem || currentViewConfigItem;
+  const interactionScreenFrame = pendingConfigItem
+    ? getDefaultScreenWidgetAppearance(pendingConfigItem.chartType).frame
+    : currentConfigItem
+      ? resolveScreenWidgetAppearance(
+        currentConfigItem.chartType,
+        currentConfigItem.valueConfig?.appearance,
+      ).frame
+      : undefined;
   const dataConfigPanel = dataConfigItem ? (
     <ScreenDataConfig
       key={historyNavEpoch}
@@ -1355,6 +1366,7 @@ const Screen = forwardRef<ScreenRef, ScreenProps>(({ selectedScreen, shareMode =
       unifiedFilterValues={queryState.filterValues}
       configSection={inspectorTab === "interaction" ? "interaction" : "data"}
       onConfigSectionChange={setInspectorTab}
+      screenFrame={interactionScreenFrame}
       onDirtyChange={setDataFormDirty}
       onConfirm={
         pendingViewConfigItem

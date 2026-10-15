@@ -3,8 +3,6 @@ import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import '@ant-design/v5-patch-for-react-19';
 import { cleanup, render, screen } from '@testing-library/react';
-import userEvent from '@testing-library/user-event';
-import { ConfigProvider } from 'antd';
 import { IntlProvider } from 'react-intl';
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 
@@ -96,7 +94,7 @@ describe('InteractionTitleIcon', () => {
             chartType: 'line',
             interaction: { ...titleLink, kind: 'data' },
           }}
-          variant="screenFloating"
+          variant="screen"
         />
       </IntlProvider>,
     );
@@ -114,7 +112,6 @@ describe('screen title link', () => {
 
     const button = screen.getByRole('button', { name: '查看详情' });
     expect(button.className).toContain('screen-widget-frame__title-link');
-    expect(button.className).not.toContain('screen-widget-frame__title-link--floating');
     expect(button.className).not.toContain('text-(--color-text-2)');
     expect(button.querySelector('.anticon-link')).toBeTruthy();
     expect(button.parentElement?.className).toContain('screen-widget-frame__header');
@@ -131,43 +128,27 @@ describe('screen title link', () => {
     expect(screen.getByText('CPU 使用率').className).toBe('screen-widget-frame__title');
   });
 
-  it('shows only a round icon on a bare screen widget and the name in a tooltip', async () => {
-    const user = userEvent.setup();
-    const { rerender } = render(
-      <ConfigProvider theme={{ token: { motion: false } }}>
-        <IntlProvider locale="zh" messages={{}}>
-          <ScreenWidgetFrame item={widget(titleLink, 'bare')}>
-            <div>chart</div>
-          </ScreenWidgetFrame>
-        </IntlProvider>
-      </ConfigProvider>,
+  it('无边框大屏不渲染标题链接，数据链接配置也不画出标题图标', () => {
+    const { rerender } = renderWithIntl(
+      <ScreenWidgetFrame item={widget(titleLink, 'bare')}>
+        <div>chart</div>
+      </ScreenWidgetFrame>,
     );
 
-    const button = screen.getByRole('button', { name: '查看详情' });
-    expect(button.className).toContain('screen-widget-frame__title-link--floating');
-    expect(button.getAttribute('title')).toBeNull();
-    expect(button.textContent).toBe('');
-    expect(button.querySelector('.anticon-link')).toBeTruthy();
+    expect(screen.queryByRole('button')).toBeNull();
     expect(screen.queryByText('CPU 使用率')).toBeNull();
-
-    await user.hover(button);
-    expect(await screen.findByText('查看详情')).toBeTruthy();
+    expect(screen.getByText('chart')).toBeTruthy();
 
     rerender(
-      <ConfigProvider theme={{ token: { motion: false } }}>
-        <IntlProvider locale="zh" messages={{}}>
-          <ScreenWidgetFrame
-            item={widget({ ...titleLink, name: '' }, 'bare')}
-          >
-            <div>chart</div>
-          </ScreenWidgetFrame>
-        </IntlProvider>
-      </ConfigProvider>,
+      <IntlProvider locale="zh" messages={{}}>
+        <ScreenWidgetFrame
+          item={widget({ ...titleLink, kind: 'data' }, 'bare')}
+        >
+          <div>chart</div>
+        </ScreenWidgetFrame>
+      </IntlProvider>,
     );
-    const emptyName = screen.getByRole('button', { name: '打开链接' });
-    expect(emptyName.textContent).toBe('');
-    await user.hover(emptyName);
-    expect(await screen.findByText('打开链接')).toBeTruthy();
+    expect(screen.queryByRole('button')).toBeNull();
   });
 });
 
@@ -189,13 +170,10 @@ describe('screen title link styles', () => {
     expect(source).toContain(
       'color-mix(in srgb, var(--screen-chrome-accent) 68%, var(--screen-widget-title-color))',
     );
-    expect(source).toContain('color-mix(in srgb, var(--screen-widget-bg) 72%, transparent)');
+    expect(source).not.toContain('screen-widget-frame__title-link--floating');
     expect(source).not.toContain('#02060c');
     expect(source).not.toContain('rgba(4, 12, 22');
     expect(source).toContain('drop-shadow(0 0 calc(6px * var(--screen-widget-ui-scale)) var(--screen-chrome-glow))');
-    expect(source).toContain('width: calc(20px * var(--screen-widget-ui-scale));');
-    expect(source).toContain('height: calc(20px * var(--screen-widget-ui-scale));');
-    expect(source).toContain('font-size: calc(12px * var(--screen-widget-ui-scale));');
     expect(source).toContain('text-overflow: ellipsis;');
     expect(source).not.toContain('screen-widget-frame__title-link-name');
     expect(source).not.toContain('--color-text-2');

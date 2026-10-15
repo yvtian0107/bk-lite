@@ -890,6 +890,8 @@
     "interactionLinkTypeDataTip": "Data link: click a point, bar, sector, or number to open",
     "interactionTitleOnlyTip": "This widget only supports a title link. Click the icon beside the title to open.",
     "interactionTitleLink": "Title link",
+    "interactionTitleLinkBareDisabled": "Bare style does not show a title, so a title link cannot be used.",
+    "interactionTitleLinkBareWarning": "Bare style is active, so the title link stays hidden until you switch to Panel style.",
     "interactionDataLink": "Data link",
     "interactionName": "Name",
     "interactionNamePlaceholder": "For example: View details",
