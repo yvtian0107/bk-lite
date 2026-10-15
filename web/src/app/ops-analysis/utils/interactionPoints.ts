@@ -9,8 +9,10 @@ import {
   toNodeGraphMapping,
 } from '@/app/ops-analysis/utils/nodeGraphData';
 import { unwrapTopNData } from '@/app/ops-analysis/utils/topNData';
+import { parseEventTimelineItems } from '@/app/ops-analysis/utils/eventTimeline';
 import {
   chartLinkFields,
+  eventTimelineLinkPoint,
   rowsFromUnknown,
   type ChartLinkPoint,
 } from '@/app/ops-analysis/utils/interactionLink';
@@ -54,6 +56,7 @@ export const buildInteractionPoints = (
     | 'nodeGraphTargetField'
     | 'nodeGraphValueField'
     | 'nodeGraphTargetPortField'
+    | 'eventTimeline'
   > | null,
 ): ChartLinkPoint[] => {
   if (chartType === 'line' || chartType === 'bar') {
@@ -74,11 +77,24 @@ export const buildInteractionPoints = (
     }).flatMap((item) => (item.__link ? [item.__link] : []));
   }
 
-  if (chartType === 'table') {
+  if (chartType === 'table' || chartType === 'eventTable') {
     return rowsFromUnknown(rawData).map((row) => ({
       fields: chartLinkFields(row),
       raw: row,
     }));
+  }
+
+  if (chartType === 'eventTimeline') {
+    const mapping = config?.eventTimeline;
+    return parseEventTimelineItems(rawData, {
+      sortOrder: mapping?.sortOrder,
+      timeField: mapping?.timeField,
+      titleField: mapping?.titleField,
+      descriptionField: mapping?.descriptionField,
+      categoryField: mapping?.categoryField,
+      statusField: mapping?.statusField,
+      linkField: mapping?.linkField,
+    }).items.map((item) => eventTimelineLinkPoint(item));
   }
 
   if (chartType === 'single' || chartType === 'gauge') {

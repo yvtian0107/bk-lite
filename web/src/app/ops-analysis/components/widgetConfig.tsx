@@ -12,7 +12,6 @@ import {
   UnifiedFilterDefinition,
   FilterBindings,
   FilterValue,
-  DashboardActionConfig,
   WidgetConfig,
 } from '@/app/ops-analysis/types/dashBoard';
 import {
@@ -160,7 +159,6 @@ const ViewConfig: React.FC<ViewConfigPropsWithManager> = ({
   const [drawerSection, setDrawerSection] = useState<'data' | 'interaction'>('data');
   const activeSection = variant === 'panel' ? (configSection ?? 'data') : drawerSection;
   const [filterBindings, setFilterBindings] = useState<FilterBindings>({});
-  const [actions, setActions] = useState<DashboardActionConfig[]>([]);
   const [dataSourceSelectorVisible, setDataSourceSelectorVisible] = useState(false);
   const [editingInputConfigParam, setEditingInputConfigParam] = useState<ParamItem | null>(null);
   const [widgetParamOverrides, setWidgetParamOverrides] = useState<ParamItem[]>([]);
@@ -324,7 +322,6 @@ const ViewConfig: React.FC<ViewConfigPropsWithManager> = ({
         setChartType(sceneWidgetType);
         setSelectedDataSource(undefined);
         setFilterBindings({});
-        setActions([]);
         setWidgetParamOverrides([]);
         tableConfig.resetTableConfig();
         singleValueConfig.resetSingleValueConfig();
@@ -340,7 +337,6 @@ const ViewConfig: React.FC<ViewConfigPropsWithManager> = ({
       // 重置依赖字段
       setChartType('');
       setFilterBindings({});
-      setActions([]);
       setWidgetParamOverrides([]);
       tableConfig.resetTableConfig();
       singleValueConfig.resetSingleValueConfig();
@@ -668,7 +664,6 @@ const ViewConfig: React.FC<ViewConfigPropsWithManager> = ({
       surface,
     });
     setChartType(formValues.chartType);
-    setActions(valueConfig?.actions || []);
 
     if (isOpenedSceneWidget) {
       setSelectedDataSource(undefined);
@@ -858,7 +853,6 @@ const ViewConfig: React.FC<ViewConfigPropsWithManager> = ({
     setSelectedDataSource(undefined);
     setChartType('');
     setFilterBindings({});
-    setActions([]);
     setDataSourceSelectorVisible(false);
     setEditingInputConfigParam(null);
     setWidgetParamOverrides([]);
@@ -1091,10 +1085,8 @@ const ViewConfig: React.FC<ViewConfigPropsWithManager> = ({
       filterBindings,
       displayColumns: tableConfig.displayColumns,
       filterFields: tableConfig.filterFields,
-      actions,
     });
   }, [
-    actions,
     chartType,
     filterBindings,
     form,
@@ -1110,7 +1102,6 @@ const ViewConfig: React.FC<ViewConfigPropsWithManager> = ({
   const liveDraft = useMemo(() => {
     return buildCurrentDraftConfig();
   }, [
-    actions,
     buildCurrentDraftConfig,
     chartType,
     filterBindings,
@@ -1205,7 +1196,6 @@ const ViewConfig: React.FC<ViewConfigPropsWithManager> = ({
         filterBindings,
         displayColumns: tableConfig.displayColumns,
         filterFields: tableConfig.filterFields,
-        actions,
       });
 
       if (submitResult.error) {
@@ -1416,7 +1406,6 @@ const ViewConfig: React.FC<ViewConfigPropsWithManager> = ({
                 t={t}
                 displayColumns={tableConfig.displayColumns}
                 displayColumnOptions={displayColumnOptions}
-                actions={actions}
                 filterFields={tableConfig.filterFields}
                 filterFieldOptions={filterFieldOptions}
                 showFilterFields={showTableFilterFields}
@@ -1429,20 +1418,7 @@ const ViewConfig: React.FC<ViewConfigPropsWithManager> = ({
                 onDeleteFilterField={tableConfig.handleDeleteFilterField}
                 onFilterFieldChange={tableConfig.handleFilterFieldChange}
                 onAddDisplayColumn={tableConfig.handleAddDisplayColumn}
-                onDeleteDisplayColumn={(id) => {
-                  const deletingColumn = tableConfig.displayColumns.find(
-                    (column) => column.id === id,
-                  );
-                  tableConfig.handleDeleteDisplayColumn(id);
-                  if (deletingColumn?.columnType === 'actions') {
-                    setActions((prev) =>
-                      prev.filter(
-                        (action) =>
-                          action.columnKey !== deletingColumn.key,
-                      ),
-                    );
-                  }
-                }}
+                onDeleteDisplayColumn={tableConfig.handleDeleteDisplayColumn}
                 onDisplayColumnChange={tableConfig.handleDisplayColumnChange}
                 onDisplayColumnStyleChange={
                   tableConfig.handleDisplayColumnStyleChange
@@ -1464,7 +1440,6 @@ const ViewConfig: React.FC<ViewConfigPropsWithManager> = ({
                       : tableConfig.createDefaultDisplayColumn(),
                   ])
                 }
-                onActionsChange={setActions}
               />
             )}
 

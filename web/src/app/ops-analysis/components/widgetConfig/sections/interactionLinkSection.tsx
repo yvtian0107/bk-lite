@@ -50,7 +50,9 @@ const InteractionLinkSection: React.FC<InteractionLinkSectionProps> = ({
       seriesName: t('dashboard.interactionSeriesName', '系列名称'),
       time: t('dashboard.interactionValueTime', '时间'),
       numeric: t('dashboard.interactionValueNumeric', '数值'),
-      text: t('dashboard.interactionValueText', '文本'),
+      text: chartType === 'eventTimeline'
+        ? t('dashboard.eventTimelineTitleField', '标题')
+        : t('dashboard.interactionValueText', '文本'),
       raw: t('dashboard.interactionValueRaw', '原始值'),
       cabinetId: t('dashboard.interactionCabinetId', '机柜 ID'),
       cabinetName: t('dashboard.interactionCabinetName', '机柜名称'),
@@ -77,9 +79,11 @@ const InteractionLinkSection: React.FC<InteractionLinkSectionProps> = ({
 
   const dataHint = capability.data === 'table'
     ? t('dashboard.interactionDataTableHint', '表格只显示这一条操作按钮，字段取当前行。')
-    : capability.data === 'contextMenu'
-      ? t('dashboard.interactionDataMenuHint', '在机柜、设备、系统或主机上右键打开，左键交互保持不变。')
-      : t('dashboard.interactionDataClickHint', '单击数据点、柱、扇区或数字时打开。');
+    : capability.data === 'timeline'
+      ? t('dashboard.interactionDataTimelineHint', '单击事件卡片或标题时打开，字段取这条事件。')
+      : capability.data === 'contextMenu'
+        ? t('dashboard.interactionDataMenuHint', '在机柜、设备、系统或主机上右键打开，左键交互保持不变。')
+        : t('dashboard.interactionDataClickHint', '单击数据点、柱、扇区或数字时打开。');
 
   return (
     <section>

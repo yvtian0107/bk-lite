@@ -122,7 +122,8 @@ export interface BuildWidgetSubmitConfigInput {
   filterBindings: FilterBindings;
   displayColumns: SubmitDisplayColumn[];
   filterFields: SubmitFilterField[];
-  actions: DashboardActionConfig[];
+  /** 旧操作列。提交忽略它，保存时由 applyInteractionLink 删掉 valueConfig.actions。 */
+  actions?: DashboardActionConfig[];
   /** 预览组装：映射与提交相同，但不因未填必填项拦截。 */
   forPreview?: boolean;
 }
@@ -411,6 +412,7 @@ export const omitForeignChartTypeFields = <T extends object>(
   } else {
     delete next.cardList;
   }
+  delete next.actions;
   if (chartType === 'multiValue') {
     if (!Array.isArray(next.thresholdColors) || next.thresholdColors.length === 0) {
       delete next.thresholdColors;
@@ -540,7 +542,6 @@ export const buildWidgetSubmitConfig = ({
   filterBindings,
   displayColumns,
   filterFields,
-  actions,
   forPreview = false,
 }: BuildWidgetSubmitConfigInput): BuildWidgetSubmitConfigResult => {
   if (values.sceneWidgetType) {
@@ -586,9 +587,6 @@ export const buildWidgetSubmitConfig = ({
     result.chartThemeMode = values.chartThemeMode;
   }
 
-  if (chartType === 'table') {
-    void actions;
-  }
   applyInteractionLink(result, values, chartType);
 
   if (chartType === 'single') {

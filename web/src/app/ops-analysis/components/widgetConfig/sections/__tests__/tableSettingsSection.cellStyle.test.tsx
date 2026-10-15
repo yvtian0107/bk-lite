@@ -24,7 +24,6 @@ vi.mock('@/components/custom-table', () => ({
     </div>
   ),
 }));
-vi.mock('../actionInteractionModal', () => ({ ActionInteractionModal: () => null }));
 vi.mock('../columnCellStyleModal', () => ({ ColumnCellStyleModal: () => null }));
 
 afterEach(cleanup);
@@ -37,7 +36,6 @@ const renderSection = (showColumnCellStyle: boolean) =>
         { id: 'status', key: 'status', title: '状态', visible: true, order: 0 },
       ]}
       displayColumnOptions={[{ label: '状态', value: 'status' }]}
-      actions={[]}
       filterFields={[]}
       filterFieldOptions={[]}
       showFilterFields={false}
@@ -58,7 +56,6 @@ const renderSection = (showColumnCellStyle: boolean) =>
       onReProbeColumns={vi.fn()}
       onAddNewFilterField={vi.fn()}
       onAddNewDisplayColumn={vi.fn()}
-      onActionsChange={vi.fn()}
     />,
   );
 

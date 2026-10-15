@@ -24,7 +24,7 @@ dayjs.extend(timezone);
 
 export type InteractionSurface = 'edit' | 'view' | 'share';
 
-export type InteractionDataCapability = false | 'click' | 'table' | 'contextMenu';
+export type InteractionDataCapability = false | 'click' | 'table' | 'contextMenu' | 'timeline';
 
 export interface ChartLinkPoint {
   seriesName?: string;
@@ -88,7 +88,8 @@ export const interactionCapability = (
 ): { title: boolean; data: InteractionDataCapability } => {
   const type = chartType || '';
   if (TITLE_ONLY.has(type)) return { title: true, data: false };
-  if (type === 'table') return { title: true, data: 'table' };
+  if (type === 'table' || type === 'eventTable') return { title: true, data: 'table' };
+  if (type === 'eventTimeline') return { title: true, data: 'timeline' };
   if (type === 'room3D' || type === 'application3D') {
     return { title: true, data: 'contextMenu' };
   }
@@ -167,6 +168,13 @@ export const isFirstActionColumn = <T extends { columnType?: string }>(
   columns: T[],
   index: number,
 ) => columns.findIndex((column) => column.columnType === 'actions') === index;
+
+/** 分享页不显示操作按钮；编辑态显示，是否跳转由打开函数决定。 */
+export const shouldRenderInteractionActionButton = (
+  link: WidgetInteractionLink | undefined,
+  surface: InteractionSurface,
+  isFirst: boolean,
+) => link?.kind === 'data' && isFirst && shouldShowInteractionEntry(surface, true);
 
 export const withChartLinkPoints = <T>(
   data: T[] | undefined,
@@ -628,7 +636,7 @@ export const listPresentDataVariables = (
               : item.label;
     return { ...item, label };
   });
-  if (chartType === 'table') {
+  if (chartType === 'table' || chartType === 'eventTable') {
     return named.filter((item) => item.token.includes(DATA_FIELD_PREFIX));
   }
   if (chartType === 'room3D' || chartType === 'application3D') {
@@ -742,6 +750,29 @@ export const tableRowLinkPoint = (record: Record<string, unknown>): ChartLinkPoi
   fields: chartLinkFields(record),
   raw: record,
 });
+
+/** 事件时间线数据链接：时间、标题，以及原始行上真实存在的字段。 */
+export const eventTimelineLinkPoint = (item: {
+  time?: string;
+  title?: string;
+  source?: Record<string, unknown>;
+}): ChartLinkPoint => {
+  const iso = item.time ? chartLinkTime(item.time, true) : undefined;
+  const time = iso || item.time || undefined;
+  const fields = chartLinkFields(item.source);
+  return {
+    ...(time ? { time } : {}),
+    ...(item.title ? { text: item.title } : {}),
+    ...(item.source ? { raw: item.source } : {}),
+    ...(fields ? { fields } : {}),
+  };
+};
+
+/** 配了数据链接时，标题不再使用 linkField 的地址。 */
+export const shouldRenderEventTimelineFieldLink = (
+  link: WidgetInteractionLink | undefined,
+  fieldLink?: string,
+) => Boolean(fieldLink) && link?.kind !== 'data';
 
 export const listTableFieldVariables = (
   rows: Array<Record<string, unknown>>,

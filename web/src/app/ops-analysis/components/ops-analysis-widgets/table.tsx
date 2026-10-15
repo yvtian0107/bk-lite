@@ -19,6 +19,7 @@ import { useWidgetDataLink } from '@/app/ops-analysis/components/interactionTitl
 import {
   isFirstActionColumn,
   readWidgetInteraction,
+  shouldRenderInteractionActionButton,
   tableRowLinkPoint,
   withInteractionActionColumn,
 } from '@/app/ops-analysis/utils/interactionLink';
@@ -163,7 +164,11 @@ const OpsAnalysisTable: React.FC<OpsAnalysisTableProps> = ({
         ellipsis: { showTitle: false },
         render: (text: any, record: TableDataItem) => {
           if (col.columnType === 'actions') {
-            if (dataLink?.kind !== 'data' || !isFirstActionColumn(columnConfigs, columnIndex)) {
+            if (!shouldRenderInteractionActionButton(
+              dataLink,
+              surface,
+              isFirstActionColumn(columnConfigs, columnIndex),
+            )) {
               return '-';
             }
             return (
@@ -244,7 +249,7 @@ const OpsAnalysisTable: React.FC<OpsAnalysisTableProps> = ({
 
       return column;
     });
-  }, [columnConfigs, dataLink, dataLinkName, displayedTableData, openPoint, t]);
+  }, [columnConfigs, dataLink, dataLinkName, displayedTableData, openPoint, surface, t]);
 
   useEffect(() => {
     if (!onQueryChange) return;

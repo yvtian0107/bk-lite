@@ -190,6 +190,7 @@ export interface ScreenRenderContext {
   widgetUiScale: number;
 }
 
+/** 旧操作列参数映射。只在读取时转成 interaction，配置界面不再编辑。 */
 export interface DashboardActionParamMapping {
   key: string;
   source: 'rowField' | 'fixed';
@@ -197,6 +198,7 @@ export interface DashboardActionParamMapping {
   value?: string | number | boolean | null;
 }
 
+/** 旧操作列。读取时只保留第一条并迁成 interaction，保存时删除。 */
 export interface DashboardActionConfig {
   columnKey: string;
   text: string;

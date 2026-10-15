@@ -32,6 +32,7 @@ import { useWidgetDataLink } from '@/app/ops-analysis/components/interactionTitl
 import {
   isFirstActionColumn,
   readWidgetInteraction,
+  shouldRenderInteractionActionButton,
   tableRowLinkPoint,
   withInteractionActionColumn,
 } from '@/app/ops-analysis/utils/interactionLink';
@@ -207,7 +208,11 @@ const ComTable: React.FC<ComTableProps> = ({
         ellipsis: { showTitle: false },
         render: (text: any, record: TableDataItem) => {
           if (col.columnType === 'actions') {
-            if (dataLink?.kind !== 'data' || !isFirstActionColumn(columnConfigs, columnIndex)) {
+            if (!shouldRenderInteractionActionButton(
+              dataLink,
+              surface,
+              isFirstActionColumn(columnConfigs, columnIndex),
+            )) {
               return '-';
             }
             return (
@@ -281,7 +286,7 @@ const ComTable: React.FC<ComTableProps> = ({
 
       return column;
     });
-  }, [columnConfigs, config, dataLink, dataLinkName, openPoint, t]);
+  }, [columnConfigs, config, dataLink, dataLinkName, openPoint, surface, t]);
 
   useEffect(() => {
     if (!onQueryChange) return;

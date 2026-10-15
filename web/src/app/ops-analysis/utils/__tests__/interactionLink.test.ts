@@ -16,6 +16,8 @@ import {
   readWidgetInteraction,
   resolveInteractionUrl,
   shouldNavigateInteraction,
+  shouldRenderEventTimelineFieldLink,
+  shouldRenderInteractionActionButton,
   shouldShowInteractionEntry,
   withInteractionActionColumn,
   type ChartLinkPoint,
@@ -115,6 +117,7 @@ test('allows http, https, and site paths, and blocks other protocols', () => {
   assert.equal(isAllowedInteractionUrl('data:text/html,hi'), false);
   assert.equal(isAllowedInteractionUrl('vbscript:msg'), false);
   assert.equal(isAllowedInteractionUrl('//evil.example'), false);
+  assert.equal(isAllowedInteractionUrl('///evil.example'), false);
   assert.equal(isAllowedInteractionUrl('javascript:alert(1)'), false);
   assert.equal(isAllowedInteractionUrl(' javascript:alert(1)'), false);
 });
@@ -354,4 +357,54 @@ test('chart clicks expose the fields that exist on each widget', () => {
     '$__data.fields.system.id$',
     '$__data.fields.system.name$',
   ]);
+});
+
+test('event table and event timeline expose the clicked row fields', () => {
+  const labels = {
+    valueGroup: '值',
+    fieldGroup: '字段',
+    fieldLabel: (field: string) => field,
+  };
+  const rows = [{ id: 'evt-1', title: 'CPU', severity: 'critical' }];
+  const eventTable = listPresentDataVariables(
+    'eventTable',
+    rows,
+    labels,
+    buildInteractionPoints('eventTable', rows),
+  );
+  assert.deepEqual(eventTable.map((item) => item.token), [
+    '$__data.fields.id$',
+    '$__data.fields.severity$',
+    '$__data.fields.title$',
+  ]);
+
+  const events = [{
+    time: '2026-08-01 10:15:00',
+    title: 'CPU usage reached 95%',
+    host: 'web-01',
+    link: '/monitor/view/detail?id=1',
+  }];
+  const timelinePoints = buildInteractionPoints('eventTimeline', events);
+  assert.equal(timelinePoints[0]?.text, 'CPU usage reached 95%');
+  assert.equal(Date.parse(timelinePoints[0]?.time || ''), Date.parse('2026-08-01 10:15:00'));
+  assert.equal(timelinePoints[0]?.fields?.host, 'web-01');
+  const timeline = listPresentDataVariables('eventTimeline', events, labels, timelinePoints);
+  assert.equal(timeline.some((item) => item.token === '$__value.time$'), true);
+  assert.equal(timeline.some((item) => item.token === '$__value.text$'), true);
+  assert.equal(timeline.some((item) => item.token === '$__data.fields.host$'), true);
+  assert.equal(timeline.some((item) => item.token === '$__data.fields.title$'), true);
+
+  const dataLink = {
+    kind: 'data' as const,
+    name: '查看',
+    url: '/ops/event?title=$__value.text$',
+    openMode: 'sameTab' as const,
+  };
+  assert.equal(shouldRenderEventTimelineFieldLink(dataLink, '/monitor/view/detail?id=1'), false);
+  assert.equal(shouldRenderEventTimelineFieldLink(undefined, '/monitor/view/detail?id=1'), true);
+  assert.equal(shouldRenderInteractionActionButton(dataLink, 'view', true), true);
+  assert.equal(shouldRenderInteractionActionButton(dataLink, 'edit', true), true);
+  assert.equal(shouldRenderInteractionActionButton(dataLink, 'share', true), false);
+  assert.equal(shouldShowInteractionEntry('share', true), false);
+  assert.equal(shouldNavigateInteraction('edit'), false);
 });

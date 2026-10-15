@@ -18,7 +18,6 @@ import {
 } from '@ant-design/icons';
 import CustomTable from '@/components/custom-table';
 import type {
-  DashboardActionConfig,
   TableFilterFieldConfig,
   TableColumnConfigItem,
 } from '@/app/ops-analysis/types/dashBoard';
@@ -42,7 +41,6 @@ interface TableSettingsSectionProps {
   ) => string;
   displayColumns: DisplayColumnRow[];
   displayColumnOptions: FilterFieldOption[];
-  actions: DashboardActionConfig[];
   filterFields: FilterFieldRow[];
   filterFieldOptions: FilterFieldOption[];
   showFilterFields: boolean;
@@ -78,7 +76,6 @@ interface TableSettingsSectionProps {
   onReProbeColumns: () => void;
   onAddNewFilterField: () => void;
   onAddNewDisplayColumn: (columnType?: 'data' | 'actions') => void;
-  onActionsChange: (actions: DashboardActionConfig[]) => void;
 }
 
 export const TableSettingsSection: React.FC<TableSettingsSectionProps> = ({
