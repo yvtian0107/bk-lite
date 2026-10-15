@@ -70,18 +70,29 @@ interface InteractionTitleIconProps {
   config?: ValueConfig | null;
   className?: string;
   floating?: boolean;
+  variant?: 'default' | 'screen' | 'screenFloating';
 }
 
 const InteractionTitleIcon: React.FC<InteractionTitleIconProps> = ({
   config,
   className = '',
   floating = false,
+  variant = 'default',
 }) => {
   const { t } = useTranslation();
   const { link, surface, open } = useOpenInteractionLink(config);
   const titleLink = link?.kind === 'title' ? link : undefined;
   if (!shouldShowInteractionEntry(surface, Boolean(titleLink))) return null;
   const label = titleLink?.name || t('dashboard.interactionOpen', '打开链接');
+  const layoutClass = variant === 'screenFloating'
+    ? 'screen-widget-frame__title-link screen-widget-frame__title-link--floating'
+    : variant === 'screen'
+      ? 'screen-widget-frame__title-link'
+      : `inline-flex shrink-0 items-center justify-center text-(--color-text-2) hover:text-(--color-text-1) ${
+        floating
+          ? 'absolute right-2 top-2 z-20 h-6 w-6 rounded-full bg-(--color-bg-1)/80 shadow-sm'
+          : 'h-5 w-5'
+      }`;
 
   return (
     <button
@@ -89,11 +100,7 @@ const InteractionTitleIcon: React.FC<InteractionTitleIconProps> = ({
       data-export-hidden="true"
       aria-label={label}
       title={label}
-      className={`no-drag inline-flex shrink-0 items-center justify-center text-(--color-text-2) hover:text-(--color-text-1) ${
-        floating
-          ? 'absolute right-2 top-2 z-20 h-6 w-6 rounded-full bg-(--color-bg-1)/80 shadow-sm'
-          : 'h-5 w-5'
-      } ${className}`}
+      className={`no-drag ${layoutClass} ${className}`}
       onClick={(event) => {
         event.preventDefault();
         event.stopPropagation();
@@ -101,6 +108,9 @@ const InteractionTitleIcon: React.FC<InteractionTitleIconProps> = ({
       }}
     >
       <LinkOutlined aria-hidden />
+      {variant === 'screenFloating' ? (
+        <span className="screen-widget-frame__title-link-name">{label}</span>
+      ) : null}
     </button>
   );
 };

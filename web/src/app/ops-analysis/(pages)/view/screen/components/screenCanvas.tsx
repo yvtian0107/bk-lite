@@ -1105,6 +1105,71 @@ const ScreenCanvas: React.FC<ScreenCanvasProps> = ({
           text-shadow: var(--screen-widget-title-shadow);
         }
 
+        .screen-widget-frame__header:has(.screen-widget-frame__title-link) {
+          justify-content: flex-start;
+          gap: calc(6px * var(--screen-widget-ui-scale));
+        }
+
+        .screen-widget-frame__header:has(.screen-widget-frame__title-link) .screen-widget-frame__title {
+          width: auto;
+          flex: 0 1 auto;
+        }
+
+        .screen-widget-frame__title-link {
+          display: inline-flex;
+          flex-shrink: 0;
+          align-items: center;
+          justify-content: center;
+          width: calc(14px * var(--screen-widget-ui-scale));
+          height: calc(14px * var(--screen-widget-ui-scale));
+          padding: 0;
+          border: 0;
+          background: transparent;
+          color: color-mix(in srgb, var(--screen-chrome-accent) 68%, #02060c);
+          font-size: calc(14px * var(--screen-widget-ui-scale));
+          line-height: 1;
+          cursor: pointer;
+        }
+
+        .screen-widget-frame__title-link .anticon {
+          font-size: 1em;
+        }
+
+        .screen-widget-frame__title-link:hover {
+          color: var(--screen-chrome-accent);
+          filter: drop-shadow(0 0 calc(6px * var(--screen-widget-ui-scale)) var(--screen-chrome-glow));
+        }
+
+        .screen-widget-frame__title-link--floating {
+          position: absolute;
+          top: calc(8px * var(--screen-widget-ui-scale));
+          right: calc(8px * var(--screen-widget-ui-scale));
+          z-index: 20;
+          width: auto;
+          max-width: calc(100% - calc(16px * var(--screen-widget-ui-scale)));
+          height: calc(24px * var(--screen-widget-ui-scale));
+          gap: calc(4px * var(--screen-widget-ui-scale));
+          padding: 0 calc(8px * var(--screen-widget-ui-scale));
+          overflow: hidden;
+          border: 1px solid color-mix(in srgb, var(--screen-chrome-accent) 48%, transparent);
+          border-radius: 999px;
+          background: rgba(4, 12, 22, 0.55);
+          font-size: calc(12px * var(--screen-widget-ui-scale));
+        }
+
+        .screen-widget-frame__title-link--floating:hover {
+          border-color: var(--screen-chrome-accent);
+          box-shadow: 0 0 calc(8px * var(--screen-widget-ui-scale)) var(--screen-chrome-glow);
+          filter: none;
+        }
+
+        .screen-widget-frame__title-link-name {
+          min-width: 0;
+          overflow: hidden;
+          text-overflow: ellipsis;
+          white-space: nowrap;
+        }
+
         .screen-widget-frame__body {
           position: relative;
           z-index: 1;
