@@ -25,6 +25,8 @@ import { useTableBodyScrollY } from '@/app/ops-analysis/components/widgets/share
 import { useInteractionSurface } from '@/app/ops-analysis/context/interactionSurface';
 import { InteractionActionCell, useWidgetDataLink } from '@/app/ops-analysis/components/interactionTitleIcon';
 import {
+  interactionActionColumnTitle,
+  interactionActionLinkText,
   isFirstActionColumn,
   readWidgetInteraction,
   tableRowLinkPoint,
@@ -117,12 +119,12 @@ const OpsAnalysisEventTable: React.FC<OpsAnalysisEventTableProps> = ({
   const columnConfigs = useMemo(() => {
     return withInteractionActionColumn(configuredColumns, dataLink, surface, {
       key: '__interaction',
-      title: dataLinkName || t('dashboard.interactionOpen', '打开链接'),
+      title: interactionActionColumnTitle(t),
       columnType: 'actions',
       visible: true,
       order: configuredColumns.length,
     });
-  }, [configuredColumns, dataLink, dataLinkName, surface, t]);
+  }, [configuredColumns, dataLink, surface, t]);
 
   const columns = useMemo((): ColumnsType<EventTableRow> => {
     return columnConfigs.map((col, columnIndex) => {
@@ -138,7 +140,7 @@ const OpsAnalysisEventTable: React.FC<OpsAnalysisEventTableProps> = ({
                 link={dataLink}
                 surface={surface}
                 isFirst={isFirstActionColumn(columnConfigs, columnIndex)}
-                label={dataLinkName || t('dashboard.interactionOpen', '打开链接')}
+                label={interactionActionLinkText(dataLinkName, t)}
                 onOpen={() => openPoint(tableRowLinkPoint(record))}
               />
             );

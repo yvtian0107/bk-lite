@@ -7,6 +7,8 @@ import { ChartDataTransformer } from '@/app/ops-analysis/utils/chartDataTransfor
 import { buildInteractionPoints, cardListLinkPoints } from '@/app/ops-analysis/utils/interactionPoints';
 import { parseCardListItems, DEFAULT_CARD_LIST_MAX_ITEMS } from '@/app/ops-analysis/utils/cardList';
 import {
+  interactionActionColumnTitle,
+  interactionActionLinkText,
   interactionKindForChartType,
   isAllowedInteractionUrl,
   isFirstActionColumn,
@@ -477,6 +479,7 @@ test('chart clicks expose the fields that exist on each widget', () => {
     'view',
     { key: '__interaction', columnType: 'actions' },
   );
+  assert.equal(tableColumns.at(-1)?.key, '__interaction');
   assert.equal(isFirstActionColumn(tableColumns, 1), true);
   assert.equal(withInteractionActionColumn(
     tableColumns,
@@ -498,6 +501,15 @@ test('chart clicks expose the fields that exist on each widget', () => {
     '$__data.fields.system.id$',
     '$__data.fields.system.name$',
   ]);
+});
+
+test('table action column title stays fixed while the cell uses the interaction name', () => {
+  const copy = (key: string, fallback?: string) => fallback ?? key;
+  assert.equal(interactionActionColumnTitle(copy), '操作');
+  assert.equal(interactionActionLinkText('查看', copy), '查看');
+  assert.equal(interactionActionLinkText('  ', copy), '打开链接');
+  assert.equal(interactionActionLinkText('', copy), '打开链接');
+  assert.equal(interactionActionLinkText(undefined, copy), '打开链接');
 });
 
 test('event table and event timeline expose the clicked row fields', () => {
@@ -730,6 +742,10 @@ test('interaction dropdown group names exist in Chinese and English', () => {
   assert.equal(en.interactionNoneTip, 'None: no navigation is set');
   assert.equal(zh.interactionNoneHint, '未设置交互，组件不可点击跳转');
   assert.equal(en.interactionNoneHint, 'No interaction is set. The widget cannot be opened by clicking.');
+  assert.equal(zh.interactionActionColumn, '操作');
+  assert.equal(en.interactionActionColumn, 'Actions');
+  assert.equal(zh.interactionOpen, '打开链接');
+  assert.equal(en.interactionOpen, 'Open link');
   assert.equal(zh.interactionLinkTypeTitleTip, '标题链接：标题旁显示图标');
   assert.equal(en.interactionLinkTypeTitleTip, 'Title link: an icon appears beside the title');
   assert.equal(zh.interactionLinkTypeDataTip, '数据链接：点击数据点、柱、扇区或数字打开');

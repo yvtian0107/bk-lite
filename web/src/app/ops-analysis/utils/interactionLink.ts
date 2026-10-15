@@ -185,6 +185,15 @@ export const readChartClickPoint = (
   return readChartLinkPoint(data);
 };
 
+export const interactionActionColumnTitle = (
+  t: (key: string, fallback?: string) => string,
+) => t('dashboard.interactionActionColumn', '操作');
+
+export const interactionActionLinkText = (
+  name: string | undefined,
+  t: (key: string, fallback?: string) => string,
+) => name?.trim() || t('dashboard.interactionOpen', '打开链接');
+
 export const withInteractionActionColumn = <T extends { columnType?: string }>(
   columns: T[],
   link: WidgetInteractionLink | undefined,

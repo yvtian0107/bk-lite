@@ -30,6 +30,8 @@ import type {
 import { useInteractionSurface } from '@/app/ops-analysis/context/interactionSurface';
 import { InteractionActionCell, useWidgetDataLink } from '@/app/ops-analysis/components/interactionTitleIcon';
 import {
+  interactionActionColumnTitle,
+  interactionActionLinkText,
   isFirstActionColumn,
   readWidgetInteraction,
   tableRowLinkPoint,
@@ -191,12 +193,12 @@ const ComTable: React.FC<ComTableProps> = ({
     }).filter((col) => col.visible);
     return withInteractionActionColumn(visible, dataLink, surface, {
       key: '__interaction',
-      title: dataLinkName || t('dashboard.interactionOpen', '打开链接'),
+      title: interactionActionColumnTitle(t),
       columnType: 'actions',
       visible: true,
       order: visible.length,
     });
-  }, [config?.tableConfig?.columns, dataLink, dataLinkName, dataSource?.field_schema, surface, t, tableData]);
+  }, [config?.tableConfig?.columns, dataLink, dataSource?.field_schema, surface, t, tableData]);
 
   const antColumns = useMemo((): ColumnsType<TableDataItem> => {
     return columnConfigs.map((col, columnIndex) => {
@@ -212,7 +214,7 @@ const ComTable: React.FC<ComTableProps> = ({
                 link={dataLink}
                 surface={surface}
                 isFirst={isFirstActionColumn(columnConfigs, columnIndex)}
-                label={dataLinkName || t('dashboard.interactionOpen', '打开链接')}
+                label={interactionActionLinkText(dataLinkName, t)}
                 onOpen={() => openPoint(tableRowLinkPoint(record))}
               />
             );
