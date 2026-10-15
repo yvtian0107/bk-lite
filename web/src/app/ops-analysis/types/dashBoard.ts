@@ -169,7 +169,9 @@ export interface ValueConfig {
     arrayValueField?: string;
   };
   cardList?: CardListConfig;
+  /** 旧表格操作列。读取时迁成 interaction，保存不再写回。 */
   actions?: DashboardActionConfig[];
+  interaction?: WidgetInteractionLink;
   appearance?: ScreenWidgetAppearance;
 }
 
@@ -201,6 +203,18 @@ export interface DashboardActionConfig {
   url?: string;
   openMode?: 'sameTab' | 'newTab';
   params?: DashboardActionParamMapping[];
+}
+
+/** 组件只保留一条交互链接：标题旁图标，或点击数据。 */
+export type WidgetInteractionKind = 'title' | 'data';
+
+export type WidgetInteractionOpenMode = 'sameTab' | 'newTab';
+
+export interface WidgetInteractionLink {
+  kind: WidgetInteractionKind;
+  name: string;
+  url: string;
+  openMode: WidgetInteractionOpenMode;
 }
 
 export interface WidgetConfig extends ValueConfig {
@@ -254,6 +268,8 @@ export interface ViewConfigProps {
   /** 拓扑不插入统一筛选变量，名称和描述保持普通输入框。 */
   filterTemplateTokens?: boolean;
   variant?: 'drawer' | 'panel';
+  /** 大屏检查器切换数据/交互时复用同一份表单。 */
+  configSection?: 'data' | 'interaction';
   onDirtyChange?: (dirty: boolean) => void;
 }
 

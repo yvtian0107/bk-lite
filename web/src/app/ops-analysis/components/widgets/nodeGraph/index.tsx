@@ -15,6 +15,8 @@ import type {
   ValueConfig,
 } from '@/app/ops-analysis/types/dashBoard';
 import { formatVisibleChartValue } from '@/app/ops-analysis/utils/chartValueFormat';
+import { useWidgetDataLink } from '@/app/ops-analysis/components/interactionTitleIcon';
+import { buildInteractionPoints } from '@/app/ops-analysis/utils/interactionPoints';
 import {
   NODE_GRAPH_NODE_HEIGHT,
   NODE_GRAPH_NODE_WIDTH,
@@ -77,6 +79,11 @@ const NodeGraph: React.FC<NodeGraphProps> = ({
   onReadyRef.current = onReady;
 
   const mapping = useMemo(() => toNodeGraphMapping(config), [config]);
+  const { openPoint } = useWidgetDataLink(config);
+  const linkPointsRef = useRef(buildInteractionPoints('nodeGraph', rawData, config));
+  linkPointsRef.current = buildInteractionPoints('nodeGraph', rawData, config);
+  const openPointRef = useRef(openPoint);
+  openPointRef.current = openPoint;
   const mappingComplete = isNodeGraphMappingComplete(mapping);
   const graphModel = useMemo(
     () => buildNodeGraph(rawData, mapping),
@@ -211,6 +218,20 @@ const NodeGraph: React.FC<NodeGraphProps> = ({
     graph.on('node:mouseleave', () => setHover(null));
     graph.on('edge:mouseleave', () => setHover(null));
     graph.on('blank:mouseenter', () => setHover(null));
+    graph.on('node:click', ({ node, e }) => {
+      e.stopPropagation();
+      const id = (node.getData() as { label?: string } | undefined)?.label;
+      const point = linkPointsRef.current.find((item) => item.fields?.id === id);
+      openPointRef.current(point);
+    });
+    graph.on('edge:click', ({ edge, e }) => {
+      e.stopPropagation();
+      const data = edge.getData() as { source?: string; target?: string } | undefined;
+      const point = linkPointsRef.current.find(
+        (item) => item.fields?.source === data?.source && item.fields?.target === data?.target,
+      );
+      openPointRef.current(point);
+    });
 
     const observer =
       typeof ResizeObserver === 'undefined'

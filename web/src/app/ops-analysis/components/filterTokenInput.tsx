@@ -9,6 +9,10 @@ import {
   listFilterTemplateVariables,
   listUnmatchedFilterTokens,
 } from '@/app/ops-analysis/utils/filterTemplate';
+import {
+  listUnmatchedInteractionTokens,
+  type InteractionVariable,
+} from '@/app/ops-analysis/utils/interactionLink';
 
 type FilterTokenTranslate = (
   key: string,
@@ -30,6 +34,9 @@ interface FilterTokenInputProps {
   rows?: number;
   autoSize?: { minRows?: number; maxRows?: number };
   definitions?: UnifiedFilterDefinition[];
+  /** 传入后按下拉分组展示，不再从筛选定义推导变量。 */
+  variables?: InteractionVariable[];
+  hint?: string;
 }
 
 const typeLabel = (
@@ -79,13 +86,37 @@ export const FilterTokenInput: React.FC<FilterTokenInputProps> = ({
   rows,
   autoSize,
   definitions,
+  variables: variableSource,
+  hint,
 }) => {
   const contextDefinitions = useFilterTemplateVariables();
   const source = definitions ?? contextDefinitions;
-  const variables = useMemo(() => listFilterTemplateVariables(source), [source]);
+  const filterVariables = useMemo(() => listFilterTemplateVariables(source), [source]);
+  const menuItems = useMemo(() => {
+    if (variableSource) {
+      return variableSource.map((item) => ({
+        key: `${item.group}:${item.token}`,
+        token: item.token,
+        label: item.label,
+        group: item.group,
+        definition: undefined as UnifiedFilterDefinition | undefined,
+      }));
+    }
+    return filterVariables.map((item) => ({
+      key: item.definition.id,
+      token: item.token,
+      label: item.definition.name || item.definition.key,
+      group: '',
+      definition: item.definition,
+    }));
+  }, [filterVariables, variableSource]);
   const unmatchedTokens = useMemo(
-    () => listUnmatchedFilterTokens(value ?? '', source),
-    [source, value],
+    () => (
+      variableSource
+        ? listUnmatchedInteractionTokens(value ?? '', variableSource)
+        : listUnmatchedFilterTokens(value ?? '', source)
+    ),
+    [source, value, variableSource],
   );
   const fieldRef = useRef<HTMLDivElement>(null);
   const anchorRef = useRef(0);
@@ -97,15 +128,16 @@ export const FilterTokenInput: React.FC<FilterTokenInputProps> = ({
 
   const filtered = useMemo(() => {
     const needle = query.trim().toLowerCase();
-    if (!needle) return variables;
-    return variables.filter((item) => {
-      const typeName = typeLabel(item.definition.type, t);
-      const haystack = `${item.definition.name} ${item.definition.key} ${item.token} ${typeName}`.toLowerCase();
+    if (!needle) return menuItems;
+    return menuItems.filter((item) => {
+      const typeName = item.definition ? typeLabel(item.definition.type, t) : '';
+      const haystack = `${item.label} ${item.definition?.key ?? ''} ${item.token} ${item.group} ${typeName}`.toLowerCase();
       return haystack.includes(needle);
     });
-  }, [query, t, variables]);
+  }, [menuItems, query, t]);
   const currentIndex = Math.min(activeIndex, Math.max(filtered.length - 1, 0));
-  const menuOpen = open && filtered.length > 0 && variables.length > 0;
+  const menuOpen = open && filtered.length > 0 && menuItems.length > 0;
+  const grouped = new Set(filtered.map((item) => item.group).filter(Boolean)).size > 1;
   const unmatchedMessage = unmatchedTokens.length
     ? t(
       'dashboard.filterTokenUnmatched',
@@ -158,7 +190,7 @@ export const FilterTokenInput: React.FC<FilterTokenInputProps> = ({
       setActiveIndex(0);
       return;
     }
-    if (!insertedDollar || variables.length === 0) return;
+    if (!insertedDollar || menuItems.length === 0) return;
     anchorRef.current = insertedAt;
     setQuery('');
     setActiveIndex(0);
@@ -197,7 +229,7 @@ export const FilterTokenInput: React.FC<FilterTokenInputProps> = ({
     maxLength,
     placeholder,
     className,
-    'aria-describedby': variables.length > 0 ? hintId : undefined,
+    'aria-describedby': menuItems.length > 0 ? hintId : undefined,
     onChange: (event: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
       handleValueChange(event.target.value, event.target.selectionStart ?? event.target.value.length);
     },
@@ -227,33 +259,41 @@ export const FilterTokenInput: React.FC<FilterTokenInputProps> = ({
             className="max-h-64 min-w-52 overflow-y-auto rounded-md border border-(--color-border-1) bg-(--color-bg-1) py-1 shadow-md"
           >
             {filtered.map((item, index) => {
-              const typeName = typeLabel(item.definition.type, t);
-              const optionLabel = t(
-                'dashboard.filterTokenOption',
-                '{name}（{token} · {type}）',
-                {
-                  name: item.definition.name || item.definition.key,
-                  token: item.token,
-                  type: typeName,
-                },
-              );
+              const previousGroup = index > 0 ? filtered[index - 1]?.group : '';
+              const optionLabel = item.definition
+                ? t(
+                  'dashboard.filterTokenOption',
+                  '{name}（{token} · {type}）',
+                  {
+                    name: item.definition.name || item.definition.key,
+                    token: item.token,
+                    type: typeLabel(item.definition.type, t),
+                  },
+                )
+                : `${item.label}（${item.token}）`;
               return (
-                <button
-                  key={item.definition.id}
-                  type="button"
-                  role="option"
-                  aria-selected={index === currentIndex}
-                  className={`block w-full cursor-pointer px-3 py-1.5 text-left text-xs text-(--color-text-1) ${
-                    index === currentIndex ? 'bg-(--color-fill-2)' : 'hover:bg-(--color-fill-1)'
-                  }`}
-                  onMouseDown={(event) => {
-                    event.preventDefault();
-                    insertToken(item.token);
-                  }}
-                  onMouseEnter={() => setActiveIndex(index)}
-                >
-                  {optionLabel}
-                </button>
+                <React.Fragment key={item.key}>
+                  {grouped && item.group !== previousGroup ? (
+                    <div className="px-3 py-1 text-[11px] font-medium text-(--color-text-3)">
+                      {item.group}
+                    </div>
+                  ) : null}
+                  <button
+                    type="button"
+                    role="option"
+                    aria-selected={index === currentIndex}
+                    className={`block w-full cursor-pointer px-3 py-1.5 text-left text-xs text-(--color-text-1) ${
+                      index === currentIndex ? 'bg-(--color-fill-2)' : 'hover:bg-(--color-fill-1)'
+                    }`}
+                    onMouseDown={(event) => {
+                      event.preventDefault();
+                      insertToken(item.token);
+                    }}
+                    onMouseEnter={() => setActiveIndex(index)}
+                  >
+                    {optionLabel}
+                  </button>
+                </React.Fragment>
               );
             })}
           </div>
@@ -261,12 +301,12 @@ export const FilterTokenInput: React.FC<FilterTokenInputProps> = ({
       >
         <div ref={fieldRef} className="w-full">{control}</div>
       </Dropdown>
-      {variables.length > 0 && (
+      {menuItems.length > 0 && (
         <span
           id={hintId}
           className="hidden text-xs leading-5 text-(--color-text-3) group-focus-within:block"
         >
-          {t('dashboard.filterTokenHint', '输入 $ 插入筛选')}
+          {hint || t('dashboard.filterTokenHint', '输入 $ 插入筛选')}
         </span>
       )}
       {unmatchedMessage && (

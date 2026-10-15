@@ -10,6 +10,7 @@ import type {
 } from '@/app/ops-analysis/types/dashBoard';
 import type { ParamItem } from '@/app/ops-analysis/types/dataSource';
 import type { OpsChartThemeMode } from '@/app/ops-analysis/utils/chartTheme';
+import { normalizeInteractionLink } from '@/app/ops-analysis/utils/interactionLink';
 import {
   isFiniteNumber,
   type ThresholdColorConfig,
@@ -87,6 +88,7 @@ export interface WidgetConfigFormValues {
     layout?: 'list' | 'grid';
   };
   actions?: DashboardActionConfig[];
+  interaction?: ValueConfig['interaction'];
   appearance?: ValueConfig['appearance'];
 }
 
@@ -139,6 +141,20 @@ export const persistRelatedTopologyConfig = (
     ...(modelId ? { modelId } : {}),
     ...(instUuid ? { instUuid } : {}),
   };
+};
+
+const applyInteractionLink = (
+  result: WidgetConfig,
+  values: WidgetConfigFormValues,
+  chartType: string,
+) => {
+  const link = normalizeInteractionLink(values.interaction, chartType);
+  if (link) {
+    result.interaction = link;
+  } else {
+    delete result.interaction;
+  }
+  delete result.actions;
 };
 
 const buildWidgetConfigBase = (
@@ -538,7 +554,9 @@ export const buildWidgetSubmitConfig = ({
         return { error: 'relatedTopologyInstUuidRequired' };
       }
     }
-    return { config: buildSceneWidgetConfig(values) };
+    const config = buildSceneWidgetConfig(values);
+    applyInteractionLink(config, values, values.sceneWidgetType);
+    return { config };
   }
 
   const result: WidgetConfig = buildWidgetConfigBase(values, chartType);
@@ -569,18 +587,9 @@ export const buildWidgetSubmitConfig = ({
   }
 
   if (chartType === 'table') {
-    const displayColumnKeys = new Set(
-      displayColumns.map((column) => (column.key || '').trim()).filter(Boolean),
-    );
-    const validActions = actions.filter((action) =>
-      displayColumnKeys.has(action.columnKey),
-    );
-    if (validActions.length > 0) {
-      result.actions = validActions;
-    } else {
-      delete result.actions;
-    }
+    void actions;
   }
+  applyInteractionLink(result, values, chartType);
 
   if (chartType === 'single') {
     applySingleValueConfig(result, values, selectedFields, thresholdColors);

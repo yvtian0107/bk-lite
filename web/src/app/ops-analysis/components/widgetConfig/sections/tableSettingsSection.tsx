@@ -25,7 +25,6 @@ import type {
 import type { DisplayColumnRow } from '../utils/columnProbing';
 import CompactEmptyState from '@/components/compact-empty-state';
 import { ConfigGroupTitle } from '../configTitles';
-import { ActionInteractionModal } from './actionInteractionModal';
 import { ColumnCellStyleModal } from './columnCellStyleModal';
 
 type FilterFieldRow = TableFilterFieldConfig & { id: string };
@@ -86,7 +85,6 @@ export const TableSettingsSection: React.FC<TableSettingsSectionProps> = ({
   t,
   displayColumns,
   displayColumnOptions,
-  actions,
   filterFields,
   filterFieldOptions,
   showFilterFields,
@@ -107,10 +105,7 @@ export const TableSettingsSection: React.FC<TableSettingsSectionProps> = ({
   onReProbeColumns,
   onAddNewFilterField,
   onAddNewDisplayColumn,
-  onActionsChange,
 }) => {
-  const [interactionColumn, setInteractionColumn] =
-    useState<DisplayColumnRow | null>(null);
   const [styleColumnId, setStyleColumnId] = useState<string | null>(null);
 
   const styleColumn =
@@ -290,18 +285,6 @@ export const TableSettingsSection: React.FC<TableSettingsSectionProps> = ({
             }}
             className="border-none p-1"
           />
-          {record.columnType === 'actions' && (
-            <Tooltip title={t('dashboard.interactionConfig')}>
-              <Button
-                type="text"
-                size="small"
-                icon={<SettingOutlined aria-hidden />}
-                aria-label={t('dashboard.interactionConfig')}
-                onClick={() => setInteractionColumn(record)}
-                className="border-none p-1"
-              />
-            </Tooltip>
-          )}
           {showColumnCellStyle && record.columnType !== 'actions' && (
             <Tooltip title={t('dashboard.columnCellStyleConfig')}>
               <Button
@@ -450,18 +433,6 @@ export const TableSettingsSection: React.FC<TableSettingsSectionProps> = ({
           )}
         </div>
       )}
-      <ActionInteractionModal
-        open={!!interactionColumn}
-        column={interactionColumn}
-        actions={actions}
-        fieldOptions={displayColumnOptions}
-        t={t}
-        onCancel={() => setInteractionColumn(null)}
-        onConfirm={(nextActions) => {
-          onActionsChange(nextActions);
-          setInteractionColumn(null);
-        }}
-      />
       <ColumnCellStyleModal
         open={!!styleColumn}
         column={styleColumn}

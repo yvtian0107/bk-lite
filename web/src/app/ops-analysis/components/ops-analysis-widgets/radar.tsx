@@ -1,4 +1,6 @@
 import React, { useMemo } from 'react';
+import { useWidgetDataLink } from '@/app/ops-analysis/components/interactionTitleIcon';
+import { buildInteractionPoints } from '@/app/ops-analysis/utils/interactionPoints';
 import ReactEcharts from 'echarts-for-react';
 import ChartSurface from '@/components/chart-surface';
 import type { ValueConfig } from '@/app/ops-analysis/components/ops-analysis-widgets';
@@ -38,11 +40,20 @@ const OpsAnalysisRadar: React.FC<OpsAnalysisRadarProps> = ({
     [config?.selectedFields, radarConfig, rawData],
   );
   const hasData = radarSeries.indicatorLabels.length > 0;
-  const { onEvents } = useEchartsFinishedReady({
+  const { onEvents: finishedEvents } = useEchartsFinishedReady({
     loading,
     isDataReady: hasData,
     onReady,
   });
+  const { onChartClick } = useWidgetDataLink(config);
+  const radarPoints = useMemo(
+    () => buildInteractionPoints('radar', rawData, config),
+    [config, rawData],
+  );
+  const onEvents = useMemo(
+    () => ({ ...finishedEvents, click: onChartClick }),
+    [finishedEvents, onChartClick],
+  );
 
   const option = useMemo(
     () => ({
@@ -71,6 +82,7 @@ const OpsAnalysisRadar: React.FC<OpsAnalysisRadarProps> = ({
           data: [
             {
               value: radarSeries.indicatorValues,
+              __links: radarPoints,
               areaStyle: {
                 color: seriesColor,
                 opacity: chartTheme.lineAreaOpacity,
@@ -97,6 +109,7 @@ const OpsAnalysisRadar: React.FC<OpsAnalysisRadarProps> = ({
       chartTheme.tooltipBorderColor,
       chartTheme.tooltipShadow,
       chartTheme.tooltipTextColor,
+      radarPoints,
       radarSeries.indicatorLabels,
       radarSeries.indicatorValues,
       range.max,

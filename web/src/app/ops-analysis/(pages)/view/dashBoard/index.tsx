@@ -18,6 +18,7 @@ import ViewWorkspace from '../components/viewWorkspace';
 import { Modal, message, Select } from 'antd';
 import { FilterTokenInput } from '@/app/ops-analysis/components/filterTokenInput';
 import { FilterTemplateProvider, FilterTemplateTitleGate } from '@/app/ops-analysis/context/filterTemplate';
+import { InteractionSurfaceProvider } from '@/app/ops-analysis/context/interactionSurface';
 import { filterTemplateAsyncDependencies } from '@/app/ops-analysis/utils/filterTemplate';
 import { useTranslation } from '@/utils/i18n';
 import { useOpsAnalysis } from '@/app/ops-analysis/context/common';
@@ -2031,6 +2032,7 @@ const Dashboard = forwardRef<DashboardRef, DashboardProps>(
         resolveEnabled={!isEditMode || isFullscreen || exporting || renderMode}
         canvasId={selectedDashboard?.data_id}
       >
+      <InteractionSurfaceProvider editing={isEditMode && !shareMode}>
       <FilterTemplateTitleGate
         texts={titleTemplateTexts}
         active={Boolean(renderMode)}
@@ -2131,6 +2133,7 @@ const Dashboard = forwardRef<DashboardRef, DashboardProps>(
           />
         </Modal>
       </div>
+      </InteractionSurfaceProvider>
       </FilterTemplateProvider>
     );
   },

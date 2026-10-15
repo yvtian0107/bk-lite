@@ -504,6 +504,12 @@ export const createApplication3DScene = (
     onBackgroundClick?: () => void;
     onArchitectureHostSelect?: (selection: ArchitectureHostSelection | null) => void;
     onFirstRender?: () => void;
+    onLinkContextMenu?: (hit: {
+      x: number;
+      y: number;
+      system?: { id: string; name: string };
+      host?: { id: string; name: string };
+    } | null) => void;
   },
 ): Application3DSceneController => {
   const reducedMotion = prefersReducedMotion();
@@ -2465,8 +2471,39 @@ export const createApplication3DScene = (
     requestRender();
   };
 
-  const handleContextMenu = (event: Event) => {
+  const handleContextMenu = (event: MouseEvent) => {
     event.preventDefault();
+    if (!options.onLinkContextMenu) return;
+    const point = { x: event.clientX, y: event.clientY };
+    if (phase === 'architecture') {
+      const node = pickArchitectureNode(event.clientX, event.clientY);
+      if (node?.kind === 'host') {
+        options.onLinkContextMenu({
+          ...point,
+          host: { id: node.id, name: node.name },
+        });
+        return;
+      }
+      if (node?.kind === 'system') {
+        options.onLinkContextMenu({
+          ...point,
+          system: { id: node.id, name: node.name },
+        });
+        return;
+      }
+      options.onLinkContextMenu(null);
+      return;
+    }
+    const applicationId = pickApplicationId(event.clientX, event.clientY);
+    const item = applicationId ? visuals.get(applicationId)?.item : undefined;
+    if (!item) {
+      options.onLinkContextMenu(null);
+      return;
+    }
+    options.onLinkContextMenu({
+      ...point,
+      system: { id: item.id, name: item.name },
+    });
   };
 
   const handleWheel = () => {

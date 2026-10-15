@@ -6,6 +6,7 @@ export interface ScreenDataConfigCompareProps {
   filterDefinitions?: unknown;
   unifiedFilterValues?: unknown;
   builtinNamespaceId?: unknown;
+  configSection?: unknown;
   dataSourceManager: {
     dataSources: unknown;
     dataSourcesLoading: unknown;
@@ -24,6 +25,7 @@ export const areScreenDataConfigPropsEqual = (
   prev.filterDefinitions === next.filterDefinitions &&
   prev.unifiedFilterValues === next.unifiedFilterValues &&
   prev.builtinNamespaceId === next.builtinNamespaceId &&
+  prev.configSection === next.configSection &&
   prev.dataSourceManager.selectedDataSource ===
     next.dataSourceManager.selectedDataSource &&
   prev.dataSourceManager.dataSources === next.dataSourceManager.dataSources &&

@@ -36,6 +36,14 @@ export interface Room3DSceneCallbacks {
   onDeviceSelect?: (
     state: { rack: Room3DRack; device: Room3DRenderableDevice } | null,
   ) => void;
+  onContextMenu?: (
+    hit: {
+      rack: Room3DRack;
+      device?: Room3DRenderableDevice;
+      x: number;
+      y: number;
+    } | null,
+  ) => void;
 }
 
 export interface Room3DSceneController {
@@ -768,9 +776,25 @@ export const createRoom3DScene = (
     updateVisualStates();
   };
 
+  const handleContextMenu = (event: MouseEvent) => {
+    event.preventDefault();
+    const picked = pickRack(event);
+    if (!picked) {
+      callbacks.onContextMenu?.(null);
+      return;
+    }
+    callbacks.onContextMenu?.({
+      rack: picked.rack,
+      device: picked.device,
+      x: event.clientX,
+      y: event.clientY,
+    });
+  };
+
   renderer.domElement.addEventListener("pointermove", handlePointerMove);
   renderer.domElement.addEventListener("pointerleave", handlePointerLeave);
   renderer.domElement.addEventListener("click", handleClick);
+  renderer.domElement.addEventListener("contextmenu", handleContextMenu);
 
   const handlePreparePrint = () => {
     if (disposed) {
@@ -809,6 +833,7 @@ export const createRoom3DScene = (
         handlePointerLeave,
       );
       renderer.domElement.removeEventListener("click", handleClick);
+      renderer.domElement.removeEventListener("contextmenu", handleContextMenu);
       controls.removeEventListener("start", handleControlsStart);
       controls.removeEventListener("change", requestRender);
       controls.dispose();

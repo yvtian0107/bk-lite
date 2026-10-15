@@ -23,6 +23,7 @@ import {
   Select,
   message,
 } from 'antd';
+import InteractionLinkSection from '@/app/ops-analysis/components/widgetConfig/sections/interactionLinkSection';
 import { EyeOutlined } from '@ant-design/icons';
 import { useDataSourceManager } from '@/app/ops-analysis/hooks/useDataSource';
 import { useSingleValueConfig } from '@/app/ops-analysis/hooks/useSingleValueConfig';
@@ -148,6 +149,7 @@ const ViewConfig: React.FC<ViewConfigPropsWithManager> = ({
   surface = 'dashboard',
   filterTemplateTokens = true,
   variant = 'drawer',
+  configSection,
   onDirtyChange,
 }) => {
   const { t } = useTranslation();
@@ -155,6 +157,8 @@ const ViewConfig: React.FC<ViewConfigPropsWithManager> = ({
   const [form] = Form.useForm();
   const handleClose = () => guardClose(form.isFieldsTouched(), onClose);
   const [chartType, setChartType] = useState<string>('');
+  const [drawerSection, setDrawerSection] = useState<'data' | 'interaction'>('data');
+  const activeSection = variant === 'panel' ? (configSection ?? 'data') : drawerSection;
   const [filterBindings, setFilterBindings] = useState<FilterBindings>({});
   const [actions, setActions] = useState<DashboardActionConfig[]>([]);
   const [dataSourceSelectorVisible, setDataSourceSelectorVisible] = useState(false);
@@ -656,6 +660,7 @@ const ViewConfig: React.FC<ViewConfigPropsWithManager> = ({
     }
 
     const { valueConfig } = widgetItem;
+    setDrawerSection('data');
     const sceneWidgetType = resolveOpenedSceneWidgetType(valueConfig);
     const isOpenedSceneWidget = Boolean(sceneWidgetType);
     const formValues = buildOpenedWidgetFormValues(widgetItem, {
@@ -1307,9 +1312,42 @@ const ViewConfig: React.FC<ViewConfigPropsWithManager> = ({
           filterTemplateTokens={filterTemplateTokens}
         />
 
+        {variant === 'drawer' ? (
+          <div className="mb-4 flex gap-2" role="tablist">
+            <button
+              type="button"
+              role="tab"
+              aria-selected={activeSection === 'data'}
+              className={`rounded-md px-3 py-1 text-sm ${
+                activeSection === 'data'
+                  ? 'bg-(--color-fill-2) text-(--color-text-1)'
+                  : 'text-(--color-text-2)'
+              }`}
+              onClick={() => setDrawerSection('data')}
+            >
+              {t('dashboard.interactionDataTab', '数据')}
+            </button>
+            <button
+              type="button"
+              role="tab"
+              aria-selected={activeSection === 'interaction'}
+              className={`rounded-md px-3 py-1 text-sm ${
+                activeSection === 'interaction'
+                  ? 'bg-(--color-fill-2) text-(--color-text-1)'
+                  : 'text-(--color-text-2)'
+              }`}
+              onClick={() => setDrawerSection('interaction')}
+            >
+              {t('dashboard.interactionTab', '交互')}
+            </button>
+          </div>
+        ) : null}
+
         <Form.Item name="sceneWidgetType" hidden>
           <Input />
         </Form.Item>
+
+        <div className={activeSection === 'data' ? undefined : 'hidden'}>
 
         {isApplication3D ? <Application3DWallFields /> : null}
 
@@ -1566,6 +1604,17 @@ const ViewConfig: React.FC<ViewConfigPropsWithManager> = ({
             )}
           </WidgetDatasourceChartTypeFields>
         )}
+        </div>
+
+        <div className={activeSection === 'interaction' ? undefined : 'hidden'}>
+          <InteractionLinkSection
+            t={t}
+            chartType={watchedFormValues?.sceneWidgetType || chartType}
+            definitions={filterDefinitions}
+            rawData={previewRawData}
+            fieldConfig={watchedFormValues}
+          />
+        </div>
 
       </Form>
         </div>

@@ -1,4 +1,6 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useMemo } from 'react';
+import { useWidgetDataLink } from '@/app/ops-analysis/components/interactionTitleIcon';
+import { buildInteractionPoints } from '@/app/ops-analysis/utils/interactionPoints';
 import { Alert } from 'antd';
 import ChartSurface from '@/components/chart-surface';
 import type { ValueConfig } from '@/app/ops-analysis/types/dashBoard';
@@ -23,6 +25,11 @@ const ComCardList: React.FC<ComCardListProps> = ({
   onReady,
 }) => {
   const { t } = useTranslation();
+  const { active: dataLinkActive, openPoint } = useWidgetDataLink(config);
+  const points = useMemo(
+    () => buildInteractionPoints('cardList', rawData, config),
+    [config, rawData],
+  );
   const cardListConfig = config?.cardList;
   const parsed = parseCardListItems(rawData, {
     ...cardListConfig,
@@ -68,7 +75,8 @@ const ComCardList: React.FC<ComCardListProps> = ({
           {parsed.items.map((item, index) => (
             <article
               key={`${item.primary}-${index}`}
-              className="flex min-w-0 items-center gap-3 rounded-md border border-(--color-border-2) bg-(--color-bg) px-3 py-2"
+              className={`flex min-w-0 items-center gap-3 rounded-md border border-(--color-border-2) bg-(--color-bg) px-3 py-2 ${dataLinkActive ? 'cursor-pointer' : ''}`}
+              onClick={dataLinkActive ? () => openPoint(points[index]) : undefined}
             >
               {item.leading ? (
                 <CardListAccent

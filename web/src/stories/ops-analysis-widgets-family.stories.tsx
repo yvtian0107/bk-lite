@@ -478,6 +478,12 @@ const FamilyOverview = () => {
                   { key: 'cpu', title: 'CPU%', visible: true, order: 2 },
                 ],
               },
+              interaction: {
+                kind: 'data',
+                name: '查看主机',
+                url: '/ops/host?name=$__data.fields.host$',
+                openMode: 'sameTab',
+              },
             }}
           />
           <OpsAnalysisTable

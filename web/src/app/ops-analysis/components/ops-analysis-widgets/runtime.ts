@@ -723,6 +723,12 @@ export const buildFallbackSparkline = (
   });
 };
 
+export {
+  prepareInteractionNavigation,
+  readWidgetInteraction,
+  resolveInteractionUrl,
+} from '@/app/ops-analysis/utils/interactionLink';
+
 export const buildDashboardActionUrl = (
   rawUrl: string | undefined,
   params: Record<string, string | number | boolean>,

@@ -23,9 +23,17 @@ import {
   getBindableFilterParams,
   getFilterDefinitionId,
 } from '@/app/ops-analysis/utils/widgetDataTransform';
+import { readWidgetInteraction } from '@/app/ops-analysis/utils/interactionLink';
 import type { WidgetConfigFormValues } from './submitConfig';
 
 export const NETWORK_STATUS_TOPOLOGY = 'networkStatusTopology';
+const EMPTY_INTERACTION = {
+  kind: 'title' as const,
+  name: '',
+  url: '',
+  openMode: 'sameTab' as const,
+};
+
 export const VALUE_FORMAT_CHART_TYPES = new Set([
   'line',
   'bar',
@@ -297,6 +305,7 @@ export function buildOpenedWidgetFormValues(
     params: {},
     tableConfig: valueConfig?.tableConfig,
     actions: valueConfig?.actions || [],
+    interaction: readWidgetInteraction(valueConfig) ?? EMPTY_INTERACTION,
   };
 }
 

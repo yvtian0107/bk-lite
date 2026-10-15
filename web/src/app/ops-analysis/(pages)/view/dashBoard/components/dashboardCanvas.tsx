@@ -17,6 +17,7 @@ import type {
 } from 'gridstack';
 
 import { useFilterTemplateText } from '@/app/ops-analysis/context/filterTemplate';
+import InteractionTitleIcon from '@/app/ops-analysis/components/interactionTitleIcon';
 import { useTranslation } from '@/utils/i18n';
 import type {
   DashboardLayoutItem,
@@ -205,9 +206,12 @@ const DashboardWidgetCard = React.memo(function DashboardWidgetCard({
         >
           <div className="widget-header mb-2 flex min-w-0 items-start gap-2">
             <div className="min-w-0 flex-1">
-              <h4 className="truncate text-[14px] font-medium leading-5 text-(--color-text-2)">
-                {title}
-              </h4>
+              <div className="flex min-w-0 items-center gap-1">
+                <h4 className="truncate text-[14px] font-medium leading-5 text-(--color-text-2)">
+                  {title}
+                </h4>
+                <InteractionTitleIcon config={item.valueConfig} />
+              </div>
               {item.description?.trim() && (
                 <p className="mt-0.5 text-[11px] leading-4 text-(--color-text-3) wrap-break-word whitespace-normal">
                   {description}
