@@ -103,10 +103,7 @@ export const TableSettingsSection: React.FC<TableSettingsSectionProps> = ({
   const [styleColumnId, setStyleColumnId] = useState<string | null>(null);
 
   const styleColumn =
-    displayColumns.find(
-      (column) =>
-        column.id === styleColumnId && column.columnType !== 'actions',
-    ) || null;
+    displayColumns.find((column) => column.id === styleColumnId) || null;
 
   const hasColumnCellStyle = (column: DisplayColumnRow) =>
     column.cellType === 'colorBackground' ||
@@ -276,7 +273,7 @@ export const TableSettingsSection: React.FC<TableSettingsSectionProps> = ({
             }}
             className="border-none p-1"
           />
-          {showColumnCellStyle && record.columnType !== 'actions' && (
+          {showColumnCellStyle && (
             <Tooltip title={t('dashboard.columnCellStyleConfig')}>
               <Button
                 type="text"

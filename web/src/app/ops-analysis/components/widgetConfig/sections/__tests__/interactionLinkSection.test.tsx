@@ -174,4 +174,24 @@ describe('InteractionLinkSection', () => {
       });
     });
   });
+
+  it('不允许的协议留在表单里，合法的 http 和站内路径可以保存', async () => {
+    const user = userEvent.setup();
+    const formRef = renderSection('line', 'title');
+    const url = screen.getByPlaceholderText('输入 URL，键入 $ 插入变量');
+
+    await user.type(url, 'javascript:alert(1)');
+    await act(async () => {
+      await expect(formRef.current?.validateFields()).rejects.toBeTruthy();
+    });
+    expect(await screen.findByText('链接协议不被允许')).toBeTruthy();
+
+    await user.clear(url);
+    await user.type(url, 'https://example.com/a');
+    await act(async () => {
+      await expect(formRef.current?.validateFields()).resolves.toMatchObject({
+        interaction: { kind: 'title', url: 'https://example.com/a' },
+      });
+    });
+  });
 });

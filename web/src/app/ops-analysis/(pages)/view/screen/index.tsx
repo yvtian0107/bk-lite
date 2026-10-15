@@ -172,6 +172,7 @@ const ScreenDataConfig = memo(
     filterDefinitions,
     unifiedFilterValues,
     configSection,
+    onConfigSectionChange,
     onDirtyChange,
     onConfirm,
     onClose,
@@ -182,6 +183,7 @@ const ScreenDataConfig = memo(
     filterDefinitions?: UnifiedFilterDefinition[];
     unifiedFilterValues?: Record<string, FilterValue>;
     configSection?: "data" | "interaction";
+    onConfigSectionChange?: (section: "data" | "interaction") => void;
     onDirtyChange?: (dirty: boolean) => void;
     onConfirm?: (values: WidgetConfig) => void;
     onClose?: () => void;
@@ -191,6 +193,7 @@ const ScreenDataConfig = memo(
         open
         variant="panel"
         configSection={configSection}
+        onConfigSectionChange={onConfigSectionChange}
         item={item}
         dataSourceManager={dataSourceManager}
         showChartThemeMode={false}
@@ -1351,6 +1354,7 @@ const Screen = forwardRef<ScreenRef, ScreenProps>(({ selectedScreen, shareMode =
       filterDefinitions={queryState.definitions}
       unifiedFilterValues={queryState.filterValues}
       configSection={inspectorTab === "interaction" ? "interaction" : "data"}
+      onConfigSectionChange={setInspectorTab}
       onDirtyChange={setDataFormDirty}
       onConfirm={
         pendingViewConfigItem

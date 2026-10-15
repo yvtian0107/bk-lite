@@ -11,6 +11,7 @@ import type {
 import { buildInteractionPoints } from '@/app/ops-analysis/utils/interactionPoints';
 import {
   interactionCapability,
+  isAllowedInteractionUrl,
   listInteractionVariables,
   listPresentDataVariables,
 } from '@/app/ops-analysis/utils/interactionLink';
@@ -149,8 +150,12 @@ const InteractionLinkSection: React.FC<InteractionLinkSectionProps> = ({
               preserve
               rules={[{
                 validator: async (_, value: unknown) => {
-                  if (typeof value === 'string' && value.trim()) return;
-                  throw new Error(t('dashboard.interactionUrlRequired', '请输入 URL'));
+                  if (typeof value !== 'string' || !value.trim()) {
+                    throw new Error(t('dashboard.interactionUrlRequired', '请输入 URL'));
+                  }
+                  if (!isAllowedInteractionUrl(value)) {
+                    throw new Error(t('dashboard.interactionUrlBlocked', '链接协议不被允许'));
+                  }
                 },
               }]}
             >

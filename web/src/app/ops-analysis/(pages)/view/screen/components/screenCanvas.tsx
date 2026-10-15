@@ -1125,7 +1125,7 @@ const ScreenCanvas: React.FC<ScreenCanvasProps> = ({
           padding: 0;
           border: 0;
           background: transparent;
-          color: color-mix(in srgb, var(--screen-chrome-accent) 68%, #02060c);
+          color: color-mix(in srgb, var(--screen-chrome-accent) 68%, var(--screen-widget-title-color));
           font-size: calc(14px * var(--screen-widget-ui-scale));
           line-height: 1;
           cursor: pointer;
@@ -1149,7 +1149,7 @@ const ScreenCanvas: React.FC<ScreenCanvasProps> = ({
           height: calc(20px * var(--screen-widget-ui-scale));
           border: 1px solid color-mix(in srgb, var(--screen-chrome-accent) 48%, transparent);
           border-radius: 999px;
-          background: rgba(4, 12, 22, 0.55);
+          background: color-mix(in srgb, var(--screen-widget-bg) 72%, transparent);
           font-size: calc(12px * var(--screen-widget-ui-scale));
         }
 

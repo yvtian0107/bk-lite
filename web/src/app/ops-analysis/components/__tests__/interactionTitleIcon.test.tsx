@@ -186,7 +186,12 @@ describe('screen title link styles', () => {
     expect(source).toContain(`width: auto;
           flex: 0 1 auto;`);
     expect(source).toContain('font-size: calc(14px * var(--screen-widget-ui-scale));');
-    expect(source).toContain('color-mix(in srgb, var(--screen-chrome-accent) 68%, #02060c)');
+    expect(source).toContain(
+      'color-mix(in srgb, var(--screen-chrome-accent) 68%, var(--screen-widget-title-color))',
+    );
+    expect(source).toContain('color-mix(in srgb, var(--screen-widget-bg) 72%, transparent)');
+    expect(source).not.toContain('#02060c');
+    expect(source).not.toContain('rgba(4, 12, 22');
     expect(source).toContain('drop-shadow(0 0 calc(6px * var(--screen-widget-ui-scale)) var(--screen-chrome-glow))');
     expect(source).toContain('width: calc(20px * var(--screen-widget-ui-scale));');
     expect(source).toContain('height: calc(20px * var(--screen-widget-ui-scale));');

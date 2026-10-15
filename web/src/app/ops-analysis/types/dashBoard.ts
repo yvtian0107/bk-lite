@@ -272,6 +272,8 @@ export interface ViewConfigProps {
   variant?: 'drawer' | 'panel';
   /** 大屏检查器切换数据/交互时复用同一份表单。 */
   configSection?: 'data' | 'interaction';
+  /** 面板模式的页签在外部，交互校验失败时切回交互页。 */
+  onConfigSectionChange?: (section: 'data' | 'interaction') => void;
   onDirtyChange?: (dirty: boolean) => void;
 }
 

@@ -128,6 +128,12 @@ import {
   normalizeDatasourceItemParams,
 } from '@/app/ops-analysis/utils/stringParamMultipleMigrate';
 
+const isInteractionFieldError = (error: unknown) => {
+  if (!error || typeof error !== 'object' || !('errorFields' in error)) return false;
+  const fields = (error as { errorFields?: { name?: (string | number)[] }[] }).errorFields;
+  return Array.isArray(fields) && fields.some((field) => field.name?.[0] === 'interaction');
+};
+
 const readWidgetId = (item: ViewConfigItem | null | undefined) => (
   item && 'i' in item ? String(item.i || '') : ''
 );
@@ -164,6 +170,7 @@ const ViewConfig: React.FC<ViewConfigPropsWithManager> = ({
   filterTemplateTokens = true,
   variant = 'drawer',
   configSection,
+  onConfigSectionChange,
   onDirtyChange,
 }) => {
   const { t } = useTranslation();
@@ -840,10 +847,11 @@ const ViewConfig: React.FC<ViewConfigPropsWithManager> = ({
         setFilterBindings({});
       }
 
-      const storedColumns = (valueConfig?.tableConfig?.columns || []).filter(
+      const originalColumns = valueConfig?.tableConfig?.columns || [];
+      const storedColumns = originalColumns.filter(
         (column) => column.columnType !== 'actions',
       );
-      if (valueConfig?.tableConfig?.columns?.length) {
+      if (storedColumns.length) {
         const schemaDefaultKeys = new Set(
           (targetDataSource?.field_schema || [])
             .map((field) => field.key)
@@ -896,15 +904,18 @@ const ViewConfig: React.FC<ViewConfigPropsWithManager> = ({
       }
 
       if (
-        !valueConfig?.tableConfig?.columns?.length &&
+        !storedColumns.length &&
         (formValues.chartType === 'table' ||
           formValues.chartType === 'eventTable')
       ) {
         const schemaFields = targetDataSource?.field_schema;
+        const replaceActionOnlyColumns = originalColumns.length > 0;
         if (schemaFields && schemaFields.length > 0) {
-          tableConfig.setDetectedDisplayColumns(
-            buildDisplayColumnsFromSchema(schemaFields),
-          );
+          const defaults = buildDisplayColumnsFromSchema(schemaFields);
+          tableConfig.setDetectedDisplayColumns(defaults);
+          if (replaceActionOnlyColumns) {
+            tableConfig.setDisplayColumns(defaults);
+          }
         } else {
           const probedColumns = await tableConfig.probeDefaultDisplayColumns(
             targetDataSource,
@@ -914,6 +925,9 @@ const ViewConfig: React.FC<ViewConfigPropsWithManager> = ({
             return;
           }
           tableConfig.setDetectedDisplayColumns(probedColumns);
+          if (replaceActionOnlyColumns) {
+            tableConfig.setDisplayColumns(probedColumns);
+          }
         }
       }
     } else {
@@ -1341,6 +1355,17 @@ const ViewConfig: React.FC<ViewConfigPropsWithManager> = ({
         onConfirm?.(submitResult.config);
       }
     } catch (error) {
+      if (isInteractionFieldError(error)) {
+        if (variant === 'panel') {
+          onConfigSectionChange?.('interaction');
+        } else {
+          setDrawerSection('interaction');
+        }
+        window.setTimeout(() => {
+          form.scrollToField(['interaction', 'url'], { block: 'center' });
+        }, 0);
+        return;
+      }
       console.error('Form validation failed:', error);
       message.error(t('common.saveFailed'));
     }

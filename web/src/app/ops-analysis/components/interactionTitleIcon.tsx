@@ -68,14 +68,12 @@ export const useWidgetDataLink = (config?: object | null) => {
 
 interface InteractionTitleIconProps {
   config?: ValueConfig | null;
-  className?: string;
   floating?: boolean;
   variant?: 'default' | 'screen' | 'screenFloating';
 }
 
 const InteractionTitleIcon: React.FC<InteractionTitleIconProps> = ({
   config,
-  className = '',
   floating = false,
   variant = 'default',
 }) => {
@@ -100,7 +98,7 @@ const InteractionTitleIcon: React.FC<InteractionTitleIconProps> = ({
       data-export-hidden="true"
       aria-label={label}
       title={variant === 'screenFloating' ? undefined : label}
-      className={`no-drag ${layoutClass} ${className}`}
+      className={`no-drag ${layoutClass}`}
       onClick={(event) => {
         event.preventDefault();
         event.stopPropagation();
