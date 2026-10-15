@@ -713,4 +713,27 @@ test('interaction dropdown group names exist in Chinese and English', () => {
   assert.equal(en.interactionValueText, undefined);
   assert.equal(zh.interactionValueRaw, undefined);
   assert.equal(en.interactionValueRaw, undefined);
+  assert.equal(zh.interactionLinkType, '链接类型');
+  assert.equal(en.interactionLinkType, 'Link type');
+  assert.equal(zh.interactionLinkTypeTitleTip, '标题链接：标题旁显示图标');
+  assert.equal(en.interactionLinkTypeTitleTip, 'Title link: an icon appears beside the title');
+  assert.equal(zh.interactionLinkTypeDataTip, '数据链接：点击数据点、柱、扇区或数字打开');
+  assert.equal(en.interactionLinkTypeDataTip, 'Data link: click a point, bar, sector, or number to open');
+  assert.equal(zh.interactionTitleOnlyTip, '该组件仅支持标题链接，点击标题旁图标打开');
+  assert.equal(en.interactionTitleOnlyTip, 'This widget only supports a title link. Click the icon beside the title to open.');
+  assert.equal(zh.interactionUrlPlaceholder, '输入 URL，键入 $ 插入变量');
+  assert.equal(en.interactionUrlPlaceholder, 'Enter a URL, type $ to insert a variable');
+  for (const key of [
+    'interactionSection',
+    'interactionTitleHint',
+    'interactionDataTableHint',
+    'interactionDataMenuHint',
+    'interactionDataClickHint',
+    'interactionDataTimelineHint',
+    'interactionDataUnsupported',
+    'interactionTokenHint',
+  ]) {
+    assert.equal(zh[key], undefined);
+    assert.equal(en[key], undefined);
+  }
 });

@@ -20,6 +20,7 @@ import {
   Form,
   Input,
   Select,
+  Tabs,
   message,
 } from 'antd';
 import InteractionLinkSection from '@/app/ops-analysis/components/widgetConfig/sections/interactionLinkSection';
@@ -1399,34 +1400,15 @@ const ViewConfig: React.FC<ViewConfigPropsWithManager> = ({
         />
 
         {variant === 'drawer' ? (
-          <div className="mb-4 flex gap-2" role="tablist">
-            <button
-              type="button"
-              role="tab"
-              aria-selected={activeSection === 'data'}
-              className={`rounded-md px-3 py-1 text-sm ${
-                activeSection === 'data'
-                  ? 'bg-(--color-fill-2) text-(--color-text-1)'
-                  : 'text-(--color-text-2)'
-              }`}
-              onClick={() => setDrawerSection('data')}
-            >
-              {t('dashboard.interactionDataTab', '数据')}
-            </button>
-            <button
-              type="button"
-              role="tab"
-              aria-selected={activeSection === 'interaction'}
-              className={`rounded-md px-3 py-1 text-sm ${
-                activeSection === 'interaction'
-                  ? 'bg-(--color-fill-2) text-(--color-text-1)'
-                  : 'text-(--color-text-2)'
-              }`}
-              onClick={() => setDrawerSection('interaction')}
-            >
-              {t('dashboard.interactionTab', '交互')}
-            </button>
-          </div>
+          <Tabs
+            className="[&_.ant-tabs-content-holder]:hidden [&_.ant-tabs-nav]:mb-0"
+            activeKey={activeSection}
+            onChange={(key) => setDrawerSection(key as 'data' | 'interaction')}
+            items={[
+              { key: 'data', label: t('dashboard.interactionDataTab', '数据') },
+              { key: 'interaction', label: t('dashboard.interactionTab', '交互') },
+            ]}
+          />
         ) : null}
 
         <Form.Item name="sceneWidgetType" hidden>

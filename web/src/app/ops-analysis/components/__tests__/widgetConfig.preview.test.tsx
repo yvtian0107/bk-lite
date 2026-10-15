@@ -37,7 +37,7 @@ vi.mock('@/hooks/useUnsavedConfirm', () => ({
 
 vi.mock('@/app/ops-analysis/api/dataSource', () => ({
   useDataSourceApi: () => ({
-    getSourceDataByApiId: vi.fn(),
+    getSourceDataByApiId: vi.fn(async () => ({ data: [] })),
     getDataSourceDetail: vi.fn(),
   }),
 }));
@@ -167,6 +167,29 @@ const buildManager = (dataSource?: DatasourceItem) => {
 };
 
 describe('ViewConfig preview drawer', () => {
+  it('switches data and interaction with underline tabs', async () => {
+    const user = userEvent.setup();
+    render(
+      <ViewConfig
+        open
+        item={lineItem()}
+        onClose={() => undefined}
+        dataSourceManager={buildManager(lineDataSource) as never}
+      />,
+    );
+
+    const interactionTab = await screen.findByRole('tab', { name: 'dashboard.interactionTab' });
+    const dataTab = screen.getByRole('tab', { name: 'dashboard.interactionDataTab' });
+    expect(interactionTab.closest('.ant-tabs-nav')).toBeTruthy();
+    expect(dataTab.getAttribute('aria-selected')).toBe('true');
+
+    await user.click(interactionTab);
+    expect(interactionTab.getAttribute('aria-selected')).toBe('true');
+    expect(screen.getByText('dashboard.interactionLinkType')).toBeTruthy();
+    expect(screen.queryByRole('heading', { name: 'dashboard.interactionSection' })).toBeNull();
+    expect(screen.queryByRole('heading', { name: '交互' })).toBeNull();
+  });
+
   it('opens a preview pane keyed by the widget, then collapses it', async () => {
     const user = userEvent.setup();
     render(

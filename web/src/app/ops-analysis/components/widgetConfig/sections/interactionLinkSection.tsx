@@ -1,8 +1,8 @@
-import React, { useMemo } from 'react';
-import { Form, Input, Radio } from 'antd';
+import React, { useEffect, useMemo } from 'react';
+import { QuestionCircleOutlined } from '@ant-design/icons';
+import { Form, Input, Segmented, Tooltip } from 'antd';
 
 import { FilterTokenInput } from '@/app/ops-analysis/components/filterTokenInput';
-import { ConfigSectionTitle } from '@/app/ops-analysis/components/widgetConfig/configTitles';
 import type {
   UnifiedFilterDefinition,
   ValueConfig,
@@ -41,6 +41,11 @@ const InteractionLinkSection: React.FC<InteractionLinkSectionProps> = ({
   const capability = interactionCapability(chartType);
   const selectedKind: WidgetInteractionKind = kind === 'data' && capability.data ? 'data' : 'title';
 
+  useEffect(() => {
+    if (capability.data || kind !== 'data') return;
+    form.setFieldValue(['interaction', 'kind'], 'title');
+  }, [capability.data, form, kind]);
+
   const variables = useMemo(() => {
     const points = buildInteractionPoints(chartType, rawData, fieldConfig);
     const dataVariables = listPresentDataVariables(chartType, rawData, {
@@ -76,47 +81,42 @@ const InteractionLinkSection: React.FC<InteractionLinkSectionProps> = ({
     form.setFieldValue(['interaction', 'kind'], next);
   };
 
-  const dataHint = capability.data === 'table'
-    ? t('dashboard.interactionDataTableHint', '表格只显示这一条操作按钮，字段取当前行。')
-    : capability.data === 'timeline'
-      ? t('dashboard.interactionDataTimelineHint', '单击事件卡片或标题时打开，字段取这条事件。')
-      : capability.data === 'contextMenu'
-        ? t('dashboard.interactionDataMenuHint', '在机柜、设备、系统或主机上右键打开，左键交互保持不变。')
-        : t('dashboard.interactionDataClickHint', '单击数据点、柱、扇区或数字时打开。');
+  const linkTypeTip = capability.data ? (
+    <div>
+      <div>{t('dashboard.interactionLinkTypeTitleTip', '标题链接：标题旁显示图标')}</div>
+      <div>{t('dashboard.interactionLinkTypeDataTip', '数据链接：点击数据点、柱、扇区或数字打开')}</div>
+    </div>
+  ) : (
+    t('dashboard.interactionTitleOnlyTip', '该组件仅支持标题链接，点击标题旁图标打开')
+  );
 
   return (
     <section>
-      <ConfigSectionTitle>
-        {t('dashboard.interactionSection', '交互')}
-      </ConfigSectionTitle>
       <Form.Item name={['interaction', 'kind']} hidden>
         <Input />
       </Form.Item>
       <div className="space-y-4">
-        <div className="rounded-md border border-(--color-border-1) p-3">
-          <Radio
-            checked={selectedKind === 'title'}
-            onChange={() => selectKind('title')}
-          >
-            {t('dashboard.interactionTitleLink', '标题链接')}
-          </Radio>
-          <p className="mb-0 mt-1 text-xs text-(--color-text-3)">
-            {t('dashboard.interactionTitleHint', '在标题旁显示图标。')}
-          </p>
-        </div>
-        <div className={`rounded-md border border-(--color-border-1) p-3 ${capability.data ? '' : 'opacity-60'}`}>
-          <Radio
-            checked={selectedKind === 'data'}
-            disabled={!capability.data}
-            onChange={() => selectKind('data')}
-          >
-            {t('dashboard.interactionDataLink', '数据链接')}
-          </Radio>
-          <p className="mb-0 mt-1 text-xs text-(--color-text-3)">
-            {capability.data
-              ? dataHint
-              : t('dashboard.interactionDataUnsupported', '这个组件只有标题链接。')}
-          </p>
+        <div>
+          <div className="mb-2 flex items-center text-sm text-(--color-text-1)">
+            <span>
+              {capability.data
+                ? t('dashboard.interactionLinkType', '链接类型')
+                : t('dashboard.interactionTitleLink', '标题链接')}
+            </span>
+            <Tooltip title={linkTypeTip}>
+              <QuestionCircleOutlined className="ml-1 cursor-help text-(--color-text-3)" />
+            </Tooltip>
+          </div>
+          {capability.data ? (
+            <Segmented
+              value={selectedKind}
+              onChange={(value) => selectKind(value === 'data' ? 'data' : 'title')}
+              options={[
+                { label: t('dashboard.interactionTitleLink', '标题链接'), value: 'title' },
+                { label: t('dashboard.interactionDataLink', '数据链接'), value: 'data' },
+              ]}
+            />
+          ) : null}
         </div>
         <Form.Item
           label={t('dashboard.interactionName', '名称')}
@@ -127,22 +127,26 @@ const InteractionLinkSection: React.FC<InteractionLinkSectionProps> = ({
         <Form.Item
           label={t('dashboard.interactionUrl', '目标 URL')}
           name={['interaction', 'url']}
+          required
         >
           <FilterTokenInput
             t={t}
             variables={variables}
-            hint={t('dashboard.interactionTokenHint', '输入 $ 选择要带上的值')}
-            placeholder={t('dashboard.interactionUrlPlaceholder', 'https:// 或 / 开头的路径')}
+            hint=""
+            placeholder={t('dashboard.interactionUrlPlaceholder', '输入 URL，键入 $ 插入变量')}
           />
         </Form.Item>
         <Form.Item
           label={t('dashboard.interactionOpenMode', '打开方式')}
           name={['interaction', 'openMode']}
         >
-          <Radio.Group>
-            <Radio value="sameTab">{t('dashboard.interactionSameTab', '当前页')}</Radio>
-            <Radio value="newTab">{t('dashboard.interactionNewTab', '新标签')}</Radio>
-          </Radio.Group>
+          <Segmented
+            size="small"
+            options={[
+              { label: t('dashboard.interactionSameTab', '当前页'), value: 'sameTab' },
+              { label: t('dashboard.interactionNewTab', '新标签'), value: 'newTab' },
+            ]}
+          />
         </Form.Item>
       </div>
     </section>

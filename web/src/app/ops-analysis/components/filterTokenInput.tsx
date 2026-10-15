@@ -151,6 +151,9 @@ export const FilterTokenInput: React.FC<FilterTokenInputProps> = ({
   }, [menuItems, query]);
   const currentIndex = Math.min(activeIndex, Math.max(filtered.length - 1, 0));
   const menuOpen = open && filtered.length > 0 && menuItems.length > 0;
+  const hintText = hint === undefined
+    ? t('dashboard.filterTokenHint', '输入 $ 插入筛选')
+    : hint;
   const unmatchedMessage = unmatchedTokens.length
     ? t(
       'dashboard.filterTokenUnmatched',
@@ -242,7 +245,7 @@ export const FilterTokenInput: React.FC<FilterTokenInputProps> = ({
     maxLength,
     placeholder,
     className,
-    'aria-describedby': menuItems.length > 0 ? hintId : undefined,
+    'aria-describedby': menuItems.length > 0 && hintText ? hintId : undefined,
     onChange: (event: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
       handleValueChange(event.target.value, event.target.selectionStart ?? event.target.value.length);
     },
@@ -311,14 +314,14 @@ export const FilterTokenInput: React.FC<FilterTokenInputProps> = ({
       >
         <div ref={fieldRef} className="w-full">{control}</div>
       </Dropdown>
-      {menuItems.length > 0 && (
+      {menuItems.length > 0 && hintText ? (
         <span
           id={hintId}
           className="hidden text-xs leading-5 text-(--color-text-3) group-focus-within:block"
         >
-          {hint || t('dashboard.filterTokenHint', '输入 $ 插入筛选')}
+          {hintText}
         </span>
-      )}
+      ) : null}
       {unmatchedMessage && (
         <span role="status" className="text-xs leading-5 text-(--color-warning)">
           {unmatchedMessage}
