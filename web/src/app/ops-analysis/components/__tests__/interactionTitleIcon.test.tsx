@@ -3,14 +3,32 @@ import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import '@ant-design/v5-patch-for-react-19';
 import { cleanup, render, screen } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
+import { ConfigProvider } from 'antd';
 import { IntlProvider } from 'react-intl';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 
 import InteractionTitleIcon from '@/app/ops-analysis/components/interactionTitleIcon';
 import { ShareModeProvider } from '@/app/ops-analysis/context/shareMode';
 import ScreenWidgetFrame from '@/app/ops-analysis/(pages)/view/screen/components/screenWidgetFrame';
 import type { WidgetInteractionLink } from '@/app/ops-analysis/types/dashBoard';
 import type { ScreenWidgetItem } from '@/app/ops-analysis/types/screen';
+
+beforeAll(() => {
+  Object.defineProperty(window, 'matchMedia', {
+    writable: true,
+    value: vi.fn().mockImplementation((query: string) => ({
+      matches: false,
+      media: query,
+      onchange: null,
+      addListener: vi.fn(),
+      removeListener: vi.fn(),
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+      dispatchEvent: vi.fn(),
+    })),
+  });
+});
 
 afterEach(cleanup);
 
@@ -58,7 +76,6 @@ describe('InteractionTitleIcon', () => {
     expect(button.className).toContain('rounded-full');
     expect(button.className).toContain('h-6');
     expect(button.className).not.toContain('screen-widget-frame__title-link');
-    expect(button.querySelector('.screen-widget-frame__title-link-name')).toBeNull();
     expect(button.getAttribute('title')).toBe('查看详情');
   });
 
@@ -100,7 +117,6 @@ describe('screen title link', () => {
     expect(button.className).not.toContain('screen-widget-frame__title-link--floating');
     expect(button.className).not.toContain('text-(--color-text-2)');
     expect(button.querySelector('.anticon-link')).toBeTruthy();
-    expect(button.querySelector('.screen-widget-frame__title-link-name')).toBeNull();
     expect(button.parentElement?.className).toContain('screen-widget-frame__header');
     expect(screen.getByText('CPU 使用率').className).toBe('screen-widget-frame__title');
 
@@ -115,29 +131,43 @@ describe('screen title link', () => {
     expect(screen.getByText('CPU 使用率').className).toBe('screen-widget-frame__title');
   });
 
-  it('uses a capsule with the link name on a bare screen widget', () => {
-    const { rerender } = renderWithIntl(
-      <ScreenWidgetFrame item={widget(titleLink, 'bare')}>
-        <div>chart</div>
-      </ScreenWidgetFrame>,
+  it('shows only a round icon on a bare screen widget and the name in a tooltip', async () => {
+    const user = userEvent.setup();
+    const { rerender } = render(
+      <ConfigProvider theme={{ token: { motion: false } }}>
+        <IntlProvider locale="zh" messages={{}}>
+          <ScreenWidgetFrame item={widget(titleLink, 'bare')}>
+            <div>chart</div>
+          </ScreenWidgetFrame>
+        </IntlProvider>
+      </ConfigProvider>,
     );
 
     const button = screen.getByRole('button', { name: '查看详情' });
     expect(button.className).toContain('screen-widget-frame__title-link--floating');
-    expect(screen.queryByText('CPU 使用率')).toBeNull();
-    expect(button.querySelector('.screen-widget-frame__title-link-name')?.textContent).toBe('查看详情');
+    expect(button.getAttribute('title')).toBeNull();
+    expect(button.textContent).toBe('');
     expect(button.querySelector('.anticon-link')).toBeTruthy();
+    expect(screen.queryByText('CPU 使用率')).toBeNull();
+
+    await user.hover(button);
+    expect(await screen.findByText('查看详情')).toBeTruthy();
 
     rerender(
-      <IntlProvider locale="zh" messages={{}}>
-        <ScreenWidgetFrame
-          item={widget({ ...titleLink, name: '' }, 'bare')}
-        >
-          <div>chart</div>
-        </ScreenWidgetFrame>
-      </IntlProvider>,
+      <ConfigProvider theme={{ token: { motion: false } }}>
+        <IntlProvider locale="zh" messages={{}}>
+          <ScreenWidgetFrame
+            item={widget({ ...titleLink, name: '' }, 'bare')}
+          >
+            <div>chart</div>
+          </ScreenWidgetFrame>
+        </IntlProvider>
+      </ConfigProvider>,
     );
-    expect(screen.getByRole('button', { name: '打开链接' }).textContent).toContain('打开链接');
+    const emptyName = screen.getByRole('button', { name: '打开链接' });
+    expect(emptyName.textContent).toBe('');
+    await user.hover(emptyName);
+    expect(await screen.findByText('打开链接')).toBeTruthy();
   });
 });
 
@@ -158,9 +188,11 @@ describe('screen title link styles', () => {
     expect(source).toContain('font-size: calc(14px * var(--screen-widget-ui-scale));');
     expect(source).toContain('color-mix(in srgb, var(--screen-chrome-accent) 68%, #02060c)');
     expect(source).toContain('drop-shadow(0 0 calc(6px * var(--screen-widget-ui-scale)) var(--screen-chrome-glow))');
-    expect(source).toContain('height: calc(24px * var(--screen-widget-ui-scale));');
+    expect(source).toContain('width: calc(20px * var(--screen-widget-ui-scale));');
+    expect(source).toContain('height: calc(20px * var(--screen-widget-ui-scale));');
     expect(source).toContain('font-size: calc(12px * var(--screen-widget-ui-scale));');
     expect(source).toContain('text-overflow: ellipsis;');
+    expect(source).not.toContain('screen-widget-frame__title-link-name');
     expect(source).not.toContain('--color-text-2');
   });
 });

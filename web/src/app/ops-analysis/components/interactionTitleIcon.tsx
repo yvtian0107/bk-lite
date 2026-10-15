@@ -2,7 +2,7 @@
 
 import React, { useCallback } from 'react';
 import { LinkOutlined } from '@ant-design/icons';
-import { Button, message } from 'antd';
+import { Button, message, Tooltip } from 'antd';
 
 import { useFilterTemplateSnapshot } from '@/app/ops-analysis/context/filterTemplate';
 import { useInteractionSurface } from '@/app/ops-analysis/context/interactionSurface';
@@ -94,12 +94,12 @@ const InteractionTitleIcon: React.FC<InteractionTitleIconProps> = ({
           : 'h-5 w-5'
       }`;
 
-  return (
+  const button = (
     <button
       type="button"
       data-export-hidden="true"
       aria-label={label}
-      title={label}
+      title={variant === 'screenFloating' ? undefined : label}
       className={`no-drag ${layoutClass} ${className}`}
       onClick={(event) => {
         event.preventDefault();
@@ -108,11 +108,10 @@ const InteractionTitleIcon: React.FC<InteractionTitleIconProps> = ({
       }}
     >
       <LinkOutlined aria-hidden />
-      {variant === 'screenFloating' ? (
-        <span className="screen-widget-frame__title-link-name">{label}</span>
-      ) : null}
     </button>
   );
+  if (variant !== 'screenFloating') return button;
+  return <Tooltip title={label}>{button}</Tooltip>;
 };
 
 export const InteractionActionCell = ({

@@ -1145,12 +1145,8 @@ const ScreenCanvas: React.FC<ScreenCanvasProps> = ({
           top: calc(8px * var(--screen-widget-ui-scale));
           right: calc(8px * var(--screen-widget-ui-scale));
           z-index: 20;
-          width: auto;
-          max-width: calc(100% - calc(16px * var(--screen-widget-ui-scale)));
-          height: calc(24px * var(--screen-widget-ui-scale));
-          gap: calc(4px * var(--screen-widget-ui-scale));
-          padding: 0 calc(8px * var(--screen-widget-ui-scale));
-          overflow: hidden;
+          width: calc(20px * var(--screen-widget-ui-scale));
+          height: calc(20px * var(--screen-widget-ui-scale));
           border: 1px solid color-mix(in srgb, var(--screen-chrome-accent) 48%, transparent);
           border-radius: 999px;
           background: rgba(4, 12, 22, 0.55);
@@ -1161,13 +1157,6 @@ const ScreenCanvas: React.FC<ScreenCanvasProps> = ({
           border-color: var(--screen-chrome-accent);
           box-shadow: 0 0 calc(8px * var(--screen-widget-ui-scale)) var(--screen-chrome-glow);
           filter: none;
-        }
-
-        .screen-widget-frame__title-link-name {
-          min-width: 0;
-          overflow: hidden;
-          text-overflow: ellipsis;
-          white-space: nowrap;
         }
 
         .screen-widget-frame__body {
