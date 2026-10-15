@@ -175,7 +175,7 @@ const TrendLine: React.FC<TrendLineProps> = ({
     scheduleActivateDataZoomSelect();
   }, [legendSelected, rawData, zoomRange, isDataReady, scheduleActivateDataZoomSelect]);
 
-  useEffect(() => () => clickSchedulerRef.current.cancel(), []);
+  useEffect(() => () => clickSchedulerRef.current.dispose(), []);
 
   const handleLineClick = useCallback((params: ChartClickParams) => {
     clickSchedulerRef.current.schedule(() => onChartClick(params));

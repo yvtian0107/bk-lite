@@ -97,6 +97,10 @@ type SubmitDisplayColumn = TableColumnConfigItem & {
   isDefault?: boolean;
 };
 
+type DataSubmitColumn = Omit<SubmitDisplayColumn, 'columnType'> & {
+  columnType?: 'data';
+};
+
 type SubmitFilterField = TableFilterFieldConfig & {
   id: string;
 };
@@ -256,7 +260,9 @@ const buildTableConfig = ({
       key: column.key.trim(),
       title: column.title?.trim() || column.key.trim(),
     }))
-    .filter((column) => column.key && column.columnType !== 'actions');
+    .filter((column): column is DataSubmitColumn => (
+      Boolean(column.key) && column.columnType !== 'actions'
+    ));
 
   const duplicateKeySet = new Set<string>();
   const hasDuplicateKeys = validDisplayColumns.some((column) => {
@@ -285,7 +291,7 @@ const buildTableConfig = ({
         order: index,
         columnType: column.columnType,
       };
-      if (column.columnType === 'actions' || !includeCellStyle) {
+      if (!includeCellStyle) {
         return next;
       }
       if (column.cellType === 'colorBackground') {

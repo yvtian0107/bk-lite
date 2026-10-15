@@ -78,10 +78,19 @@ test('table submit persists column cell style fields', () => {
         visible: true,
         order: 1,
       },
+      {
+        id: 'c3',
+        key: '__actions__',
+        title: '操作',
+        visible: true,
+        order: 2,
+        columnType: 'actions',
+      },
     ],
   });
 
   assert.equal(result.error, undefined);
+  assert.equal(result.config?.tableConfig?.columns?.length, 2);
   assert.deepEqual(result.config?.tableConfig?.columns?.[0], {
     key: 'health_set',
     title: '健康集',

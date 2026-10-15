@@ -37,6 +37,12 @@ export const createDelayedClickScheduler = (
         blocked = false;
       }, 0);
     },
+    dispose() {
+      if (timer != null) {
+        timers.clear(timer);
+        timer = null;
+      }
+    },
   };
 };
 

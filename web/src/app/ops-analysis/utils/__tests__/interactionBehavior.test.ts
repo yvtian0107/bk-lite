@@ -46,6 +46,27 @@ test('line click waits and cancels on dblclick or data zoom', () => {
   assert.equal(opened, 2);
 });
 
+test('dispose only clears the pending click timer', () => {
+  const pending: Array<{ callback: () => void; ms: number } | null> = [];
+  const scheduler = createDelayedClickScheduler(250, {
+    set: (callback, ms) => {
+      pending.push({ callback, ms });
+      return pending.length;
+    },
+    clear: (id) => {
+      pending[id - 1] = null;
+    },
+  });
+  let opened = 0;
+  scheduler.schedule(() => {
+    opened += 1;
+  });
+  scheduler.dispose();
+  assert.equal(pending.length, 1);
+  assert.equal(pending[0], null);
+  assert.equal(opened, 0);
+});
+
 test('right click opens only for a short move that hits an object', () => {
   const gesture = createRightClickGesture(6);
   gesture.pointerDown({ button: 2, clientX: 10, clientY: 20 });

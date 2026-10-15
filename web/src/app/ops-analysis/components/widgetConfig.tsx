@@ -110,6 +110,12 @@ import { ConfigGroupTitle } from './widgetConfig/configTitles';
 import { getDefaultScreenWidgetAppearance } from '@/app/ops-analysis/(pages)/view/screen/utils/layoutUtils';
 import { useWidgetCsvExportRegistry } from '@/app/ops-analysis/context/widgetCsvExportRegistry';
 import { interactionKindForChartType } from '@/app/ops-analysis/utils/interactionLink';
+import {
+  isCurrentInteractionSample,
+  nextInteractionSampleTicket,
+  planInteractionSample,
+  type InteractionSampleTicket,
+} from '@/app/ops-analysis/utils/interactionSample';
 import { isSceneWidgetType } from '@/app/ops-analysis/types/sceneWidgetCapability';
 import { ensurePrometheusQueryRequired } from '@/app/ops-analysis/utils/dataSourceParamContract';
 import {
@@ -118,6 +124,10 @@ import {
   migrateParamItemsFromStringList,
   normalizeDatasourceItemParams,
 } from '@/app/ops-analysis/utils/stringParamMultipleMigrate';
+
+const readWidgetId = (item: ViewConfigItem | null | undefined) => (
+  item && 'i' in item ? String(item.i || '') : ''
+);
 
 const viewConfigReloadKey = (item: ViewConfigItem | null | undefined) => {
   if (!item) return '';
@@ -185,6 +195,9 @@ const ViewConfig: React.FC<ViewConfigPropsWithManager> = ({
   const { getSourceDataByApiId } = useDataSourceApi();
   const configRequestIdRef = useRef(0);
   const resolvedParamOptionsRef = useRef(new Map<string, InputOption[]>());
+  const interactionSampleKeyRef = useRef('');
+  const sampleReadRef = useRef<InteractionSampleTicket>({ widgetId: '', sequence: 0 });
+  const [settledSampleWidgetId, setSettledSampleWidgetId] = useState<string | null>(null);
 
   const {
     selectedDataSource,
@@ -312,12 +325,26 @@ const ViewConfig: React.FC<ViewConfigPropsWithManager> = ({
     [],
   );
 
+  const abandonInteractionSample = useCallback((widgetId: string) => {
+    sampleReadRef.current = nextInteractionSampleTicket(sampleReadRef.current, widgetId);
+    interactionSampleKeyRef.current = '';
+    setPreviewRawData(null);
+    setLoadingRoleFields(false);
+    setSettledSampleWidgetId(null);
+  }, []);
+
+  const settleInteractionSample = useCallback((requestId: number, widgetId: string) => {
+    if (requestId !== configRequestIdRef.current) return;
+    setSettledSampleWidgetId(widgetId);
+  }, []);
+
   /** 用户通过弹窗选择了新的数据源，重置所有依赖配置 */
   const handleDataSourceChangeFromSelector = useCallback(
     async (item: DatasourceItem) => {
       const requestId = nextConfigRequestId();
       resolvedParamOptionsRef.current.clear();
       setDataSourceSelectorVisible(false);
+      abandonInteractionSample(readWidgetId(widgetItem));
 
       if (isSceneWidgetSelection(item)) {
         const sceneWidgetType =
@@ -328,12 +355,11 @@ const ViewConfig: React.FC<ViewConfigPropsWithManager> = ({
         setWidgetParamOverrides([]);
         tableConfig.resetTableConfig();
         singleValueConfig.resetSingleValueConfig();
-        setPreviewRawData(null);
-        setLoadingRoleFields(false);
 
         form.setFieldsValue(
           buildSceneWidgetSelectorResetValues(sceneWidgetType, surface),
         );
+        settleInteractionSample(requestId, readWidgetId(widgetItem));
         return;
       }
 
@@ -343,8 +369,6 @@ const ViewConfig: React.FC<ViewConfigPropsWithManager> = ({
       setWidgetParamOverrides([]);
       tableConfig.resetTableConfig();
       singleValueConfig.resetSingleValueConfig();
-      setPreviewRawData(null);
-      setLoadingRoleFields(false);
 
       // 加载完整数据源（brief 模式不含 params）
       const fullItem = normalizeDatasourceItemParams(
@@ -378,6 +402,7 @@ const ViewConfig: React.FC<ViewConfigPropsWithManager> = ({
           surface,
         }),
       );
+      settleInteractionSample(requestId, readWidgetId(widgetItem));
 
       // 重建 filter bindings
       if (fullItem.params?.length) {
@@ -420,6 +445,9 @@ const ViewConfig: React.FC<ViewConfigPropsWithManager> = ({
       nextConfigRequestId,
       isCurrentConfigRequest,
       surface,
+      widgetItem,
+      abandonInteractionSample,
+      settleInteractionSample,
     ],
   );
 
@@ -503,6 +531,11 @@ const ViewConfig: React.FC<ViewConfigPropsWithManager> = ({
     const resolvedId = canonicalSelectedDataSource?.id;
     if (!resolvedId || !canonicalSelectedDataSource) return;
 
+    const ticket = nextInteractionSampleTicket(
+      sampleReadRef.current,
+      readWidgetId(widgetItem),
+    );
+    sampleReadRef.current = ticket;
     setLoadingRoleFields(true);
     try {
       const formValues = form.getFieldsValue();
@@ -526,16 +559,20 @@ const ViewConfig: React.FC<ViewConfigPropsWithManager> = ({
       }
 
       const { data } = await getSourceDataByApiId(resolvedId, requestParams);
+      if (!isCurrentInteractionSample(sampleReadRef.current, ticket)) return;
       setPreviewRawData(data);
       if (previewOpen) {
         setSuppliedPreviewRawData(data);
         setSuppliedPreviewVersion((version) => version + 1);
       }
     } catch (error) {
+      if (!isCurrentInteractionSample(sampleReadRef.current, ticket)) return;
       console.error('Failed to fetch data fields:', error);
       message.error(t('dashboard.fetchDataFieldsFailed'));
     } finally {
-      setLoadingRoleFields(false);
+      if (isCurrentInteractionSample(sampleReadRef.current, ticket)) {
+        setLoadingRoleFields(false);
+      }
     }
   }, [
     canonicalSelectedDataSource,
@@ -544,34 +581,43 @@ const ViewConfig: React.FC<ViewConfigPropsWithManager> = ({
     getSourceDataByApiId,
     previewOpen,
     t,
+    widgetItem,
   ]);
 
-  const interactionSampleKeyRef = useRef('');
+  const interactionWidgetId = readWidgetId(widgetItem);
   useEffect(() => {
-    if (!open || activeSection !== 'interaction') return;
-    if (previewRawData != null) return;
-    const widgetId = widgetItem && 'i' in widgetItem ? String(widgetItem.i || '') : '';
-    const rendered = widgetId
-      ? canvasRawDataRegistry?.readWidgetRawData(widgetId)
-      : undefined;
-    if (rendered != null) {
-      setPreviewRawData(rendered);
+    const plan = planInteractionSample({
+      open,
+      interactionVisible: activeSection === 'interaction',
+      hasPreview: previewRawData != null,
+      widgetId: interactionWidgetId,
+      settledWidgetId: settledSampleWidgetId,
+      rendered: interactionWidgetId
+        ? canvasRawDataRegistry?.readWidgetRawData(interactionWidgetId)
+        : undefined,
+      sourceId: canonicalSelectedDataSource?.id,
+      fetchedKey: interactionSampleKeyRef.current,
+    });
+    if (plan.type === 'use-rendered') {
+      sampleReadRef.current = nextInteractionSampleTicket(
+        sampleReadRef.current,
+        interactionWidgetId,
+      );
+      setPreviewRawData(plan.data);
       return;
     }
-    const sourceId = canonicalSelectedDataSource?.id;
-    if (sourceId == null) return;
-    const sampleKey = `${widgetId}:${sourceId}`;
-    if (interactionSampleKeyRef.current === sampleKey) return;
-    interactionSampleKeyRef.current = sampleKey;
+    if (plan.type !== 'fetch') return;
+    interactionSampleKeyRef.current = plan.sampleKey;
     void fetchRoleFields();
   }, [
     activeSection,
     canvasRawDataRegistry,
     canonicalSelectedDataSource?.id,
     fetchRoleFields,
+    interactionWidgetId,
     open,
     previewRawData,
-    widgetItem,
+    settledSampleWidgetId,
   ]);
 
   const displayColumnOptions = useMemo(
@@ -693,6 +739,8 @@ const ViewConfig: React.FC<ViewConfigPropsWithManager> = ({
       return;
     }
 
+    const widgetId = readWidgetId(widgetItem);
+    abandonInteractionSample(widgetId);
     const { valueConfig } = widgetItem;
     setDrawerSection('data');
     const sceneWidgetType = resolveOpenedSceneWidgetType(valueConfig);
@@ -718,6 +766,7 @@ const ViewConfig: React.FC<ViewConfigPropsWithManager> = ({
       // setFieldsValue 在 rc-field-form 2.x 会标记 touched，初始化后清掉以免误报未保存
       markFormPristine(form);
       onDirtyChange?.(false);
+      settleInteractionSample(requestId, widgetId);
       return;
     }
 
@@ -884,6 +933,7 @@ const ViewConfig: React.FC<ViewConfigPropsWithManager> = ({
     // setFieldsValue 在 rc-field-form 2.x 会标记 touched，初始化后清掉以免误报未保存
     markFormPristine(form);
     onDirtyChange?.(false);
+    settleInteractionSample(requestId, widgetId);
   };
 
   const resetForm = (): void => {
@@ -901,9 +951,8 @@ const ViewConfig: React.FC<ViewConfigPropsWithManager> = ({
     setPreviewSnapshotNamespaceId(undefined);
     setPreviewDataFetchSignature(null);
     setPreviewReloadVersion(0);
-    setPreviewRawData(null);
     setPreviewLoading(false);
-    setLoadingRoleFields(false);
+    abandonInteractionSample('');
     networkTopologyConfig.resetInstanceOptions();
     tableConfig.resetTableConfig();
     singleValueConfig.resetSingleValueConfig();

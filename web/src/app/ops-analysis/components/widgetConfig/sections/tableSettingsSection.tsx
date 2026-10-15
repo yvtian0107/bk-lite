@@ -73,7 +73,7 @@ interface TableSettingsSectionProps {
   onDisplayColumnDragEnd: (targetTableData: DisplayColumnRow[]) => void;
   onReProbeColumns: () => void;
   onAddNewFilterField: () => void;
-  onAddNewDisplayColumn: (columnType?: 'data' | 'actions') => void;
+  onAddNewDisplayColumn: (columnType: 'data') => void;
 }
 
 export const TableSettingsSection: React.FC<TableSettingsSectionProps> = ({
