@@ -88,7 +88,12 @@ export interface WidgetConfigFormValues {
     layout?: 'list' | 'grid';
   };
   actions?: DashboardActionConfig[];
-  interaction?: ValueConfig['interaction'];
+  interaction?: {
+    kind: 'none' | 'title' | 'data';
+    name: string;
+    url: string;
+    openMode: 'sameTab' | 'newTab';
+  };
   appearance?: ValueConfig['appearance'];
 }
 

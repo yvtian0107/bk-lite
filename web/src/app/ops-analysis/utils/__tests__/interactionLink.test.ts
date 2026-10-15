@@ -15,6 +15,7 @@ import {
   listTableFieldVariables,
   listUnmatchedInteractionTokens,
   migrateActionsToInteraction,
+  normalizeInteractionLink,
   prepareInteractionNavigation,
   readChartClickPoint,
   readWidgetInteraction,
@@ -220,6 +221,14 @@ test('stored interaction wins and title-only widgets keep the link as a title li
   }
   assert.equal(interactionKindForChartType('line', 'data'), 'data');
   assert.equal(interactionKindForChartType('bar', 'title'), 'title');
+  assert.equal(interactionKindForChartType('line', 'none'), 'none');
+  assert.equal(interactionKindForChartType('text', 'none'), 'none');
+  assert.equal(normalizeInteractionLink({
+    kind: 'none',
+    name: '详情',
+    url: '/ops',
+    openMode: 'newTab',
+  }, 'line'), undefined);
 });
 
 test('empty legacy action urls are not turned into a query-only link', () => {
@@ -715,6 +724,12 @@ test('interaction dropdown group names exist in Chinese and English', () => {
   assert.equal(en.interactionValueRaw, undefined);
   assert.equal(zh.interactionLinkType, '链接类型');
   assert.equal(en.interactionLinkType, 'Link type');
+  assert.equal(zh.interactionNone, '无');
+  assert.equal(en.interactionNone, 'None');
+  assert.equal(zh.interactionNoneTip, '无：不设置跳转');
+  assert.equal(en.interactionNoneTip, 'None: no navigation is set');
+  assert.equal(zh.interactionNoneHint, '未设置交互，组件不可点击跳转');
+  assert.equal(en.interactionNoneHint, 'No interaction is set. The widget cannot be opened by clicking.');
   assert.equal(zh.interactionLinkTypeTitleTip, '标题链接：标题旁显示图标');
   assert.equal(en.interactionLinkTypeTitleTip, 'Title link: an icon appears beside the title');
   assert.equal(zh.interactionLinkTypeDataTip, '数据链接：点击数据点、柱、扇区或数字打开');

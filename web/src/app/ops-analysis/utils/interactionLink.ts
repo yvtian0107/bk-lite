@@ -534,10 +534,12 @@ export const migrateActionsToInteraction = (
 };
 
 export const normalizeInteractionLink = (
-  link: Partial<WidgetInteractionLink> | null | undefined,
+  link: (Omit<Partial<WidgetInteractionLink>, 'kind'> & {
+    kind?: WidgetInteractionKind | 'none';
+  }) | null | undefined,
   chartType?: string,
 ): WidgetInteractionLink | undefined => {
-  if (!link) return undefined;
+  if (!link || link.kind === 'none') return undefined;
   const url = link.url?.trim() || '';
   if (!url) return undefined;
   let kind: WidgetInteractionKind = link.kind === 'data' ? 'data' : 'title';
@@ -569,9 +571,10 @@ export const readWidgetInteraction = (
 export const interactionKindForChartType = (
   chartType: string | undefined,
   currentKind: unknown,
-): WidgetInteractionKind => (
-  currentKind === 'data' && interactionCapability(chartType).data ? 'data' : 'title'
-);
+): 'none' | WidgetInteractionKind => {
+  if (currentKind === 'none') return 'none';
+  return currentKind === 'data' && interactionCapability(chartType).data ? 'data' : 'title';
+};
 
 const hasOwn = (row: Record<string, unknown>, key: string) =>
   Object.prototype.hasOwnProperty.call(row, key);

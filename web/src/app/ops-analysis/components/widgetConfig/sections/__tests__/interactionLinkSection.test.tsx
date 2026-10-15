@@ -65,6 +65,7 @@ describe('InteractionLinkSection', () => {
     expect(screen.queryByText('输入 $ 选择要带上的值')).toBeNull();
     expect(screen.queryByText('输入 $ 插入筛选')).toBeNull();
 
+    expect(screen.getByRole('radio', { name: '无' })).toBeTruthy();
     expect(screen.getByRole('radio', { name: '标题链接' })).toBeTruthy();
     expect(screen.getByRole('radio', { name: '数据链接' })).toBeTruthy();
     const groups = document.querySelectorAll('.ant-segmented');
@@ -85,24 +86,59 @@ describe('InteractionLinkSection', () => {
     });
 
     await user.hover(screen.getByRole('img', { name: 'question-circle' }));
-    expect(await screen.findByText('标题链接：标题旁显示图标')).toBeTruthy();
+    expect(await screen.findByText('无：不设置跳转')).toBeTruthy();
+    expect(screen.getByText('标题链接：标题旁显示图标')).toBeTruthy();
     expect(screen.getByText('数据链接：点击数据点、柱、扇区或数字打开')).toBeTruthy();
   });
 
-  it('只支持标题链接的组件不显示分段选择器，并把 kind 固定为 title', async () => {
+  it('只支持标题链接的组件用同一分段选择器，并把数据链接收成标题链接', async () => {
     const user = userEvent.setup();
     renderSection('text', 'data');
 
-    expect(screen.getByText('标题链接')).toBeTruthy();
-    expect(screen.queryByText('链接类型')).toBeNull();
+    expect(screen.getByText('链接类型')).toBeTruthy();
+    expect(screen.getByRole('radio', { name: '无' })).toBeTruthy();
+    expect(screen.getByRole('radio', { name: '标题链接' })).toBeTruthy();
     expect(screen.queryByRole('radio', { name: '数据链接' })).toBeNull();
-    expect(screen.queryByRole('radio', { name: '标题链接' })).toBeNull();
-    expect(document.querySelectorAll('.ant-segmented')).toHaveLength(1);
+    expect(document.querySelectorAll('.ant-segmented')).toHaveLength(2);
     await waitFor(() => {
       expect(screen.getByTestId('kind').textContent).toBe('title');
     });
 
     await user.hover(screen.getByRole('img', { name: 'question-circle' }));
-    expect(await screen.findByText('该组件仅支持标题链接，点击标题旁图标打开')).toBeTruthy();
+    expect(await screen.findByText('无：不设置跳转')).toBeTruthy();
+    expect(screen.getByText('该组件仅支持标题链接，点击标题旁图标打开')).toBeTruthy();
+  });
+
+  it('选无时只留提示，切回后保留已填的 URL，并可以清空输入', async () => {
+    const user = userEvent.setup();
+    renderSection('line', 'none');
+
+    expect(screen.getByText('未设置交互，组件不可点击跳转')).toBeTruthy();
+    expect(screen.queryByText('名称')).toBeNull();
+    expect(screen.queryByText('目标 URL')).toBeNull();
+    expect(screen.queryByText('打开方式')).toBeNull();
+    expect(document.querySelectorAll('.ant-segmented')).toHaveLength(1);
+    expect(screen.getByTestId('kind').textContent).toBe('none');
+
+    await user.click(screen.getByText('标题链接'));
+    const url = await screen.findByPlaceholderText('输入 URL，键入 $ 插入变量');
+    await user.type(url, '/ops/detail');
+    expect(document.querySelector('.ant-input-clear-icon')).toBeTruthy();
+
+    await user.click(screen.getByText('无'));
+    await waitFor(() => {
+      expect(screen.getByText('未设置交互，组件不可点击跳转')).toBeTruthy();
+    });
+    expect(screen.queryByPlaceholderText('输入 URL，键入 $ 插入变量')).toBeNull();
+    expect(screen.getByTestId('kind').textContent).toBe('none');
+
+    await user.click(screen.getByText('标题链接'));
+    const restored = await screen.findByPlaceholderText('输入 URL，键入 $ 插入变量');
+    expect((restored as HTMLInputElement).value).toBe('/ops/detail');
+
+    await user.click(document.querySelector('.ant-input-clear-icon') as HTMLElement);
+    await waitFor(() => {
+      expect((screen.getByPlaceholderText('输入 URL，键入 $ 插入变量') as HTMLInputElement).value).toBe('');
+    });
   });
 });

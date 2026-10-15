@@ -173,6 +173,24 @@ test('table submit drops leftover action columns and keeps a title-only link', (
   });
   assert.equal(text.config?.interaction?.kind, 'title');
   assert.equal(text.config?.interaction?.url, '/ops/text');
+
+  const cleared = buildWidgetSubmitConfig({
+    ...baseInput,
+    values: {
+      name: '折线',
+      chartType: 'line',
+      interaction: {
+        kind: 'none',
+        name: '详情',
+        url: '/ops',
+        openMode: 'newTab',
+      },
+    },
+    chartType: 'line',
+  });
+  assert.equal(cleared.error, undefined);
+  assert.equal(cleared.config?.interaction, undefined);
+  assert.equal('actions' in (cleared.config ?? {}), false);
 });
 
 test('eventTable submit strips table-only cell style fields and keeps column config', () => {

@@ -21,6 +21,8 @@ type Translate = (
   values?: Record<string, string | number>,
 ) => string;
 
+type InteractionChoice = 'none' | WidgetInteractionKind;
+
 interface InteractionLinkSectionProps {
   t: Translate;
   chartType?: string;
@@ -37,9 +39,14 @@ const InteractionLinkSection: React.FC<InteractionLinkSectionProps> = ({
   fieldConfig,
 }) => {
   const form = Form.useFormInstance();
-  const kind = Form.useWatch(['interaction', 'kind'], form) as WidgetInteractionKind | undefined;
+  const watchedKind = Form.useWatch(['interaction', 'kind'], form) as InteractionChoice | undefined;
+  const kind = watchedKind ?? (form.getFieldValue(['interaction', 'kind']) as InteractionChoice | undefined);
   const capability = interactionCapability(chartType);
-  const selectedKind: WidgetInteractionKind = kind === 'data' && capability.data ? 'data' : 'title';
+  const selectedKind: InteractionChoice = kind === 'data'
+    ? (capability.data ? 'data' : 'title')
+    : kind === 'title'
+      ? 'title'
+      : 'none';
 
   useEffect(() => {
     if (capability.data || kind !== 'data') return;
@@ -76,18 +83,23 @@ const InteractionLinkSection: React.FC<InteractionLinkSectionProps> = ({
     });
   }, [chartType, definitions, fieldConfig, rawData, selectedKind, t]);
 
-  const selectKind = (next: WidgetInteractionKind) => {
+  const selectKind = (next: InteractionChoice) => {
     if (next === 'data' && !capability.data) return;
     form.setFieldValue(['interaction', 'kind'], next);
   };
 
-  const linkTypeTip = capability.data ? (
+  const linkTypeTip = (
     <div>
-      <div>{t('dashboard.interactionLinkTypeTitleTip', '标题链接：标题旁显示图标')}</div>
-      <div>{t('dashboard.interactionLinkTypeDataTip', '数据链接：点击数据点、柱、扇区或数字打开')}</div>
+      <div>{t('dashboard.interactionNoneTip', '无：不设置跳转')}</div>
+      {capability.data ? (
+        <>
+          <div>{t('dashboard.interactionLinkTypeTitleTip', '标题链接：标题旁显示图标')}</div>
+          <div>{t('dashboard.interactionLinkTypeDataTip', '数据链接：点击数据点、柱、扇区或数字打开')}</div>
+        </>
+      ) : (
+        <div>{t('dashboard.interactionTitleOnlyTip', '该组件仅支持标题链接，点击标题旁图标打开')}</div>
+      )}
     </div>
-  ) : (
-    t('dashboard.interactionTitleOnlyTip', '该组件仅支持标题链接，点击标题旁图标打开')
   );
 
   return (
@@ -98,56 +110,67 @@ const InteractionLinkSection: React.FC<InteractionLinkSectionProps> = ({
       <div className="space-y-4">
         <div>
           <div className="mb-2 flex items-center text-sm text-(--color-text-1)">
-            <span>
-              {capability.data
-                ? t('dashboard.interactionLinkType', '链接类型')
-                : t('dashboard.interactionTitleLink', '标题链接')}
-            </span>
+            <span>{t('dashboard.interactionLinkType', '链接类型')}</span>
             <Tooltip title={linkTypeTip}>
               <QuestionCircleOutlined className="ml-1 cursor-help text-(--color-text-3)" />
             </Tooltip>
           </div>
-          {capability.data ? (
-            <Segmented
-              value={selectedKind}
-              onChange={(value) => selectKind(value === 'data' ? 'data' : 'title')}
-              options={[
-                { label: t('dashboard.interactionTitleLink', '标题链接'), value: 'title' },
-                { label: t('dashboard.interactionDataLink', '数据链接'), value: 'data' },
-              ]}
-            />
-          ) : null}
-        </div>
-        <Form.Item
-          label={t('dashboard.interactionName', '名称')}
-          name={['interaction', 'name']}
-        >
-          <Input placeholder={t('dashboard.interactionNamePlaceholder', '例如：查看详情')} />
-        </Form.Item>
-        <Form.Item
-          label={t('dashboard.interactionUrl', '目标 URL')}
-          name={['interaction', 'url']}
-          required
-        >
-          <FilterTokenInput
-            t={t}
-            variables={variables}
-            hint=""
-            placeholder={t('dashboard.interactionUrlPlaceholder', '输入 URL，键入 $ 插入变量')}
-          />
-        </Form.Item>
-        <Form.Item
-          label={t('dashboard.interactionOpenMode', '打开方式')}
-          name={['interaction', 'openMode']}
-        >
           <Segmented
-            size="small"
+            value={selectedKind}
+            onChange={(value) => {
+              if (value === 'none' || value === 'title' || value === 'data') selectKind(value);
+            }}
             options={[
-              { label: t('dashboard.interactionSameTab', '当前页'), value: 'sameTab' },
-              { label: t('dashboard.interactionNewTab', '新标签'), value: 'newTab' },
+              { label: t('dashboard.interactionNone', '无'), value: 'none' },
+              { label: t('dashboard.interactionTitleLink', '标题链接'), value: 'title' },
+              ...(capability.data
+                ? [{ label: t('dashboard.interactionDataLink', '数据链接'), value: 'data' }]
+                : []),
             ]}
           />
-        </Form.Item>
+        </div>
+        {selectedKind === 'none' ? (
+          <p className="mb-0 text-xs text-(--color-text-3)">
+            {t('dashboard.interactionNoneHint', '未设置交互，组件不可点击跳转')}
+          </p>
+        ) : (
+          <>
+            <Form.Item
+              label={t('dashboard.interactionName', '名称')}
+              name={['interaction', 'name']}
+              preserve
+            >
+              <Input placeholder={t('dashboard.interactionNamePlaceholder', '例如：查看详情')} />
+            </Form.Item>
+            <Form.Item
+              label={t('dashboard.interactionUrl', '目标 URL')}
+              name={['interaction', 'url']}
+              required
+              preserve
+            >
+              <FilterTokenInput
+                t={t}
+                variables={variables}
+                hint=""
+                allowClear
+                placeholder={t('dashboard.interactionUrlPlaceholder', '输入 URL，键入 $ 插入变量')}
+              />
+            </Form.Item>
+            <Form.Item
+              label={t('dashboard.interactionOpenMode', '打开方式')}
+              name={['interaction', 'openMode']}
+              preserve
+            >
+              <Segmented
+                size="small"
+                options={[
+                  { label: t('dashboard.interactionSameTab', '当前页'), value: 'sameTab' },
+                  { label: t('dashboard.interactionNewTab', '新标签'), value: 'newTab' },
+                ]}
+              />
+            </Form.Item>
+          </>
+        )}
       </div>
     </section>
   );

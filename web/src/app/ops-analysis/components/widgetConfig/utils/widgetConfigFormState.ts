@@ -28,7 +28,7 @@ import type { WidgetConfigFormValues } from './submitConfig';
 
 export const NETWORK_STATUS_TOPOLOGY = 'networkStatusTopology';
 const EMPTY_INTERACTION = {
-  kind: 'title' as const,
+  kind: 'none' as const,
   name: '',
   url: '',
   openMode: 'sameTab' as const,
