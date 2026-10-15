@@ -34,6 +34,8 @@ export interface ChartLinkPoint {
   seriesName?: string;
   /** 点击瞬间可还原的原始时间，ISO-8601。没有时间维度时不出现。 */
   time?: string;
+  /** 折线或柱状的类目轴字段。有时间轴时不设置。 */
+  axisField?: string;
   numeric?: number | null;
   text?: string;
   raw?: unknown;
@@ -45,6 +47,8 @@ export interface InteractionVariable {
   token: string;
   label: string;
   group: string;
+  /** 样本里第一个非空值。没有样本时不出现。 */
+  example?: string;
 }
 
 const DATA_VALUE_TOKENS = new Set([
@@ -56,8 +60,6 @@ const DATA_VALUE_TOKENS = new Set([
 ]);
 
 const DATA_FIELD_PREFIX = '__data.fields.';
-
-const CLICK_VALUE_FALLBACK = new Set(['pie', 'line', 'bar', 'gauge', 'single']);
 
 const CLICK_CHARTS = new Set([
   'line',
@@ -585,35 +587,100 @@ const pushFieldVariable = (
   variables.push({ token, label, group });
 };
 
-const collectPointVariables = (
+type PointSeriesKind = 'category' | 'series' | 'name' | 'indicator';
+
+interface PointProfile {
+  series?: PointSeriesKind;
+  time?: boolean;
+  /** 没有时间轴时，把类目字段放进数据点，不再在数据字段里重复。 */
+  categoryAxis?: boolean;
+  numeric?: boolean;
+  fields?: boolean;
+  fallback?: Array<'series' | 'numeric'>;
+}
+
+const POINT_PROFILES: Record<string, PointProfile> = {
+  pie: { series: 'category', numeric: true, fields: true, fallback: ['series', 'numeric'] },
+  line: { series: 'series', time: true, categoryAxis: true, numeric: true, fields: true, fallback: ['series', 'numeric'] },
+  bar: { series: 'series', time: true, categoryAxis: true, numeric: true, fields: true, fallback: ['series', 'numeric'] },
+  gauge: { numeric: true, fields: true, fallback: ['numeric'] },
+  single: { numeric: true, fields: true, fallback: ['numeric'] },
+  topN: { series: 'name', numeric: true, fields: true },
+  cardList: { series: 'name', numeric: true, fields: true },
+  multiValue: { series: 'name', numeric: true, fields: true },
+  radar: { series: 'indicator', numeric: true, fields: false },
+  eventTimeline: { time: true, fields: true },
+  nodeGraph: { series: 'name', numeric: true, fields: true },
+  table: { fields: true },
+  eventTable: { fields: true },
+};
+
+interface DataVariableLabels {
+  valueGroup: string;
+  fieldGroup: string;
+  fieldLabel: (field: string) => string;
+  category?: string;
+  series?: string;
+  seriesName?: string;
+  name?: string;
+  indicator?: string;
+  time?: string;
+  numeric?: string;
+}
+
+const seriesSlotLabel = (kind: PointSeriesKind, labels: DataVariableLabels) => {
+  if (kind === 'category') return labels.category || labels.seriesName || '$__series.name$';
+  if (kind === 'name') return labels.name || labels.seriesName || '$__series.name$';
+  if (kind === 'indicator') return labels.indicator || labels.seriesName || '$__series.name$';
+  return labels.series || labels.seriesName || '$__series.name$';
+};
+
+const hasNumericPoint = (points: ChartLinkPoint[]) => points.some(
+  (point) => typeof point.numeric === 'number' && Number.isFinite(point.numeric),
+);
+
+const exampleForToken = (points: ChartLinkPoint[], token: string) => {
+  const body = token.slice(1, -1);
+  return points.map((point) => pointTokenValue(point, body)).find((value) => value);
+};
+
+const addVariable = (
+  variables: InteractionVariable[],
+  seen: Set<string>,
+  body: string,
+  label: string,
+  group: string,
   points: ChartLinkPoint[],
-  labels: { valueGroup: string; fieldGroup: string; fieldLabel: (field: string) => string },
+) => {
+  const before = variables.length;
+  pushFieldVariable(variables, body, label, group, seen);
+  if (variables.length === before) return;
+  const example = exampleForToken(points, variables[variables.length - 1].token);
+  if (example) variables[variables.length - 1].example = example;
+};
+
+const collectFieldVariables = (
+  points: ChartLinkPoint[],
+  labels: { fieldGroup: string; fieldLabel: (field: string) => string },
+  skip: Set<string> = new Set(),
 ): InteractionVariable[] => {
   const variables: InteractionVariable[] = [];
   const seen = new Set<string>();
-  const add = (body: string, label: string, group: string) =>
-    pushFieldVariable(variables, body, label, group, seen);
-  if (points.some((point) => point.seriesName)) {
-    add('__series.name', '$__series.name$', labels.valueGroup);
-  }
-  if (points.some((point) => point.time)) {
-    add('__value.time', '$__value.time$', labels.valueGroup);
-  }
-  if (points.some((point) => typeof point.numeric === 'number' && Number.isFinite(point.numeric))) {
-    add('__value.numeric', '$__value.numeric$', labels.valueGroup);
-  }
-  if (points.some((point) => point.text)) {
-    add('__value.text', '$__value.text$', labels.valueGroup);
-  }
-  if (points.some((point) => point.raw !== undefined)) {
-    add('__value.raw', '$__value.raw$', labels.valueGroup);
-  }
   const fields = new Set<string>();
   points.forEach((point) => {
-    Object.keys(point.fields || {}).forEach((key) => fields.add(key));
+    Object.keys(point.fields || {}).forEach((key) => {
+      if (!skip.has(key)) fields.add(key);
+    });
   });
   [...fields].sort().forEach((field) => {
-    add(`${DATA_FIELD_PREFIX}${field}`, labels.fieldLabel(field), labels.fieldGroup);
+    addVariable(
+      variables,
+      seen,
+      `${DATA_FIELD_PREFIX}${field}`,
+      labels.fieldLabel(field),
+      labels.fieldGroup,
+      points,
+    );
   });
   return variables;
 };
@@ -632,15 +699,7 @@ const rowsOf = (data: unknown): Record<string, unknown>[] => {
 export const listPresentDataVariables = (
   chartType: string | undefined,
   rawData: unknown,
-  labels: {
-    valueGroup: string;
-    fieldGroup: string;
-    fieldLabel: (field: string) => string;
-    seriesName?: string;
-    time?: string;
-    numeric?: string;
-    text?: string;
-    raw?: string;
+  labels: DataVariableLabels & {
     cabinetId?: string;
     cabinetName?: string;
     deviceId?: string;
@@ -654,40 +713,85 @@ export const listPresentDataVariables = (
 ): InteractionVariable[] => {
   const capability = interactionCapability(chartType);
   if (!capability.data) return [];
-  const named = collectPointVariables(points, {
-    valueGroup: labels.valueGroup,
-    fieldGroup: labels.fieldGroup,
-    fieldLabel: labels.fieldLabel,
-  }).map((item) => {
-    const body = item.token.slice(1, -1);
-    const label = body === '__series.name'
-      ? labels.seriesName || item.label
-      : body === '__value.time'
-        ? labels.time || item.label
-        : body === '__value.numeric'
-          ? labels.numeric || item.label
-          : body === '__value.text'
-            ? labels.text || item.label
-            : body === '__value.raw'
-              ? labels.raw || item.label
-              : item.label;
-    return { ...item, label };
-  });
-  if (chartType === 'table' || chartType === 'eventTable') {
-    return named.filter((item) => item.token.includes(DATA_FIELD_PREFIX));
-  }
   if (chartType === 'room3D' || chartType === 'application3D') {
     return listSceneVariables(chartType, rawData, labels);
   }
-  if (named.length === 0 && CLICK_VALUE_FALLBACK.has(chartType || '')) {
+  const profile = POINT_PROFILES[chartType || ''];
+  if (!profile) return [];
+  if (points.length === 0) {
+    if (rawData != null || !profile.fallback) return [];
     const group = labels.valueGroup;
-    return [
-      { token: '$__series.name$', label: labels.seriesName || '$__series.name$', group },
-      { token: '$__value.numeric$', label: labels.numeric || '$__value.numeric$', group },
-      { token: '$__value.time$', label: labels.time || '$__value.time$', group },
-    ];
+    return profile.fallback.map((slot) => (
+      slot === 'numeric'
+        ? {
+          token: '$__value.numeric$',
+          label: labels.numeric || '$__value.numeric$',
+          group,
+        }
+        : {
+          token: '$__series.name$',
+          label: profile.series
+            ? seriesSlotLabel(profile.series, labels)
+            : (labels.series || labels.seriesName || '$__series.name$'),
+          group,
+        }
+    ));
   }
-  return named;
+
+  const variables: InteractionVariable[] = [];
+  const seen = new Set<string>();
+  const hasTime = points.some((point) => point.time);
+  if (profile.series && points.some((point) => point.seriesName)) {
+    addVariable(
+      variables,
+      seen,
+      '__series.name',
+      seriesSlotLabel(profile.series, labels),
+      labels.valueGroup,
+      points,
+    );
+  }
+  if (profile.time && hasTime) {
+    addVariable(
+      variables,
+      seen,
+      '__value.time',
+      labels.time || '$__value.time$',
+      labels.valueGroup,
+      points,
+    );
+  }
+  const axisField = profile.categoryAxis && !hasTime
+    ? points.find((point) => point.axisField)?.axisField
+    : undefined;
+  if (axisField) {
+    addVariable(
+      variables,
+      seen,
+      `${DATA_FIELD_PREFIX}${axisField}`,
+      labels.category || axisField,
+      labels.valueGroup,
+      points,
+    );
+  }
+  if (profile.numeric && hasNumericPoint(points)) {
+    addVariable(
+      variables,
+      seen,
+      '__value.numeric',
+      labels.numeric || '$__value.numeric$',
+      labels.valueGroup,
+      points,
+    );
+  }
+  if (profile.fields) {
+    collectFieldVariables(points, labels, new Set(axisField ? [axisField] : [])).forEach((item) => {
+      if (seen.has(item.token)) return;
+      seen.add(item.token);
+      variables.push(item);
+    });
+  }
+  return variables;
 };
 
 const listSceneVariables = (
@@ -707,24 +811,32 @@ const listSceneVariables = (
 ): InteractionVariable[] => {
   const variables: InteractionVariable[] = [];
   const seen = new Set<string>();
-  const add = (body: string, label: string) =>
+  const add = (body: string, label: string, example?: unknown) => {
+    const before = variables.length;
     pushFieldVariable(variables, body, label, labels.fieldGroup, seen);
+    if (variables.length === before || example == null || example === '') return;
+    variables[variables.length - 1].example = scalarText(example);
+  };
   if (chartType === 'room3D' && isRecord(rawData)) {
     const racks = Array.isArray(rawData.racks) ? rawData.racks.filter(isRecord) : [];
-    if (racks.some((rack) => hasOwn(rack, 'rack_id') || hasOwn(rack, 'id'))) {
-      add(RESERVED_FIELD_TOKENS.cabinetId, labels.cabinetId || 'cabinet.id');
+    const rackWithId = racks.find((rack) => hasOwn(rack, 'rack_id') || hasOwn(rack, 'id'));
+    const rackWithName = racks.find((rack) => hasOwn(rack, 'rack_name') || hasOwn(rack, 'name'));
+    if (rackWithId) {
+      add(RESERVED_FIELD_TOKENS.cabinetId, labels.cabinetId || 'cabinet.id', rackWithId.rack_id ?? rackWithId.id);
     }
-    if (racks.some((rack) => hasOwn(rack, 'rack_name') || hasOwn(rack, 'name'))) {
-      add(RESERVED_FIELD_TOKENS.cabinetName, labels.cabinetName || 'cabinet.name');
+    if (rackWithName) {
+      add(RESERVED_FIELD_TOKENS.cabinetName, labels.cabinetName || 'cabinet.name', rackWithName.rack_name ?? rackWithName.name);
     }
     const devices = racks.flatMap((rack) =>
       Array.isArray(rack.devices) ? rack.devices.filter(isRecord) : [],
     );
-    if (devices.some((device) => hasOwn(device, 'device_id') || hasOwn(device, 'id'))) {
-      add(RESERVED_FIELD_TOKENS.deviceId, labels.deviceId || 'device.id');
+    const deviceWithId = devices.find((device) => hasOwn(device, 'device_id') || hasOwn(device, 'id'));
+    const deviceWithName = devices.find((device) => hasOwn(device, 'device_name') || hasOwn(device, 'name'));
+    if (deviceWithId) {
+      add(RESERVED_FIELD_TOKENS.deviceId, labels.deviceId || 'device.id', deviceWithId.device_id ?? deviceWithId.id);
     }
-    if (devices.some((device) => hasOwn(device, 'device_name') || hasOwn(device, 'name'))) {
-      add(RESERVED_FIELD_TOKENS.deviceName, labels.deviceName || 'device.name');
+    if (deviceWithName) {
+      add(RESERVED_FIELD_TOKENS.deviceName, labels.deviceName || 'device.name', deviceWithName.device_name ?? deviceWithName.name);
     }
   }
   if (chartType === 'application3D') {
@@ -733,17 +845,21 @@ const listSceneVariables = (
       ...unlabeledWallItems(rawData),
     ];
     const hosts = sceneNodes(rawData, 'host');
-    if (systems.some((node) => hasOwn(node, 'id'))) {
-      add(RESERVED_FIELD_TOKENS.systemId, labels.systemId || 'system.id');
+    const systemWithId = systems.find((node) => hasOwn(node, 'id'));
+    const systemWithName = systems.find((node) => hasOwn(node, 'name'));
+    const hostWithId = hosts.find((node) => hasOwn(node, 'id'));
+    const hostWithName = hosts.find((node) => hasOwn(node, 'name'));
+    if (systemWithId) {
+      add(RESERVED_FIELD_TOKENS.systemId, labels.systemId || 'system.id', systemWithId.id);
     }
-    if (systems.some((node) => hasOwn(node, 'name'))) {
-      add(RESERVED_FIELD_TOKENS.systemName, labels.systemName || 'system.name');
+    if (systemWithName) {
+      add(RESERVED_FIELD_TOKENS.systemName, labels.systemName || 'system.name', systemWithName.name);
     }
-    if (hosts.some((node) => hasOwn(node, 'id'))) {
-      add(RESERVED_FIELD_TOKENS.hostId, labels.hostId || 'host.id');
+    if (hostWithId) {
+      add(RESERVED_FIELD_TOKENS.hostId, labels.hostId || 'host.id', hostWithId.id);
     }
-    if (hosts.some((node) => hasOwn(node, 'name'))) {
-      add(RESERVED_FIELD_TOKENS.hostName, labels.hostName || 'host.name');
+    if (hostWithName) {
+      add(RESERVED_FIELD_TOKENS.hostName, labels.hostName || 'host.name', hostWithName.name);
     }
   }
   return variables;
@@ -823,10 +939,10 @@ export const listTableFieldVariables = (
   rows: Array<Record<string, unknown>>,
   labels: { fieldGroup: string; fieldLabel: (field: string) => string },
 ): InteractionVariable[] =>
-  collectPointVariables(
-    rows.map((row) => ({ fields: chartLinkFields(row), raw: row })),
-    { ...labels, valueGroup: labels.fieldGroup },
-  ).filter((item) => item.token.includes(DATA_FIELD_PREFIX));
+  collectFieldVariables(
+    rows.map((row) => ({ fields: chartLinkFields(row) })),
+    labels,
+  );
 
 export const listInteractionVariables = ({
   definitions,
@@ -879,7 +995,7 @@ export const listUnmatchedInteractionTokens = (
     if (!token) continue;
     const raw = text.slice(cursor, token.end);
     cursor = token.end - 1;
-    if (known.has(raw) || seen.has(raw)) continue;
+    if (known.has(raw) || DATA_VALUE_TOKENS.has(token.body) || seen.has(raw)) continue;
     seen.add(raw);
     unmatched.push(raw);
   }

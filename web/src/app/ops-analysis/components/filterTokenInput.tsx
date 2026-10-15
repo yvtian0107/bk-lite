@@ -99,6 +99,7 @@ export const FilterTokenInput: React.FC<FilterTokenInputProps> = ({
         token: item.token,
         label: item.label,
         group: item.group,
+        example: item.example,
         definition: undefined as UnifiedFilterDefinition | undefined,
       }));
     }
@@ -107,6 +108,7 @@ export const FilterTokenInput: React.FC<FilterTokenInputProps> = ({
       token: item.token,
       label: item.definition.name || item.definition.key,
       group: '',
+      example: undefined as string | undefined,
       definition: item.definition,
     }));
   }, [filterVariables, variableSource]);
@@ -270,7 +272,7 @@ export const FilterTokenInput: React.FC<FilterTokenInputProps> = ({
                     type: typeLabel(item.definition.type, t),
                   },
                 )
-                : `${item.label}（${item.token}）`;
+                : item.label;
               return (
                 <React.Fragment key={item.key}>
                   {grouped && item.group !== previousGroup ? (
@@ -282,7 +284,7 @@ export const FilterTokenInput: React.FC<FilterTokenInputProps> = ({
                     type="button"
                     role="option"
                     aria-selected={index === currentIndex}
-                    className={`block w-full cursor-pointer px-3 py-1.5 text-left text-xs text-(--color-text-1) ${
+                    className={`flex w-full cursor-pointer items-baseline justify-between gap-3 px-3 py-1.5 text-left text-xs text-(--color-text-1) ${
                       index === currentIndex ? 'bg-(--color-fill-2)' : 'hover:bg-(--color-fill-1)'
                     }`}
                     onMouseDown={(event) => {
@@ -291,7 +293,17 @@ export const FilterTokenInput: React.FC<FilterTokenInputProps> = ({
                     }}
                     onMouseEnter={() => setActiveIndex(index)}
                   >
-                    {optionLabel}
+                    {item.definition ? (
+                      optionLabel
+                    ) : (
+                      <>
+                        <span>{item.label}</span>
+                        <span className="shrink-0 text-[11px] text-(--color-text-3)">
+                          {item.token}
+                          {item.example ? <span className="ml-2">{item.example}</span> : null}
+                        </span>
+                      </>
+                    )}
                   </button>
                 </React.Fragment>
               );

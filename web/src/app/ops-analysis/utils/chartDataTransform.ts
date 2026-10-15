@@ -157,6 +157,7 @@ export class ChartDataTransformer {
   private static linkPoint(input: {
     seriesName?: string;
     dimension?: unknown;
+    dimensionKey?: string;
     isTime?: boolean;
     numeric: number | null;
     raw?: unknown;
@@ -172,6 +173,7 @@ export class ChartDataTransformer {
     return {
       ...(input.seriesName ? { seriesName: input.seriesName } : {}),
       ...(time ? { time } : {}),
+      ...(!time && input.dimensionKey ? { axisField: input.dimensionKey } : {}),
       ...(typeof input.numeric === 'number' && Number.isFinite(input.numeric)
         ? { numeric: input.numeric }
         : {}),
@@ -186,12 +188,14 @@ export class ChartDataTransformer {
     shouldFormatAsTime: boolean,
     read: (row: any) => { dimension: unknown; raw: unknown; numeric: number | null },
     seriesName?: string,
+    dimensionKey?: string,
   ): ChartLinkPoint[] {
     return rows.map((row) => {
       const item = read(row);
       return this.linkPoint({
         seriesName,
         dimension: item.dimension,
+        dimensionKey,
         isTime: shouldFormatAsTime,
         numeric: item.numeric,
         raw: item.raw,
@@ -213,6 +217,7 @@ export class ChartDataTransformer {
         map[key] = this.linkPoint({
           seriesName,
           dimension: item.name,
+          dimensionKey: 'name',
           isTime: shouldFormatAsTime,
           numeric: Number.isFinite(parseFloat(item.value)) ? parseFloat(item.value) : null,
           raw: item.value,
@@ -291,7 +296,7 @@ export class ChartDataTransformer {
             dimension: item.name,
             raw: item.count,
             numeric: Number.isFinite(Number(item.count)) ? Number(item.count) : null,
-          })),
+          }), undefined, 'name'),
         };
       }
 
@@ -309,7 +314,7 @@ export class ChartDataTransformer {
             dimension: item.name,
             raw: item.value,
             numeric: Number.isFinite(parseFloat(item.value)) ? parseFloat(item.value) : null,
-          })),
+          }), undefined, 'name'),
         };
       }
 
@@ -399,6 +404,7 @@ export class ChartDataTransformer {
       values: rows.map((row) => coerceTopNNumericValue(row[valueField])),
       points: rows.map((row) => this.linkPoint({
         dimension: row[dimensionField],
+        dimensionKey: dimensionField || undefined,
         isTime: shouldFormatAsTime,
         numeric: coerceTopNNumericValue(row[valueField]),
         raw: row[valueField],

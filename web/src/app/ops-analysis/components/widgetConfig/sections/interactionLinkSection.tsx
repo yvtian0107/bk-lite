@@ -44,16 +44,15 @@ const InteractionLinkSection: React.FC<InteractionLinkSectionProps> = ({
   const variables = useMemo(() => {
     const points = buildInteractionPoints(chartType, rawData, fieldConfig);
     const dataVariables = listPresentDataVariables(chartType, rawData, {
-      valueGroup: t('dashboard.interactionGroupValue', '数据值'),
+      valueGroup: t('dashboard.interactionGroupValue', '数据点'),
       fieldGroup: t('dashboard.interactionGroupField', '数据字段'),
       fieldLabel: (field) => field,
-      seriesName: t('dashboard.interactionSeriesName', '系列名称'),
+      category: t('dashboard.interactionPointCategory', '分类'),
+      series: t('dashboard.interactionSeriesName', '系列'),
+      name: t('dashboard.interactionPointName', '名称'),
+      indicator: t('dashboard.interactionPointIndicator', '指标'),
       time: t('dashboard.interactionValueTime', '时间'),
       numeric: t('dashboard.interactionValueNumeric', '数值'),
-      text: chartType === 'eventTimeline'
-        ? t('dashboard.eventTimelineTitleField', '标题')
-        : t('dashboard.interactionValueText', '文本'),
-      raw: t('dashboard.interactionValueRaw', '原始值'),
       cabinetId: t('dashboard.interactionCabinetId', '机柜 ID'),
       cabinetName: t('dashboard.interactionCabinetName', '机柜名称'),
       deviceId: t('dashboard.interactionDeviceId', '设备 ID'),
@@ -66,7 +65,7 @@ const InteractionLinkSection: React.FC<InteractionLinkSectionProps> = ({
     return listInteractionVariables({
       definitions,
       dataVariables: selectedKind === 'data' ? dataVariables : [],
-      filterGroup: t('dashboard.interactionGroupFilter', '筛选'),
+      filterGroup: t('dashboard.interactionGroupFilter', '筛选条件'),
       timeStartLabel: (name) => t('dashboard.interactionTimeStart', '{name} 开始', { name }),
       timeEndLabel: (name) => t('dashboard.interactionTimeEnd', '{name} 结束', { name }),
     });

@@ -153,6 +153,33 @@ describe('FilterTokenInput', () => {
     expect(screen.queryByRole('listbox')).toBeNull();
   });
 
+  it('交互下拉在右侧用灰色小字显示 token，有样本时再显示示例', async () => {
+    const user = userEvent.setup();
+    render(
+      <FilterTokenInput
+        t={translate}
+        value=""
+        variables={[
+          { token: '$env$', label: '环境', group: '筛选条件' },
+          { token: '$__series.name$', label: '分类', group: '数据点', example: 'up' },
+          { token: '$__data.fields.host$', label: 'host', group: '数据字段', example: 'web-01' },
+        ]}
+      />,
+    );
+
+    await user.type(screen.getByRole('textbox'), '$');
+    expect(screen.getByText('筛选条件')).toBeTruthy();
+    expect(screen.getByText('数据点')).toBeTruthy();
+    expect(screen.getByText('数据字段')).toBeTruthy();
+
+    const option = screen.getByRole('option', { name: '分类$__series.name$up' });
+    const token = [...option.querySelectorAll('span')].find((node) => node.className.includes('text-(--color-text-3)'));
+    expect(token?.textContent).toContain('$__series.name$');
+    expect(option.textContent).toContain('up');
+    expect(screen.getByRole('option', { name: 'host$__data.fields.host$web-01' }).textContent).toContain('web-01');
+    expect(screen.getByRole('option', { name: '环境$env$' }).textContent).toContain('$env$');
+  });
+
   it('组字过程中的回车留给输入法，不插入高亮变量', async () => {
     const user = userEvent.setup();
     render(<Harness />);

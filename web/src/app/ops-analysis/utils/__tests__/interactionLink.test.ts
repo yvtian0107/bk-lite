@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import test from 'node:test';
 
 import type { UnifiedFilterDefinition } from '@/app/ops-analysis/types/dashBoard';
@@ -12,6 +13,7 @@ import {
   listInteractionVariables,
   listPresentDataVariables,
   listTableFieldVariables,
+  listUnmatchedInteractionTokens,
   migrateActionsToInteraction,
   prepareInteractionNavigation,
   readChartClickPoint,
@@ -101,13 +103,17 @@ test('resolves clicked point fields without encoding the whole URL', () => {
     fields: { host: 'web 01', region: 'a/b' },
   };
   const url = resolveInteractionUrl(
-    '/ops?series=$__series.name$&at=$__value.time$&n=$__value.numeric$&host=$__data.fields.host$',
+    '/ops?series=$__series.name$&at=$__value.time$&n=$__value.numeric$&host=$__data.fields.host$&text=$__value.text$&raw=$__value.raw$',
     { definitions: [], values: {}, point, now },
   );
 
   assert.equal(
     url,
-    '/ops?series=cpu&at=2026-10-15T00%3A00%3A00.000Z&n=1.5&host=web%2001',
+    '/ops?series=cpu&at=2026-10-15T00%3A00%3A00.000Z&n=1.5&host=web%2001&text=1.5&raw=1.5',
+  );
+  assert.deepEqual(
+    listUnmatchedInteractionTokens('$__value.text$ $__value.raw$', []),
+    [],
   );
 });
 
@@ -262,17 +268,29 @@ test('dropdown lists only fields that exist for the chart and the rows', () => {
   });
   const points = chart.series?.[0]?.points ?? [];
   const variables = listPresentDataVariables('line', { cpu: [] }, {
-    valueGroup: '值',
-    fieldGroup: '字段',
+    valueGroup: '数据点',
+    fieldGroup: '数据字段',
     fieldLabel: (field) => field,
-    seriesName: '系列',
+    series: '系列',
+    category: '分类',
     numeric: '数值',
-    raw: '原始值',
   }, points);
 
-  assert.equal(variables.some((item) => item.token === '$__series.name$'), true);
-  assert.equal(variables.some((item) => item.token === '$__data.fields.name$'), true);
+  assert.deepEqual(
+    variables.filter((item) => item.group === '数据点').map((item) => [item.label, item.token, item.example]),
+    [
+      ['系列', '$__series.name$', 'cpu'],
+      ['分类', '$__data.fields.name$', 'a'],
+      ['数值', '$__value.numeric$', '1'],
+    ],
+  );
+  assert.deepEqual(
+    variables.filter((item) => item.group === '数据字段').map((item) => item.token),
+    ['$__data.fields.value$'],
+  );
   assert.equal(variables.some((item) => item.token === '$__value.time$'), false);
+  assert.equal(variables.some((item) => item.token === '$__value.text$'), false);
+  assert.equal(variables.some((item) => item.token === '$__value.raw$'), false);
 
   const tableVariables = listTableFieldVariables(
     [{ host: 'web-01', cpu: 1 }],
@@ -417,11 +435,19 @@ test('event table and event timeline expose the clicked row fields', () => {
   assert.equal(timelinePoints[0]?.text, 'CPU usage reached 95%');
   assert.equal(Date.parse(timelinePoints[0]?.time || ''), Date.parse('2026-08-01 10:15:00'));
   assert.equal(timelinePoints[0]?.fields?.host, 'web-01');
-  const timeline = listPresentDataVariables('eventTimeline', events, labels, timelinePoints);
-  assert.equal(timeline.some((item) => item.token === '$__value.time$'), true);
-  assert.equal(timeline.some((item) => item.token === '$__value.text$'), true);
+  const timeline = listPresentDataVariables('eventTimeline', events, {
+    ...labels,
+    time: '时间',
+  }, timelinePoints);
+  assert.equal(timeline.some((item) => item.label === '时间' && item.token === '$__value.time$'), true);
+  assert.equal(timeline.some((item) => item.token === '$__value.text$'), false);
+  assert.equal(timeline.some((item) => item.token === '$__value.raw$'), false);
   assert.equal(timeline.some((item) => item.token === '$__data.fields.host$'), true);
   assert.equal(timeline.some((item) => item.token === '$__data.fields.title$'), true);
+  assert.equal(
+    resolveInteractionUrl('$__value.text$', { definitions: [], values: {}, point: timelinePoints[0] }),
+    encodeURIComponent('CPU usage reached 95%'),
+  );
 
   const dataLink = {
     kind: 'data' as const,
@@ -438,26 +464,89 @@ test('event table and event timeline expose the clicked row fields', () => {
   assert.equal(shouldNavigateInteraction('edit'), false);
 });
 
-test('dropdown falls back to series, numeric and time only before sample rows arrive', () => {
+test('dropdown lists chart data points and omits text, raw, and unknown fields', () => {
   const labels = {
-    valueGroup: '值',
-    fieldGroup: '字段',
+    valueGroup: '数据点',
+    fieldGroup: '数据字段',
     fieldLabel: (field: string) => field,
-    seriesName: '系列',
+    category: '分类',
+    series: '系列',
+    name: '名称',
+    indicator: '指标',
     numeric: '数值',
     time: '时间',
   };
-  for (const chartType of ['pie', 'line', 'bar', 'gauge', 'single']) {
+  assert.deepEqual(
+    listPresentDataVariables('pie', null, labels).map((item) => [item.label, item.token]),
+    [['分类', '$__series.name$'], ['数值', '$__value.numeric$']],
+  );
+  assert.deepEqual(
+    listPresentDataVariables('line', null, labels).map((item) => item.token),
+    ['$__series.name$', '$__value.numeric$'],
+  );
+  assert.deepEqual(
+    listPresentDataVariables('bar', null, labels).map((item) => item.token),
+    ['$__series.name$', '$__value.numeric$'],
+  );
+  for (const chartType of ['gauge', 'single']) {
     assert.deepEqual(
-      listPresentDataVariables(chartType, null, labels).map((item) => item.token),
-      ['$__series.name$', '$__value.numeric$', '$__value.time$'],
+      listPresentDataVariables(chartType, null, labels).map((item) => [item.label, item.token]),
+      [['数值', '$__value.numeric$']],
     );
   }
   assert.deepEqual(listPresentDataVariables('table', null, labels), []);
+  assert.deepEqual(listPresentDataVariables('topN', null, labels), []);
   assert.equal(
-    listPresentDataVariables('line', null, labels).some((item) => item.token.includes('__data.fields')),
+    listPresentDataVariables('line', null, labels).some((item) => item.example || item.token.includes('__data.fields') || item.token.includes('__value.time')),
     false,
   );
+
+  const timed = buildInteractionPoints('line', [
+    { name: 1760486400, value: 3, host: 'web-01' },
+  ]);
+  const timedMenu = listPresentDataVariables('line', [{ name: 1760486400 }], labels, timed);
+  assert.deepEqual(
+    timedMenu.filter((item) => item.group === '数据点').map((item) => item.label),
+    ['时间', '数值'],
+  );
+  assert.equal(timedMenu.some((item) => item.label === '分类'), false);
+  assert.equal(timedMenu.some((item) => item.token === '$__data.fields.host$'), true);
+
+  const gauge = listPresentDataVariables('gauge', { cpu: 12, host: 'web' }, labels, buildInteractionPoints('gauge', { cpu: 12, host: 'web' }, {
+    selectedFields: ['cpu'],
+  }));
+  assert.deepEqual(
+    gauge.filter((item) => item.group === '数据点').map((item) => item.token),
+    ['$__value.numeric$'],
+  );
+  assert.equal(gauge.some((item) => item.token === '$__series.name$'), false);
+  assert.equal(gauge.some((item) => item.token === '$__data.fields.host$'), true);
+
+  const radar = listPresentDataVariables('radar', [{ cpu: 1 }], labels, [
+    { seriesName: 'cpu', numeric: 1, fields: { cpu: 1 } },
+  ]);
+  assert.deepEqual(radar.map((item) => [item.label, item.token]), [
+    ['指标', '$__series.name$'],
+    ['数值', '$__value.numeric$'],
+  ]);
+
+  const cards = listPresentDataVariables('cardList', [{ title: '主机' }], labels, [
+    { seriesName: '主机', fields: { title: '主机' } },
+  ]);
+  assert.deepEqual(cards.map((item) => [item.label, item.token, item.example]), [
+    ['名称', '$__series.name$', '主机'],
+    ['title', '$__data.fields.title$', '主机'],
+  ]);
+
+  const graph = listPresentDataVariables('nodeGraph', [], labels, [
+    { seriesName: 'a → b', numeric: 2, text: 'a → b', raw: 2, fields: { source: 'a', target: 'b' } },
+  ]);
+  assert.deepEqual(
+    graph.filter((item) => item.group === '数据点').map((item) => item.label),
+    ['名称', '数值'],
+  );
+  assert.equal(graph.some((item) => item.token === '$__value.text$' || item.token === '$__value.raw$'), false);
+  assert.equal(graph.some((item) => item.token === '$__data.fields.source$'), true);
 });
 
 test('card list click points follow the same filtered and truncated cards', () => {
@@ -516,4 +605,23 @@ test('node graph edge clicks carry the parallel index and service port', () => {
   const serviceEdges = service.filter((point) => point.fields?.source);
   assert.equal(serviceEdges.find((edge) => edge.fields?.target === '10.0.0.9:443')?.fields?.port, '443');
   assert.equal(serviceEdges.find((edge) => edge.fields?.target === '10.0.0.9:80')?.fields?.port, '80');
+});
+
+test('interaction dropdown group names exist in Chinese and English', () => {
+  const zh = JSON.parse(readFileSync(new URL('../../locales/zh.json', import.meta.url), 'utf8')).dashboard;
+  const en = JSON.parse(readFileSync(new URL('../../locales/en.json', import.meta.url), 'utf8')).dashboard;
+  assert.equal(zh.interactionGroupFilter, '筛选条件');
+  assert.equal(zh.interactionGroupValue, '数据点');
+  assert.equal(zh.interactionGroupField, '数据字段');
+  assert.equal(en.interactionGroupFilter, 'Filter conditions');
+  assert.equal(en.interactionGroupValue, 'Data points');
+  assert.equal(en.interactionGroupField, 'Data fields');
+  assert.equal(zh.interactionPointCategory, '分类');
+  assert.equal(en.interactionPointCategory, 'Category');
+  assert.equal(zh.interactionSeriesName, '系列');
+  assert.equal(en.interactionSeriesName, 'Series');
+  assert.equal(zh.interactionPointName, '名称');
+  assert.equal(en.interactionPointName, 'Name');
+  assert.equal(zh.interactionPointIndicator, '指标');
+  assert.equal(en.interactionPointIndicator, 'Indicator');
 });
