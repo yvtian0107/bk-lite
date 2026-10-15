@@ -84,7 +84,9 @@ describe('FilterTokenInput', () => {
     expect(hint.parentElement?.className).toContain('flex-col');
     await user.type(screen.getByRole('textbox'), '$');
 
-    const option = await screen.findByRole('option', { name: '业务（$biz$ · 文本）' });
+    const option = await screen.findByRole('option', { name: '业务$biz$ · text' });
+    expect(option.textContent).not.toContain('文本');
+    expect(option.textContent).not.toContain('（');
     expect(screen.queryByRole('option', { name: /业务数/ })).toBeNull();
     await user.click(option);
 
@@ -153,16 +155,80 @@ describe('FilterTokenInput', () => {
     expect(screen.queryByRole('listbox')).toBeNull();
   });
 
-  it('交互下拉在右侧用灰色小字显示 token，有样本时再显示示例', async () => {
+  it('筛选下拉和交互下拉都只在左侧显示名称，右侧用英文类型', async () => {
     const user = userEvent.setup();
+    const department: UnifiedFilterDefinition = {
+      id: 'department__string',
+      key: 'department',
+      name: '使用部门',
+      type: 'string',
+      order: 1,
+      enabled: true,
+    };
+    const count: UnifiedFilterDefinition = {
+      ...department,
+      id: 'count__number',
+      key: 'count',
+      name: '数量',
+      type: 'number',
+      order: 2,
+    };
+    const range: UnifiedFilterDefinition = {
+      ...department,
+      id: 'range__timeRange',
+      key: 'range',
+      name: '时间范围',
+      type: 'timeRange',
+      order: 3,
+    };
+    const day: UnifiedFilterDefinition = {
+      ...department,
+      id: 'day__dateRange',
+      key: 'day',
+      name: '日期',
+      type: 'dateRange',
+      order: 4,
+    };
+    const { unmount } = render(
+      <FilterTokenInput
+        t={translate}
+        value=""
+        definitions={[department, count, range, day]}
+      />,
+    );
+
+    await user.type(screen.getByRole('textbox'), '$');
+    expect(screen.queryByText('筛选条件')).toBeNull();
+    const departmentOption = screen.getByRole('option', { name: '使用部门$department$ · text' });
+    expect(departmentOption.querySelector('span.shrink-0')?.textContent).toBe('使用部门');
+    const departmentMeta = departmentOption.querySelector('span.truncate');
+    expect(departmentMeta?.textContent).toBe('$department$ · text');
+    expect(departmentMeta?.className).toContain('text-right');
+    expect(departmentMeta?.className).toContain('max-w-64');
+    expect(departmentMeta?.className).toContain('text-(--color-text-3)');
+    expect(screen.getByRole('option', { name: '数量$count$ · number' })).toBeTruthy();
+    expect(screen.getByRole('option', { name: '时间范围$range$ · timeRange' })).toBeTruthy();
+    expect(screen.getByRole('option', { name: '日期$day$ · dateRange' })).toBeTruthy();
+    unmount();
+
     render(
       <FilterTokenInput
         t={translate}
         value=""
         variables={[
-          { token: '$env$', label: '环境', group: '筛选条件' },
-          { token: '$__series.name$', label: '分类', group: '数据点', example: 'up' },
-          { token: '$__data.fields.host$', label: 'host', group: '数据字段', example: 'web-01' },
+          { token: '$department$', label: '使用部门', group: '筛选条件', valueType: 'text' },
+          { token: '$__series.name$', label: '名称', group: '数据点', example: 'up' },
+          { token: '$__value.numeric$', label: '数值', group: '数据点', example: '1' },
+          { token: '$__value.time$', label: '时间', group: '数据点' },
+          { token: '$__data.fields.instance_count$', label: 'instance_count', group: '数据字段', example: '12' },
+          { token: '$__data.fields.created_at$', label: 'created_at', group: '数据字段', example: '2025-10-15T00:00:00.000Z' },
+          { token: '$__data.fields.note$', label: 'note', group: '数据字段' },
+          {
+            token: '$__data.fields.very_long_field_name_that_should_truncate$',
+            label: '长字段',
+            group: '数据字段',
+            example: 'kept',
+          },
         ]}
       />,
     );
@@ -172,12 +238,20 @@ describe('FilterTokenInput', () => {
     expect(screen.getByText('数据点')).toBeTruthy();
     expect(screen.getByText('数据字段')).toBeTruthy();
 
-    const option = screen.getByRole('option', { name: '分类$__series.name$up' });
-    const token = [...option.querySelectorAll('span')].find((node) => node.className.includes('text-(--color-text-3)'));
-    expect(token?.textContent).toContain('$__series.name$');
-    expect(option.textContent).toContain('up');
-    expect(screen.getByRole('option', { name: 'host$__data.fields.host$web-01' }).textContent).toContain('web-01');
-    expect(screen.getByRole('option', { name: '环境$env$' }).textContent).toContain('$env$');
+    const nameOption = screen.getByRole('option', { name: '名称$__series.name$ · text' });
+    expect(nameOption.textContent).not.toContain('up');
+    expect(screen.getByRole('option', { name: '数值$__value.numeric$ · number' }).textContent).not.toContain('1');
+    expect(screen.getByRole('option', { name: '时间$__value.time$ · time' })).toBeTruthy();
+    expect(screen.getByRole('option', { name: 'instance_count$__data.fields.instance_count$ · number' }).textContent).not.toContain('12');
+    expect(screen.getByRole('option', { name: 'created_at$__data.fields.created_at$ · time' })).toBeTruthy();
+    const unknown = screen.getByRole('option', { name: 'note$__data.fields.note$' });
+    expect(unknown.textContent).toBe('note$__data.fields.note$');
+    const longOption = screen.getByRole('option', { name: /长字段/ });
+    const longMeta = longOption.querySelector('span.truncate');
+    expect(longMeta?.className).toContain('truncate');
+    expect(longMeta?.className).toContain('max-w-64');
+    expect(longOption.querySelector('span.shrink-0')?.className).toContain('shrink-0');
+    expect(longMeta?.textContent).not.toContain('kept');
   });
 
   it('只有一组时也显示分组标题', async () => {
@@ -214,6 +288,6 @@ describe('FilterTokenInput', () => {
     expect(input).toHaveProperty('value', '$');
 
     fireEvent.keyDown(input, { key: 'ArrowDown', keyCode: 229 });
-    expect(screen.getByRole('option', { name: '业务（$biz$ · 文本）' }).getAttribute('aria-selected')).toBe('true');
+    expect(screen.getByRole('option', { name: '业务$biz$ · text' }).getAttribute('aria-selected')).toBe('true');
   });
 });

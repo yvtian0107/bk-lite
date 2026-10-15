@@ -6,6 +6,7 @@ import { Dropdown, Input } from 'antd';
 import { useFilterTemplateVariables } from '@/app/ops-analysis/context/filterTemplate';
 import type { UnifiedFilterDefinition } from '@/app/ops-analysis/types/dashBoard';
 import {
+  filterDropdownType,
   listFilterTemplateVariables,
   listUnmatchedFilterTokens,
 } from '@/app/ops-analysis/utils/filterTemplate';
@@ -39,14 +40,25 @@ interface FilterTokenInputProps {
   hint?: string;
 }
 
-const typeLabel = (
-  type: UnifiedFilterDefinition['type'],
-  t: FilterTokenTranslate,
-) => {
-  if (type === 'number') return t('dashboard.filterTokenTypeNumber', '数字');
-  if (type === 'timeRange') return t('dashboard.filterTokenTypeTimeRange', '时间');
-  if (type === 'dateRange') return t('dashboard.filterTokenTypeDateRange', '日期');
-  return t('dashboard.filterTokenTypeString', '文本');
+const NUMBER_PATTERN = /^[+-]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?$/;
+const TIME_PATTERN = /^\d{4}-\d{2}-\d{2}(?:[T ]\d{2}:\d{2}(?::\d{2}(?:\.\d+)?)?(?:Z|[+-]\d{2}:\d{2})?)?$/;
+
+const scalarMenuType = (example?: string): 'number' | 'time' | 'text' | undefined => {
+  const trimmed = example?.trim() ?? '';
+  if (!trimmed) return undefined;
+  if (NUMBER_PATTERN.test(trimmed)) return 'number';
+  if (TIME_PATTERN.test(trimmed)) return 'time';
+  return 'text';
+};
+
+/** 数据点和数据字段：数值是 number，时间是 time，其余是 text。看不出来就留空。 */
+const dataMenuType = (token: string, example?: string): string | undefined => {
+  const body = token.startsWith('$') && token.endsWith('$') ? token.slice(1, -1) : token;
+  if (body === '__value.numeric') return 'number';
+  if (body === '__value.time') return 'time';
+  if (body === '__series.name' || body === '__value.text') return 'text';
+  if (body.startsWith('__data.fields.') || body === '__value.raw') return scalarMenuType(example);
+  return undefined;
 };
 
 const isEscapedDollar = (text: string, index: number) =>
@@ -100,7 +112,7 @@ export const FilterTokenInput: React.FC<FilterTokenInputProps> = ({
         label: item.label,
         group: item.group,
         example: item.example,
-        definition: undefined as UnifiedFilterDefinition | undefined,
+        valueType: item.valueType,
       }));
     }
     return filterVariables.map((item) => ({
@@ -109,7 +121,7 @@ export const FilterTokenInput: React.FC<FilterTokenInputProps> = ({
       label: item.definition.name || item.definition.key,
       group: '',
       example: undefined as string | undefined,
-      definition: item.definition,
+      valueType: filterDropdownType(item.definition.type),
     }));
   }, [filterVariables, variableSource]);
   const unmatchedTokens = useMemo(
@@ -132,11 +144,11 @@ export const FilterTokenInput: React.FC<FilterTokenInputProps> = ({
     const needle = query.trim().toLowerCase();
     if (!needle) return menuItems;
     return menuItems.filter((item) => {
-      const typeName = item.definition ? typeLabel(item.definition.type, t) : '';
-      const haystack = `${item.label} ${item.definition?.key ?? ''} ${item.token} ${item.group} ${typeName}`.toLowerCase();
+      const typeName = item.valueType || dataMenuType(item.token, item.example) || '';
+      const haystack = `${item.label} ${item.token} ${item.group} ${typeName}`.toLowerCase();
       return haystack.includes(needle);
     });
-  }, [menuItems, query, t]);
+  }, [menuItems, query]);
   const currentIndex = Math.min(activeIndex, Math.max(filtered.length - 1, 0));
   const menuOpen = open && filtered.length > 0 && menuItems.length > 0;
   const unmatchedMessage = unmatchedTokens.length
@@ -257,21 +269,12 @@ export const FilterTokenInput: React.FC<FilterTokenInputProps> = ({
         popupRender={() => (
           <div
             role="listbox"
-            className="max-h-64 min-w-52 overflow-y-auto rounded-md border border-(--color-border-1) bg-(--color-bg-1) py-1 shadow-md"
+            className="max-h-64 min-w-52 overflow-x-hidden overflow-y-auto rounded-md border border-(--color-border-1) bg-(--color-bg-1) py-1 shadow-md"
           >
             {filtered.map((item, index) => {
               const previousGroup = index > 0 ? filtered[index - 1]?.group : '';
-              const optionLabel = item.definition
-                ? t(
-                  'dashboard.filterTokenOption',
-                  '{name}（{token} · {type}）',
-                  {
-                    name: item.definition.name || item.definition.key,
-                    token: item.token,
-                    type: typeLabel(item.definition.type, t),
-                  },
-                )
-                : item.label;
+              const typeName = item.valueType || dataMenuType(item.token, item.example);
+              const detail = typeName ? `${item.token} · ${typeName}` : item.token;
               return (
                 <React.Fragment key={item.key}>
                   {item.group && item.group !== previousGroup ? (
@@ -283,7 +286,7 @@ export const FilterTokenInput: React.FC<FilterTokenInputProps> = ({
                     type="button"
                     role="option"
                     aria-selected={index === currentIndex}
-                    className={`flex w-full cursor-pointer items-baseline justify-between gap-3 px-3 py-1.5 text-left text-xs text-(--color-text-1) ${
+                    className={`flex w-full min-w-0 cursor-pointer items-baseline justify-between gap-3 px-3 py-1.5 text-left text-xs text-(--color-text-1) ${
                       index === currentIndex ? 'bg-(--color-fill-2)' : 'hover:bg-(--color-fill-1)'
                     }`}
                     onMouseDown={(event) => {
@@ -292,17 +295,13 @@ export const FilterTokenInput: React.FC<FilterTokenInputProps> = ({
                     }}
                     onMouseEnter={() => setActiveIndex(index)}
                   >
-                    {item.definition ? (
-                      optionLabel
-                    ) : (
-                      <>
-                        <span>{item.label}</span>
-                        <span className="shrink-0 text-[11px] text-(--color-text-3)">
-                          {item.token}
-                          {item.example ? <span className="ml-2">{item.example}</span> : null}
-                        </span>
-                      </>
-                    )}
+                    <span className="shrink-0">{item.label}</span>
+                    <span
+                      title={detail}
+                      className="min-w-0 max-w-64 shrink truncate text-right text-[11px] text-(--color-text-3)"
+                    >
+                      {detail}
+                    </span>
                   </button>
                 </React.Fragment>
               );

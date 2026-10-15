@@ -17,7 +17,7 @@ import {
   resolveDateRange,
 } from '@/app/ops-analysis/utils/dateRange';
 import { normalizeTimeRangeFilterValue } from '@/app/ops-analysis/utils/filterValue';
-import { listFilterTemplateVariables } from '@/app/ops-analysis/utils/filterTemplate';
+import { filterDropdownType, listFilterTemplateVariables } from '@/app/ops-analysis/utils/filterTemplate';
 import {
   nearestRadarIndicatorIndex,
   type RadarClickGeometry,
@@ -47,8 +47,10 @@ export interface InteractionVariable {
   token: string;
   label: string;
   group: string;
-  /** 样本里第一个非空值。没有样本时不出现。 */
+  /** 样本里第一个非空值。没有样本时不出现。下拉不展示它，只用来判断字段类型。 */
   example?: string;
+  /** 筛选参数自己的英文类型。数据点留空，由 token 和样本判断。 */
+  valueType?: string;
 }
 
 const DATA_VALUE_TOKENS = new Set([
@@ -960,18 +962,21 @@ export const listInteractionVariables = ({
   const filters: InteractionVariable[] = [];
   listFilterTemplateVariables(definitions).forEach((item) => {
     const name = item.definition.name?.trim() || item.definition.key;
-    filters.push({ token: item.token, label: name, group: filterGroup });
+    const valueType = filterDropdownType(item.definition.type);
+    filters.push({ token: item.token, label: name, group: filterGroup, valueType });
     if (item.definition.type !== 'timeRange' && item.definition.type !== 'dateRange') return;
     const inner = item.token.slice(1, -1);
     filters.push({
       token: `$${inner}.start$`,
       label: timeStartLabel(name),
       group: filterGroup,
+      valueType,
     });
     filters.push({
       token: `$${inner}.end$`,
       label: timeEndLabel(name),
       group: filterGroup,
+      valueType,
     });
   });
   return [...filters, ...dataVariables];

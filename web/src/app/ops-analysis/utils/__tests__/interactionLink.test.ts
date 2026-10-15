@@ -419,6 +419,10 @@ test('filter variable list adds start and end only for time filters', () => {
     '$time.start$',
     '$time.end$',
   ]);
+  assert.equal(variables[0]?.valueType, 'text');
+  assert.equal(variables[1]?.valueType, 'timeRange');
+  assert.equal(variables[2]?.valueType, 'timeRange');
+  assert.equal(variables[3]?.valueType, 'timeRange');
 });
 
 test('chart clicks expose the fields that exist on each widget', () => {
