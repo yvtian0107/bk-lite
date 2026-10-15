@@ -49,10 +49,6 @@ const translate = (
   fallback?: string,
   values?: Record<string, string | number>,
 ) => {
-  if (key === 'dashboard.filterTokenOption' && values) {
-    return `${values.name}（${values.token} · ${values.type}）`;
-  }
-  if (key === 'dashboard.filterTokenTypeString') return '文本';
   if (key === 'dashboard.filterTokenHint') return '输入 $ 插入筛选';
   if (key === 'dashboard.filterTokenSeparator') return '、';
   if (key === 'dashboard.filterTokenUnmatched' && values) {

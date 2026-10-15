@@ -481,6 +481,25 @@ test('chart clicks expose the fields that exist on each widget', () => {
   );
   assert.equal(tableColumns.at(-1)?.key, '__interaction');
   assert.equal(isFirstActionColumn(tableColumns, 1), true);
+  const replaced = withInteractionActionColumn(
+    [
+      { key: 'host', columnType: 'data' },
+      { key: '__actions__', title: '查看', columnType: 'actions' },
+    ],
+    { kind: 'data', name: '查看', url: '/host', openMode: 'sameTab' },
+    'view',
+    { key: '__interaction', title: '操作', columnType: 'actions' },
+  );
+  assert.deepEqual(replaced.map((column) => column.key), ['host', '__interaction']);
+  assert.deepEqual(withInteractionActionColumn(
+    [
+      { key: 'host', columnType: 'data' },
+      { key: '__actions__', columnType: 'actions' },
+    ],
+    undefined,
+    'view',
+    { key: '__interaction', columnType: 'actions' },
+  ).map((column) => column.key), ['host']);
   assert.equal(withInteractionActionColumn(
     tableColumns,
     { kind: 'data', name: '查看', url: '/host', openMode: 'sameTab' },
@@ -746,6 +765,20 @@ test('interaction dropdown group names exist in Chinese and English', () => {
   assert.equal(en.interactionActionColumn, 'Actions');
   assert.equal(zh.interactionOpen, '打开链接');
   assert.equal(en.interactionOpen, 'Open link');
+  assert.equal(zh.interactionUrlRequired, '请输入 URL');
+  assert.equal(en.interactionUrlRequired, 'Enter a URL');
+  for (const key of [
+    'filterTokenOption',
+    'filterTokenTypeString',
+    'filterTokenTypeNumber',
+    'filterTokenTypeTimeRange',
+    'filterTokenTypeDateRange',
+    'operationColumn',
+    'operationColumnTitle',
+  ]) {
+    assert.equal(zh[key], undefined);
+    assert.equal(en[key], undefined);
+  }
   assert.equal(zh.interactionLinkTypeTitleTip, '标题链接：标题旁显示图标');
   assert.equal(en.interactionLinkTypeTitleTip, 'Title link: an icon appears beside the title');
   assert.equal(zh.interactionLinkTypeDataTip, '数据链接：点击数据点、柱、扇区或数字打开');

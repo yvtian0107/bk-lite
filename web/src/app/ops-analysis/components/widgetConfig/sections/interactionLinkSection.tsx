@@ -147,6 +147,12 @@ const InteractionLinkSection: React.FC<InteractionLinkSectionProps> = ({
               name={['interaction', 'url']}
               required
               preserve
+              rules={[{
+                validator: async (_, value: unknown) => {
+                  if (typeof value === 'string' && value.trim()) return;
+                  throw new Error(t('dashboard.interactionUrlRequired', '请输入 URL'));
+                },
+              }]}
             >
               <FilterTokenInput
                 t={t}

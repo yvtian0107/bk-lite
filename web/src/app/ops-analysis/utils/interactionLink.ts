@@ -200,11 +200,11 @@ export const withInteractionActionColumn = <T extends { columnType?: string }>(
   surface: InteractionSurface,
   synthesized: T,
 ): T[] => {
+  const dataColumns = columns.filter((column) => column.columnType !== 'actions');
   if (link?.kind !== 'data' || !shouldShowInteractionEntry(surface, true)) {
-    return columns;
+    return dataColumns;
   }
-  if (columns.some((column) => column.columnType === 'actions')) return columns;
-  return [...columns, synthesized];
+  return [...dataColumns, synthesized];
 };
 
 export const isFirstActionColumn = <T extends { columnType?: string }>(

@@ -5,7 +5,6 @@ import {
   Input,
   Select,
   Switch,
-  Tag,
   Tooltip,
 } from 'antd';
 import {
@@ -206,26 +205,23 @@ export const TableSettingsSection: React.FC<TableSettingsSectionProps> = ({
       dataIndex: 'key',
       key: 'key',
       width: 180,
-      render: (_: unknown, record: DisplayColumnRow) =>
-        record.columnType === 'actions' ? (
-          <Tag className="m-0">{t('dashboard.operationColumn')}</Tag>
-        ) : (
-          <AutoComplete
-            value={record.key}
-            placeholder={t('dashboard.selectOrInputField')}
-            className="w-full"
-            options={displayColumnOptions}
-            filterOption={(inputValue, option) => {
-              const query = inputValue.toLowerCase();
-              return (
-                (option?.label || '').toString().toLowerCase().includes(query) ||
-                (option?.value || '').toString().toLowerCase().includes(query)
-              );
-            }}
-            onChange={(value) => onDisplayColumnChange(record.id, 'key', value)}
-            onBlur={() => onDisplayColumnKeyBlur(record.id)}
-          />
-        ),
+      render: (_: unknown, record: DisplayColumnRow) => (
+        <AutoComplete
+          value={record.key}
+          placeholder={t('dashboard.selectOrInputField')}
+          className="w-full"
+          options={displayColumnOptions}
+          filterOption={(inputValue, option) => {
+            const query = inputValue.toLowerCase();
+            return (
+              (option?.label || '').toString().toLowerCase().includes(query) ||
+              (option?.value || '').toString().toLowerCase().includes(query)
+            );
+          }}
+          onChange={(value) => onDisplayColumnChange(record.id, 'key', value)}
+          onBlur={() => onDisplayColumnKeyBlur(record.id)}
+        />
+      ),
     },
     {
       title: t('dashboard.filterFieldLabel'),

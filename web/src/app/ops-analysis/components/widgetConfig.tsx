@@ -840,6 +840,9 @@ const ViewConfig: React.FC<ViewConfigPropsWithManager> = ({
         setFilterBindings({});
       }
 
+      const storedColumns = (valueConfig?.tableConfig?.columns || []).filter(
+        (column) => column.columnType !== 'actions',
+      );
       if (valueConfig?.tableConfig?.columns?.length) {
         const schemaDefaultKeys = new Set(
           (targetDataSource?.field_schema || [])
@@ -879,7 +882,7 @@ const ViewConfig: React.FC<ViewConfigPropsWithManager> = ({
         });
 
         tableConfig.setDisplayColumns(
-          valueConfig.tableConfig.columns.map((c, idx) => ({
+          storedColumns.map((c, idx) => ({
             ...c,
             id: `column_${idx}_${Date.now()}`,
             title:

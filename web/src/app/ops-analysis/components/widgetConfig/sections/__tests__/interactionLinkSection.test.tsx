@@ -1,8 +1,8 @@
-import React from 'react';
+import React, { createRef } from 'react';
 import '@ant-design/v5-patch-for-react-19';
-import { cleanup, render, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { ConfigProvider, Form } from 'antd';
+import { ConfigProvider, Form, type FormInstance } from 'antd';
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 
 import InteractionLinkSection from '@/app/ops-analysis/components/widgetConfig/sections/interactionLinkSection';
@@ -34,9 +34,11 @@ const KindValue = () => {
 };
 
 const renderSection = (chartType: string, kind = 'title') => {
+  const formRef = createRef<FormInstance>();
   render(
     <ConfigProvider theme={{ token: { motion: false } }}>
       <Form
+        ref={formRef}
         layout="vertical"
         initialValues={{
           interaction: { kind, name: '', url: '', openMode: 'sameTab' },
@@ -52,6 +54,7 @@ const renderSection = (chartType: string, kind = 'title') => {
       </Form>
     </ConfigProvider>,
   );
+  return formRef;
 };
 
 describe('InteractionLinkSection', () => {
@@ -139,6 +142,36 @@ describe('InteractionLinkSection', () => {
     await user.click(document.querySelector('.ant-input-clear-icon') as HTMLElement);
     await waitFor(() => {
       expect((screen.getByPlaceholderText('输入 URL，键入 $ 插入变量') as HTMLInputElement).value).toBe('');
+    });
+  });
+
+  it('标题链接和数据链接必须填写 URL，选无时不拦截保存', async () => {
+    const user = userEvent.setup();
+    const formRef = renderSection('line', 'title');
+
+    await act(async () => {
+      await expect(formRef.current?.validateFields()).rejects.toBeTruthy();
+    });
+    expect(await screen.findByText('请输入 URL')).toBeTruthy();
+
+    await user.click(screen.getByText('数据链接'));
+    await user.type(screen.getByPlaceholderText('输入 URL，键入 $ 插入变量'), '   ');
+    await act(async () => {
+      await expect(formRef.current?.validateFields()).rejects.toBeTruthy();
+    });
+
+    await user.type(screen.getByPlaceholderText('输入 URL，键入 $ 插入变量'), '/ops');
+    await act(async () => {
+      await expect(formRef.current?.validateFields()).resolves.toMatchObject({
+        interaction: { kind: 'data', url: '   /ops' },
+      });
+    });
+
+    await user.click(screen.getByText('无'));
+    await act(async () => {
+      await expect(formRef.current?.validateFields()).resolves.toMatchObject({
+        interaction: { kind: 'none' },
+      });
     });
   });
 });
