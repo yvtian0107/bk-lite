@@ -180,6 +180,24 @@ describe('FilterTokenInput', () => {
     expect(screen.getByRole('option', { name: '环境$env$' }).textContent).toContain('$env$');
   });
 
+  it('只有一组时也显示分组标题', async () => {
+    const user = userEvent.setup();
+    render(
+      <FilterTokenInput
+        t={translate}
+        value=""
+        variables={[
+          { token: '$__series.name$', label: '系列', group: '数据点', example: 'cpu' },
+          { token: '$__value.numeric$', label: '数值', group: '数据点', example: '1' },
+        ]}
+      />,
+    );
+
+    await user.type(screen.getByRole('textbox'), '$');
+    expect(screen.getByText('数据点')).toBeTruthy();
+    expect(screen.getAllByRole('option')).toHaveLength(2);
+  });
+
   it('组字过程中的回车留给输入法，不插入高亮变量', async () => {
     const user = userEvent.setup();
     render(<Harness />);

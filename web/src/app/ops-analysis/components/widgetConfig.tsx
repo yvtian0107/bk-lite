@@ -111,6 +111,8 @@ import { getDefaultScreenWidgetAppearance } from '@/app/ops-analysis/(pages)/vie
 import { useWidgetCsvExportRegistry } from '@/app/ops-analysis/context/widgetCsvExportRegistry';
 import { interactionKindForChartType } from '@/app/ops-analysis/utils/interactionLink';
 import {
+  acceptPreviewRawWrite,
+  clearSampleKeyOnFetchFailure,
   isCurrentInteractionSample,
   nextInteractionSampleTicket,
   planInteractionSample,
@@ -566,6 +568,11 @@ const ViewConfig: React.FC<ViewConfigPropsWithManager> = ({
         setSuppliedPreviewVersion((version) => version + 1);
       }
     } catch (error) {
+      interactionSampleKeyRef.current = clearSampleKeyOnFetchFailure(
+        sampleReadRef.current,
+        ticket,
+        interactionSampleKeyRef.current,
+      );
       if (!isCurrentInteractionSample(sampleReadRef.current, ticket)) return;
       console.error('Failed to fetch data fields:', error);
       message.error(t('dashboard.fetchDataFieldsFailed'));
@@ -1358,7 +1365,9 @@ const ViewConfig: React.FC<ViewConfigPropsWithManager> = ({
               suppliedRawData={suppliedPreviewRawData}
               suppliedRawDataVersion={suppliedPreviewVersion}
               loading={previewLoading}
-              onRawData={(data) => {
+              sampleTicket={sampleReadRef.current}
+              onRawData={(data, ticket) => {
+                if (!acceptPreviewRawWrite(sampleReadRef.current, ticket)) return;
                 setPreviewRawData(data);
                 setPreviewLoading(false);
               }}

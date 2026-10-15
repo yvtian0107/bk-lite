@@ -908,8 +908,6 @@
     "interactionPointIndicator": "Indicator",
     "interactionValueTime": "Time",
     "interactionValueNumeric": "Number",
-    "interactionValueText": "Text",
-    "interactionValueRaw": "Raw value",
     "interactionCabinetId": "Cabinet ID",
     "interactionCabinetName": "Cabinet name",
     "interactionDeviceId": "Device ID",

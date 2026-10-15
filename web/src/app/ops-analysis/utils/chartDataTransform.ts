@@ -199,7 +199,11 @@ export class ChartDataTransformer {
         isTime: shouldFormatAsTime,
         numeric: item.numeric,
         raw: item.raw,
-        row: Array.isArray(row) ? undefined : row,
+        row: Array.isArray(row)
+          ? (!shouldFormatAsTime && dimensionKey
+            ? { [dimensionKey]: item.dimension }
+            : undefined)
+          : row,
       });
     });
   }
@@ -231,9 +235,11 @@ export class ChartDataTransformer {
         map[key] = this.linkPoint({
           seriesName,
           dimension: item[0],
+          dimensionKey: 'name',
           isTime: shouldFormatAsTime,
           numeric,
           raw: item[1],
+          row: shouldFormatAsTime ? undefined : { name: item[0] },
         });
       });
     }
@@ -332,7 +338,7 @@ export class ChartDataTransformer {
             dimension: item[0],
             raw: item[1],
             numeric: Number.isFinite(parseFloat(item[1])) ? parseFloat(item[1]) : null,
-          })),
+          }), undefined, 'name'),
         };
       }
 
@@ -357,17 +363,18 @@ export class ChartDataTransformer {
 
         const shouldFormatAsTime = this.shouldFormatAsTimeDimension(rawCategories);
         const allCategoriesSet = new Set<string>();
+        const categoryValue = new Map<string, unknown>();
         keys.forEach((k) => {
           rawData[k].forEach((item: any) => {
-            if (Array.isArray(item) && item.length >= 2) {
-              allCategoriesSet.add(
-                this.formatDimensionValue(item[0], shouldFormatAsTime)
-              );
-            } else if (item && typeof item === 'object' && 'name' in item) {
-              allCategoriesSet.add(
-                this.formatDimensionValue(item.name, shouldFormatAsTime)
-              );
-            }
+            const raw = Array.isArray(item) && item.length >= 2
+              ? item[0]
+              : item && typeof item === 'object' && 'name' in item
+                ? item.name
+                : undefined;
+            if (raw === undefined) return;
+            const key = this.formatDimensionValue(raw, shouldFormatAsTime);
+            allCategoriesSet.add(key);
+            if (!categoryValue.has(key)) categoryValue.set(key, raw);
           });
         });
         const categories = Array.from(allCategoriesSet).sort();
@@ -377,7 +384,14 @@ export class ChartDataTransformer {
           return {
             name: k,
             data: categories.map((cat) => dataMap[cat] || 0),
-            points: categories.map((cat) => pointMap[cat] ?? {}),
+            points: categories.map((cat) => pointMap[cat] ?? this.linkPoint({
+              seriesName: k,
+              dimension: categoryValue.get(cat),
+              dimensionKey: 'name',
+              isTime: shouldFormatAsTime,
+              numeric: null,
+              row: shouldFormatAsTime ? undefined : { name: categoryValue.get(cat) },
+            })),
           };
         });
         return { categories, series };

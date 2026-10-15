@@ -16,6 +16,23 @@ export const isCurrentInteractionSample = (
   ticket: InteractionSampleTicket,
 ) => current.widgetId === ticket.widgetId && current.sequence === ticket.sequence;
 
+/** 预览回写必须带着这次样本请求的票据；切换组件后旧预览不能再写。 */
+export const acceptPreviewRawWrite = (
+  current: InteractionSampleTicket,
+  ticket: InteractionSampleTicket | undefined,
+): ticket is InteractionSampleTicket => (
+  Boolean(ticket) && isCurrentInteractionSample(current, ticket)
+);
+
+/** 这次请求失败就把 key 清掉，下次打开交互页才能重试。过期票据不能清掉后来的 key。 */
+export const clearSampleKeyOnFetchFailure = (
+  current: InteractionSampleTicket,
+  ticket: InteractionSampleTicket,
+  fetchedKey: string,
+): string => (
+  isCurrentInteractionSample(current, ticket) ? '' : fetchedKey
+);
+
 export type InteractionSamplePlan =
   | { type: 'use-rendered'; data: unknown }
   | { type: 'fetch'; sampleKey: string }

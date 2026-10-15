@@ -262,6 +262,87 @@ test('line points keep the original timestamp, row, and label without changing p
   assert.equal(chart.categories[0]?.includes('10-15'), true);
 });
 
+test('tuple rows without a time axis keep the original category and list it as 分类', () => {
+  const chart = ChartDataTransformer.transformToLineBarData([
+    ['east', 3],
+    ['west', 1],
+  ]);
+  const labels = {
+    valueGroup: '数据点',
+    fieldGroup: '数据字段',
+    fieldLabel: (field: string) => field,
+    series: '系列',
+    category: '分类',
+    time: '时间',
+    numeric: '数值',
+  };
+
+  assert.deepEqual(chart.values, [3, 1]);
+  assert.equal(chart.points?.[0]?.axisField, 'name');
+  assert.equal(chart.points?.[0]?.fields?.name, 'east');
+  assert.equal(chart.points?.[0]?.numeric, 3);
+  assert.equal(chart.points?.[0]?.time, undefined);
+
+  const variables = listPresentDataVariables('line', [['east', 3]], labels, chart.points);
+  assert.deepEqual(
+    variables.filter((item) => item.group === '数据点').map((item) => [item.label, item.token, item.example]),
+    [
+      ['分类', '$__data.fields.name$', 'east'],
+      ['数值', '$__value.numeric$', '3'],
+    ],
+  );
+  assert.equal(variables.some((item) => item.label === '时间'), false);
+
+  const timed = ChartDataTransformer.transformToLineBarData([[1760486400, 3]]);
+  assert.equal(timed.points?.[0]?.time, '2025-10-15T00:00:00.000Z');
+  assert.equal(timed.points?.[0]?.axisField, undefined);
+  assert.equal(timed.points?.[0]?.fields, undefined);
+  assert.equal(
+    listPresentDataVariables('line', [[1760486400, 3]], labels, timed.points)
+      .some((item) => item.label === '分类'),
+    false,
+  );
+});
+
+test('a missing multi-series category keeps that category field', () => {
+  const chart = ChartDataTransformer.transformToLineBarData({
+    cpu: [{ name: 'a', value: 1 }],
+    mem: [{ name: 'a', value: 2 }, { name: 'b', value: 3, host: 'web' }],
+  });
+  const cpu = chart.series?.find((series) => series.name === 'cpu');
+  const missing = cpu?.points?.[chart.categories.indexOf('b')];
+
+  assert.deepEqual(cpu?.data, [1, 0]);
+  assert.equal(missing?.seriesName, 'cpu');
+  assert.equal(missing?.axisField, 'name');
+  assert.equal(missing?.fields?.name, 'b');
+  assert.equal(missing?.numeric, undefined);
+  assert.equal(missing?.fields?.host, undefined);
+  assert.equal(missing?.fields?.value, undefined);
+
+  const tuples = ChartDataTransformer.transformToLineBarData({
+    cpu: [['east', 1]],
+    mem: [['east', 2], ['west', 4]],
+  });
+  const westIndex = tuples.categories.indexOf('west');
+  const west = tuples.series?.find((series) => series.name === 'cpu')?.points?.[westIndex];
+  assert.equal(west?.fields?.name, 'west');
+  assert.equal(west?.seriesName, 'cpu');
+  assert.equal(west?.numeric, undefined);
+
+  const timed = ChartDataTransformer.transformToLineBarData({
+    cpu: [[1760486400, 1]],
+    mem: [[1760486400, 2], [1760486460, 3]],
+  });
+  const gap = timed.series
+    ?.find((series) => series.name === 'cpu')
+    ?.points
+    ?.find((point) => point.time === '2025-10-15T00:01:00.000Z');
+  assert.equal(gap?.seriesName, 'cpu');
+  assert.equal(gap?.numeric, undefined);
+  assert.equal(gap?.fields, undefined);
+});
+
 test('dropdown lists only fields that exist for the chart and the rows', () => {
   const chart = ChartDataTransformer.transformToLineBarData({
     cpu: [{ name: 'a', value: 1 }],
@@ -624,4 +705,8 @@ test('interaction dropdown group names exist in Chinese and English', () => {
   assert.equal(en.interactionPointName, 'Name');
   assert.equal(zh.interactionPointIndicator, '指标');
   assert.equal(en.interactionPointIndicator, 'Indicator');
+  assert.equal(zh.interactionValueText, undefined);
+  assert.equal(en.interactionValueText, undefined);
+  assert.equal(zh.interactionValueRaw, undefined);
+  assert.equal(en.interactionValueRaw, undefined);
 });

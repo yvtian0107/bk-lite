@@ -139,7 +139,6 @@ export const FilterTokenInput: React.FC<FilterTokenInputProps> = ({
   }, [menuItems, query, t]);
   const currentIndex = Math.min(activeIndex, Math.max(filtered.length - 1, 0));
   const menuOpen = open && filtered.length > 0 && menuItems.length > 0;
-  const grouped = new Set(filtered.map((item) => item.group).filter(Boolean)).size > 1;
   const unmatchedMessage = unmatchedTokens.length
     ? t(
       'dashboard.filterTokenUnmatched',
@@ -275,7 +274,7 @@ export const FilterTokenInput: React.FC<FilterTokenInputProps> = ({
                 : item.label;
               return (
                 <React.Fragment key={item.key}>
-                  {grouped && item.group !== previousGroup ? (
+                  {item.group && item.group !== previousGroup ? (
                     <div className="px-3 py-1 text-[11px] font-medium text-(--color-text-3)">
                       {item.group}
                     </div>

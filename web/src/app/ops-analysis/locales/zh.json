@@ -908,8 +908,6 @@
     "interactionPointIndicator": "指标",
     "interactionValueTime": "时间",
     "interactionValueNumeric": "数值",
-    "interactionValueText": "文本",
-    "interactionValueRaw": "原始值",
     "interactionCabinetId": "机柜 ID",
     "interactionCabinetName": "机柜名称",
     "interactionDeviceId": "设备 ID",

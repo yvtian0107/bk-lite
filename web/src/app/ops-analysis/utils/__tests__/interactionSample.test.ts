@@ -2,6 +2,8 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import {
+  acceptPreviewRawWrite,
+  clearSampleKeyOnFetchFailure,
   isCurrentInteractionSample,
   nextInteractionSampleTicket,
   planInteractionSample,
@@ -93,6 +95,37 @@ test('closing, leaving the interaction page, or keeping a preview does not read 
   assert.equal(planInteractionSample({ ...base, interactionVisible: false }).type, 'skip');
   assert.equal(planInteractionSample({ ...base, hasPreview: true }).type, 'skip');
   assert.equal(planInteractionSample({ ...base, rendered: undefined, sourceId: null }).type, 'skip');
+});
+
+test('a failed sample fetch clears the key so the next open can retry', () => {
+  const current = nextInteractionSampleTicket(EMPTY, 'widget-b');
+  const cleared = clearSampleKeyOnFetchFailure(current, current, 'widget-b:4');
+  assert.equal(cleared, '');
+  assert.deepEqual(planInteractionSample({
+    open: true,
+    interactionVisible: true,
+    hasPreview: false,
+    widgetId: 'widget-b',
+    settledWidgetId: 'widget-b',
+    rendered: undefined,
+    sourceId: 4,
+    fetchedKey: cleared,
+  }), { type: 'fetch', sampleKey: 'widget-b:4' });
+
+  const newer = nextInteractionSampleTicket(current, 'widget-c');
+  assert.equal(
+    clearSampleKeyOnFetchFailure(newer, current, 'widget-c:8'),
+    'widget-c:8',
+  );
+});
+
+test('a stale preview ticket cannot write raw data back', () => {
+  const reading = nextInteractionSampleTicket(EMPTY, 'widget-a');
+  const switched = nextInteractionSampleTicket(reading, 'widget-b');
+
+  assert.equal(acceptPreviewRawWrite(reading, reading), true);
+  assert.equal(acceptPreviewRawWrite(switched, reading), false);
+  assert.equal(acceptPreviewRawWrite(switched, undefined), false);
 });
 
 test('switching widgets drops the in-flight sample and the next widget can load its own', () => {
