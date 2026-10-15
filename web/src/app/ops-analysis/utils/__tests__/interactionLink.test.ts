@@ -22,6 +22,7 @@ import {
   readChartClickPoint,
   readWidgetInteraction,
   resolveInteractionUrl,
+  sceneLinkPoint,
   shouldNavigateInteraction,
   shouldRenderEventTimelineFieldLink,
   shouldRenderInteractionActionButton,
@@ -393,23 +394,66 @@ test('dropdown lists only fields that exist for the chart and the rows', () => {
     ['$__data.fields.cpu$', '$__data.fields.host$'],
   );
 
-  const room = listPresentDataVariables('room3D', {
-    racks: [{ rack_id: 'r1', rack_name: 'A', devices: [{ device_id: 'd1', device_name: 'srv' }] }],
-  }, {
+  const sceneLabels = {
     valueGroup: '值',
     fieldGroup: '字段',
-    fieldLabel: (field) => field,
+    fieldLabel: (field: string) => field,
+    cabinetGroup: '机柜',
     cabinetId: '机柜 ID',
     cabinetName: '机柜名称',
+    cabinetLocation: '机柜位置',
+    cabinetType: '机柜类型',
+    cabinetState: '机柜状态',
+    deviceGroup: '设备',
     deviceId: '设备 ID',
     deviceName: '设备名称',
-  });
-  assert.deepEqual(room.map((item) => item.token), [
+    deviceModel: '设备模型',
+    deviceUStart: '起始 U 位',
+    deviceStatus: '设备状态',
+    objectGroup: '对象',
+    objectType: '对象类型',
+    objectId: '对象 ID',
+    objectName: '对象名称',
+  };
+  const roomTokens = [
     '$__data.fields.cabinet.id$',
     '$__data.fields.cabinet.name$',
+    '$__data.fields.cabinet.location$',
+    '$__data.fields.cabinet.type$',
+    '$__data.fields.cabinet.state$',
     '$__data.fields.device.id$',
     '$__data.fields.device.name$',
+    '$__data.fields.device.model_id$',
+    '$__data.fields.device.u_start$',
+    '$__data.fields.device.status$',
+    '$__data.fields.object.type$',
+    '$__data.fields.object.id$',
+    '$__data.fields.object.name$',
+  ];
+  const room = listPresentDataVariables('room3D', null, sceneLabels);
+  assert.deepEqual(room.map((item) => item.token), roomTokens);
+  assert.deepEqual(
+    listPresentDataVariables('room3D', {
+      racks: [{ rack_id: 'r1', rack_name: 'A', devices: [{ device_id: 'd1', device_name: 'srv' }] }],
+    }, sceneLabels).map((item) => item.token),
+    roomTokens,
+  );
+  assert.deepEqual(room.map((item) => [item.label, item.group, item.valueType]), [
+    ['机柜 ID', '机柜', 'text'],
+    ['机柜名称', '机柜', 'text'],
+    ['机柜位置', '机柜', 'text'],
+    ['机柜类型', '机柜', 'text'],
+    ['机柜状态', '机柜', 'text'],
+    ['设备 ID', '设备', 'text'],
+    ['设备名称', '设备', 'text'],
+    ['设备模型', '设备', 'text'],
+    ['起始 U 位', '设备', 'number'],
+    ['设备状态', '设备', 'text'],
+    ['对象类型', '对象', 'text'],
+    ['对象 ID', '对象', 'text'],
+    ['对象名称', '对象', 'text'],
   ]);
+  assert.equal(room.some((item) => item.example), false);
 });
 
 test('filter variable list adds start and end only for time filters', () => {
@@ -507,19 +551,150 @@ test('chart clicks expose the fields that exist on each widget', () => {
     { key: 'extra', columnType: 'actions' },
   ).some((column) => column.key === 'extra'), false);
 
-  const systems = listPresentDataVariables('application3D', {
-    items: [{ id: 'sys-1', name: '门户' }],
-  }, {
+  const applicationLabels = {
     valueGroup: '值',
     fieldGroup: '字段',
-    fieldLabel: (field) => field,
+    fieldLabel: (field: string) => field,
+    systemGroup: '应用系统',
     systemId: '系统 ID',
     systemName: '系统名称',
-  });
-  assert.deepEqual(systems.map((item) => item.token), [
+    hostGroup: '主机',
+    hostId: '主机 ID',
+    hostName: '主机名称',
+    hostIp: '主机 IP',
+    hostOs: '操作系统',
+    applicationGroup: '应用',
+    applicationId: '应用 ID',
+    applicationName: '应用名称',
+    objectGroup: '对象',
+    objectType: '对象类型',
+    objectId: '对象 ID',
+    objectName: '对象名称',
+  };
+  const applicationTokens = [
     '$__data.fields.system.id$',
     '$__data.fields.system.name$',
-  ]);
+    '$__data.fields.host.id$',
+    '$__data.fields.host.name$',
+    '$__data.fields.host.ip$',
+    '$__data.fields.host.os$',
+    '$__data.fields.application.id$',
+    '$__data.fields.application.name$',
+    '$__data.fields.object.type$',
+    '$__data.fields.object.id$',
+    '$__data.fields.object.name$',
+  ];
+  const systems = listPresentDataVariables('application3D', null, applicationLabels);
+  assert.deepEqual(systems.map((item) => item.token), applicationTokens);
+  assert.deepEqual(
+    listPresentDataVariables('application3D', {
+      items: [{ id: 'sys-1', name: '门户' }],
+    }, applicationLabels).map((item) => [item.label, item.token]),
+    systems.map((item) => [item.label, item.token]),
+  );
+});
+
+test('scene link points fill the right-clicked object and its related fields', () => {
+  const devicePoint = sceneLinkPoint({
+    cabinet: {
+      rack_id: 'rack-1',
+      rack_name: 'A01',
+      location: 'A-1',
+      rack_type_name: '网络柜',
+      rack_type: 'network',
+      rack_state_name: null,
+      rack_state: '1',
+    },
+    device: {
+      device_id: 'dev-1',
+      device_name: 'srv',
+      model_id: 'model-9',
+      rack_u_start: 12,
+      status: 'online',
+    },
+  });
+  assert.equal(devicePoint.fields?.['object.type'], 'device');
+  assert.equal(devicePoint.fields?.['object.id'], 'dev-1');
+  assert.equal(devicePoint.fields?.['object.name'], 'srv');
+  assert.equal(devicePoint.fields?.['cabinet.id'], 'rack-1');
+  assert.equal(devicePoint.fields?.['cabinet.name'], 'A01');
+  assert.equal(devicePoint.fields?.['cabinet.location'], 'A-1');
+  assert.equal(devicePoint.fields?.['cabinet.type'], '网络柜');
+  assert.equal(devicePoint.fields?.['cabinet.state'], '1');
+  assert.equal(devicePoint.fields?.['device.model_id'], 'model-9');
+  assert.equal(devicePoint.fields?.['device.u_start'], 12);
+  assert.equal(devicePoint.fields?.['device.status'], 'online');
+  assert.equal(
+    resolveInteractionUrl(
+      '/room?id=$__data.fields.device.id$&u=$__data.fields.device.u_start$&kind=$__data.fields.object.type$',
+      { definitions: [], values: {}, point: devicePoint },
+    ),
+    '/room?id=dev-1&u=12&kind=device',
+  );
+
+  const cabinetOnly = sceneLinkPoint({
+    cabinet: {
+      rack_id: 'rack-2',
+      rack_name: 'B02',
+      rack_type: 'server',
+      rack_state_name: '启用',
+    },
+  });
+  assert.equal(cabinetOnly.fields?.['object.type'], 'cabinet');
+  assert.equal(cabinetOnly.fields?.['cabinet.type'], 'server');
+  assert.equal(cabinetOnly.fields?.['cabinet.state'], '启用');
+  assert.equal(cabinetOnly.fields?.['device.id'], undefined);
+  assert.equal(
+    resolveInteractionUrl('$__data.fields.device.model_id$', {
+      definitions: [],
+      values: {},
+      point: cabinetOnly,
+    }),
+    '',
+  );
+
+  const zeroU = sceneLinkPoint({
+    device: { device_id: 'dev-0', device_name: 'edge', rack_u_start: 0 },
+  });
+  assert.equal(zeroU.fields?.['device.u_start'], 0);
+  assert.equal(zeroU.fields?.['object.type'], 'device');
+
+  const legacyNames = sceneLinkPoint({
+    cabinet: { id: 'c-old', name: '旧机柜' },
+    device: { id: 'd-old', name: '旧设备' },
+  });
+  assert.equal(legacyNames.fields?.['cabinet.id'], 'c-old');
+  assert.equal(legacyNames.fields?.['device.name'], '旧设备');
+  assert.equal(legacyNames.fields?.['object.type'], 'device');
+
+  const hostPoint = sceneLinkPoint({
+    host: { id: 'host-1', name: 'web-1', ip: '10.0.0.8', os: 'Linux' },
+  });
+  assert.deepEqual(hostPoint.fields, {
+    'host.id': 'host-1',
+    'host.name': 'web-1',
+    'host.ip': '10.0.0.8',
+    'host.os': 'Linux',
+    'object.type': 'host',
+    'object.id': 'host-1',
+    'object.name': 'web-1',
+  });
+
+  const applicationPoint = sceneLinkPoint({
+    application: { id: 'app-1', name: '门户' },
+  });
+  assert.equal(applicationPoint.fields?.['application.id'], 'app-1');
+  assert.equal(applicationPoint.fields?.['application.name'], '门户');
+  assert.equal(applicationPoint.fields?.['object.type'], 'application');
+  assert.equal(applicationPoint.fields?.['system.id'], undefined);
+
+  const systemPoint = sceneLinkPoint({
+    system: { id: 'sys-1', name: '门户系统' },
+  });
+  assert.equal(systemPoint.fields?.['system.id'], 'sys-1');
+  assert.equal(systemPoint.fields?.['system.name'], '门户系统');
+  assert.equal(systemPoint.fields?.['object.type'], 'system');
+  assert.equal(systemPoint.fields?.['object.id'], 'sys-1');
 });
 
 test('table action column title stays fixed while the cell uses the interaction name', () => {
@@ -741,6 +916,44 @@ test('interaction dropdown group names exist in Chinese and English', () => {
   assert.equal(en.interactionGroupFilter, 'Filter conditions');
   assert.equal(en.interactionGroupValue, 'Data points');
   assert.equal(en.interactionGroupField, 'Data fields');
+  assert.equal(zh.interactionGroupCabinet, '机柜');
+  assert.equal(en.interactionGroupCabinet, 'Cabinet');
+  assert.equal(zh.interactionGroupDevice, '设备');
+  assert.equal(en.interactionGroupDevice, 'Device');
+  assert.equal(zh.interactionGroupSystem, '应用系统');
+  assert.equal(en.interactionGroupSystem, 'Application system');
+  assert.equal(zh.interactionGroupHost, '主机');
+  assert.equal(en.interactionGroupHost, 'Host');
+  assert.equal(zh.interactionGroupApplication, '应用');
+  assert.equal(en.interactionGroupApplication, 'Application');
+  assert.equal(zh.interactionGroupObject, '对象');
+  assert.equal(en.interactionGroupObject, 'Object');
+  assert.equal(zh.interactionCabinetLocation, '机柜位置');
+  assert.equal(en.interactionCabinetLocation, 'Cabinet location');
+  assert.equal(zh.interactionCabinetType, '机柜类型');
+  assert.equal(en.interactionCabinetType, 'Cabinet type');
+  assert.equal(zh.interactionCabinetState, '机柜状态');
+  assert.equal(en.interactionCabinetState, 'Cabinet status');
+  assert.equal(zh.interactionDeviceModel, '设备模型');
+  assert.equal(en.interactionDeviceModel, 'Device model');
+  assert.equal(zh.interactionDeviceUStart, '起始 U 位');
+  assert.equal(en.interactionDeviceUStart, 'Start U');
+  assert.equal(zh.interactionDeviceStatus, '设备状态');
+  assert.equal(en.interactionDeviceStatus, 'Device status');
+  assert.equal(zh.interactionHostIp, '主机 IP');
+  assert.equal(en.interactionHostIp, 'Host IP');
+  assert.equal(zh.interactionHostOs, '操作系统');
+  assert.equal(en.interactionHostOs, 'Operating system');
+  assert.equal(zh.interactionApplicationId, '应用 ID');
+  assert.equal(en.interactionApplicationId, 'Application ID');
+  assert.equal(zh.interactionApplicationName, '应用名称');
+  assert.equal(en.interactionApplicationName, 'Application name');
+  assert.equal(zh.interactionObjectType, '对象类型');
+  assert.equal(en.interactionObjectType, 'Object type');
+  assert.equal(zh.interactionObjectId, '对象 ID');
+  assert.equal(en.interactionObjectId, 'Object ID');
+  assert.equal(zh.interactionObjectName, '对象名称');
+  assert.equal(en.interactionObjectName, 'Object name');
   assert.equal(zh.interactionPointCategory, '分类');
   assert.equal(en.interactionPointCategory, 'Category');
   assert.equal(zh.interactionSeriesName, '系列');

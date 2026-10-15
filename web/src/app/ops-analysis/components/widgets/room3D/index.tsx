@@ -104,7 +104,7 @@ const Room3D: React.FC<Room3DProps> = ({
   } | null>(null);
   const linkMenuRef = useRef<(hit: {
     rack: Room3DRack;
-    device?: { device_id: string; device_name: string };
+    device?: Room3DRenderableDevice;
     x: number;
     y: number;
   } | null) => void>(() => undefined);
@@ -117,10 +117,8 @@ const Room3D: React.FC<Room3DProps> = ({
       x: hit.x,
       y: hit.y,
       point: sceneLinkPoint({
-        cabinet: { id: hit.rack.rack_id, name: hit.rack.rack_name },
-        device: hit.device
-          ? { id: hit.device.device_id, name: hit.device.device_name }
-          : undefined,
+        cabinet: hit.rack,
+        device: hit.device,
       }),
     });
   };

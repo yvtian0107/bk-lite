@@ -91,7 +91,8 @@ export default function Application3D({
     x: number;
     y: number;
     system?: { id: string; name: string };
-    host?: { id: string; name: string };
+    host?: { id: string; name: string; ip?: string; os?: string };
+    application?: { id: string; name: string };
   } | null) => void>(() => undefined);
   linkMenuRef.current = (hit) => {
     if (!dataLinkActive || !hit) {
@@ -101,7 +102,11 @@ export default function Application3D({
     setLinkMenu({
       x: hit.x,
       y: hit.y,
-      point: sceneLinkPoint({ system: hit.system, host: hit.host }),
+      point: sceneLinkPoint({
+        system: hit.system,
+        host: hit.host,
+        application: hit.application,
+      }),
     });
   };
   const translateRef = useRef(t);

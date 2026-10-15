@@ -509,7 +509,8 @@ export const createApplication3DScene = (
       x: number;
       y: number;
       system?: { id: string; name: string };
-      host?: { id: string; name: string };
+      host?: { id: string; name: string; ip?: string; os?: string };
+      application?: { id: string; name: string };
     } | null) => void;
   },
 ): Application3DSceneController => {
@@ -2482,15 +2483,21 @@ export const createApplication3DScene = (
     let payload: {
       x: number;
       y: number;
-      host?: { id: string; name: string };
+      host?: { id: string; name: string; ip?: string; os?: string };
       system?: { id: string; name: string };
+      application?: { id: string; name: string };
     } | null = null;
     if (phase === 'architecture') {
       const node = pickArchitectureNode(event.clientX, event.clientY);
       if (node?.kind === 'host') {
-        payload = { ...point, host: { id: node.id, name: node.name } };
+        payload = {
+          ...point,
+          host: { id: node.id, name: node.name, ip: node.ip_addr, os: node.os_name },
+        };
       } else if (node?.kind === 'system') {
         payload = { ...point, system: { id: node.id, name: node.name } };
+      } else if (node?.kind === 'application') {
+        payload = { ...point, application: { id: node.id, name: node.name } };
       }
     } else {
       const applicationId = pickApplicationId(event.clientX, event.clientY);
