@@ -37,7 +37,7 @@ import {
 import { useTranslation } from '@/utils/i18n';
 import OpsAnalysisMetricValue from '@/app/ops-analysis/components/ops-analysis-metric-value';
 import { useWidgetDataLink } from '@/app/ops-analysis/components/interactionTitleIcon';
-import { composeNativeHint } from '@/app/ops-analysis/utils/interactionLinkHint';
+import DataLinkHintTooltip from '@/app/ops-analysis/components/dataLinkHintTooltip';
 import { buildInteractionPoints } from '@/app/ops-analysis/utils/interactionPoints';
 import WidgetState from '@/app/ops-analysis/components/widget-state';
 import { useWidgetViewport } from '@/app/ops-analysis/components/widget-viewport';
@@ -418,11 +418,11 @@ const ComSingle: React.FC<ComSingleProps> = ({
   }
 
   return (
+    <DataLinkHintTooltip hint={hoverHint}>
     <div
       className={`flex h-full w-full flex-col overflow-hidden ${
         usesScreenTheme ? '' : 'px-2'
       } ${dataLinkActive && singlePoint ? 'cursor-pointer' : ''}`}
-      title={hoverHint}
       onClick={dataLinkActive ? () => openPoint(singlePoint) : undefined}
     >
       <div
@@ -475,7 +475,7 @@ const ComSingle: React.FC<ComSingleProps> = ({
                 lineHeight: SINGLE_META_TYPOGRAPHY.descriptionLineHeight,
               }}
             >
-              <div className="line-clamp-2 break-words" title={composeNativeHint(descriptionText, hoverHint)}>
+              <div className="line-clamp-2 break-words" title={descriptionText}>
                 {descriptionText}
               </div>
             </div>
@@ -531,6 +531,7 @@ const ComSingle: React.FC<ComSingleProps> = ({
         ) : null}
       </div>
     </div>
+    </DataLinkHintTooltip>
   );
 };
 

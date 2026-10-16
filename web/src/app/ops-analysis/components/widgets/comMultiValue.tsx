@@ -69,7 +69,6 @@ const ComMultiValue: React.FC<ComMultiValueProps> = ({
           <div
             key={`${index}-${item.label}`}
             className={`flex min-w-0 items-center justify-between gap-3 rounded px-2 py-1 ${dataLinkActive ? 'cursor-pointer' : ''}`}
-            title={hoverHint}
             onClick={dataLinkActive ? () => openPoint(points[index]) : undefined}
           >
             <Tooltip title={hoverHint ? <>{item.label}<br />{hoverHint}</> : item.label}>

@@ -386,7 +386,12 @@ const Room3D: React.FC<Room3DProps> = ({
         hoverState.device,
       ),
   );
-  const showDeviceLinkHint = deviceLinkEligible && !linkMenu;
+  const hoveringSelectedDevice = Boolean(
+    selectedDevice &&
+      hoverState?.device?.device_id === selectedDevice.device.device_id,
+  );
+  const showDeviceLinkHint =
+    deviceLinkEligible && !linkMenu && !hoveringSelectedDevice;
   const showRackHoverTooltip = Boolean(
     hoverState &&
       !selectedDevice &&
@@ -789,6 +794,14 @@ const Room3D: React.FC<Room3DProps> = ({
               </React.Fragment>
             ))}
           </div>
+          {shouldShowRoom3DDeviceLinkHint(
+            interactionSurface,
+            dataLink,
+            selectedDevice.rack,
+            selectedDevice.device,
+          ) ? (
+            <div className={styles.tooltipHint}>{contextHint}</div>
+            ) : null}
         </div>
       )}
     </div>
