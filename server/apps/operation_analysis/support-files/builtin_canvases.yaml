@@ -223,11 +223,11 @@ dashboards:
       selectedFields:
       - model_coverage_rate
       thresholdColors:
-      - color: '#fd666d'
-        value: '70'
+      - color: '#67a567'
+        value: '90'
       - color: '#EAB839'
-        value: '30'
-      - color: '#366CE4'
+        value: '70'
+      - color: '#fd666d'
         value: '0'
   - h: 3
     w: 2
@@ -243,7 +243,7 @@ dashboards:
       interaction:
         kind: title
         name: 查看采集
-        url: '/cmdb/assetManage/autoDiscovery'
+        url: '/cmdb/assetManage/autoDiscovery/collection?view=tasks'
         openMode: newTab
       selectedFields:
       - task_count
@@ -265,11 +265,6 @@ dashboards:
     valueConfig:
       chartType: single
       dataSource: CMDB采集健康统计::cmdb/get_cmdb_collect_statistics
-      interaction:
-        kind: title
-        name: 查看采集
-        url: '/cmdb/assetManage/autoDiscovery'
-        openMode: newTab
       selectedFields:
       - interval_task_count
       thresholdColors:
@@ -290,11 +285,6 @@ dashboards:
     valueConfig:
       chartType: single
       dataSource: CMDB采集健康统计::cmdb/get_cmdb_collect_statistics
-      interaction:
-        kind: title
-        name: 查看采集
-        url: '/cmdb/assetManage/autoDiscovery'
-        openMode: newTab
       selectedFields:
       - success_count
       thresholdColors:
@@ -316,11 +306,6 @@ dashboards:
     valueConfig:
       chartType: single
       dataSource: CMDB采集健康统计::cmdb/get_cmdb_collect_statistics
-      interaction:
-        kind: title
-        name: 查看采集
-        url: '/cmdb/assetManage/autoDiscovery'
-        openMode: newTab
       selectedFields:
       - running_count
       thresholdColors:
@@ -342,11 +327,6 @@ dashboards:
     valueConfig:
       chartType: single
       dataSource: CMDB采集健康统计::cmdb/get_cmdb_collect_statistics
-      interaction:
-        kind: title
-        name: 查看采集
-        url: '/cmdb/assetManage/autoDiscovery'
-        openMode: newTab
       selectedFields:
       - timeout_count
       thresholdColors:
@@ -368,11 +348,6 @@ dashboards:
     valueConfig:
       chartType: single
       dataSource: CMDB采集健康统计::cmdb/get_cmdb_collect_statistics
-      interaction:
-        kind: title
-        name: 查看采集
-        url: '/cmdb/assetManage/autoDiscovery'
-        openMode: newTab
       selectedFields:
       - never_run_count
       thresholdColors:
@@ -492,11 +467,6 @@ dashboards:
     valueConfig:
       chartType: single
       dataSource: 告警期间统计::alert/get_alert_period_statistics
-      interaction:
-        kind: title
-        name: 查看事故
-        url: '/alarm/incidents'
-        openMode: newTab
       filterBindings:
         time__timeRange: true
       selectedFields:
@@ -715,11 +685,6 @@ dashboards:
       compare: false
       chartType: single
       dataSource: 告警源总数/启用率/活跃数::alert/get_alert_source_statistics
-      interaction:
-        kind: title
-        name: 查看告警源
-        url: '/alarm/integration'
-        openMode: newTab
       selectedFields:
       - enabled_count
       thresholdColors:
@@ -741,11 +706,6 @@ dashboards:
       compare: false
       chartType: single
       dataSource: 告警源总数/启用率/活跃数::alert/get_alert_source_statistics
-      interaction:
-        kind: title
-        name: 查看告警源
-        url: '/alarm/integration'
-        openMode: newTab
       filterBindings:
         time__timeRange: true
       selectedFields:
@@ -770,19 +730,14 @@ dashboards:
       compare: false
       chartType: single
       dataSource: 告警源总数/启用率/活跃数::alert/get_alert_source_statistics
-      interaction:
-        kind: title
-        name: 查看告警源
-        url: '/alarm/integration'
-        openMode: newTab
       selectedFields:
       - enabled_rate
       thresholdColors:
-      - color: '#fd666d'
-        value: '200'
+      - color: '#67a567'
+        value: '90'
       - color: '#EAB839'
-        value: '100'
-      - color: '#366CE4'
+        value: '70'
+      - color: '#fd666d'
         value: '0'
   - h: 6
     w: 6
@@ -933,11 +888,11 @@ dashboards:
       selectedFields:
       - success_rate
       thresholdColors:
-      - color: '#fd666d'
-        value: '70'
-      - color: '#EAB839'
-        value: '30'
       - color: '#67a567'
+        value: '90'
+      - color: '#EAB839'
+        value: '70'
+      - color: '#fd666d'
         value: '0'
   - h: 3
     w: 3
@@ -1319,11 +1274,6 @@ dashboards:
     valueConfig:
       chartType: single
       dataSource: 监控中心总览统计::monitor/get_monitor_statistics
-      interaction:
-        kind: title
-        name: 查看告警
-        url: '/monitor/event/alert'
-        openMode: newTab
       selectedFields:
       - alert_current
       thresholdColors:
@@ -1344,11 +1294,6 @@ dashboards:
     valueConfig:
       chartType: single
       dataSource: 监控中心总览统计::monitor/get_monitor_statistics
-      interaction:
-        kind: title
-        name: 查看告警
-        url: '/monitor/event/alert'
-        openMode: newTab
       selectedFields:
       - alert_history
       thresholdColors:
@@ -1369,11 +1314,6 @@ dashboards:
     valueConfig:
       chartType: single
       dataSource: 监控中心总览统计::monitor/get_monitor_statistics
-      interaction:
-        kind: title
-        name: 查看告警
-        url: '/monitor/event/alert'
-        openMode: newTab
       selectedFields:
       - alert_today
       thresholdColors:
@@ -1494,11 +1434,6 @@ dashboards:
     valueConfig:
       chartType: single
       dataSource: 监控中心总览统计::monitor/get_monitor_statistics
-      interaction:
-        kind: title
-        name: 查看告警
-        url: '/monitor/event/alert'
-        openMode: newTab
       selectedFields:
       - alert_recovered
       thresholdColors:
@@ -1519,11 +1454,6 @@ dashboards:
     valueConfig:
       chartType: single
       dataSource: 监控中心总览统计::monitor/get_monitor_statistics
-      interaction:
-        kind: title
-        name: 查看告警
-        url: '/monitor/event/alert'
-        openMode: newTab
       selectedFields:
       - alert_closed
       thresholdColors:
@@ -1544,11 +1474,6 @@ dashboards:
     valueConfig:
       chartType: single
       dataSource: 监控中心总览统计::monitor/get_monitor_statistics
-      interaction:
-        kind: title
-        name: 查看事件
-        url: '/monitor/event/alert'
-        openMode: newTab
       selectedFields:
       - event_total
       thresholdColors:
@@ -1569,11 +1494,6 @@ dashboards:
     valueConfig:
       chartType: single
       dataSource: 监控中心总览统计::monitor/get_monitor_statistics
-      interaction:
-        kind: title
-        name: 查看事件
-        url: '/monitor/event/alert'
-        openMode: newTab
       selectedFields:
       - event_today
       thresholdColors:
@@ -1594,11 +1514,6 @@ dashboards:
     valueConfig:
       chartType: single
       dataSource: 监控中心总览统计::monitor/get_monitor_statistics
-      interaction:
-        kind: title
-        name: 查看告警
-        url: '/monitor/event/alert'
-        openMode: newTab
       selectedFields:
       - alert_snapshot_total
       thresholdColors:
@@ -1637,7 +1552,7 @@ topologies: []
 screens:
 - key: screen::告警运营大屏_内置
   name: 告警运营大屏
-  desc: 集中展示今日告警、当前仍在处理的告警、等级和状态分布，以及持续最久的活跃告警，帮助运维人员查看当前告警态势和处置进展。
+  desc: 今日已产生和今日已关闭按当天统计；待响应、处理中和活跃告警按当前状态统计。新增事故、关联事件、通知成功率和趋势图跟随所选时段。
   other: {}
   view_sets:
     items:
@@ -1761,11 +1676,6 @@ screens:
       kind: text
       zIndex: 5
       content: 新增事故数
-      interaction:
-        kind: title
-        name: 查看事故
-        url: '/alarm/incidents'
-        openMode: newTab
       textStyle:
         align: left
         color: '#EAF3FF'

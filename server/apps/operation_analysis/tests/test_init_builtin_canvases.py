@@ -71,19 +71,16 @@ def _title_link(name, url):
     return {"kind": "title", "name": name, "url": url, "openMode": "newTab"}
 
 
-INCIDENT_TITLE_LINK = _title_link("查看事故", "/alarm/incidents")
 ALERT_SOURCE_TITLE_LINK = _title_link("查看告警源", "/alarm/integration")
-COLLECT_TITLE_LINK = _title_link("查看采集", "/cmdb/assetManage/autoDiscovery")
-MONITOR_ALERT_TITLE_LINK = _title_link("查看告警", "/monitor/event/alert")
-MONITOR_EVENT_TITLE_LINK = _title_link("查看事件", "/monitor/event/alert")
-# group_by=classification 只返回 classification_id，没有 model_id。
-CLASSIFICATION_TOP_LINK = {
-    "kind": "data",
-    "name": "查看分类",
-    "url": "/cmdb/assetData?classificationId=$__data.fields.classification_id$",
-    "openMode": "newTab",
-}
+COLLECT_TASK_TITLE_LINK = _title_link("查看采集", "/cmdb/assetManage/autoDiscovery/collection?view=tasks")
+# 比率按 0–100 计。≥90 绿、≥70 黄、其余红：90 为健康线，70 沿用原高位作为警告线。
+RATE_THRESHOLD_COLORS = [
+    {"color": "#67a567", "value": "90"},
+    {"color": "#EAB839", "value": "70"},
+    {"color": "#fd666d", "value": "0"},
+]
 TREND_TITLE_SUFFIX = "（$time$）"
+ALERT_SCREEN_DESC = "今日已产生和今日已关闭按当天统计；待响应、处理中和活跃告警按当前状态统计。新增事故、关联事件、通知成功率和趋势图跟随所选时段。"
 
 
 def _count_nested_key(value, target_key):
@@ -667,11 +664,6 @@ def test_builtin_canvas_title_links_and_alert_screen_trend_titles():
             "活跃告警总数",
             _title_link("查看告警", "/alarm/alarms?status=pending,processing,unassigned"),
         ),
-        "2bdee93c-3a75-49a6-93b2-bd0d448967b3": (
-            "label-2bdee93c-3a75-49a6-93b2-bd0d448967b3",
-            "新增事故数",
-            INCIDENT_TITLE_LINK,
-        ),
     }
     for widget_id, (label_id, content, link) in screen_title_links.items():
         widget = screen_nodes[widget_id]
@@ -684,6 +676,13 @@ def test_builtin_canvas_title_links_and_alert_screen_trend_titles():
         assert label["interaction"] == link
         assert label["y"] + label["h"] <= widget["y"]
         assert abs(label["x"] - widget["x"]) <= 8
+    incident_widget = screen_nodes["2bdee93c-3a75-49a6-93b2-bd0d448967b3"]
+    incident_label = screen_nodes["label-2bdee93c-3a75-49a6-93b2-bd0d448967b3"]
+    assert incident_widget["title"] == "新增事故数"
+    assert incident_label["content"] == "新增事故数"
+    assert "interaction" not in incident_widget["valueConfig"]
+    assert "interaction" not in incident_label
+    assert _load_builtin_alert_screen()["desc"] == ALERT_SCREEN_DESC
     assert screen_nodes["alert-access-trend"]["title"] == f"告警与关联事件趋势{TREND_TITLE_SUFFIX}"
     assert screen_nodes["label-alert-access-trend"]["content"] == f"告警与关联事件趋势{TREND_TITLE_SUFFIX}"
     assert screen_nodes["alert-level-trend"]["title"] == f"告警等级趋势{TREND_TITLE_SUFFIX}"
@@ -694,33 +693,59 @@ def test_builtin_canvas_title_links_and_alert_screen_trend_titles():
     alert_widgets = _widgets_by_name(
         next(item for item in payload["dashboards"] if item["name"] == "统一告警中心仪表盘")["view_sets"]
     )
-    assert alert_widgets["新增事故数"]["valueConfig"]["interaction"] == INCIDENT_TITLE_LINK
-    for name in ("告警源总数", "已启用告警源数", "活跃告警源数", "告警源启用率"):
+    assert "interaction" not in alert_widgets["新增事故数"]["valueConfig"]
+    assert alert_widgets["告警源总数"]["valueConfig"]["interaction"] == ALERT_SOURCE_TITLE_LINK
+    assert "organization__string" not in (alert_widgets["告警源总数"]["valueConfig"].get("filterBindings") or {})
+    for name in ("已启用告警源数", "活跃告警源数", "告警源启用率"):
         value_config = alert_widgets[name]["valueConfig"]
-        assert value_config["interaction"] == ALERT_SOURCE_TITLE_LINK
+        assert "interaction" not in value_config
         assert "organization__string" not in (value_config.get("filterBindings") or {})
+    assert alert_widgets["告警源启用率"]["valueConfig"]["thresholdColors"] == RATE_THRESHOLD_COLORS
+    assert alert_widgets["通知成功率"]["valueConfig"]["thresholdColors"] == RATE_THRESHOLD_COLORS
+    assert alert_widgets["通知失败率"]["valueConfig"]["thresholdColors"] == [
+        {"color": "#fd666d", "value": "70"},
+        {"color": "#EAB839", "value": "30"},
+        {"color": "#366CE4", "value": "0"},
+    ]
 
     cmdb_widgets = _widgets_by_name(next(item for item in payload["dashboards"] if item["name"] == "CMDB仪表盘")["view_sets"])
-    for name in ("采集任务总数", "周期任务数", "采集成功任务数", "运行中任务数", "超时任务数", "从未执行任务数"):
-        assert cmdb_widgets[name]["valueConfig"]["interaction"] == COLLECT_TITLE_LINK
+    assert cmdb_widgets["采集任务总数"]["valueConfig"]["interaction"] == COLLECT_TASK_TITLE_LINK
+    for name in ("周期任务数", "采集成功任务数", "运行中任务数", "超时任务数", "从未执行任务数"):
+        assert "interaction" not in cmdb_widgets[name]["valueConfig"]
+    assert cmdb_widgets["模型覆盖率"]["valueConfig"]["thresholdColors"] == RATE_THRESHOLD_COLORS
 
     monitor_widgets = _widgets_by_name(
         next(item for item in payload["dashboards"] if item["name"] == "监控中心仪表盘")["view_sets"]
     )
-    for name in ("告警总数", "历史告警总数", "今日新增告警数", "已恢复告警数", "已关闭告警数", "告警快照总数"):
-        assert monitor_widgets[name]["valueConfig"]["interaction"] == MONITOR_ALERT_TITLE_LINK
-    for name in ("监控事件总数", "今日新增事件数"):
-        assert monitor_widgets[name]["valueConfig"]["interaction"] == MONITOR_EVENT_TITLE_LINK
-    for name in ("告警策略总数", "启用策略数", "禁用策略数", "阈值策略数", "无数据策略数", "无数据基准总数"):
+    for name in (
+        "告警总数",
+        "历史告警总数",
+        "今日新增告警数",
+        "已恢复告警数",
+        "已关闭告警数",
+        "告警快照总数",
+        "监控事件总数",
+        "今日新增事件数",
+        "告警策略总数",
+        "启用策略数",
+        "禁用策略数",
+        "阈值策略数",
+        "无数据策略数",
+        "无数据基准总数",
+    ):
         assert "interaction" not in monitor_widgets[name]["valueConfig"]
 
     weopsx = yaml.safe_load(WEOPSX_DASHBOARD_PATH.read_text(encoding="utf-8"))
-    class_top = _widgets_by_name(next(item for item in weopsx["dashboards"] if item["name"] == "WeOpsX 平台使用")["view_sets"])[
-        "分类实例 TOP"
-    ]
-    assert class_top["valueConfig"]["interaction"] == CLASSIFICATION_TOP_LINK
+    weopsx_widgets = _widgets_by_name(next(item for item in weopsx["dashboards"] if item["name"] == "WeOpsX 平台使用")["view_sets"])
+    class_top = weopsx_widgets["分类实例 TOP"]
+    assert "interaction" not in class_top["valueConfig"]
     group_by = next(param for param in class_top["valueConfig"]["dataSourceParams"] if param["name"] == "group_by")
     assert group_by["value"] == "classification"
+    assert weopsx_widgets["采集覆盖率"]["valueConfig"]["thresholdColors"] == [
+        {"color": "#16a34a", "value": "90"},
+        {"color": "#d97706", "value": "70"},
+        {"color": "#dc2626", "value": "0"},
+    ]
 
     for language, titles in {
         "zh-Hans": {
@@ -733,9 +758,19 @@ def test_builtin_canvas_title_links_and_alert_screen_trend_titles():
         },
     }.items():
         catalog = yaml.safe_load((LANGUAGE_DIR / f"{language}.yaml").read_text(encoding="utf-8"))
-        widgets = catalog["screens"]["screen::告警运营大屏_内置"]["widgets"]
+        screen_copy = catalog["screens"]["screen::告警运营大屏_内置"]
+        widgets = screen_copy["widgets"]
         for widget_id, title in titles.items():
             assert widgets[widget_id]["title"] == title
+        expected_desc = {
+            "zh-Hans": ALERT_SCREEN_DESC,
+            "en": (
+                "Created Today and Closed Today use the calendar day. "
+                "Pending, processing, and active alerts use the current status. "
+                "New incidents, linked events, notification success, and trend charts follow the selected time range."
+            ),
+        }[language]
+        assert screen_copy["desc"] == expected_desc
 
 
 @pytest.mark.unit

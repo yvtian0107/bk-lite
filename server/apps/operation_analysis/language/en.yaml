@@ -631,7 +631,7 @@ dashboards:
 screens:
   "screen::告警运营大屏_内置":
     name: Alert Operations Screen
-    desc: Shows today's alerts, alerts still being handled, the severity and status mix, and the active alerts that have lasted the longest.
+    desc: Created Today and Closed Today use the calendar day. Pending, processing, and active alerts use the current status. New incidents, linked events, notification success, and trend charts follow the selected time range.
     decorations:
       title: Alert Operations Screen
     widgets:

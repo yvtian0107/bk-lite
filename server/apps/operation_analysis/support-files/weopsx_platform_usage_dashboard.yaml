@@ -333,11 +333,11 @@ dashboards:
           selectedFields:
           - collect_coverage_rate
           thresholdColors:
-          - color: '#dc2626'
-            value: '70'
+          - color: '#16a34a'
+            value: '90'
           - color: '#d97706'
-            value: '30'
-          - color: '#2563eb'
+            value: '70'
+          - color: '#dc2626'
             value: '0'
           dataSourceParams:
           - name: organization
@@ -358,11 +358,6 @@ dashboards:
         valueConfig:
           chartType: topN
           dataSource: CMDB模型实例TOPN::cmdb/get_cmdb_model_instance_top
-          interaction:
-            kind: data
-            name: 查看分类
-            url: '/cmdb/assetData?classificationId=$__data.fields.classification_id$'
-            openMode: newTab
           filterBindings:
             organization__string: true
           topNLabelField: classification
