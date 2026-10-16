@@ -891,6 +891,7 @@
     "interactionLinkTypeTitleTip": "标题链接：标题旁显示图标",
     "interactionLinkTypeDataTip": "数据链接：点击数据点、柱、扇区或数字打开",
     "interactionTitleOnlyTip": "该组件仅支持标题链接，点击标题旁图标打开",
+    "interactionTextTitleTip": "标题链接：文本后显示图标",
     "interactionTitleLink": "标题链接",
     "interactionTitleLinkBareDisabled": "无边框样式不显示标题，无法使用标题链接",
     "interactionTitleLinkBareWarning": "当前为无边框样式，标题链接不会显示，切换为标准样式后生效",

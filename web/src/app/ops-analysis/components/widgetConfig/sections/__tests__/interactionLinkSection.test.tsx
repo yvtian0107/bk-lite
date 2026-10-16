@@ -283,4 +283,49 @@ describe('InteractionLinkSection', () => {
     expect((screen.getByPlaceholderText('输入 URL，键入 $ 插入变量') as HTMLInputElement).value).toBe('/ops');
     expect(formRef.current?.getFieldValue(['interaction', 'url'])).toBe('/ops');
   });
+
+  it('文本项只保留标题链接，选无会清空名称和 URL', async () => {
+    const user = userEvent.setup();
+    const formRef = createRef<FormInstance>();
+    render(
+      <ConfigProvider theme={{ token: { motion: false } }}>
+        <Form
+          ref={formRef}
+          layout="vertical"
+          initialValues={{
+            interaction: { kind: 'title', name: '详情', url: '/ops', openMode: 'newTab' },
+          }}
+        >
+          <InteractionLinkSection
+            t={translate}
+            definitions={[]}
+            rawData={null}
+            besideText
+            clearOnNone
+          />
+          <KindValue />
+        </Form>
+      </ConfigProvider>,
+    );
+
+    expect(screen.queryByRole('radio', { name: '数据链接' })).toBeNull();
+    await user.hover(screen.getByRole('img', { name: 'question-circle' }));
+    expect(await screen.findByText('标题链接：文本后显示图标')).toBeTruthy();
+    expect(screen.queryByText('该组件仅支持标题链接，点击标题旁图标打开')).toBeNull();
+
+    await user.click(screen.getByText('无'));
+    await waitFor(() => {
+      expect(screen.getByTestId('kind').textContent).toBe('none');
+    });
+    expect(formRef.current?.getFieldValue(['interaction'])).toEqual({
+      kind: 'none',
+      name: '',
+      url: '',
+      openMode: 'sameTab',
+    });
+
+    await user.click(screen.getByText('标题链接'));
+    expect((await screen.findByPlaceholderText('输入 URL，键入 $ 插入变量') as HTMLInputElement).value).toBe('');
+    expect((screen.getByPlaceholderText('例如：查看详情') as HTMLInputElement).value).toBe('');
+  });
 });
