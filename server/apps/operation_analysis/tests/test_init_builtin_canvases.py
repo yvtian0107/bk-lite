@@ -615,13 +615,8 @@ def test_builtin_canvas_data_links_and_alert_screen_drops_organization_filter():
     assert model_table["valueConfig"]["interaction"] == CMDB_MODEL_TABLE_LINK
 
     room3d = next(item for item in _load_builtin_room3d_screen()["view_sets"]["items"] if item["id"] == "builtin-room3d-main")
-    application3d = next(
-        item
-        for item in payload["screens"]
-        if item["key"] == "screen::3D应用大屏_内置"
-        for child in item["view_sets"]["items"]
-        if child["id"] == "builtin-application3d-main"
-    )
+    application_screen = next(item for item in payload["screens"] if item["key"] == "screen::3D应用大屏_内置")
+    application3d = next(item for item in application_screen["view_sets"]["items"] if item["id"] == "builtin-application3d-main")
     assert room3d["valueConfig"]["interaction"] == SCENE_CMDB_DETAIL_LINK
     assert application3d["valueConfig"]["interaction"] == SCENE_CMDB_DETAIL_LINK
 
