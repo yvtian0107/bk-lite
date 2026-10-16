@@ -77,6 +77,25 @@ describe('wrapDataLinkTooltipFormatter', () => {
     })).toBeUndefined();
   });
 
+  it('skips the footer when the shared can-open check rejects the column', () => {
+    const formatter = () => base();
+    const hidden = wrapDataLinkTooltipFormatter(formatter, {
+      ...options,
+      surface: 'view',
+      link: { kind: 'data' },
+      includeFooter: () => false,
+    });
+    expect(hidden?.({})).toBe(base());
+
+    const shown = wrapDataLinkTooltipFormatter(formatter, {
+      ...options,
+      surface: 'view',
+      link: { kind: 'data' },
+      includeFooter: () => true,
+    });
+    expect(String(shown?.({}))).toContain(footer);
+  });
+
   it('keeps an empty custom formatter empty', () => {
     const wrapped = wrapDataLinkTooltipFormatter(() => '', {
       ...options,

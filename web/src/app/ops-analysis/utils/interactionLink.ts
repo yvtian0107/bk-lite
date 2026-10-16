@@ -379,6 +379,23 @@ interface ParsedInteractionToken {
   end: number;
 }
 
+export const listInteractionTemplateBodies = (text: string): string[] => {
+  if (!text) return [];
+  const bodies: string[] = [];
+  for (let cursor = 0; cursor < text.length; cursor += 1) {
+    if (text[cursor] === '\\' && text[cursor + 1] === '$') {
+      cursor += 1;
+      continue;
+    }
+    if (text[cursor] !== '$') continue;
+    const token = readInteractionToken(text, cursor);
+    if (!token) continue;
+    bodies.push(token.body);
+    cursor = token.end - 1;
+  }
+  return bodies;
+};
+
 const readInteractionToken = (
   text: string,
   start: number,

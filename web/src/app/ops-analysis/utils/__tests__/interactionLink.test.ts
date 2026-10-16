@@ -4,7 +4,8 @@ import test from 'node:test';
 
 import type { UnifiedFilterDefinition } from '@/app/ops-analysis/types/dashBoard';
 import { ChartDataTransformer } from '@/app/ops-analysis/utils/chartDataTransform';
-import { buildInteractionPoints, cardListLinkPoints } from '@/app/ops-analysis/utils/interactionPoints';
+import { buildInteractionPoints, cardListLinkPoints, topNLinkPoints } from '@/app/ops-analysis/utils/interactionPoints';
+import { buildTopNItems } from '@/app/ops-analysis/utils/topNData';
 import { parseCardListItems, DEFAULT_CARD_LIST_MAX_ITEMS } from '@/app/ops-analysis/utils/cardList';
 import {
   interactionActionColumnTitle,
@@ -492,12 +493,22 @@ test('chart clicks expose the fields that exist on each widget', () => {
   });
   assert.equal(gauge[0]?.numeric, 40);
 
-  const topN = buildInteractionPoints('topN', [
+  const topNRows = [
     { name: 'a', value: 3 },
-  ], { topNLabelField: 'name', topNValueField: 'value' });
+    { name: '  ', value: 9 },
+    { name: 'b', value: '0' },
+  ];
+  const topNConfig = { topNLabelField: 'name', topNValueField: 'value' };
+  const topNItems = buildTopNItems(topNRows, 'name', 'value');
+  const topN = buildInteractionPoints('topN', topNRows, topNConfig);
+  assert.deepEqual(topNItems.map((item) => item.name), ['a', 'b']);
+  assert.deepEqual(topN, topNLinkPoints(topNItems, 'value'));
   assert.equal(topN[0]?.seriesName, 'a');
   assert.equal(topN[0]?.numeric, 3);
+  assert.equal(topN[0]?.raw, 3);
   assert.equal(topN[0]?.fields?.name, 'a');
+  assert.equal(topN[1]?.numeric, 0);
+  assert.equal(topN[1]?.raw, '0');
 
   const pie = buildInteractionPoints('pie', [
     { name: 'up', value: 2 },

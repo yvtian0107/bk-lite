@@ -101,6 +101,8 @@ export interface DataLinkTooltipHintOptions {
   footerText: string;
   theme?: DataLinkHintTheme;
   fallback?: (...args: any[]) => unknown;
+  /** 与点击共用：这一列不能跳时不追加提示。 */
+  includeFooter?: (...args: any[]) => boolean;
 }
 
 export const wrapDataLinkTooltipFormatter = <T extends (...args: any[]) => unknown>(
@@ -112,6 +114,7 @@ export const wrapDataLinkTooltipFormatter = <T extends (...args: any[]) => unkno
   }
   const wrapped = (...args: Parameters<T>) => {
     const raw = formatter ? formatter(...args) : options.fallback?.(...args);
+    if (options.includeFooter && !options.includeFooter(...args)) return raw;
     return appendDataLinkTooltipFooter(raw, options.footerText, options.theme);
   };
   return wrapped as T;

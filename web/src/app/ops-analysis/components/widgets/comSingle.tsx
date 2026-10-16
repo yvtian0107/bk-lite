@@ -418,7 +418,7 @@ const ComSingle: React.FC<ComSingleProps> = ({
   }
 
   return (
-    <DataLinkHintTooltip hint={hoverHint}>
+    <DataLinkHintTooltip hint={singlePoint ? hoverHint : undefined}>
     <div
       className={`flex h-full w-full flex-col overflow-hidden ${
         usesScreenTheme ? '' : 'px-2'

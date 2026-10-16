@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo } from 'react';
 import { useWidgetDataLink } from '@/app/ops-analysis/components/interactionTitleIcon';
 import DataLinkHintTooltip from '@/app/ops-analysis/components/dataLinkHintTooltip';
-import { buildInteractionPoints } from '@/app/ops-analysis/utils/interactionPoints';
+import { topNLinkPoints } from '@/app/ops-analysis/utils/interactionPoints';
 import { Spin } from 'antd';
 import WidgetState from '@/app/ops-analysis/components/widget-state';
 import {
@@ -91,8 +91,8 @@ const TopN: React.FC<TopNProps> = ({
   const items = buildTopNItems(rawData, labelField, valueField);
   const { active: dataLinkActive, openPoint, hoverHint } = useWidgetDataLink(config);
   const points = useMemo(
-    () => buildInteractionPoints('topN', rawData, config),
-    [config, rawData],
+    () => topNLinkPoints(items, valueField),
+    [items, valueField],
   );
   const maxValue = resolveTopNMaxValue(items);
   const isDataReady = items.length > 0;

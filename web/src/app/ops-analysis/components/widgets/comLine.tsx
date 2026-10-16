@@ -3,11 +3,18 @@ import ReactEcharts from 'echarts-for-react';
 import { Spin } from 'antd';
 import { randomColorForLegend } from '@/app/ops-analysis/utils/randomColorForChart';
 import { ChartDataTransformer } from '@/app/ops-analysis/utils/chartDataTransform';
-import { withChartLinkPoints, type ChartClickParams } from '@/app/ops-analysis/utils/interactionLink';
+import { withChartLinkPoints } from '@/app/ops-analysis/utils/interactionLink';
 import {
   resolveDataLinkTooltipTheme,
   wrapDataLinkTooltipFormatter,
 } from '@/app/ops-analysis/utils/interactionLinkHint';
+import {
+  bindTrendGridClick,
+  resolveTrendGridClick,
+  trendColumnCanOpen,
+  trendPointsFromTooltip,
+  type TrendGridChart,
+} from '@/app/ops-analysis/utils/trendLink';
 import { createDelayedClickScheduler } from '@/app/ops-analysis/utils/interactionBehavior';
 import { useWidgetDataLink } from '@/app/ops-analysis/components/interactionTitleIcon';
 import { useTranslation } from '@/utils/i18n';
@@ -124,7 +131,7 @@ const TrendLine: React.FC<TrendLineProps> = ({
   const yAxisName = getLineBarYAxisName(config);
   const [legendSelected, setLegendSelected] = useState<Record<string, boolean>>({});
   const [zoomRange, setZoomRange] = useState<{ start: number; end: number }>({ start: 0, end: 100 });
-  const { onChartClick, link, surface, chartTooltipHint } = useWidgetDataLink(config);
+  const { openPoint, link, surface, chartTooltipHint } = useWidgetDataLink(config);
   const linkTooltipTheme = resolveDataLinkTooltipTheme(config?.chartThemeMode, themeName);
   const clickSchedulerRef = useRef(createDelayedClickScheduler());
 
@@ -143,6 +150,25 @@ const TrendLine: React.FC<TrendLineProps> = ({
 
   const chartData = transformData(rawData);
   const isDataReady = chartData.categories.length > 0;
+  const openTrendRef = useRef<(offsetX: number, offsetY: number) => void>(() => {});
+  const unbindTrendClickRef = useRef<(() => void) | null>(null);
+  openTrendRef.current = (offsetX, offsetY) => {
+    const chart = chartRef.current?.getEchartsInstance?.() as TrendGridChart | undefined;
+    if (!chart) return;
+    const series = chartData.series
+      ? chartData.series
+      : [{ name: t('topology.treeValueTitle'), points: chartData.points }];
+    openPoint(resolveTrendGridClick({
+      chart,
+      offsetX,
+      offsetY,
+      categoryCount: chartData.categories.length,
+      template: link?.url,
+      axisFields: [config?.dimensionField],
+      series,
+      legendSelected,
+    }));
+  };
 
   useEffect(() => {
     if (!loading) {
@@ -180,11 +206,10 @@ const TrendLine: React.FC<TrendLineProps> = ({
     scheduleActivateDataZoomSelect();
   }, [legendSelected, rawData, zoomRange, isDataReady, scheduleActivateDataZoomSelect]);
 
-  useEffect(() => () => clickSchedulerRef.current.dispose(), []);
-
-  const handleLineClick = useCallback((params: ChartClickParams) => {
-    clickSchedulerRef.current.schedule(() => onChartClick(params));
-  }, [onChartClick]);
+  useEffect(() => () => {
+    clickSchedulerRef.current.dispose();
+    unbindTrendClickRef.current?.();
+  }, []);
 
   const handleDataZoom = useCallback(() => {
     clickSchedulerRef.current.cancel();
@@ -213,7 +238,14 @@ const TrendLine: React.FC<TrendLineProps> = ({
     }
   }, [isZoomed]);
 
-  const handleChartReady = useCallback(() => {
+  const handleChartReady = useCallback((chart: TrendGridChart) => {
+    unbindTrendClickRef.current?.();
+    unbindTrendClickRef.current = null;
+    if (chart?.getZr) {
+      unbindTrendClickRef.current = bindTrendGridClick(chart, (offsetX, offsetY) => {
+        clickSchedulerRef.current.schedule(() => openTrendRef.current(offsetX, offsetY));
+      });
+    }
     if (!isDataReady) return;
     scheduleActivateDataZoomSelect();
   }, [isDataReady, scheduleActivateDataZoomSelect]);
@@ -308,6 +340,11 @@ const TrendLine: React.FC<TrendLineProps> = ({
         link,
         footerText: chartTooltipHint,
         theme: linkTooltipTheme,
+        includeFooter: (params: unknown) => trendColumnCanOpen(
+          link?.url,
+          [config?.dimensionField],
+          trendPointsFromTooltip(params),
+        ),
       }),
     },
     grid: {
@@ -635,7 +672,6 @@ const TrendLine: React.FC<TrendLineProps> = ({
           onEvents={{
             datazoom: handleDataZoom,
             dblclick: handleDblClick,
-            click: handleLineClick,
           }}
         />
       </div>
