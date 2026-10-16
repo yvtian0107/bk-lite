@@ -20,6 +20,7 @@ import {
   shouldShowInteractionEntry,
   type ChartClickParams,
 } from '@/app/ops-analysis/utils/interactionLink';
+import { shouldShowDataLinkHint } from '@/app/ops-analysis/utils/interactionLinkHint';
 
 export const useOpenInteractionLink = (config?: object | null) => {
   const { t } = useTranslation();
@@ -54,8 +55,20 @@ export const useOpenInteractionLink = (config?: object | null) => {
 };
 
 export const useWidgetDataLink = (config?: object | null) => {
+  const { t } = useTranslation();
   const { link, surface, open } = useOpenInteractionLink(config);
   const active = link?.kind === 'data' && surface !== 'share';
+  const showDataLinkHint = shouldShowDataLinkHint(surface, link);
+  const hintName = link?.name?.trim() || t('dashboard.interactionOpen', '打开链接');
+  const chartTooltipHint = showDataLinkHint
+    ? t('dashboard.interactionChartTooltipHint', '{name} ↗ 点击打开', { name: hintName })
+    : '';
+  const hoverHint = showDataLinkHint
+    ? t('dashboard.interactionHoverHint', '点击打开：{name}', { name: hintName })
+    : undefined;
+  const contextHint = showDataLinkHint
+    ? t('dashboard.interactionContextHint', '右键打开链接')
+    : '';
   const openPoint = useCallback((point?: ChartLinkPoint) => {
     if (!active || !point) return;
     open(point);
@@ -63,7 +76,17 @@ export const useWidgetDataLink = (config?: object | null) => {
   const onChartClick = useCallback((params: ChartClickParams) => {
     openPoint(readChartClickPoint(params));
   }, [openPoint]);
-  return { active, link, openPoint, onChartClick, surface };
+  return {
+    active,
+    link,
+    openPoint,
+    onChartClick,
+    surface,
+    showDataLinkHint,
+    chartTooltipHint,
+    hoverHint,
+    contextHint,
+  };
 };
 
 interface InteractionTitleIconProps {

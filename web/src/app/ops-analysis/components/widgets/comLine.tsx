@@ -4,6 +4,10 @@ import { Spin } from 'antd';
 import { randomColorForLegend } from '@/app/ops-analysis/utils/randomColorForChart';
 import { ChartDataTransformer } from '@/app/ops-analysis/utils/chartDataTransform';
 import { withChartLinkPoints, type ChartClickParams } from '@/app/ops-analysis/utils/interactionLink';
+import {
+  resolveDataLinkTooltipTheme,
+  wrapDataLinkTooltipFormatter,
+} from '@/app/ops-analysis/utils/interactionLinkHint';
 import { createDelayedClickScheduler } from '@/app/ops-analysis/utils/interactionBehavior';
 import { useWidgetDataLink } from '@/app/ops-analysis/components/interactionTitleIcon';
 import { useTranslation } from '@/utils/i18n';
@@ -120,7 +124,8 @@ const TrendLine: React.FC<TrendLineProps> = ({
   const yAxisName = getLineBarYAxisName(config);
   const [legendSelected, setLegendSelected] = useState<Record<string, boolean>>({});
   const [zoomRange, setZoomRange] = useState<{ start: number; end: number }>({ start: 0, end: 100 });
-  const { onChartClick } = useWidgetDataLink(config);
+  const { onChartClick, link, surface, chartTooltipHint } = useWidgetDataLink(config);
+  const linkTooltipTheme = resolveDataLinkTooltipTheme(config?.chartThemeMode, themeName);
   const clickSchedulerRef = useRef(createDelayedClickScheduler());
 
   const isZoomed = zoomRange.start !== 0 || zoomRange.end !== 100;
@@ -278,7 +283,7 @@ const TrendLine: React.FC<TrendLineProps> = ({
         fontSize: scaleScreenMetric(12, screenRenderContext),
         color: chartTheme.tooltipTextColor,
       },
-      formatter: function (params: any) {
+      formatter: wrapDataLinkTooltipFormatter(function (params: any) {
         if (!params || params.length === 0) return '';
         const tooltipPaddingY = scaleScreenMetric(4, screenRenderContext);
         const tooltipPaddingX = scaleScreenMetric(8, screenRenderContext);
@@ -298,7 +303,12 @@ const TrendLine: React.FC<TrendLineProps> = ({
 
         content += '</div>';
         return content;
-      },
+      }, {
+        surface,
+        link,
+        footerText: chartTooltipHint,
+        theme: linkTooltipTheme,
+      }),
     },
     grid: {
       top: scaleScreenMetric(yAxisName ? 28 : 18, screenRenderContext),

@@ -18,6 +18,7 @@ import {
   sceneLinkPoint,
   type ChartLinkPoint,
 } from "@/app/ops-analysis/utils/interactionLink";
+import { shouldShowContextLinkHint } from "@/app/ops-analysis/utils/interactionLinkHint";
 import { useRoom3DApi } from "@/app/ops-analysis/api/room3D";
 import { isSceneWidgetAllowedOnSurface } from "@/app/ops-analysis/types/sceneWidgetCapability";
 import type { OpsAnalysisWidgetSurface } from "@/app/ops-analysis/utils/chartTypeSurface";
@@ -97,7 +98,13 @@ const Room3D: React.FC<Room3DProps> = ({
 }) => {
   const { t } = useTranslation();
   const shareMode = useShareMode();
-  const { active: dataLinkActive, link: dataLink, openPoint } = useWidgetDataLink(config);
+  const {
+    active: dataLinkActive,
+    link: dataLink,
+    openPoint,
+    surface: interactionSurface,
+    contextHint,
+  } = useWidgetDataLink(config);
   const [linkMenu, setLinkMenu] = useState<{
     x: number;
     y: number;
@@ -704,6 +711,13 @@ const Room3D: React.FC<Room3DProps> = ({
               </React.Fragment>
             ))}
           </div>
+          {shouldShowContextLinkHint(
+            interactionSurface,
+            dataLink,
+            canOpenRoom3DRackLink(hoverState.rack),
+          ) ? (
+            <div className={styles.tooltipHint}>{contextHint}</div>
+            ) : null}
         </div>
       )}
       {shouldShowRackPanel &&

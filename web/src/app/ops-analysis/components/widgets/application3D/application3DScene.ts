@@ -11,6 +11,7 @@ import type {
 } from '@/app/ops-analysis/types/sceneWidget';
 import type { Application3DPageEffect } from '@/app/ops-analysis/utils/application3DWallConfig';
 import { createRightClickGesture } from '@/app/ops-analysis/utils/interactionBehavior';
+import { application3DHoverTitle } from '@/app/ops-analysis/utils/interactionLinkHint';
 import {
   APPLICATION3D_CAMERA_FOV,
   buildApplication3DLayout,
@@ -512,6 +513,7 @@ export const createApplication3DScene = (
       host?: { id: string; name: string; ip?: string; os?: string; modelId?: string };
       application?: { id: string; name: string; modelId?: string };
     } | null) => void;
+    linkHoverHint?: () => string;
   },
 ): Application3DSceneController => {
   const reducedMotion = prefersReducedMotion();
@@ -2435,7 +2437,9 @@ export const createApplication3DScene = (
           if (!architectureSelectedId) {
             architectureView?.setHoveredNode?.(architectureHoveredId);
           }
-          renderer.domElement.title = hitNode ? hitNode.name : '';
+          renderer.domElement.title = hitNode
+            ? application3DHoverTitle(hitNode.name, hitNode.kind, options.linkHoverHint?.())
+            : '';
           requestRender();
         }
       }
@@ -2453,7 +2457,11 @@ export const createApplication3DScene = (
     hoveredId = next;
     const hovered = next ? visuals.get(next) : undefined;
     renderer.domElement.title = hovered
-      ? formatApplication3DCardTitle(hovered.item.name)
+      ? application3DHoverTitle(
+        formatApplication3DCardTitle(hovered.item.name),
+        'wall',
+        options.linkHoverHint?.(),
+      )
       : '';
     requestRender();
   };

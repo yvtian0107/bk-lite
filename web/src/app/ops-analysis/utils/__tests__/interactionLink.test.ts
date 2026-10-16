@@ -1013,6 +1013,12 @@ test('interaction dropdown group names exist in Chinese and English', () => {
   assert.equal(en.interactionNoneHint, 'No interaction is set. The widget cannot be opened by clicking.');
   assert.equal(zh.interactionActionColumn, '操作');
   assert.equal(en.interactionActionColumn, 'Actions');
+  assert.equal(zh.interactionChartTooltipHint, '{name} ↗ 点击打开');
+  assert.equal(en.interactionChartTooltipHint, '{name} ↗ Click to open');
+  assert.equal(zh.interactionHoverHint, '点击打开：{name}');
+  assert.equal(en.interactionHoverHint, 'Click to open: {name}');
+  assert.equal(zh.interactionContextHint, '右键打开链接');
+  assert.equal(en.interactionContextHint, 'Right-click to open link');
   assert.equal(zh.interactionOpen, '打开链接');
   assert.equal(en.interactionOpen, 'Open link');
   assert.equal(zh.interactionUrlRequired, '请输入 URL');

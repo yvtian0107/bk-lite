@@ -4,6 +4,10 @@ import { Spin } from 'antd';
 import { randomColorForLegend } from '@/app/ops-analysis/utils/randomColorForChart';
 import { ChartDataTransformer } from '@/app/ops-analysis/utils/chartDataTransform';
 import { withChartLinkPoints } from '@/app/ops-analysis/utils/interactionLink';
+import {
+  resolveDataLinkTooltipTheme,
+  wrapDataLinkTooltipFormatter,
+} from '@/app/ops-analysis/utils/interactionLinkHint';
 import { useWidgetDataLink } from '@/app/ops-analysis/components/interactionTitleIcon';
 import { useTranslation } from '@/utils/i18n';
 import {
@@ -57,7 +61,8 @@ const BarChart: React.FC<BarChartProps> = ({
   const widgetScale = getScreenWidgetScale(screenRenderContext);
   const yAxisName = getLineBarYAxisName(config);
   const [legendSelected, setLegendSelected] = useState<Record<string, boolean>>({});
-  const { onChartClick } = useWidgetDataLink(config);
+  const { onChartClick, link, surface, chartTooltipHint } = useWidgetDataLink(config);
+  const linkTooltipTheme = resolveDataLinkTooltipTheme(config?.chartThemeMode, themeName);
 
   const handleLegendChange = useCallback((selected: Record<string, boolean>) => {
     setLegendSelected(selected);
@@ -110,7 +115,7 @@ const BarChart: React.FC<BarChartProps> = ({
         fontSize: scaleScreenMetric(12, screenRenderContext),
         color: chartTheme.tooltipTextColor,
       },
-      formatter: function (params: any) {
+      formatter: wrapDataLinkTooltipFormatter(function (params: any) {
         if (!params || params.length === 0) return '';
         const tooltipPaddingY = scaleScreenMetric(4, screenRenderContext);
         const tooltipPaddingX = scaleScreenMetric(8, screenRenderContext);
@@ -130,7 +135,12 @@ const BarChart: React.FC<BarChartProps> = ({
 
         content += '</div>';
         return content;
-      },
+      }, {
+        surface,
+        link,
+        footerText: chartTooltipHint,
+        theme: linkTooltipTheme,
+      }),
     },
     grid: {
       top: scaleScreenMetric(yAxisName ? 24 : 8, screenRenderContext),

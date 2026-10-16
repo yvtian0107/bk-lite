@@ -25,7 +25,7 @@ const ComCardList: React.FC<ComCardListProps> = ({
   onReady,
 }) => {
   const { t } = useTranslation();
-  const { active: dataLinkActive, openPoint } = useWidgetDataLink(config);
+  const { active: dataLinkActive, openPoint, hoverHint } = useWidgetDataLink(config);
   const cardListConfig = config?.cardList;
   const parsed = parseCardListItems(rawData, {
     ...cardListConfig,
@@ -76,6 +76,7 @@ const ComCardList: React.FC<ComCardListProps> = ({
             <article
               key={`${item.primary}-${index}`}
               className={`flex min-w-0 items-center gap-3 rounded-md border border-(--color-border-2) bg-(--color-bg) px-3 py-2 ${dataLinkActive ? 'cursor-pointer' : ''}`}
+              title={hoverHint}
               onClick={dataLinkActive ? () => openPoint(points[index]) : undefined}
             >
               {item.leading ? (

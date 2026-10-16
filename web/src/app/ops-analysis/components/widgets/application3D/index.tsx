@@ -81,7 +81,14 @@ export default function Application3D({
   instUuid,
 }: Application3DProps) {
   const { t } = useTranslation();
-  const { active: dataLinkActive, link: dataLink, openPoint } = useWidgetDataLink(config);
+  const {
+    active: dataLinkActive,
+    link: dataLink,
+    openPoint,
+    contextHint,
+  } = useWidgetDataLink(config);
+  const linkHintRef = useRef('');
+  linkHintRef.current = contextHint;
   const [linkMenu, setLinkMenu] = useState<{
     x: number;
     y: number;
@@ -251,6 +258,7 @@ export default function Application3D({
           setArchitectureHost(selection);
         },
         onLinkContextMenu: (hit) => linkMenuRef.current(hit),
+        linkHoverHint: () => linkHintRef.current,
       });
       controllerRef.current = controller;
       resizeSceneRef.current = () => controller.resize();
