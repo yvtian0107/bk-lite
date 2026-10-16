@@ -1052,6 +1052,8 @@ test('interaction dropdown group names exist in Chinese and English', () => {
   assert.equal(en.interactionLinkTypeDataTip, 'Data link: click a point, bar, sector, or number to open');
   assert.equal(zh.interactionTitleOnlyTip, '该组件仅支持标题链接，点击标题旁图标打开');
   assert.equal(en.interactionTitleOnlyTip, 'This widget only supports a title link. Click the icon beside the title to open.');
+  assert.equal(zh.interactionTextTitleTip, '标题链接：文本后显示图标');
+  assert.equal(en.interactionTextTitleTip, 'Title link: an icon appears after the text');
   assert.equal(zh.interactionUrlPlaceholder, '输入 URL，键入 $ 插入变量');
   assert.equal(en.interactionUrlPlaceholder, 'Enter a URL, type $ to insert a variable');
   for (const key of [

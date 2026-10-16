@@ -1172,6 +1172,21 @@ const ScreenCanvas: React.FC<ScreenCanvasProps> = ({
           filter: drop-shadow(0 0 calc(6px * var(--screen-widget-ui-scale)) var(--screen-chrome-glow));
         }
 
+        .screen-text-item__title-link {
+          width: 1em;
+          height: 1em;
+          flex-shrink: 0;
+          font-size: 1em;
+          outline: none;
+          box-shadow: none;
+        }
+
+        .screen-text-item__title-link:focus,
+        .screen-text-item__title-link:focus-visible {
+          outline: none;
+          box-shadow: none;
+        }
+
         .screen-widget-frame__body {
           position: relative;
           z-index: 1;
