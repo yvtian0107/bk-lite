@@ -90,9 +90,9 @@ export default function Application3D({
   const linkMenuRef = useRef<(hit: {
     x: number;
     y: number;
-    system?: { id: string; name: string };
-    host?: { id: string; name: string; ip?: string; os?: string };
-    application?: { id: string; name: string };
+    system?: { id: string; name: string; modelId?: string };
+    host?: { id: string; name: string; ip?: string; os?: string; modelId?: string };
+    application?: { id: string; name: string; modelId?: string };
   } | null) => void>(() => undefined);
   linkMenuRef.current = (hit) => {
     if (!dataLinkActive || !hit) {

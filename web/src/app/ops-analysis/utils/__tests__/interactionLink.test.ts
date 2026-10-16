@@ -407,13 +407,14 @@ test('dropdown lists only fields that exist for the chart and the rows', () => {
     deviceGroup: '设备',
     deviceId: '设备 ID',
     deviceName: '设备名称',
-    deviceModel: '设备模型',
+    deviceModel: '模型 ID',
     deviceUStart: '起始 U 位',
     deviceStatus: '设备状态',
     objectGroup: '对象',
     objectType: '对象类型',
     objectId: '对象 ID',
     objectName: '对象名称',
+    objectModelId: '模型 ID',
   };
   const roomTokens = [
     '$__data.fields.cabinet.id$',
@@ -429,6 +430,7 @@ test('dropdown lists only fields that exist for the chart and the rows', () => {
     '$__data.fields.object.type$',
     '$__data.fields.object.id$',
     '$__data.fields.object.name$',
+    '$__data.fields.object.model_id$',
   ];
   const room = listPresentDataVariables('room3D', null, sceneLabels);
   assert.deepEqual(room.map((item) => item.token), roomTokens);
@@ -446,12 +448,13 @@ test('dropdown lists only fields that exist for the chart and the rows', () => {
     ['机柜状态', '机柜', 'text'],
     ['设备 ID', '设备', 'text'],
     ['设备名称', '设备', 'text'],
-    ['设备模型', '设备', 'text'],
+    ['模型 ID', '设备', 'text'],
     ['起始 U 位', '设备', 'number'],
     ['设备状态', '设备', 'text'],
     ['对象类型', '对象', 'text'],
     ['对象 ID', '对象', 'text'],
     ['对象名称', '对象', 'text'],
+    ['模型 ID', '对象', 'text'],
   ]);
   assert.equal(room.some((item) => item.example), false);
 });
@@ -570,6 +573,7 @@ test('chart clicks expose the fields that exist on each widget', () => {
     objectType: '对象类型',
     objectId: '对象 ID',
     objectName: '对象名称',
+    objectModelId: '模型 ID',
   };
   const applicationTokens = [
     '$__data.fields.system.id$',
@@ -583,6 +587,7 @@ test('chart clicks expose the fields that exist on each widget', () => {
     '$__data.fields.object.type$',
     '$__data.fields.object.id$',
     '$__data.fields.object.name$',
+    '$__data.fields.object.model_id$',
   ];
   const systems = listPresentDataVariables('application3D', null, applicationLabels);
   assert.deepEqual(systems.map((item) => item.token), applicationTokens);
@@ -619,17 +624,18 @@ test('scene link points fill the right-clicked object and its related fields', (
   assert.equal(devicePoint.fields?.['cabinet.id'], 'rack-1');
   assert.equal(devicePoint.fields?.['cabinet.name'], 'A01');
   assert.equal(devicePoint.fields?.['cabinet.location'], 'A-1');
-  assert.equal(devicePoint.fields?.['cabinet.type'], '网络柜');
+  assert.equal(devicePoint.fields?.['cabinet.type'], 'network');
   assert.equal(devicePoint.fields?.['cabinet.state'], '1');
   assert.equal(devicePoint.fields?.['device.model_id'], 'model-9');
+  assert.equal(devicePoint.fields?.['object.model_id'], 'model-9');
   assert.equal(devicePoint.fields?.['device.u_start'], 12);
   assert.equal(devicePoint.fields?.['device.status'], 'online');
   assert.equal(
     resolveInteractionUrl(
-      '/room?id=$__data.fields.device.id$&u=$__data.fields.device.u_start$&kind=$__data.fields.object.type$',
+      '/cmdb/assetData/detail/baseInfo?model_id=$__data.fields.object.model_id$&inst_uuid=$__data.fields.object.id$&inst_name=$__data.fields.object.name$',
       { definitions: [], values: {}, point: devicePoint },
     ),
-    '/room?id=dev-1&u=12&kind=device',
+    '/cmdb/assetData/detail/baseInfo?model_id=model-9&inst_uuid=dev-1&inst_name=srv',
   );
 
   const cabinetOnly = sceneLinkPoint({
@@ -637,12 +643,15 @@ test('scene link points fill the right-clicked object and its related fields', (
       rack_id: 'rack-2',
       rack_name: 'B02',
       rack_type: 'server',
+      rack_type_name: '服务器柜',
+      rack_state: '1',
       rack_state_name: '启用',
     },
   });
   assert.equal(cabinetOnly.fields?.['object.type'], 'cabinet');
+  assert.equal(cabinetOnly.fields?.['object.model_id'], 'rack');
   assert.equal(cabinetOnly.fields?.['cabinet.type'], 'server');
-  assert.equal(cabinetOnly.fields?.['cabinet.state'], '启用');
+  assert.equal(cabinetOnly.fields?.['cabinet.state'], '1');
   assert.equal(cabinetOnly.fields?.['device.id'], undefined);
   assert.equal(
     resolveInteractionUrl('$__data.fields.device.model_id$', {
@@ -652,12 +661,24 @@ test('scene link points fill the right-clicked object and its related fields', (
     }),
     '',
   );
+  const displayNameOnly = sceneLinkPoint({
+    cabinet: {
+      rack_id: 'rack-3',
+      rack_name: 'C03',
+      rack_type_name: '网络柜',
+      rack_state_name: '启用',
+    },
+  });
+  assert.equal(displayNameOnly.fields?.['cabinet.type'], undefined);
+  assert.equal(displayNameOnly.fields?.['cabinet.state'], undefined);
+  assert.equal(displayNameOnly.fields?.['object.model_id'], 'rack');
 
   const zeroU = sceneLinkPoint({
     device: { device_id: 'dev-0', device_name: 'edge', rack_u_start: 0 },
   });
   assert.equal(zeroU.fields?.['device.u_start'], 0);
   assert.equal(zeroU.fields?.['object.type'], 'device');
+  assert.equal(zeroU.fields?.['object.model_id'], undefined);
 
   const legacyNames = sceneLinkPoint({
     cabinet: { id: 'c-old', name: '旧机柜' },
@@ -678,7 +699,12 @@ test('scene link points fill the right-clicked object and its related fields', (
     'object.type': 'host',
     'object.id': 'host-1',
     'object.name': 'web-1',
+    'object.model_id': 'host',
   });
+  const customHost = sceneLinkPoint({
+    host: { id: 'host-2', name: 'vm-1', modelId: 'vmware_vm' },
+  });
+  assert.equal(customHost.fields?.['object.model_id'], 'vmware_vm');
 
   const applicationPoint = sceneLinkPoint({
     application: { id: 'app-1', name: '门户' },
@@ -686,7 +712,12 @@ test('scene link points fill the right-clicked object and its related fields', (
   assert.equal(applicationPoint.fields?.['application.id'], 'app-1');
   assert.equal(applicationPoint.fields?.['application.name'], '门户');
   assert.equal(applicationPoint.fields?.['object.type'], 'application');
+  assert.equal(applicationPoint.fields?.['object.model_id'], 'application');
   assert.equal(applicationPoint.fields?.['system.id'], undefined);
+  assert.equal(
+    sceneLinkPoint({ application: { id: 'app-2', name: '订单', model_id: 'custom_app' } }).fields?.['object.model_id'],
+    'custom_app',
+  );
 
   const systemPoint = sceneLinkPoint({
     system: { id: 'sys-1', name: '门户系统' },
@@ -695,6 +726,11 @@ test('scene link points fill the right-clicked object and its related fields', (
   assert.equal(systemPoint.fields?.['system.name'], '门户系统');
   assert.equal(systemPoint.fields?.['object.type'], 'system');
   assert.equal(systemPoint.fields?.['object.id'], 'sys-1');
+  assert.equal(systemPoint.fields?.['object.model_id'], 'system');
+  assert.equal(
+    sceneLinkPoint({ system: { id: 'sys-2', name: '计费', modelId: 'biz_system' } }).fields?.['object.model_id'],
+    'biz_system',
+  );
 });
 
 test('table action column title stays fixed while the cell uses the interaction name', () => {
@@ -934,8 +970,10 @@ test('interaction dropdown group names exist in Chinese and English', () => {
   assert.equal(en.interactionCabinetType, 'Cabinet type');
   assert.equal(zh.interactionCabinetState, '机柜状态');
   assert.equal(en.interactionCabinetState, 'Cabinet status');
-  assert.equal(zh.interactionDeviceModel, '设备模型');
-  assert.equal(en.interactionDeviceModel, 'Device model');
+  assert.equal(zh.interactionModelId, '模型 ID');
+  assert.equal(en.interactionModelId, 'Model ID');
+  assert.equal(zh.interactionDeviceModel, undefined);
+  assert.equal(en.interactionDeviceModel, undefined);
   assert.equal(zh.interactionDeviceUStart, '起始 U 位');
   assert.equal(en.interactionDeviceUStart, 'Start U');
   assert.equal(zh.interactionDeviceStatus, '设备状态');

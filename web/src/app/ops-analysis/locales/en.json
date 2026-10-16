@@ -924,7 +924,7 @@
     "interactionCabinetState": "Cabinet status",
     "interactionDeviceId": "Device ID",
     "interactionDeviceName": "Device name",
-    "interactionDeviceModel": "Device model",
+    "interactionModelId": "Model ID",
     "interactionDeviceUStart": "Start U",
     "interactionDeviceStatus": "Device status",
     "interactionSystemId": "System ID",

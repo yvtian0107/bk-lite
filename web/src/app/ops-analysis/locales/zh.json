@@ -924,7 +924,7 @@
     "interactionCabinetState": "机柜状态",
     "interactionDeviceId": "设备 ID",
     "interactionDeviceName": "设备名称",
-    "interactionDeviceModel": "设备模型",
+    "interactionModelId": "模型 ID",
     "interactionDeviceUStart": "起始 U 位",
     "interactionDeviceStatus": "设备状态",
     "interactionSystemId": "系统 ID",

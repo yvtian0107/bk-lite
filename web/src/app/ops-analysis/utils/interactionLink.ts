@@ -104,6 +104,15 @@ const RESERVED_FIELD_TOKENS = {
   objectType: '__data.fields.object.type',
   objectId: '__data.fields.object.id',
   objectName: '__data.fields.object.name',
+  objectModel: '__data.fields.object.model_id',
+} as const;
+
+/** CMDB model_id。application3D 场景载荷没有该字段时用这些内置模型。 */
+const SCENE_OBJECT_MODEL_ID = {
+  cabinet: 'rack',
+  host: 'host',
+  system: 'system',
+  application: 'application',
 } as const;
 
 export const interactionCapability = (
@@ -837,6 +846,7 @@ interface SceneVariableLabels {
   objectType?: string;
   objectId?: string;
   objectName?: string;
+  objectModelId?: string;
 }
 
 const listSceneVariables = (
@@ -862,6 +872,7 @@ const listSceneVariables = (
     add(RESERVED_FIELD_TOKENS.objectType, labels.objectType, 'object.type', labels.objectGroup, 'object');
     add(RESERVED_FIELD_TOKENS.objectId, labels.objectId, 'object.id', labels.objectGroup, 'object');
     add(RESERVED_FIELD_TOKENS.objectName, labels.objectName, 'object.name', labels.objectGroup, 'object');
+    add(RESERVED_FIELD_TOKENS.objectModel, labels.objectModelId, 'object.model_id', labels.objectGroup, 'object');
   };
   if (chartType === 'room3D') {
     add(RESERVED_FIELD_TOKENS.cabinetId, labels.cabinetId, 'cabinet.id', labels.cabinetGroup, 'cabinet');
@@ -933,7 +944,7 @@ export const sceneLinkPoint = (hit: {
     rack_u_start?: number | null;
     status?: string | null;
   };
-  system?: { id?: string; name?: string };
+  system?: { id?: string; name?: string; model_id?: string | null; modelId?: string | null };
   host?: {
     id?: string;
     name?: string;
@@ -941,8 +952,10 @@ export const sceneLinkPoint = (hit: {
     os?: string | null;
     ip_addr?: string | null;
     os_name?: string | null;
+    model_id?: string | null;
+    modelId?: string | null;
   };
-  application?: { id?: string; name?: string };
+  application?: { id?: string; name?: string; model_id?: string | null; modelId?: string | null };
 }): ChartLinkPoint => {
   const fields: Record<string, unknown> = {};
   const writeText = (key: string, value: string | undefined) => {
@@ -954,16 +967,8 @@ export const sceneLinkPoint = (hit: {
   writeText('cabinet.id', cabinetId);
   writeText('cabinet.name', cabinetName);
   writeText('cabinet.location', firstSceneText(hit.cabinet?.location));
-  writeText('cabinet.type', firstSceneText(
-    hit.cabinet?.rack_type_name,
-    hit.cabinet?.rack_type,
-    hit.cabinet?.type,
-  ));
-  writeText('cabinet.state', firstSceneText(
-    hit.cabinet?.rack_state_name,
-    hit.cabinet?.rack_state,
-    hit.cabinet?.state,
-  ));
+  writeText('cabinet.type', firstSceneText(hit.cabinet?.rack_type, hit.cabinet?.type));
+  writeText('cabinet.state', firstSceneText(hit.cabinet?.rack_state, hit.cabinet?.state));
 
   const deviceId = firstSceneText(hit.device?.device_id, hit.device?.id);
   const deviceName = firstSceneText(hit.device?.device_name, hit.device?.name);
@@ -1006,6 +1011,18 @@ export const sceneLinkPoint = (hit: {
     fields['object.type'] = clicked.type;
     writeText('object.id', clicked.id);
     writeText('object.name', clicked.name);
+    const modelOn = (node?: { model_id?: string | null; modelId?: string | null }) =>
+      firstSceneText(node?.model_id, node?.modelId);
+    const objectModelId = clicked.type === 'device'
+      ? firstSceneText(hit.device?.model_id)
+      : clicked.type === 'cabinet'
+        ? SCENE_OBJECT_MODEL_ID.cabinet
+        : clicked.type === 'host'
+          ? modelOn(hit.host) ?? SCENE_OBJECT_MODEL_ID.host
+          : clicked.type === 'system'
+            ? modelOn(hit.system) ?? SCENE_OBJECT_MODEL_ID.system
+            : modelOn(hit.application) ?? SCENE_OBJECT_MODEL_ID.application;
+    writeText('object.model_id', objectModelId);
   }
   return { fields };
 };

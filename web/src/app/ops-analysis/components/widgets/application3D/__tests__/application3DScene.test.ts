@@ -1404,8 +1404,10 @@ describe('application3D architecture host pick', () => {
       ...architectureAlarms,
       nodes: architectureAlarms.nodes.map((node) => (
         node.id === 'host-alarm'
-          ? { ...node, ip_addr: '10.0.0.8', os_name: 'Linux' }
-          : node
+          ? { ...node, ip_addr: '10.0.0.8', os_name: 'Linux', model_id: 'vmware_vm' }
+          : node.id === 'app-1'
+            ? { ...node, model_id: 'custom_app' }
+            : node
       )),
     };
     const controller = createApplication3DScene(mount, {
@@ -1436,7 +1438,7 @@ describe('application3D architecture host pick', () => {
     rightClick();
     expect(onLinkContextMenu).toHaveBeenCalledTimes(1);
     expect(onLinkContextMenu.mock.calls[0][0]).toMatchObject({
-      host: { id: 'host-alarm', name: 'web-alarm', ip: '10.0.0.8', os: 'Linux' },
+      host: { id: 'host-alarm', name: 'web-alarm', ip: '10.0.0.8', os: 'Linux', modelId: 'vmware_vm' },
     });
     expect(onLinkContextMenu.mock.calls[0][0].system).toBeUndefined();
     expect(onLinkContextMenu.mock.calls[0][0].application).toBeUndefined();
@@ -1455,7 +1457,7 @@ describe('application3D architecture host pick', () => {
     rightClick();
     expect(onLinkContextMenu).toHaveBeenCalledTimes(1);
     expect(onLinkContextMenu.mock.calls[0][0]).toMatchObject({
-      application: { id: 'app-1', name: '门户' },
+      application: { id: 'app-1', name: '门户', modelId: 'custom_app' },
     });
     expect(onLinkContextMenu.mock.calls[0][0].host).toBeUndefined();
     expect(onLinkContextMenu.mock.calls[0][0].system).toBeUndefined();

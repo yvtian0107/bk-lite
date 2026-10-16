@@ -78,7 +78,7 @@ const InteractionLinkSection: React.FC<InteractionLinkSectionProps> = ({
       deviceGroup: t('dashboard.interactionGroupDevice', '设备'),
       deviceId: t('dashboard.interactionDeviceId', '设备 ID'),
       deviceName: t('dashboard.interactionDeviceName', '设备名称'),
-      deviceModel: t('dashboard.interactionDeviceModel', '设备模型'),
+      deviceModel: t('dashboard.interactionModelId', '模型 ID'),
       deviceUStart: t('dashboard.interactionDeviceUStart', '起始 U 位'),
       deviceStatus: t('dashboard.interactionDeviceStatus', '设备状态'),
       systemGroup: t('dashboard.interactionGroupSystem', '应用系统'),
@@ -96,6 +96,7 @@ const InteractionLinkSection: React.FC<InteractionLinkSectionProps> = ({
       objectType: t('dashboard.interactionObjectType', '对象类型'),
       objectId: t('dashboard.interactionObjectId', '对象 ID'),
       objectName: t('dashboard.interactionObjectName', '对象名称'),
+      objectModelId: t('dashboard.interactionModelId', '模型 ID'),
     }, points);
     return listInteractionVariables({
       definitions,
