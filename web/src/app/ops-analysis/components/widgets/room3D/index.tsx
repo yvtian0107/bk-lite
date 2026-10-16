@@ -19,6 +19,7 @@ import {
   type ChartLinkPoint,
 } from "@/app/ops-analysis/utils/interactionLink";
 import { shouldShowContextLinkHint } from "@/app/ops-analysis/utils/interactionLinkHint";
+import { shouldShowRoom3DDeviceLinkHint } from "./room3DLinkHint";
 import { useRoom3DApi } from "@/app/ops-analysis/api/room3D";
 import { isSceneWidgetAllowedOnSurface } from "@/app/ops-analysis/types/sceneWidgetCapability";
 import type { OpsAnalysisWidgetSurface } from "@/app/ops-analysis/utils/chartTypeSurface";
@@ -67,6 +68,8 @@ interface Room3DProps {
 
 interface PointerState {
   rack: Room3DRack;
+  device?: Room3DRenderableDevice;
+  rackTooltip?: boolean;
   x: number;
   y: number;
 }
@@ -374,9 +377,23 @@ const Room3D: React.FC<Room3DProps> = ({
   const selectedConflictRacks = selectedRack?.is_conflict
     ? (selectedRack.conflict_racks ?? [])
     : [];
-  const shouldShowHoverTooltip = Boolean(
-    hoverState && !selectedDevice,
+  const deviceLinkEligible = Boolean(
+    hoverState?.device &&
+      shouldShowRoom3DDeviceLinkHint(
+        interactionSurface,
+        dataLink,
+        hoverState.rack,
+        hoverState.device,
+      ),
   );
+  const showDeviceLinkHint = deviceLinkEligible && !linkMenu;
+  const showRackHoverTooltip = Boolean(
+    hoverState &&
+      !selectedDevice &&
+      !deviceLinkEligible &&
+      hoverState.rackTooltip !== false,
+  );
+  const hoverPopupVisible = showRackHoverTooltip || showDeviceLinkHint;
   const shouldShowRackPanel = Boolean(
     selectedRack?.is_conflict && !selectedDevice,
   );
@@ -435,7 +452,7 @@ const Room3D: React.FC<Room3DProps> = ({
     return fields;
   }, [hoverState?.rack, t]);
   useLayoutEffect(() => {
-    if (!shouldShowHoverTooltip) {
+    if (!hoverPopupVisible) {
       return undefined;
     }
 
@@ -465,7 +482,7 @@ const Room3D: React.FC<Room3DProps> = ({
       resizeObserver.disconnect();
       window.removeEventListener("resize", updateTooltipSize);
     };
-  }, [hoverRackFields, shouldShowHoverTooltip]);
+  }, [hoverPopupVisible, hoverRackFields, hoverState?.device?.device_name]);
   const hoverTooltipStyle = useMemo<React.CSSProperties | undefined>(() => {
     if (!hoverState) {
       return undefined;
@@ -474,8 +491,8 @@ const Room3D: React.FC<Room3DProps> = ({
     const scale = readableOverlayScale;
     const offset = 6 * scale;
     const margin = 8 * scale;
-    const fallbackWidth = 184 * scale;
-    const fallbackHeight = 132 * scale;
+    const fallbackWidth = (showDeviceLinkHint ? 148 : 184) * scale;
+    const fallbackHeight = (showDeviceLinkHint ? 52 : 132) * scale;
     const width = tooltipSize.width || fallbackWidth;
     const height = tooltipSize.height || fallbackHeight;
     const roomNode = roomRef.current;
@@ -512,7 +529,7 @@ const Room3D: React.FC<Room3DProps> = ({
       ),
       top: Math.min(Math.max(preferredTop, minTop), maxTop),
     };
-  }, [hoverState, readableOverlayScale, tooltipSize]);
+  }, [hoverState, readableOverlayScale, showDeviceLinkHint, tooltipSize]);
   const selectedDeviceFields = useMemo(() => {
     if (!selectedDevice) {
       return [];
@@ -692,32 +709,43 @@ const Room3D: React.FC<Room3DProps> = ({
           ))}
         </div>
       )}
-      {shouldShowHoverTooltip && hoverState && (
+      {hoverPopupVisible && hoverState && (
         <div
           ref={tooltipRef}
           className={styles.tooltip}
           style={hoverTooltipStyle}
         >
-          <strong className={styles.tooltipTitle}>
-            {hoverState.rack.is_conflict
-              ? t("dashboard.room3DPositionConflict")
-              : hoverState.rack.rack_name}
-          </strong>
-          <div className={styles.tooltipGrid}>
-            {hoverRackFields.map((field) => (
-              <React.Fragment key={field.label}>
-                <span>{field.label}</span>
-                <strong>{field.value}</strong>
-              </React.Fragment>
-            ))}
-          </div>
-          {shouldShowContextLinkHint(
-            interactionSurface,
-            dataLink,
-            canOpenRoom3DRackLink(hoverState.rack),
-          ) ? (
-            <div className={styles.tooltipHint}>{contextHint}</div>
-            ) : null}
+          {showDeviceLinkHint && hoverState.device ? (
+            <>
+              <strong className={styles.tooltipTitle}>
+                {hoverState.device.device_name}
+              </strong>
+              <div className={styles.tooltipHint}>{contextHint}</div>
+            </>
+          ) : (
+            <>
+              <strong className={styles.tooltipTitle}>
+                {hoverState.rack.is_conflict
+                  ? t("dashboard.room3DPositionConflict")
+                  : hoverState.rack.rack_name}
+              </strong>
+              <div className={styles.tooltipGrid}>
+                {hoverRackFields.map((field) => (
+                  <React.Fragment key={field.label}>
+                    <span>{field.label}</span>
+                    <strong>{field.value}</strong>
+                  </React.Fragment>
+                ))}
+              </div>
+              {shouldShowContextLinkHint(
+                interactionSurface,
+                dataLink,
+                canOpenRoom3DRackLink(hoverState.rack),
+              ) ? (
+                <div className={styles.tooltipHint}>{contextHint}</div>
+                ) : null}
+            </>
+          )}
         </div>
       )}
       {shouldShowRackPanel &&
