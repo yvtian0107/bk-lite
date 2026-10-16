@@ -659,16 +659,32 @@ def test_builtin_canvas_title_links_and_alert_screen_trend_titles():
     payload = yaml.safe_load(BUILTIN_CANVASES_PATH.read_text(encoding="utf-8"))
     screen_nodes = {node["id"]: node for node in _load_builtin_alert_screen()["view_sets"]["items"]}
 
-    assert screen_nodes["alert-active-pending"]["valueConfig"]["interaction"] == _title_link(
-        "查看告警", "/alarm/alarms?status=pending"
-    )
-    assert screen_nodes["alert-kpi-processing"]["valueConfig"]["interaction"] == _title_link(
-        "查看告警", "/alarm/alarms?status=processing"
-    )
-    assert screen_nodes["alert-active-total"]["valueConfig"]["interaction"] == _title_link(
-        "查看告警", "/alarm/alarms?status=pending,processing,unassigned"
-    )
-    assert screen_nodes["2bdee93c-3a75-49a6-93b2-bd0d448967b3"]["valueConfig"]["interaction"] == INCIDENT_TITLE_LINK
+    # 无边框组件不渲染标题图标，标题链接挂在正上方、文案相同的文本项上。
+    screen_title_links = {
+        "alert-active-pending": ("label-alert-active-pending", "待响应", _title_link("查看告警", "/alarm/alarms?status=pending")),
+        "alert-kpi-processing": ("label-alert-kpi-processing", "处理中", _title_link("查看告警", "/alarm/alarms?status=processing")),
+        "alert-active-total": (
+            "label-alert-active-total",
+            "活跃告警总数",
+            _title_link("查看告警", "/alarm/alarms?status=pending,processing,unassigned"),
+        ),
+        "2bdee93c-3a75-49a6-93b2-bd0d448967b3": (
+            "label-2bdee93c-3a75-49a6-93b2-bd0d448967b3",
+            "新增事故数",
+            INCIDENT_TITLE_LINK,
+        ),
+    }
+    for widget_id, (label_id, content, link) in screen_title_links.items():
+        widget = screen_nodes[widget_id]
+        label = screen_nodes[label_id]
+        assert widget["valueConfig"]["appearance"]["frame"] == "bare"
+        assert "interaction" not in widget["valueConfig"]
+        assert widget["title"] == content
+        assert label["kind"] == "text"
+        assert label["content"] == content
+        assert label["interaction"] == link
+        assert label["y"] + label["h"] <= widget["y"]
+        assert abs(label["x"] - widget["x"]) <= 8
     assert screen_nodes["alert-access-trend"]["title"] == f"告警与关联事件趋势{TREND_TITLE_SUFFIX}"
     assert screen_nodes["label-alert-access-trend"]["content"] == f"告警与关联事件趋势{TREND_TITLE_SUFFIX}"
     assert screen_nodes["alert-level-trend"]["title"] == f"告警等级趋势{TREND_TITLE_SUFFIX}"

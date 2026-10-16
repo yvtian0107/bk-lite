@@ -1786,6 +1786,11 @@ screens:
       kind: text
       zIndex: 5
       content: 新增事故数
+      interaction:
+        kind: title
+        name: 查看事故
+        url: '/alarm/incidents'
+        openMode: newTab
       textStyle:
         align: left
         color: '#EAF3FF'
@@ -1807,11 +1812,6 @@ screens:
         appearance:
           frame: bare
         dataSource: '告警期间统计::alert/get_alert_period_statistics'
-        interaction:
-          kind: title
-          name: 查看事故
-          url: '/alarm/incidents'
-          openMode: newTab
         compareMode: percent
         description: ''
         filterBindings:
@@ -1967,6 +1967,11 @@ screens:
       kind: text
       zIndex: 5
       content: 待响应
+      interaction:
+        kind: title
+        name: 查看告警
+        url: '/alarm/alarms?status=pending'
+        openMode: newTab
       textStyle:
         align: left
         color: '#EAF3FF'
@@ -1993,6 +1998,11 @@ screens:
       kind: text
       zIndex: 5
       content: 活跃告警总数
+      interaction:
+        kind: title
+        name: 查看告警
+        url: '/alarm/alarms?status=pending,processing,unassigned'
+        openMode: newTab
       textStyle:
         align: left
         color: '#EAF3FF'
@@ -2045,6 +2055,11 @@ screens:
       kind: text
       zIndex: 5
       content: 处理中
+      interaction:
+        kind: title
+        name: 查看告警
+        url: '/alarm/alarms?status=processing'
+        openMode: newTab
       textStyle:
         align: left
         color: '#EAF3FF'
@@ -2159,11 +2174,6 @@ screens:
         appearance:
           frame: bare
         dataSource: '告警快照统计::alert/get_alert_snapshot_statistics'
-        interaction:
-          kind: title
-          name: 查看告警
-          url: '/alarm/alarms?status=pending'
-          openMode: newTab
         chartThemeMode: screen-dark
         selectedFields:
         - pending_count
@@ -2248,11 +2258,6 @@ screens:
         appearance:
           frame: bare
         dataSource: '告警快照统计::alert/get_alert_snapshot_statistics'
-        interaction:
-          kind: title
-          name: 查看告警
-          url: '/alarm/alarms?status=pending,processing,unassigned'
-          openMode: newTab
         chartThemeMode: screen-dark
         selectedFields:
         - active_count
@@ -2316,11 +2321,6 @@ screens:
         appearance:
           frame: bare
         dataSource: '告警快照统计::alert/get_alert_snapshot_statistics'
-        interaction:
-          kind: title
-          name: 查看告警
-          url: '/alarm/alarms?status=processing'
-          openMode: newTab
         chartThemeMode: screen-dark
         selectedFields:
         - processing_count
