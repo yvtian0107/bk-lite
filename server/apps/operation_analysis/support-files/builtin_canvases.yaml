@@ -1394,11 +1394,6 @@ dashboards:
     valueConfig:
       chartType: single
       dataSource: 监控中心总览统计::monitor/get_monitor_statistics
-      interaction:
-        kind: title
-        name: 查看策略
-        url: '/monitor/event/strategy'
-        openMode: newTab
       selectedFields:
       - policy_total
       thresholdColors:
@@ -1419,11 +1414,6 @@ dashboards:
     valueConfig:
       chartType: single
       dataSource: 监控中心总览统计::monitor/get_monitor_statistics
-      interaction:
-        kind: title
-        name: 查看策略
-        url: '/monitor/event/strategy'
-        openMode: newTab
       selectedFields:
       - policy_enabled
       thresholdColors:
@@ -1444,11 +1434,6 @@ dashboards:
     valueConfig:
       chartType: single
       dataSource: 监控中心总览统计::monitor/get_monitor_statistics
-      interaction:
-        kind: title
-        name: 查看策略
-        url: '/monitor/event/strategy'
-        openMode: newTab
       selectedFields:
       - policy_disabled
       thresholdColors:
@@ -1469,11 +1454,6 @@ dashboards:
     valueConfig:
       chartType: single
       dataSource: 监控中心总览统计::monitor/get_monitor_statistics
-      interaction:
-        kind: title
-        name: 查看策略
-        url: '/monitor/event/strategy'
-        openMode: newTab
       selectedFields:
       - policy_threshold
       thresholdColors:
@@ -1494,11 +1474,6 @@ dashboards:
     valueConfig:
       chartType: single
       dataSource: 监控中心总览统计::monitor/get_monitor_statistics
-      interaction:
-        kind: title
-        name: 查看策略
-        url: '/monitor/event/strategy'
-        openMode: newTab
       selectedFields:
       - policy_no_data
       thresholdColors:

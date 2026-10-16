@@ -76,7 +76,6 @@ ALERT_SOURCE_TITLE_LINK = _title_link("查看告警源", "/alarm/integration")
 COLLECT_TITLE_LINK = _title_link("查看采集", "/cmdb/assetManage/autoDiscovery")
 MONITOR_ALERT_TITLE_LINK = _title_link("查看告警", "/monitor/event/alert")
 MONITOR_EVENT_TITLE_LINK = _title_link("查看事件", "/monitor/event/alert")
-MONITOR_POLICY_TITLE_LINK = _title_link("查看策略", "/monitor/event/strategy")
 # group_by=classification 只返回 classification_id，没有 model_id。
 CLASSIFICATION_TOP_LINK = {
     "kind": "data",
@@ -712,9 +711,8 @@ def test_builtin_canvas_title_links_and_alert_screen_trend_titles():
         assert monitor_widgets[name]["valueConfig"]["interaction"] == MONITOR_ALERT_TITLE_LINK
     for name in ("监控事件总数", "今日新增事件数"):
         assert monitor_widgets[name]["valueConfig"]["interaction"] == MONITOR_EVENT_TITLE_LINK
-    for name in ("告警策略总数", "启用策略数", "禁用策略数", "阈值策略数", "无数据策略数"):
-        assert monitor_widgets[name]["valueConfig"]["interaction"] == MONITOR_POLICY_TITLE_LINK
-    assert "interaction" not in monitor_widgets["无数据基准总数"]["valueConfig"]
+    for name in ("告警策略总数", "启用策略数", "禁用策略数", "阈值策略数", "无数据策略数", "无数据基准总数"):
+        assert "interaction" not in monitor_widgets[name]["valueConfig"]
 
     weopsx = yaml.safe_load(WEOPSX_DASHBOARD_PATH.read_text(encoding="utf-8"))
     class_top = _widgets_by_name(next(item for item in weopsx["dashboards"] if item["name"] == "WeOpsX 平台使用")["view_sets"])[
