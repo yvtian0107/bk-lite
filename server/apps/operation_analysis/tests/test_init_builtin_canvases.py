@@ -34,6 +34,37 @@ def _load_builtin_alert_dashboard():
     return next(dashboard for dashboard in payload["dashboards"] if dashboard["name"] == "统一告警中心仪表盘")
 
 
+ALERT_DATA_LINK = {
+    "kind": "data",
+    "name": "查看告警",
+    "url": "/alarm/alarms?alert_id=$__data.fields.alert_id$",
+    "openMode": "newTab",
+}
+# 资产列表页读取 modelId / classificationId。明细行没有 classification_id。
+CMDB_MODEL_TOP_LINK = {
+    "kind": "data",
+    "name": "查看模型",
+    "url": "/cmdb/assetData?modelId=$__data.fields.model_id$&classificationId=$__data.fields.classification_id$",
+    "openMode": "newTab",
+}
+CMDB_MODEL_TABLE_LINK = {
+    "kind": "data",
+    "name": "查看模型",
+    "url": "/cmdb/assetData?modelId=$__data.fields.model_id$",
+    "openMode": "newTab",
+}
+# 实例详情页读取 model_id / inst_uuid / inst_name。
+SCENE_CMDB_DETAIL_LINK = {
+    "kind": "data",
+    "name": "查看 CMDB 详情",
+    "url": (
+        "/cmdb/assetData/detail/baseInfo?model_id=$__data.fields.object.model_id$"
+        "&inst_uuid=$__data.fields.object.id$&inst_name=$__data.fields.object.name$"
+    ),
+    "openMode": "newTab",
+}
+
+
 def _count_nested_key(value, target_key):
     if isinstance(value, list):
         return sum(_count_nested_key(item, target_key) for item in value)
@@ -182,6 +213,7 @@ def test_builtin_application3d_screen_yaml_contains_only_the_self_fetch_scene_wi
             "valueConfig": {
                 "chartType": "application3D",
                 "sceneWidgetType": "application3D",
+                "interaction": SCENE_CMDB_DETAIL_LINK,
                 "application3DWall": {"autoPageEnabled": True},
                 "appearance": {"frame": "bare"},
             },
@@ -540,6 +572,58 @@ def test_builtin_alert_screen_yaml_uses_page_configurable_nodes_only():
         assert time_param["filterType"] == "filter"
         assert value_config["filterBindings"] == {"time__timeRange": True}
     assert all("conversionFactor" not in node["valueConfig"] for node in widgets)
+
+
+@pytest.mark.unit
+def test_builtin_canvas_data_links_and_alert_screen_drops_organization_filter():
+    payload = yaml.safe_load(BUILTIN_CANVASES_PATH.read_text(encoding="utf-8"))
+    screen = _load_builtin_alert_screen()
+
+    assert screen["view_sets"]["filters"] == [
+        {
+            "id": "time__timeRange",
+            "key": "time",
+            "name": "时间范围",
+            "type": "timeRange",
+            "order": 0,
+            "enabled": True,
+            "defaultValue": {
+                "end": "2026-08-04T00:00:00.000Z",
+                "start": "2026-07-28T00:00:00.000Z",
+                "selectValue": 10080,
+            },
+        }
+    ]
+    assert _count_nested_key(screen, "organization__string") == 0
+    for widget in screen["view_sets"]["items"]:
+        if widget.get("type") != "widget":
+            continue
+        assert "organization__string" not in (widget["valueConfig"].get("filterBindings") or {})
+
+    node_by_id = {node["id"]: node for node in screen["view_sets"]["items"]}
+    assert node_by_id["alert-active-table"]["valueConfig"]["interaction"] == ALERT_DATA_LINK
+    assert node_by_id["alert-duration-top"]["valueConfig"]["interaction"] == ALERT_DATA_LINK
+
+    alert_dashboard = next(item for item in payload["dashboards"] if item["name"] == "统一告警中心仪表盘")
+    duration_table = next(item for item in alert_dashboard["view_sets"] if item["name"] == "活跃告警持续时长 TOP 10")
+    assert duration_table["valueConfig"]["interaction"] == ALERT_DATA_LINK
+
+    cmdb_dashboard = next(item for item in payload["dashboards"] if item["name"] == "CMDB仪表盘")
+    model_top = next(item for item in cmdb_dashboard["view_sets"] if item["name"] == "模型实例 TOP 5")
+    model_table = next(item for item in cmdb_dashboard["view_sets"] if item["name"] == "模型实例明细")
+    assert model_top["valueConfig"]["interaction"] == CMDB_MODEL_TOP_LINK
+    assert model_table["valueConfig"]["interaction"] == CMDB_MODEL_TABLE_LINK
+
+    room3d = next(item for item in _load_builtin_room3d_screen()["view_sets"]["items"] if item["id"] == "builtin-room3d-main")
+    application3d = next(
+        item
+        for item in payload["screens"]
+        if item["key"] == "screen::3D应用大屏_内置"
+        for child in item["view_sets"]["items"]
+        if child["id"] == "builtin-application3d-main"
+    )
+    assert room3d["valueConfig"]["interaction"] == SCENE_CMDB_DETAIL_LINK
+    assert application3d["valueConfig"]["interaction"] == SCENE_CMDB_DETAIL_LINK
 
 
 @pytest.mark.unit
@@ -1245,16 +1329,10 @@ def test_init_builtin_canvases_creates_builtin_alert_screen():
                 "selectValue": 10080,
             },
         },
-        {
-            "id": "organization__string",
-            "key": "organization",
-            "name": "组织",
-            "type": "string",
-            "order": 1,
-            "enabled": True,
-            "defaultValue": "",
-        },
     ]
+    assert _count_nested_key(screen.view_sets, "organization__string") == 0
+    assert node_by_id["alert-active-table"]["valueConfig"]["interaction"] == ALERT_DATA_LINK
+    assert node_by_id["alert-duration-top"]["valueConfig"]["interaction"] == ALERT_DATA_LINK
     period_node_ids = {
         "alert-level-trend",
         "alert-access-trend",
@@ -1342,6 +1420,7 @@ def test_init_builtin_canvases_creates_builtin_alert_screen():
             "valueConfig": {
                 "chartType": "application3D",
                 "sceneWidgetType": "application3D",
+                "interaction": SCENE_CMDB_DETAIL_LINK,
                 "application3DWall": {"autoPageEnabled": True},
                 "appearance": {"frame": "bare"},
             },

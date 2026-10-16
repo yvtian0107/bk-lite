@@ -143,6 +143,11 @@ dashboards:
     valueConfig:
       chartType: table
       dataSource: 模型实例统计::get_model_inst_statistics
+      interaction:
+        kind: data
+        name: 查看模型
+        url: '/cmdb/assetData?modelId=$__data.fields.model_id$'
+        openMode: newTab
       tableConfig:
         columns:
         - key: classification
@@ -359,6 +364,11 @@ dashboards:
     valueConfig:
       chartType: topN
       dataSource: CMDB模型实例TOPN::cmdb/get_cmdb_model_instance_top
+      interaction:
+        kind: data
+        name: 查看模型
+        url: '/cmdb/assetData?modelId=$__data.fields.model_id$&classificationId=$__data.fields.classification_id$'
+        openMode: newTab
       topNLabelField: model
       topNValueField: count
       dataSourceParams:
@@ -931,6 +941,11 @@ dashboards:
     valueConfig:
       chartType: table
       dataSource: 活跃告警 TOP N::get_active_alert_top
+      interaction:
+        kind: data
+        name: 查看告警
+        url: '/alarm/alarms?alert_id=$__data.fields.alert_id$'
+        openMode: newTab
       tableConfig:
         columns:
         - key: alert_id
@@ -1562,6 +1577,11 @@ screens:
       valueConfig:
         name: 活动告警持续时长 TOP10
         chartType: topN
+        interaction:
+          kind: data
+          name: 查看告警
+          url: '/alarm/alarms?alert_id=$__data.fields.alert_id$'
+          openMode: newTab
         appearance:
           frame: bare
         dataSource: '活跃告警 TOP N::get_active_alert_top'
@@ -2015,8 +2035,6 @@ screens:
           frame: bare
         dataSource: '告警快照统计::alert/get_alert_snapshot_statistics'
         chartThemeMode: screen-dark
-        filterBindings:
-          organization__string: true
         selectedFields:
         - pending_count
         thresholdColors:
@@ -2036,6 +2054,11 @@ screens:
         appearance:
           frame: bare
         dataSource: '活跃告警 TOP N::get_active_alert_top'
+        interaction:
+          kind: data
+          name: 查看告警
+          url: '/alarm/alarms?alert_id=$__data.fields.alert_id$'
+          openMode: newTab
         tableConfig:
           columns:
           - key: title
@@ -2096,8 +2119,6 @@ screens:
           frame: bare
         dataSource: '告警快照统计::alert/get_alert_snapshot_statistics'
         chartThemeMode: screen-dark
-        filterBindings:
-          organization__string: true
         selectedFields:
         - active_count
         thresholdColors:
@@ -2161,8 +2182,6 @@ screens:
           frame: bare
         dataSource: '告警快照统计::alert/get_alert_snapshot_statistics'
         chartThemeMode: screen-dark
-        filterBindings:
-          organization__string: true
         selectedFields:
         - processing_count
         thresholdColors:
@@ -2515,13 +2534,6 @@ screens:
         end: '2026-08-04T00:00:00.000Z'
         start: '2026-07-28T00:00:00.000Z'
         selectValue: 10080
-    - id: organization__string
-      key: organization
-      name: 组织
-      type: string
-      order: 1
-      enabled: true
-      defaultValue: ''
     viewport:
       theme: screen-dark
       width: 3840
@@ -3422,6 +3434,11 @@ screens:
         chartType: room3D
         filterBindings:
           server_room_id__string: true
+        interaction:
+          kind: data
+          name: 查看 CMDB 详情
+          url: '/cmdb/assetData/detail/baseInfo?model_id=$__data.fields.object.model_id$&inst_uuid=$__data.fields.object.id$&inst_name=$__data.fields.object.name$'
+          openMode: newTab
         sceneWidgetType: room3D
       w: 1168
       x: 378
@@ -3504,6 +3521,11 @@ screens:
       valueConfig:
         chartType: application3D
         sceneWidgetType: application3D
+        interaction:
+          kind: data
+          name: 查看 CMDB 详情
+          url: '/cmdb/assetData/detail/baseInfo?model_id=$__data.fields.object.model_id$&inst_uuid=$__data.fields.object.id$&inst_name=$__data.fields.object.name$'
+          openMode: newTab
         application3DWall:
           autoPageEnabled: true
         appearance:
