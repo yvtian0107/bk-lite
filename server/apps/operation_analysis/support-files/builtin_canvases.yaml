@@ -240,6 +240,11 @@ dashboards:
     valueConfig:
       chartType: single
       dataSource: CMDB采集健康统计::cmdb/get_cmdb_collect_statistics
+      interaction:
+        kind: title
+        name: 查看采集
+        url: '/cmdb/assetManage/autoDiscovery'
+        openMode: newTab
       selectedFields:
       - task_count
       thresholdColors:
@@ -260,6 +265,11 @@ dashboards:
     valueConfig:
       chartType: single
       dataSource: CMDB采集健康统计::cmdb/get_cmdb_collect_statistics
+      interaction:
+        kind: title
+        name: 查看采集
+        url: '/cmdb/assetManage/autoDiscovery'
+        openMode: newTab
       selectedFields:
       - interval_task_count
       thresholdColors:
@@ -280,6 +290,11 @@ dashboards:
     valueConfig:
       chartType: single
       dataSource: CMDB采集健康统计::cmdb/get_cmdb_collect_statistics
+      interaction:
+        kind: title
+        name: 查看采集
+        url: '/cmdb/assetManage/autoDiscovery'
+        openMode: newTab
       selectedFields:
       - success_count
       thresholdColors:
@@ -301,6 +316,11 @@ dashboards:
     valueConfig:
       chartType: single
       dataSource: CMDB采集健康统计::cmdb/get_cmdb_collect_statistics
+      interaction:
+        kind: title
+        name: 查看采集
+        url: '/cmdb/assetManage/autoDiscovery'
+        openMode: newTab
       selectedFields:
       - running_count
       thresholdColors:
@@ -322,6 +342,11 @@ dashboards:
     valueConfig:
       chartType: single
       dataSource: CMDB采集健康统计::cmdb/get_cmdb_collect_statistics
+      interaction:
+        kind: title
+        name: 查看采集
+        url: '/cmdb/assetManage/autoDiscovery'
+        openMode: newTab
       selectedFields:
       - timeout_count
       thresholdColors:
@@ -343,6 +368,11 @@ dashboards:
     valueConfig:
       chartType: single
       dataSource: CMDB采集健康统计::cmdb/get_cmdb_collect_statistics
+      interaction:
+        kind: title
+        name: 查看采集
+        url: '/cmdb/assetManage/autoDiscovery'
+        openMode: newTab
       selectedFields:
       - never_run_count
       thresholdColors:
@@ -462,6 +492,11 @@ dashboards:
     valueConfig:
       chartType: single
       dataSource: 告警期间统计::alert/get_alert_period_statistics
+      interaction:
+        kind: title
+        name: 查看事故
+        url: '/alarm/incidents'
+        openMode: newTab
       filterBindings:
         time__timeRange: true
       selectedFields:
@@ -654,6 +689,11 @@ dashboards:
       compare: false
       chartType: single
       dataSource: 告警源总数/启用率/活跃数::alert/get_alert_source_statistics
+      interaction:
+        kind: title
+        name: 查看告警源
+        url: '/alarm/integration'
+        openMode: newTab
       selectedFields:
       - total_count
       thresholdColors:
@@ -675,6 +715,11 @@ dashboards:
       compare: false
       chartType: single
       dataSource: 告警源总数/启用率/活跃数::alert/get_alert_source_statistics
+      interaction:
+        kind: title
+        name: 查看告警源
+        url: '/alarm/integration'
+        openMode: newTab
       selectedFields:
       - enabled_count
       thresholdColors:
@@ -696,6 +741,11 @@ dashboards:
       compare: false
       chartType: single
       dataSource: 告警源总数/启用率/活跃数::alert/get_alert_source_statistics
+      interaction:
+        kind: title
+        name: 查看告警源
+        url: '/alarm/integration'
+        openMode: newTab
       filterBindings:
         time__timeRange: true
       selectedFields:
@@ -720,6 +770,11 @@ dashboards:
       compare: false
       chartType: single
       dataSource: 告警源总数/启用率/活跃数::alert/get_alert_source_statistics
+      interaction:
+        kind: title
+        name: 查看告警源
+        url: '/alarm/integration'
+        openMode: newTab
       selectedFields:
       - enabled_rate
       thresholdColors:
@@ -1264,6 +1319,11 @@ dashboards:
     valueConfig:
       chartType: single
       dataSource: 监控中心总览统计::monitor/get_monitor_statistics
+      interaction:
+        kind: title
+        name: 查看告警
+        url: '/monitor/event/alert'
+        openMode: newTab
       selectedFields:
       - alert_current
       thresholdColors:
@@ -1284,6 +1344,11 @@ dashboards:
     valueConfig:
       chartType: single
       dataSource: 监控中心总览统计::monitor/get_monitor_statistics
+      interaction:
+        kind: title
+        name: 查看告警
+        url: '/monitor/event/alert'
+        openMode: newTab
       selectedFields:
       - alert_history
       thresholdColors:
@@ -1304,6 +1369,11 @@ dashboards:
     valueConfig:
       chartType: single
       dataSource: 监控中心总览统计::monitor/get_monitor_statistics
+      interaction:
+        kind: title
+        name: 查看告警
+        url: '/monitor/event/alert'
+        openMode: newTab
       selectedFields:
       - alert_today
       thresholdColors:
@@ -1324,6 +1394,11 @@ dashboards:
     valueConfig:
       chartType: single
       dataSource: 监控中心总览统计::monitor/get_monitor_statistics
+      interaction:
+        kind: title
+        name: 查看策略
+        url: '/monitor/event/strategy'
+        openMode: newTab
       selectedFields:
       - policy_total
       thresholdColors:
@@ -1344,6 +1419,11 @@ dashboards:
     valueConfig:
       chartType: single
       dataSource: 监控中心总览统计::monitor/get_monitor_statistics
+      interaction:
+        kind: title
+        name: 查看策略
+        url: '/monitor/event/strategy'
+        openMode: newTab
       selectedFields:
       - policy_enabled
       thresholdColors:
@@ -1364,6 +1444,11 @@ dashboards:
     valueConfig:
       chartType: single
       dataSource: 监控中心总览统计::monitor/get_monitor_statistics
+      interaction:
+        kind: title
+        name: 查看策略
+        url: '/monitor/event/strategy'
+        openMode: newTab
       selectedFields:
       - policy_disabled
       thresholdColors:
@@ -1384,6 +1469,11 @@ dashboards:
     valueConfig:
       chartType: single
       dataSource: 监控中心总览统计::monitor/get_monitor_statistics
+      interaction:
+        kind: title
+        name: 查看策略
+        url: '/monitor/event/strategy'
+        openMode: newTab
       selectedFields:
       - policy_threshold
       thresholdColors:
@@ -1404,6 +1494,11 @@ dashboards:
     valueConfig:
       chartType: single
       dataSource: 监控中心总览统计::monitor/get_monitor_statistics
+      interaction:
+        kind: title
+        name: 查看策略
+        url: '/monitor/event/strategy'
+        openMode: newTab
       selectedFields:
       - policy_no_data
       thresholdColors:
@@ -1424,6 +1519,11 @@ dashboards:
     valueConfig:
       chartType: single
       dataSource: 监控中心总览统计::monitor/get_monitor_statistics
+      interaction:
+        kind: title
+        name: 查看告警
+        url: '/monitor/event/alert'
+        openMode: newTab
       selectedFields:
       - alert_recovered
       thresholdColors:
@@ -1444,6 +1544,11 @@ dashboards:
     valueConfig:
       chartType: single
       dataSource: 监控中心总览统计::monitor/get_monitor_statistics
+      interaction:
+        kind: title
+        name: 查看告警
+        url: '/monitor/event/alert'
+        openMode: newTab
       selectedFields:
       - alert_closed
       thresholdColors:
@@ -1464,6 +1569,11 @@ dashboards:
     valueConfig:
       chartType: single
       dataSource: 监控中心总览统计::monitor/get_monitor_statistics
+      interaction:
+        kind: title
+        name: 查看事件
+        url: '/monitor/event/alert'
+        openMode: newTab
       selectedFields:
       - event_total
       thresholdColors:
@@ -1484,6 +1594,11 @@ dashboards:
     valueConfig:
       chartType: single
       dataSource: 监控中心总览统计::monitor/get_monitor_statistics
+      interaction:
+        kind: title
+        name: 查看事件
+        url: '/monitor/event/alert'
+        openMode: newTab
       selectedFields:
       - event_today
       thresholdColors:
@@ -1504,6 +1619,11 @@ dashboards:
     valueConfig:
       chartType: single
       dataSource: 监控中心总览统计::monitor/get_monitor_statistics
+      interaction:
+        kind: title
+        name: 查看告警
+        url: '/monitor/event/alert'
+        openMode: newTab
       selectedFields:
       - alert_snapshot_total
       thresholdColors:
@@ -1687,6 +1807,11 @@ screens:
         appearance:
           frame: bare
         dataSource: '告警期间统计::alert/get_alert_period_statistics'
+        interaction:
+          kind: title
+          name: 查看事故
+          url: '/alarm/incidents'
+          openMode: newTab
         compareMode: percent
         description: ''
         filterBindings:
@@ -1828,7 +1953,7 @@ screens:
       id: label-alert-access-trend
       kind: text
       zIndex: 5
-      content: 告警与关联事件趋势
+      content: 告警与关联事件趋势（$time$）
       textStyle:
         align: left
         color: '#EAF3FF'
@@ -1945,7 +2070,7 @@ screens:
       id: label-alert-level-trend
       kind: text
       zIndex: 5
-      content: 告警等级趋势
+      content: 告警等级趋势（$time$）
       textStyle:
         align: left
         color: '#EAF3FF'
@@ -2002,7 +2127,7 @@ screens:
       y: 1084
       id: alert-access-trend
       type: widget
-      title: 告警与关联事件趋势
+      title: 告警与关联事件趋势（$time$）
       zIndex: 8
       chartType: line
       valueConfig:
@@ -2034,6 +2159,11 @@ screens:
         appearance:
           frame: bare
         dataSource: '告警快照统计::alert/get_alert_snapshot_statistics'
+        interaction:
+          kind: title
+          name: 查看告警
+          url: '/alarm/alarms?status=pending'
+          openMode: newTab
         chartThemeMode: screen-dark
         selectedFields:
         - pending_count
@@ -2118,6 +2248,11 @@ screens:
         appearance:
           frame: bare
         dataSource: '告警快照统计::alert/get_alert_snapshot_statistics'
+        interaction:
+          kind: title
+          name: 查看告警
+          url: '/alarm/alarms?status=pending,processing,unassigned'
+          openMode: newTab
         chartThemeMode: screen-dark
         selectedFields:
         - active_count
@@ -2181,6 +2316,11 @@ screens:
         appearance:
           frame: bare
         dataSource: '告警快照统计::alert/get_alert_snapshot_statistics'
+        interaction:
+          kind: title
+          name: 查看告警
+          url: '/alarm/alarms?status=processing'
+          openMode: newTab
         chartThemeMode: screen-dark
         selectedFields:
         - processing_count
@@ -2214,7 +2354,7 @@ screens:
       y: 568
       id: alert-level-trend
       type: widget
-      title: 告警等级趋势
+      title: 告警等级趋势（$time$）
       zIndex: 8
       chartType: bar
       valueConfig:

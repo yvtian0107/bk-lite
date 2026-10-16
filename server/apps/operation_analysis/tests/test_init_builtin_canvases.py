@@ -15,6 +15,8 @@ from apps.operation_analysis.models.datasource_models import DataSourceAPIModel
 from apps.operation_analysis.models.models import Dashboard, Directory, Screen, Topology
 
 BUILTIN_CANVASES_PATH = Path(__file__).resolve().parents[1] / "support-files" / "builtin_canvases.yaml"
+WEOPSX_DASHBOARD_PATH = Path(__file__).resolve().parents[1] / "support-files" / "weopsx_platform_usage_dashboard.yaml"
+LANGUAGE_DIR = Path(__file__).resolve().parents[1] / "language"
 NETWORK_TOPOLOGY_SCREEN_PATH = Path(__file__).resolve().parents[1] / "support-files" / "builtin_network_topology_screen.yaml"
 SOURCE_API_PATH = Path(__file__).resolve().parents[1] / "support-files" / "source_api.json"
 
@@ -63,6 +65,26 @@ SCENE_CMDB_DETAIL_LINK = {
     ),
     "openMode": "newTab",
 }
+
+
+def _title_link(name, url):
+    return {"kind": "title", "name": name, "url": url, "openMode": "newTab"}
+
+
+INCIDENT_TITLE_LINK = _title_link("查看事故", "/alarm/incidents")
+ALERT_SOURCE_TITLE_LINK = _title_link("查看告警源", "/alarm/integration")
+COLLECT_TITLE_LINK = _title_link("查看采集", "/cmdb/assetManage/autoDiscovery")
+MONITOR_ALERT_TITLE_LINK = _title_link("查看告警", "/monitor/event/alert")
+MONITOR_EVENT_TITLE_LINK = _title_link("查看事件", "/monitor/event/alert")
+MONITOR_POLICY_TITLE_LINK = _title_link("查看策略", "/monitor/event/strategy")
+# group_by=classification 只返回 classification_id，没有 model_id。
+CLASSIFICATION_TOP_LINK = {
+    "kind": "data",
+    "name": "查看分类",
+    "url": "/cmdb/assetData?classificationId=$__data.fields.classification_id$",
+    "openMode": "newTab",
+}
+TREND_TITLE_SUFFIX = "（$time$）"
 
 
 def _count_nested_key(value, target_key):
@@ -619,6 +641,87 @@ def test_builtin_canvas_data_links_and_alert_screen_drops_organization_filter():
     application3d = next(item for item in application_screen["view_sets"]["items"] if item["id"] == "builtin-application3d-main")
     assert room3d["valueConfig"]["interaction"] == SCENE_CMDB_DETAIL_LINK
     assert application3d["valueConfig"]["interaction"] == SCENE_CMDB_DETAIL_LINK
+
+
+def _widgets_by_name(nodes):
+    found = {}
+    for node in nodes or []:
+        if isinstance(node, dict) and node.get("name"):
+            found[node["name"]] = node
+        sub_grid = node.get("subGridOpts") if isinstance(node, dict) else None
+        children = sub_grid.get("children") if isinstance(sub_grid, dict) else None
+        found.update(_widgets_by_name(children))
+    return found
+
+
+@pytest.mark.unit
+def test_builtin_canvas_title_links_and_alert_screen_trend_titles():
+    payload = yaml.safe_load(BUILTIN_CANVASES_PATH.read_text(encoding="utf-8"))
+    screen_nodes = {node["id"]: node for node in _load_builtin_alert_screen()["view_sets"]["items"]}
+
+    assert screen_nodes["alert-active-pending"]["valueConfig"]["interaction"] == _title_link(
+        "查看告警", "/alarm/alarms?status=pending"
+    )
+    assert screen_nodes["alert-kpi-processing"]["valueConfig"]["interaction"] == _title_link(
+        "查看告警", "/alarm/alarms?status=processing"
+    )
+    assert screen_nodes["alert-active-total"]["valueConfig"]["interaction"] == _title_link(
+        "查看告警", "/alarm/alarms?status=pending,processing,unassigned"
+    )
+    assert screen_nodes["2bdee93c-3a75-49a6-93b2-bd0d448967b3"]["valueConfig"]["interaction"] == INCIDENT_TITLE_LINK
+    assert screen_nodes["alert-access-trend"]["title"] == f"告警与关联事件趋势{TREND_TITLE_SUFFIX}"
+    assert screen_nodes["label-alert-access-trend"]["content"] == f"告警与关联事件趋势{TREND_TITLE_SUFFIX}"
+    assert screen_nodes["alert-level-trend"]["title"] == f"告警等级趋势{TREND_TITLE_SUFFIX}"
+    assert screen_nodes["label-alert-level-trend"]["content"] == f"告警等级趋势{TREND_TITLE_SUFFIX}"
+    assert "interaction" not in screen_nodes["alert-access-trend"]["valueConfig"]
+    assert "interaction" not in screen_nodes["alert-level-trend"]["valueConfig"]
+
+    alert_widgets = _widgets_by_name(
+        next(item for item in payload["dashboards"] if item["name"] == "统一告警中心仪表盘")["view_sets"]
+    )
+    assert alert_widgets["新增事故数"]["valueConfig"]["interaction"] == INCIDENT_TITLE_LINK
+    for name in ("告警源总数", "已启用告警源数", "活跃告警源数", "告警源启用率"):
+        value_config = alert_widgets[name]["valueConfig"]
+        assert value_config["interaction"] == ALERT_SOURCE_TITLE_LINK
+        assert "organization__string" not in (value_config.get("filterBindings") or {})
+
+    cmdb_widgets = _widgets_by_name(next(item for item in payload["dashboards"] if item["name"] == "CMDB仪表盘")["view_sets"])
+    for name in ("采集任务总数", "周期任务数", "采集成功任务数", "运行中任务数", "超时任务数", "从未执行任务数"):
+        assert cmdb_widgets[name]["valueConfig"]["interaction"] == COLLECT_TITLE_LINK
+
+    monitor_widgets = _widgets_by_name(
+        next(item for item in payload["dashboards"] if item["name"] == "监控中心仪表盘")["view_sets"]
+    )
+    for name in ("告警总数", "历史告警总数", "今日新增告警数", "已恢复告警数", "已关闭告警数", "告警快照总数"):
+        assert monitor_widgets[name]["valueConfig"]["interaction"] == MONITOR_ALERT_TITLE_LINK
+    for name in ("监控事件总数", "今日新增事件数"):
+        assert monitor_widgets[name]["valueConfig"]["interaction"] == MONITOR_EVENT_TITLE_LINK
+    for name in ("告警策略总数", "启用策略数", "禁用策略数", "阈值策略数", "无数据策略数"):
+        assert monitor_widgets[name]["valueConfig"]["interaction"] == MONITOR_POLICY_TITLE_LINK
+    assert "interaction" not in monitor_widgets["无数据基准总数"]["valueConfig"]
+
+    weopsx = yaml.safe_load(WEOPSX_DASHBOARD_PATH.read_text(encoding="utf-8"))
+    class_top = _widgets_by_name(next(item for item in weopsx["dashboards"] if item["name"] == "WeOpsX 平台使用")["view_sets"])[
+        "分类实例 TOP"
+    ]
+    assert class_top["valueConfig"]["interaction"] == CLASSIFICATION_TOP_LINK
+    group_by = next(param for param in class_top["valueConfig"]["dataSourceParams"] if param["name"] == "group_by")
+    assert group_by["value"] == "classification"
+
+    for language, titles in {
+        "zh-Hans": {
+            "alert-level-trend": f"告警等级趋势{TREND_TITLE_SUFFIX}",
+            "alert-access-trend": f"告警与关联事件趋势{TREND_TITLE_SUFFIX}",
+        },
+        "en": {
+            "alert-level-trend": f"Severity Trend{TREND_TITLE_SUFFIX}",
+            "alert-access-trend": f"Alert and Linked Event Trend{TREND_TITLE_SUFFIX}",
+        },
+    }.items():
+        catalog = yaml.safe_load((LANGUAGE_DIR / f"{language}.yaml").read_text(encoding="utf-8"))
+        widgets = catalog["screens"]["screen::告警运营大屏_内置"]["widgets"]
+        for widget_id, title in titles.items():
+            assert widgets[widget_id]["title"] == title
 
 
 @pytest.mark.unit

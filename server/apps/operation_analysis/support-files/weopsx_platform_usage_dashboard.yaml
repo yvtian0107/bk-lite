@@ -358,6 +358,11 @@ dashboards:
         valueConfig:
           chartType: topN
           dataSource: CMDB模型实例TOPN::cmdb/get_cmdb_model_instance_top
+          interaction:
+            kind: data
+            name: 查看分类
+            url: '/cmdb/assetData?classificationId=$__data.fields.classification_id$'
+            openMode: newTab
           filterBindings:
             organization__string: true
           topNLabelField: classification

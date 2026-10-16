@@ -646,11 +646,11 @@ screens:
       alert-active-pending:
         title: Pending
       alert-level-trend:
-        title: Severity Trend
+        title: Severity Trend（$time$）
         params:
           time: Time Range
       alert-access-trend:
-        title: Alert and Linked Event Trend
+        title: Alert and Linked Event Trend（$time$）
         params:
           time: Time Range
       alert-level-distribution:

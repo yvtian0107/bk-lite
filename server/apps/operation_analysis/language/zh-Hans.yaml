@@ -646,11 +646,11 @@ screens:
       alert-active-pending:
         title: 待响应
       alert-level-trend:
-        title: 告警等级趋势
+        title: 告警等级趋势（$time$）
         params:
           time: 时间范围
       alert-access-trend:
-        title: 告警与关联事件趋势
+        title: 告警与关联事件趋势（$time$）
         params:
           time: 时间范围
       alert-level-distribution:
