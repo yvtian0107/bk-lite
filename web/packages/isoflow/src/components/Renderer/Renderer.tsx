@@ -6,6 +6,7 @@ import { Grid } from 'src/components/Grid/Grid';
 import { Cursor } from 'src/components/Cursor/Cursor';
 import { Nodes } from 'src/components/SceneLayers/Nodes/Nodes';
 import { Rectangles } from 'src/components/SceneLayers/Rectangles/Rectangles';
+import { RectangleStatusLayer } from 'src/components/SceneLayers/Rectangles/RectangleStatusLayer';
 import { Connectors } from 'src/components/SceneLayers/Connectors/Connectors';
 import { ConnectorLabels } from 'src/components/SceneLayers/ConnectorLabels/ConnectorLabels';
 import { TextBoxes } from 'src/components/SceneLayers/TextBoxes/TextBoxes';
@@ -102,6 +103,9 @@ export const Renderer = ({ showGrid, backgroundColor, enableGlobalDragHandlers }
       />
       <SceneLayer>
         <Nodes nodes={items} />
+      </SceneLayer>
+      <SceneLayer>
+        <RectangleStatusLayer />
       </SceneLayer>
       <SceneLayer>
         <TransformControlsManager />

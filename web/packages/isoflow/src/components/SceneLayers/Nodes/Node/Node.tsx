@@ -11,6 +11,7 @@ import { ViewItem } from 'src/types';
 import { useModelItem } from 'src/hooks/useModelItem';
 import { ExpandableLabel } from 'src/components/Label/ExpandableLabel';
 import { MarkdownEditor } from 'src/components/MarkdownEditor/MarkdownEditor';
+import { NodeStatusMark } from './NodeStatusMark';
 
 interface Props {
   node: ViewItem;
@@ -88,6 +89,7 @@ export const Node = ({ node, order }: Props) => {
             {iconComponent}
           </Box>
         )}
+        <NodeStatusMark nodeId={node.id} />
       </Box>
     </Box>
   );

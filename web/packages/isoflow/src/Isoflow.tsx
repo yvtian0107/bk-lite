@@ -12,6 +12,7 @@ import { UiOverlay } from 'src/components/UiOverlay/UiOverlay';
 import { UiStateProvider, useUiStateStore } from 'src/stores/uiStateStore';
 import { INITIAL_DATA, MAIN_MENU_OPTIONS } from 'src/config';
 import { useInitialDataManager } from 'src/hooks/useInitialDataManager';
+import { DiagramOverlayProvider } from 'src/diagramOverlay/context';
 
 const App = ({
   initialData,
@@ -28,8 +29,8 @@ const App = ({
     return state.actions;
   });
   const initialDataManager = useInitialDataManager();
-  const model = useModelStore((state) => {
-    return modelFromModelStore(state);
+  const modelState = useModelStore((state) => {
+    return state;
   });
 
   const { load } = initialDataManager;
@@ -52,8 +53,8 @@ const App = ({
   useEffect(() => {
     if (!initialDataManager.isReady || !onModelUpdated) return;
 
-    onModelUpdated(model);
-  }, [model, initialDataManager.isReady, onModelUpdated]);
+    onModelUpdated(modelFromModelStore(modelState));
+  }, [modelState, initialDataManager.isReady, onModelUpdated]);
 
   useEffect(() => {
     uiStateActions.setEnableDebugTools(enableDebugTools);
@@ -86,7 +87,16 @@ export const Isoflow = (props: IsoflowProps) => {
       <ModelProvider>
         <SceneProvider>
           <UiStateProvider>
-            <App {...props} />
+            <DiagramOverlayProvider
+              onItemClick={props.onItemClick}
+              onItemSelect={props.onItemSelect}
+              nodeStatus={props.nodeStatus}
+              rectangleStatus={props.rectangleStatus}
+              highlightedItemId={props.highlightedItemId}
+              editorMode={props.editorMode}
+            >
+              <App {...props} />
+            </DiagramOverlayProvider>
           </UiStateProvider>
         </SceneProvider>
       </ModelProvider>

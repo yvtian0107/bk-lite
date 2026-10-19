@@ -1,5 +1,11 @@
-import { ModelStore, UiStateStore, Size } from 'src/types';
+import { ModelStore, UiStateStore, Size, Mouse, SlimMouseEvent } from 'src/types';
 import { useScene } from 'src/hooks/useScene';
+import type { DiagramCallbacksRef } from 'src/diagramOverlay/callbacks';
+
+export interface PanPress {
+  x: number;
+  y: number;
+}
 
 export interface State {
   model: ModelStore;
@@ -8,6 +14,12 @@ export interface State {
   rendererRef: HTMLElement;
   rendererSize: Size;
   isRendererInteraction: boolean;
+  pointer: {
+    mouse: Mouse;
+    event: SlimMouseEvent;
+  };
+  panPressRef: { current: PanPress | null };
+  callbacksRef: DiagramCallbacksRef;
 }
 
 export type ModeActionsAction = (state: State) => void;

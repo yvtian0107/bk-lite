@@ -32,6 +32,7 @@ import { Isoflow } from 'src/Isoflow';
 import { Loader } from 'src/components/Loader/Loader';
 import { customVars } from 'src/styles/theme';
 import { ColorPicker } from 'src/components/ColorSelector/ColorPicker';
+import { useDiagramVisual } from 'src/diagramOverlay/context';
 
 interface Props {
   quality?: number;
@@ -100,6 +101,7 @@ export const ExportImageDialog = ({ onClose, quality = 1.5 }: Props) => {
   const [backgroundColor, setBackgroundColor] = useState<string>(
     customVars.customPalette.diagramBg
   );
+  const diagramVisual = useDiagramVisual();
   const handleBackgroundColorChange = (color: string) => {
     setBackgroundColor(color);
   };
@@ -147,6 +149,9 @@ export const ExportImageDialog = ({ onClose, quality = 1.5 }: Props) => {
                   <Isoflow
                     editorMode="NON_INTERACTIVE"
                     onModelUpdated={exportImage}
+                    nodeStatus={diagramVisual.nodeStatus}
+                    rectangleStatus={diagramVisual.rectangleStatus}
+                    highlightedItemId={diagramVisual.highlightedItemId}
                     initialData={{
                       ...model,
                       fitToView: true,

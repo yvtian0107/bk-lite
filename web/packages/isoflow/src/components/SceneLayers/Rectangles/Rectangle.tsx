@@ -3,11 +3,20 @@ import { useScene } from 'src/hooks/useScene';
 import { IsoTileArea } from 'src/components/IsoTileArea/IsoTileArea';
 import { getColorVariant } from 'src/utils';
 import { useColor } from 'src/hooks/useColor';
+import { useDiagramVisual } from 'src/diagramOverlay/context';
+import {
+  RECTANGLE_BORDER_COLOR,
+  RECTANGLE_STATUS_STROKE_WIDTH
+} from 'src/diagramOverlay/colors';
 
 type Props = ReturnType<typeof useScene>['rectangles'][0];
 
-export const Rectangle = ({ from, to, color: colorId }: Props) => {
+export const Rectangle = ({ id, from, to, color: colorId }: Props) => {
   const color = useColor(colorId);
+  const borderLevel = useDiagramVisual().rectangleStatus?.[id]?.borderLevel;
+  const strokeColor = borderLevel
+    ? RECTANGLE_BORDER_COLOR[borderLevel]
+    : getColorVariant(color.value, 'dark', { grade: 2 });
 
   return (
     <IsoTileArea
@@ -16,8 +25,8 @@ export const Rectangle = ({ from, to, color: colorId }: Props) => {
       fill={color.value}
       cornerRadius={22}
       stroke={{
-        color: getColorVariant(color.value, 'dark', { grade: 2 }),
-        width: 1
+        color: strokeColor,
+        width: borderLevel ? RECTANGLE_STATUS_STROKE_WIDTH : 1
       }}
     />
   );

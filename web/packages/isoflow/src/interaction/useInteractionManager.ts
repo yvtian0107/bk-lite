@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useRef } from 'react';
 import { useModelStore } from 'src/stores/modelStore';
 import { useUiStateStore } from 'src/stores/uiStateStore';
-import { ModeActions, State, SlimMouseEvent } from 'src/types';
+import { ModeActions, PanPress, State, SlimMouseEvent } from 'src/types';
+import { useDiagramCallbacksRef } from 'src/diagramOverlay/context';
 import { getMouse, getItemAtTile } from 'src/utils';
 import { useResizeObserver } from 'src/hooks/useResizeObserver';
 import { useScene } from 'src/hooks/useScene';
@@ -45,6 +46,8 @@ const getModeFunction = (mode: ModeActions, e: SlimMouseEvent) => {
 export const useInteractionManager = (enableGlobalDragHandlers: boolean = true) => {
   const rendererRef = useRef<HTMLElement | null>(null);
   const reducerTypeRef = useRef<string | null>(null);
+  const panPressRef = useRef<PanPress | null>(null);
+  const callbacksRef = useDiagramCallbacksRef();
   const uiState = useUiStateStore((state) => {
     return state;
   });
@@ -91,7 +94,13 @@ export const useInteractionManager = (enableGlobalDragHandlers: boolean = true) 
         uiState,
         rendererRef: rendererRef.current,
         rendererSize,
-        isRendererInteraction: rendererRef.current === e.target
+        isRendererInteraction: rendererRef.current === e.target,
+        pointer: {
+          mouse: nextMouse,
+          event: e
+        },
+        panPressRef,
+        callbacksRef
       };
 
       if (reducerTypeRef.current !== uiState.mode.type) {
@@ -108,7 +117,7 @@ export const useInteractionManager = (enableGlobalDragHandlers: boolean = true) 
       modeFunction(baseState, elCursor);
       reducerTypeRef.current = uiState.mode.type;
     },
-    [model, scene, uiState, rendererSize]
+    [model, scene, uiState, rendererSize, callbacksRef]
   );
 
   const onContextMenu = useCallback(

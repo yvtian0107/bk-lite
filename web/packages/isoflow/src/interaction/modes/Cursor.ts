@@ -18,6 +18,7 @@ import {
   connectorPathTileToGlobal
 } from 'src/utils';
 import { useScene } from 'src/hooks/useScene';
+import { emitItemSelect } from 'src/diagramOverlay/callbacks';
 
 const getAnchorOrdering = (
   anchor: ConnectorAnchor,
@@ -139,33 +140,32 @@ export const Cursor: ModeActions = {
     }
   },
   mousedown,
-  mouseup: ({ uiState, isRendererInteraction }) => {
+  mouseup: ({ uiState, isRendererInteraction, callbacksRef }) => {
     if (uiState.mode.type !== 'CURSOR' || !isRendererInteraction) return;
 
     if (uiState.mode.mousedownItem) {
-      if (uiState.mode.mousedownItem.type === 'ITEM') {
+      const item = uiState.mode.mousedownItem;
+
+      if (
+        item.type === 'ITEM' ||
+        item.type === 'RECTANGLE' ||
+        item.type === 'CONNECTOR'
+      ) {
         uiState.actions.setItemControls({
-          type: 'ITEM',
-          id: uiState.mode.mousedownItem.id
+          type: item.type,
+          id: item.id
         });
-      } else if (uiState.mode.mousedownItem.type === 'RECTANGLE') {
-        uiState.actions.setItemControls({
-          type: 'RECTANGLE',
-          id: uiState.mode.mousedownItem.id
-        });
-      } else if (uiState.mode.mousedownItem.type === 'CONNECTOR') {
-        uiState.actions.setItemControls({
-          type: 'CONNECTOR',
-          id: uiState.mode.mousedownItem.id
-        });
-      } else if (uiState.mode.mousedownItem.type === 'TEXTBOX') {
+        emitItemSelect(callbacksRef, { type: item.type, id: item.id });
+      } else if (item.type === 'TEXTBOX') {
         uiState.actions.setItemControls({
           type: 'TEXTBOX',
-          id: uiState.mode.mousedownItem.id
+          id: item.id
         });
+        emitItemSelect(callbacksRef, null);
       }
     } else {
       uiState.actions.setItemControls(null);
+      emitItemSelect(callbacksRef, null);
     }
 
     uiState.actions.setMode(
