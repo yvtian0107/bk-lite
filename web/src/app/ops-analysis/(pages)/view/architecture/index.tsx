@@ -94,6 +94,14 @@ const Architecture = forwardRef<ArchitectureRef, ArchitectureProps>(
     const debounceTimeoutRef = useRef<NodeJS.Timeout | null>(null);
     const lastModelUpdateRef = useRef<string>('');
     const isUpdatingRef = useRef<boolean>(false);
+    const modelWriteEpochRef = useRef(0);
+    const invalidatePendingModelWrite = useCallback(() => {
+      modelWriteEpochRef.current += 1;
+      if (debounceTimeoutRef.current) {
+        clearTimeout(debounceTimeoutRef.current);
+        debounceTimeoutRef.current = null;
+      }
+    }, []);
     const [diagramData, setDiagramData] = useState<DiagramData>(() => {
       return {
         title: 'Untitled Diagram',
@@ -162,6 +170,7 @@ const Architecture = forwardRef<ArchitectureRef, ArchitectureProps>(
               setLoadedArchitectureId(currentArchitectureId);
               setIsEditMode(false);
 
+              invalidatePendingModelWrite();
               lastModelUpdateRef.current = JSON.stringify({
                 items: viewSets.items || [],
                 views: viewSets.views || [],
@@ -193,7 +202,12 @@ const Architecture = forwardRef<ArchitectureRef, ArchitectureProps>(
         setLoadedArchitectureId(null);
         lastModelUpdateRef.current = '';
       }
-    }, [uniqueIcons, selectedArchitecture?.data_id, loadedArchitectureId]);
+    }, [
+      uniqueIcons,
+      selectedArchitecture?.data_id,
+      loadedArchitectureId,
+      invalidatePendingModelWrite,
+    ]);
 
     const architectureDraftResourceId = toCanvasDraftResourceId(
       selectedArchitecture?.data_id,
@@ -210,6 +224,7 @@ const Architecture = forwardRef<ArchitectureRef, ArchitectureProps>(
     );
     const applyArchitectureDraftPayload = useCallback(
       (payload: CanvasDraftPayload) => {
+        invalidatePendingModelWrite();
         const viewSets = (payload.view_sets || {}) as {
           items?: DiagramData['items'];
           views?: DiagramData['views'];
@@ -235,7 +250,7 @@ const Architecture = forwardRef<ArchitectureRef, ArchitectureProps>(
           isUpdatingRef.current = false;
         }, 0);
       },
-      [diagramName, uniqueIcons],
+      [diagramName, uniqueIcons, invalidatePendingModelWrite],
     );
     const architectureDraft = useCanvasDraft({
       resourceType: 'architecture',
@@ -260,6 +275,7 @@ const Architecture = forwardRef<ArchitectureRef, ArchitectureProps>(
     };
 
     const handleCancelEdit = () => {
+      invalidatePendingModelWrite();
       if (officialSnapshotRef.current) {
         try {
           const parsed = JSON.parse(officialSnapshotRef.current) as {
@@ -368,7 +384,10 @@ const Architecture = forwardRef<ArchitectureRef, ArchitectureProps>(
             clearTimeout(debounceTimeoutRef.current);
           }
 
+          const epoch = modelWriteEpochRef.current;
           debounceTimeoutRef.current = setTimeout(() => {
+            if (epoch !== modelWriteEpochRef.current) return;
+
             try {
               const newModelData = {
                 items: JSON.parse(JSON.stringify(model.items)) || [],
