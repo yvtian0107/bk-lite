@@ -38,7 +38,15 @@ const initialState = () => {
           set({ mainMenuOptions });
         },
         setEditorMode: (mode) => {
-          set({ editorMode: mode, mode: getStartingMode(mode) });
+          set(
+            mode === 'EDITABLE'
+              ? { editorMode: mode, mode: getStartingMode(mode) }
+              : {
+                  editorMode: mode,
+                  mode: getStartingMode(mode),
+                  itemControls: null
+                }
+          );
         },
         setIconCategoriesState: (iconCategoriesState) => {
           set({ iconCategoriesState });

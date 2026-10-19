@@ -2,6 +2,7 @@ import React, {
   createContext,
   useContext,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef
 } from 'react';
@@ -61,6 +62,19 @@ export const DiagramOverlayProvider = ({
     editorMode,
     lastSelectKey: ''
   });
+  const pendingEditSelectClearRef = useRef<(() => void) | null>(null);
+
+  if (
+    callbacksRef.current.editorMode === 'EDITABLE' &&
+    editorMode !== 'EDITABLE' &&
+    callbacksRef.current.lastSelectKey !== '' &&
+    callbacksRef.current.onItemSelect
+  ) {
+    const notify = callbacksRef.current.onItemSelect;
+    pendingEditSelectClearRef.current = () => {
+      notify(null);
+    };
+  }
 
   if (callbacksRef.current.editorMode !== editorMode) {
     callbacksRef.current.lastSelectKey = '';
@@ -69,6 +83,12 @@ export const DiagramOverlayProvider = ({
   callbacksRef.current.onItemClick = onItemClick;
   callbacksRef.current.onItemSelect = onItemSelect;
   callbacksRef.current.editorMode = editorMode;
+
+  useLayoutEffect(() => {
+    const notify = pendingEditSelectClearRef.current;
+    pendingEditSelectClearRef.current = null;
+    if (notify) notify();
+  });
 
   const visual = useMemo<DiagramVisual>(() => {
     return {
