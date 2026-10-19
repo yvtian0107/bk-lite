@@ -40,7 +40,7 @@ import {
 import { bindCanvasDraftControls } from '@/app/ops-analysis/components/canvasDraftControls';
 
 const Isoflow = dynamic(
-  () => import('x-isoflow-react-19').then((mod) => ({ default: mod.Isoflow })),
+  () => import('@bk-lite/isoflow').then((mod) => ({ default: mod.Isoflow })),
   {
     ssr: false,
     loading: () => (
