@@ -42,15 +42,28 @@ import {
 } from '@/app/ops-analysis/api/canvasDraft';
 import { bindCanvasDraftControls } from '@/app/ops-analysis/components/canvasDraftControls';
 import ResourceBindingPanel from './components/resourceBindingPanel';
+import ResourceDetailDrawer, {
+  type ArchitectureDetailState,
+} from './components/resourceDetailDrawer';
 import {
   filterBindingSearchHits,
   findSelectionBinding,
   flattenModelOptions,
   normalizeBindingSearchHits,
   type ArchitectureBinding,
-  type ArchitectureNodeStatusItem,
   type ModelOption,
 } from './binding/model';
+import {
+  ARCHITECTURE_STATUS_POLL_MS,
+  architectureStatusRequestMode,
+  blockResourceOpen,
+  buildNodeStatus,
+  buildRectangleOverlays,
+  collectBoundUuids,
+  decideDiagramClick,
+  type OverlayLabel,
+} from './binding/status';
+import { useArchitectureNodeStatus } from './binding/useNodeStatus';
 
 const Isoflow = dynamic(
   () => import('@bk-lite/isoflow').then((mod) => ({ default: mod.Isoflow })),
@@ -87,7 +100,7 @@ export interface ArchitectureRef {
 const Architecture = forwardRef<ArchitectureRef, ArchitectureProps>(
   ({ selectedArchitecture, shareMode = false }, ref) => {
     const { t } = useTranslation();
-    const { getArchitectureDetail, saveArchitecture, queryNodeStatus } = useArchitectureApi();
+    const { getArchitectureDetail, saveArchitecture } = useArchitectureApi();
     const { fulltextSearchInstances } = useInstanceApi();
     const { getModelList } = useModelApi();
     const { shareLoading, openShare } = useCanvasShareAction('architecture');
@@ -99,13 +112,11 @@ const Architecture = forwardRef<ArchitectureRef, ArchitectureProps>(
     const [uniqueIcons, setUniqueIcons] = useState<any[]>([]);
     const [isEditMode, setIsEditMode] = useState(false);
     const [selection, setSelection] = useState<DiagramItemHit | null>(null);
-    const [bindingStatus, setBindingStatus] = useState<ArchitectureNodeStatusItem | null>(null);
-    const [bindingStatusLoading, setBindingStatusLoading] = useState(false);
+    const [detail, setDetail] = useState<ArchitectureDetailState | null>(null);
+    const [highlightId, setHighlightId] = useState<string | undefined>(undefined);
     const [modelOptions, setModelOptions] = useState<ModelOption[]>([]);
     const sceneApiRef = useRef<IsoflowSceneApi | null>(null);
-    const queryNodeStatusRef = useRef(queryNodeStatus);
     const fulltextSearchRef = useRef(fulltextSearchInstances);
-    queryNodeStatusRef.current = queryNodeStatus;
     fulltextSearchRef.current = fulltextSearchInstances;
     const [loadedArchitectureId, setLoadedArchitectureId] = useState<
       string | null
@@ -452,7 +463,7 @@ const Architecture = forwardRef<ArchitectureRef, ArchitectureProps>(
     );
 
     useEffect(() => {
-      if (!showBindingPanel) return undefined;
+      if (shareMode) return undefined;
       let cancelled = false;
       getModelList()
         .then((data) => {
@@ -464,33 +475,37 @@ const Architecture = forwardRef<ArchitectureRef, ArchitectureProps>(
       return () => {
         cancelled = true;
       };
-    }, [getModelList, showBindingPanel]);
+    }, [getModelList, shareMode]);
+
+    const diagramViews = currentModel?.views ?? diagramData.views;
+    const boundUuids = useMemo(() => collectBoundUuids(diagramViews), [diagramViews]);
+    const requestMode = architectureStatusRequestMode({
+      shareMode,
+      editMode: isEditMode,
+    });
+    const modelNames = useMemo(
+      () => Object.fromEntries(modelOptions.map((model) => [model.model_id, model.model_name])),
+      [modelOptions],
+    );
+    const viewStatus = useArchitectureNodeStatus({
+      enabled: requestMode === 'poll',
+      uuids: boundUuids,
+      intervalMs: ARCHITECTURE_STATUS_POLL_MS,
+    });
+    const editStatus = useArchitectureNodeStatus({
+      enabled: requestMode === 'once',
+      uuids: boundUuids,
+      intervalMs: 0,
+    });
+    const statusByUuid = requestMode === 'poll' ? viewStatus.byUuid : editStatus.byUuid;
+    const selectedStatus = selectedBinding?.binding
+      ? editStatus.byUuid[selectedBinding.binding.inst_uuid] ?? null
+      : null;
 
     useEffect(() => {
-      const instUuid = selectedBinding?.binding?.inst_uuid;
-      if (!showBindingPanel || !instUuid) {
-        setBindingStatus(null);
-        setBindingStatusLoading(false);
-        return undefined;
-      }
-      let cancelled = false;
-      setBindingStatusLoading(true);
-      queryNodeStatusRef.current([instUuid])
-        .then((data) => {
-          if (cancelled) return;
-          const items = Array.isArray(data?.items) ? data.items : [];
-          setBindingStatus(items[0] || null);
-        })
-        .catch(() => {
-          if (!cancelled) setBindingStatus(null);
-        })
-        .finally(() => {
-          if (!cancelled) setBindingStatusLoading(false);
-        });
-      return () => {
-        cancelled = true;
-      };
-    }, [selectedBinding?.binding?.inst_uuid, showBindingPanel]);
+      setDetail(null);
+      setHighlightId(undefined);
+    }, [loadedArchitectureId, isEditMode, shareMode]);
 
     const searchResources = useCallback(
       async (keyword: string, modelId: string) => {
@@ -523,6 +538,123 @@ const Architecture = forwardRef<ArchitectureRef, ArchitectureProps>(
         return;
       }
       setSelection(item);
+    }, []);
+
+    const overlayText = useCallback((label: OverlayLabel | undefined) => {
+      if (!label || label.type === 'pending' || label.type === 'empty') return undefined;
+      if (label.type === 'text') return label.value;
+      if (label.type === 'invalid') return t('opsAnalysis.architecture.bindingInvalid');
+      if (label.type === 'forbidden') return t('opsAnalysis.architecture.bindingForbidden');
+      return t('opsAnalysis.architecture.bindingUnknown');
+    }, [t]);
+
+    const nodeStatus = useMemo(() => {
+      if (requestMode !== 'poll') return undefined;
+      if (viewStatus.phase === 'idle' && Object.keys(viewStatus.byUuid).length === 0) {
+        return undefined;
+      }
+      const overlays = buildNodeStatus(diagramViews, viewStatus.byUuid);
+      return Object.keys(overlays).length ? overlays : undefined;
+    }, [diagramViews, requestMode, viewStatus.byUuid, viewStatus.phase]);
+
+    const rectangleStatus = useMemo(() => {
+      if (requestMode === 'off') return undefined;
+      const source = requestMode === 'poll' ? viewStatus.byUuid : editStatus.byUuid;
+      if (
+        (requestMode === 'poll' ? viewStatus.phase : editStatus.phase) === 'idle'
+        && Object.keys(source).length === 0
+      ) {
+        return undefined;
+      }
+      const overlays = buildRectangleOverlays(diagramViews, source, modelNames, {
+        followBorders: requestMode === 'poll',
+      });
+      const next: Record<string, { label?: string; borderLevel?: 'warning' | 'critical' | 'unknown'; badgeCount?: number }> = {};
+      for (const [id, overlay] of Object.entries(overlays)) {
+        const label = overlayText(overlay.label);
+        const entry: { label?: string; borderLevel?: 'warning' | 'critical' | 'unknown'; badgeCount?: number } = {};
+        if (label) entry.label = label;
+        if (overlay.borderLevel) entry.borderLevel = overlay.borderLevel;
+        if (overlay.badgeCount) entry.badgeCount = overlay.badgeCount;
+        if (entry.label || entry.borderLevel || entry.badgeCount) next[id] = entry;
+      }
+      return Object.keys(next).length ? next : undefined;
+    }, [
+      diagramViews,
+      editStatus.byUuid,
+      editStatus.phase,
+      modelNames,
+      overlayText,
+      requestMode,
+      viewStatus.byUuid,
+      viewStatus.phase,
+    ]);
+
+    const closeDetail = useCallback(() => {
+      setDetail(null);
+      setHighlightId(undefined);
+    }, []);
+
+    const handleItemClick = useCallback((item: DiagramItemHit | null) => {
+      const action = decideDiagramClick({
+        hit: item,
+        views: diagramViews,
+        statusByUuid: viewStatus.byUuid,
+      });
+      if (action.type === 'toast') {
+        const key = action.reason === 'unbound'
+          ? 'opsAnalysis.architecture.unboundNode'
+          : action.reason === 'forbidden'
+            ? 'opsAnalysis.architecture.bindingForbidden'
+            : 'opsAnalysis.architecture.bindingInvalid';
+        message.warning(t(key));
+        closeDetail();
+        return;
+      }
+      if (action.type === 'close') {
+        closeDetail();
+        return;
+      }
+      if (action.type === 'resource') {
+        setHighlightId(action.highlightId);
+        setDetail({
+          kind: 'resource',
+          instUuid: action.instUuid,
+          modelId: action.modelId,
+          highlightId: action.highlightId,
+        });
+        return;
+      }
+      setHighlightId(undefined);
+      if (action.type === 'region') {
+        setDetail({ kind: 'region', rectangleId: action.rectangleId });
+        return;
+      }
+      setDetail({ kind: 'connector', connectorId: action.connectorId });
+    }, [closeDetail, diagramViews, t, viewStatus.byUuid]);
+
+    const openResource = useCallback((target: {
+      instUuid: string;
+      modelId: string;
+      highlightId?: string;
+    }) => {
+      const blocked = blockResourceOpen(statusByUuid[target.instUuid]);
+      if (blocked) return;
+      setHighlightId(target.highlightId);
+      setDetail((current) => ({
+        kind: 'resource',
+        instUuid: target.instUuid,
+        modelId: target.modelId,
+        highlightId: target.highlightId,
+        returnTo: current && current.kind !== 'resource' ? current : undefined,
+      }));
+    }, [statusByUuid]);
+
+    const backDetail = useCallback(() => {
+      setHighlightId(undefined);
+      setDetail((current) => (
+        current && current.kind === 'resource' ? current.returnTo ?? null : null
+      ));
     }, []);
 
     const hasUnsavedChanges = () => {
@@ -599,17 +731,21 @@ const Architecture = forwardRef<ArchitectureRef, ArchitectureProps>(
             editorMode={shareMode || !isEditMode ? 'EXPLORABLE_READONLY' : 'EDITABLE'}
             sceneApiRef={sceneApiRef}
             onItemSelect={isEditMode && !shareMode ? handleItemSelect : undefined}
+            onItemClick={requestMode === 'poll' ? handleItemClick : undefined}
+            highlightedItemId={requestMode === 'poll' ? highlightId : undefined}
+            nodeStatus={nodeStatus}
+            rectangleStatus={rectangleStatus}
           />
           {showBindingPanel && selectedBinding ? (
             <ResourceBindingPanel
               showFollow={selection?.type === 'RECTANGLE'}
               followAlert={selectedBinding.followAlert}
               bound={Boolean(selectedBinding.binding)}
-              statusLoading={bindingStatusLoading}
-              status={bindingStatus}
+              statusLoading={Boolean(selectedBinding.binding && !selectedStatus)}
+              status={selectedStatus}
               modelName={
-                modelOptions.find((model) => model.model_id === bindingStatus?.model_id)?.model_name
-                || bindingStatus?.model_id
+                modelOptions.find((model) => model.model_id === selectedStatus?.model_id)?.model_name
+                || selectedStatus?.model_id
                 || ''
               }
               models={modelOptions}
@@ -621,6 +757,17 @@ const Architecture = forwardRef<ArchitectureRef, ArchitectureProps>(
               }}
               onUnbind={() => patchSelection({ bkBinding: undefined })}
               onFollowAlert={(enabled) => patchSelection({ bkFollowAlert: enabled })}
+            />
+          ) : null}
+          {requestMode === 'poll' && detail ? (
+            <ResourceDetailDrawer
+              detail={detail}
+              views={diagramViews}
+              statusByUuid={viewStatus.byUuid}
+              modelNames={modelNames}
+              onClose={closeDetail}
+              onBack={backDetail}
+              onOpenResource={openResource}
             />
           ) : null}
         </div>
