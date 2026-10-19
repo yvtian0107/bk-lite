@@ -25,7 +25,7 @@ dashboards:
           model_id: 模型 ID
           field: 分组字段
       4df1fa2e-a38d-48e9-b6ca-a16f91f768eb:
-        name: 变更趋势
+        name: 变更趋势（$time$）
         description: 实例新增、修改、删除，跟随时间范围
         params:
           time: 时间范围
@@ -79,13 +79,13 @@ dashboards:
         name: 时间范围
     widgets:
       99ff96a3-2055-4932-b882-bc2b896cc1e7:
-        name: 告警关联事件数
+        name: 告警关联事件数（$time$）
         description: 按事件接收时间，仅计已关联授权告警
       d0a485b5-9f7c-46ae-9c42-717aa5fca81b:
-        name: 新增告警数
+        name: 新增告警数（$time$）
         description: 按告警创建时间
       8b710945-88a5-42d3-8fdd-a52507f54fe4:
-        name: 新增事故数
+        name: 新增事故数（$time$）
         description: 按事故创建时间
       02ed505a-d71b-4bbc-82c8-4a5338596c37:
         name: 活跃告警数
@@ -97,13 +97,13 @@ dashboards:
         name: 自动恢复占比
         description: 占全部存量告警的比例，不受时间范围影响
       f6ddd2a0-2adc-4e20-9513-f6ebb7426211:
-        name: 事件聚合倍率
+        name: 事件聚合倍率（$time$）
         description: 关联事件数 ÷ 受影响告警数（非百分比）
       5c2735d3-5449-4d29-871d-545eaf7b24b9:
-        name: 会话告警占比
+        name: 会话告警占比（$time$）
         description: 新增告警中会话类告警的比例
       586576ee-f427-4c56-9e8a-6777c95c1290:
-        name: 告警与关联事件趋势
+        name: 告警与关联事件趋势（$time$）
         description: 告警数、关联事件数与已恢复数
         params:
           time: 时间范围
@@ -113,7 +113,7 @@ dashboards:
         params:
           status_filter: 告警状态范围
       ad522899-2fc5-4b7a-875e-19004c33a425:
-        name: 告警关联事件来源 TOP 5
+        name: 告警关联事件来源 TOP 5（$time$）
         description: 按关联事件数排序
         params:
           limit: 返回条数
@@ -125,37 +125,37 @@ dashboards:
         name: 已启用告警源数
         description: 处于启用状态的告警源数
       083e3d04-08d6-4100-9d02-6bdb4a4e5a6f:
-        name: 活跃告警源数
+        name: 活跃告警源数（$time$）
         description: 跟随时间范围，至少收到一条事件的告警源
       a3538b40-7c46-475d-a3d9-927b8f2d7098:
         name: 告警源启用率
         description: 已启用告警源占全部告警源的比例
       80a6b436-a8c3-44f0-a054-905fb3f08a3d:
-        name: 渠道通知成功率
+        name: 渠道通知成功率（$time$）
         description: 各渠道发送成功占比
       af0ee431-54a4-4fcb-8ae4-43a7666a5aed:
-        name: 通知失败数
+        name: 通知失败数（$time$）
         description: 发送失败的通知数
       38cbdb62-671c-48a6-a883-2c41a97882f2:
-        name: 通知失败率
+        name: 通知失败率（$time$）
         description: 发送失败通知占全部通知的比例
       9fb91936-d18b-4583-b14b-d9ae04d6bb10:
-        name: 告警缺少规则 ID 占比
+        name: 告警缺少规则 ID 占比（$time$）
         description: 分母为时间范围内新增告警
       aede04f0-83f3-4fc6-b804-a2772c640623:
-        name: 告警缺少资源 ID 占比
+        name: 告警缺少资源 ID 占比（$time$）
         description: 分母为时间范围内新增告警
       063b6d01-ec91-4218-b6ad-9f34c82ea94b:
-        name: 通知成功数
+        name: 通知成功数（$time$）
         description: 发送成功的通知数
       fb51e119-3763-4a99-844f-274fa6c50577:
-        name: 通知成功率
+        name: 通知成功率（$time$）
         description: 发送成功通知占全部通知的比例
       356ec2d9-0bf2-4d03-aa0b-dda3d9d7cf87:
-        name: 关联事件缺少指标项占比
+        name: 关联事件缺少指标项占比（$time$）
         description: 分母为时间范围内告警关联事件
       8c4c5cb4-dfd9-4b01-9baa-33a9f758a4b6:
-        name: 关联事件缺少外部事件 ID 占比
+        name: 关联事件缺少外部事件 ID 占比（$time$）
         description: 分母为时间范围内告警关联事件
       739e9aab-809e-42c6-901a-ca6d664db676:
         name: 活跃告警持续时长 TOP 10
@@ -265,7 +265,7 @@ dashboards:
         name: 流量概览
         description: 所选设备在时间窗内的总流量、包速、平均包大小与有效采样率
       flow-kpi-bytes:
-        name: 总流量
+        name: 总流量（$time$）
         description: 所选设备归一化后的 Flow 字节速率
         params:
           instance_ids: 设备
@@ -273,7 +273,7 @@ dashboards:
           mode: 查询模式
           time: 时间范围
       flow-kpi-packets:
-        name: 总包速
+        name: 总包速（$time$）
         description: 所选设备归一化后的 Flow 包速率
         params:
           instance_ids: 设备
@@ -281,7 +281,7 @@ dashboards:
           mode: 查询模式
           time: 时间范围
       flow-kpi-avg-size:
-        name: 平均包大小
+        name: 平均包大小（$time$）
         description: 由归一化字节与包数计算的平均包大小
         params:
           instance_ids: 设备
@@ -289,7 +289,7 @@ dashboards:
           mode: 查询模式
           time: 时间范围
       flow-kpi-sampling:
-        name: 有效采样率
+        name: 有效采样率（$time$）
         description: Flow 流量归一化使用的有效采样率
         params:
           instance_ids: 设备
@@ -300,7 +300,7 @@ dashboards:
         name: 流量趋势
         description: Bytes/s、Packets/s 与协议流量趋势
       flow-trend-bytes:
-        name: 总流量趋势
+        name: 总流量趋势（$time$）
         description: 所选设备合计的 Flow 字节速率
         params:
           instance_ids: 设备
@@ -308,7 +308,7 @@ dashboards:
           mode: 查询模式
           time: 时间范围
       flow-trend-packets:
-        name: 总包速趋势
+        name: 总包速趋势（$time$）
         description: 所选设备合计的 Flow 包速率
         params:
           instance_ids: 设备
@@ -316,7 +316,7 @@ dashboards:
           mode: 查询模式
           time: 时间范围
       flow-trend-protocol:
-        name: 协议流量趋势
+        name: 协议流量趋势（$time$）
         description: 按协议折叠后的 Flow 字节速率
         params:
           instance_ids: 设备
@@ -327,7 +327,7 @@ dashboards:
         name: 协议与排行
         description: 协议占比与 Source / Destination / IP+端口 / Protocol TopN
       flow-pie-protocol:
-        name: 协议分布
+        name: 协议分布（$time$）
         description: 时间窗内按协议折叠的流量占比
         params:
           instance_ids: 设备
@@ -335,7 +335,7 @@ dashboards:
           mode: 查询模式
           time: 时间范围
       flow-topn:
-        name: 流量 TopN
+        name: 流量 TopN（$time$）
         description: 切换源地址、目的地址、源 IP+端口、目标 IP+端口或协议查看占用
         params:
           instance_ids: 设备
@@ -346,7 +346,7 @@ dashboards:
         name: 会话
         description: Top Conversation 的源、目的、端口、协议和流量
       flow-table-conversation:
-        name: Top 会话
+        name: Top 会话（$time$）
         description: 时间窗内占用最高的通信对
         columns:
           name: 会话
@@ -364,7 +364,7 @@ dashboards:
         name: 通信关系
         description: 按会话流量画主机互访与访问服务
       flow-node-graph-ip:
-        name: 主机通信
+        name: 主机通信（$time$）
         description: 源 IP 与目的 IP 之间的有向流量
         params:
           instance_ids: 设备
@@ -373,7 +373,7 @@ dashboards:
           time: 时间范围
           limit: 返回条数
       flow-node-graph-service:
-        name: 访问服务
+        name: 访问服务（$time$）
         description: 源 IP 访问目的 IP:端口 的有向流量
         params:
           instance_ids: 设备
@@ -477,7 +477,7 @@ dashboards:
         params:
           organization: 组织
       weopsx-mon-most-alerts:
-        name: 告警最多实例
+        name: 告警最多实例（$time$）
         description: 时间窗内产生告警最多的监控实例
         params:
           organization: 组织
@@ -485,7 +485,7 @@ dashboards:
           ranking: 排行模式
           limit: 返回条数
       weopsx-mon-least-alerts:
-        name: 已配策略告警最少
+        name: 已配策略告警最少（$time$）
         description: 已配策略覆盖且时间窗内告警最少（含 0）的监控实例
         params:
           organization: 组织
@@ -516,7 +516,7 @@ dashboards:
         params:
           organization: 组织
       weopsx-log-policy-top:
-        name: 告警规则 TOP
+        name: 告警规则 TOP（$time$）
         description: 时间窗内产生告警最多的日志告警策略
         params:
           organization: 组织
@@ -536,20 +536,20 @@ dashboards:
         params:
           organization: 组织
       weopsx-alert-loop:
-        name: 闭环率
+        name: 闭环率（$time$）
         description: 时间窗内关闭告警数除以新增告警数；关闭多于新增时可超过 100%
         params:
           time: 时间范围
           organization: 组织
       weopsx-alert-source-top:
-        name: 接入源事件 TOP
+        name: 接入源事件 TOP（$time$）
         description: 时间窗内事件数最多的告警接入源
         params:
           organization: 组织
           time: 时间范围
           limit: 返回条数
       weopsx-alert-rule-top:
-        name: 相关性命中 TOP
+        name: 相关性命中 TOP（$time$）
         description: 时间窗内关联/聚合规则命中次数（按产生告警条数）
         params:
           organization: 组织
@@ -600,7 +600,7 @@ dashboards:
           organization: 组织
           time: 时间范围
       weopsx-job-success:
-        name: 执行成功率
+        name: 执行成功率（$time$）
         description: 时间窗内成功执行次数占总执行次数的比例
         params:
           organization: 组织
@@ -1638,7 +1638,7 @@ reports:
       io_max_max: IO峰值上限(%)
     widgets:
       zombie-table:
-        name: 僵尸机列表
+        name: 僵尸机列表（$time$）
         description: 所选应用系统下主机在时间窗内的登录、入包、CPU/内存/IO；未采集登录显示为空，不按 0 过滤
         params:
           system_uuids: 应用系统

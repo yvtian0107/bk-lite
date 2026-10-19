@@ -37,6 +37,11 @@ dashboards:
     valueConfig:
       chartType: single
       dataSource: 模型/实例/分类总数统计::cmdb/get_cmdb_statistics
+      interaction:
+        kind: title
+        name: 查看实例规模
+        url: '/cmdb/assetOverview'
+        openMode: newTab
       selectedFields:
       - classification_count
       thresholdColors:
@@ -57,6 +62,11 @@ dashboards:
     valueConfig:
       chartType: single
       dataSource: 模型/实例/分类总数统计::cmdb/get_cmdb_statistics
+      interaction:
+        kind: title
+        name: 查看模型
+        url: '/cmdb/assetManage/management'
+        openMode: newTab
       selectedFields:
       - model_count
       thresholdColors:
@@ -77,6 +87,11 @@ dashboards:
     valueConfig:
       chartType: single
       dataSource: 模型/实例/分类总数统计::cmdb/get_cmdb_statistics
+      interaction:
+        kind: title
+        name: 查看实例规模
+        url: '/cmdb/assetOverview'
+        openMode: newTab
       selectedFields:
       - instance_count
       thresholdColors:
@@ -97,6 +112,11 @@ dashboards:
     valueConfig:
       chartType: pie
       dataSource: 主机操作系统分布::get_instance_group_by
+      interaction:
+        kind: title
+        name: 查看主机
+        url: '/cmdb/assetData?modelId=host&classificationId=host_manage'
+        openMode: newTab
       dataSourceParams:
       - name: model_id
         type: string
@@ -113,7 +133,7 @@ dashboards:
     x: 0
     y: 3
     id: 4df1fa2e-a38d-48e9-b6ca-a16f91f768eb
-    name: 变更趋势
+    name: 变更趋势（$time$）
     itemType: widget
     description: 实例新增、修改、删除，跟随时间范围
     valueConfig:
@@ -178,6 +198,11 @@ dashboards:
     valueConfig:
       chartType: single
       dataSource: 模型/实例/分类总数统计::cmdb/get_cmdb_statistics
+      interaction:
+        kind: title
+        name: 查看实例规模
+        url: '/cmdb/assetOverview'
+        openMode: newTab
       selectedFields:
       - model_with_instance_count
       thresholdColors:
@@ -198,6 +223,11 @@ dashboards:
     valueConfig:
       chartType: single
       dataSource: 模型/实例/分类总数统计::cmdb/get_cmdb_statistics
+      interaction:
+        kind: title
+        name: 查看实例规模
+        url: '/cmdb/assetOverview'
+        openMode: newTab
       selectedFields:
       - empty_model_count
       thresholdColors:
@@ -220,6 +250,11 @@ dashboards:
       unit: '%'
       chartType: single
       dataSource: 模型/实例/分类总数统计::cmdb/get_cmdb_statistics
+      interaction:
+        kind: title
+        name: 查看实例规模
+        url: '/cmdb/assetOverview'
+        openMode: newTab
       selectedFields:
       - model_coverage_rate
       thresholdColors:
@@ -417,7 +452,7 @@ dashboards:
     x: 0
     y: 0
     id: 99ff96a3-2055-4932-b882-bc2b896cc1e7
-    name: 告警关联事件数
+    name: 告警关联事件数（$time$）
     itemType: widget
     description: 按事件接收时间，仅计已关联授权告警
     valueConfig:
@@ -439,7 +474,7 @@ dashboards:
     x: 3
     y: 0
     id: d0a485b5-9f7c-46ae-9c42-717aa5fca81b
-    name: 新增告警数
+    name: 新增告警数（$time$）
     itemType: widget
     description: 按告警创建时间
     valueConfig:
@@ -461,7 +496,7 @@ dashboards:
     x: 6
     y: 0
     id: 8b710945-88a5-42d3-8fdd-a52507f54fe4
-    name: 新增事故数
+    name: 新增事故数（$time$）
     itemType: widget
     description: 按事故创建时间
     valueConfig:
@@ -545,7 +580,7 @@ dashboards:
     x: 6
     y: 3
     id: f6ddd2a0-2adc-4e20-9513-f6ebb7426211
-    name: 事件聚合倍率
+    name: 事件聚合倍率（$time$）
     itemType: widget
     description: 关联事件数 ÷ 受影响告警数（非百分比）
     valueConfig:
@@ -567,7 +602,7 @@ dashboards:
     x: 9
     y: 3
     id: 5c2735d3-5449-4d29-871d-545eaf7b24b9
-    name: 会话告警占比
+    name: 会话告警占比（$time$）
     itemType: widget
     description: 新增告警中会话类告警的比例
     valueConfig:
@@ -590,7 +625,7 @@ dashboards:
     x: 0
     y: 6
     id: 586576ee-f427-4c56-9e8a-6777c95c1290
-    name: 告警与关联事件趋势
+    name: 告警与关联事件趋势（$time$）
     itemType: widget
     description: 告警数、关联事件数与已恢复数
     valueConfig:
@@ -626,7 +661,7 @@ dashboards:
     x: 0
     y: 11
     id: ad522899-2fc5-4b7a-875e-19004c33a425
-    name: 告警关联事件来源 TOP 5
+    name: 告警关联事件来源 TOP 5（$time$）
     itemType: widget
     description: 按关联事件数排序
     valueConfig:
@@ -699,7 +734,7 @@ dashboards:
     x: 6
     y: 14
     id: 083e3d04-08d6-4100-9d02-6bdb4a4e5a6f
-    name: 活跃告警源数
+    name: 活跃告警源数（$time$）
     itemType: widget
     description: 跟随时间范围，至少收到一条事件的告警源
     valueConfig:
@@ -744,7 +779,7 @@ dashboards:
     x: 0
     y: 17
     id: 80a6b436-a8c3-44f0-a054-905fb3f08a3d
-    name: 渠道通知成功率
+    name: 渠道通知成功率（$time$）
     itemType: widget
     description: 各渠道发送成功占比
     valueConfig:
@@ -757,7 +792,7 @@ dashboards:
     x: 6
     y: 20
     id: af0ee431-54a4-4fcb-8ae4-43a7666a5aed
-    name: 通知失败数
+    name: 通知失败数（$time$）
     itemType: widget
     description: 发送失败的通知数
     valueConfig:
@@ -780,7 +815,7 @@ dashboards:
     x: 9
     y: 20
     id: 38cbdb62-671c-48a6-a883-2c41a97882f2
-    name: 通知失败率
+    name: 通知失败率（$time$）
     itemType: widget
     description: 发送失败通知占全部通知的比例
     valueConfig:
@@ -804,7 +839,7 @@ dashboards:
     x: 0
     y: 23
     id: 9fb91936-d18b-4583-b14b-d9ae04d6bb10
-    name: 告警缺少规则 ID 占比
+    name: 告警缺少规则 ID 占比（$time$）
     itemType: widget
     description: 分母为时间范围内新增告警
     valueConfig:
@@ -828,7 +863,7 @@ dashboards:
     x: 3
     y: 23
     id: aede04f0-83f3-4fc6-b804-a2772c640623
-    name: 告警缺少资源 ID 占比
+    name: 告警缺少资源 ID 占比（$time$）
     itemType: widget
     description: 分母为时间范围内新增告警
     valueConfig:
@@ -852,7 +887,7 @@ dashboards:
     x: 6
     y: 17
     id: 063b6d01-ec91-4218-b6ad-9f34c82ea94b
-    name: 通知成功数
+    name: 通知成功数（$time$）
     itemType: widget
     description: 发送成功的通知数
     valueConfig:
@@ -875,7 +910,7 @@ dashboards:
     x: 9
     y: 17
     id: fb51e119-3763-4a99-844f-274fa6c50577
-    name: 通知成功率
+    name: 通知成功率（$time$）
     itemType: widget
     description: 发送成功通知占全部通知的比例
     valueConfig:
@@ -899,7 +934,7 @@ dashboards:
     x: 6
     y: 23
     id: 356ec2d9-0bf2-4d03-aa0b-dda3d9d7cf87
-    name: 关联事件缺少指标项占比
+    name: 关联事件缺少指标项占比（$time$）
     itemType: widget
     description: 分母为时间范围内告警关联事件
     valueConfig:
@@ -922,7 +957,7 @@ dashboards:
     x: 9
     y: 23
     id: 8c4c5cb4-dfd9-4b01-9baa-33a9f758a4b6
-    name: 关联事件缺少外部事件 ID 占比
+    name: 关联事件缺少外部事件 ID 占比（$time$）
     itemType: widget
     description: 分母为时间范围内告警关联事件
     valueConfig:
@@ -1034,6 +1069,11 @@ dashboards:
     valueConfig:
       chartType: single
       dataSource: 监控中心总览统计::monitor/get_monitor_statistics
+      interaction:
+        kind: title
+        name: 查看监控对象
+        url: '/monitor/integration/object'
+        openMode: newTab
       selectedFields:
       - monitor_object_total
       thresholdColors:
@@ -1074,6 +1114,11 @@ dashboards:
     valueConfig:
       chartType: single
       dataSource: 监控中心总览统计::monitor/get_monitor_statistics
+      interaction:
+        kind: title
+        name: 查看监控对象
+        url: '/monitor/integration/object'
+        openMode: newTab
       selectedFields:
       - monitor_object_category
       thresholdColors:
@@ -1154,6 +1199,11 @@ dashboards:
     valueConfig:
       chartType: single
       dataSource: 监控中心总览统计::monitor/get_monitor_statistics
+      interaction:
+        kind: title
+        name: 查看插件
+        url: '/monitor/integration/list'
+        openMode: newTab
       selectedFields:
       - plugin_total
       thresholdColors:
@@ -1675,7 +1725,7 @@ screens:
       id: label-2bdee93c-3a75-49a6-93b2-bd0d448967b3
       kind: text
       zIndex: 5
-      content: 新增事故数
+      content: 新增事故数（$time$）
       textStyle:
         align: left
         color: '#EAF3FF'
@@ -1719,7 +1769,7 @@ screens:
       id: label-f9156f59-ac47-48b9-b071-da3289f769af
       kind: text
       zIndex: 5
-      content: 告警关联事件数
+      content: 告警关联事件数（$time$）
       textStyle:
         align: left
         color: '#EAF3FF'
@@ -1782,7 +1832,7 @@ screens:
       id: label-081f2a79-debe-4825-9d4d-1aeb02d9702e
       kind: text
       zIndex: 5
-      content: 渠道通知成功率
+      content: 渠道通知成功率（$time$）
       textStyle:
         align: left
         color: '#EAF3FF'
@@ -1983,7 +2033,7 @@ screens:
       id: label-alert-source-event-top
       kind: text
       zIndex: 5
-      content: 告警关联事件来源 TOP10
+      content: 告警关联事件来源 TOP10（$time$）
       textStyle:
         align: left
         color: '#EAF3FF'

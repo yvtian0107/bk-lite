@@ -79,6 +79,10 @@ def test_sample_yaml_parses_and_binds_flow_sources():
         "flow-node-graph-ip",
         "flow-node-graph-service",
     }
+    for widget in widgets:
+        assert widget["valueConfig"]["filterBindings"]["time__timeRange"] is True
+        assert widget["name"].endswith("（$time$）")
+        assert "$instance_ids$" not in widget["name"]
     assert by_id["flow-kpi-bytes"]["valueConfig"]["chartType"] == "single"
     assert by_id["flow-kpi-bytes"]["valueConfig"]["unitId"] == "bps"
     assert by_id["flow-kpi-bytes"]["valueConfig"]["conversionFactor"] == 8

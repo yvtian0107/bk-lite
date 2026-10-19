@@ -40,7 +40,7 @@ dashboards:
         x: 0
         y: 0
         id: flow-kpi-bytes
-        name: 总流量
+        name: 总流量（$time$）
         itemType: widget
         description: 所选设备归一化后的 Flow 字节速率
         valueConfig:
@@ -133,7 +133,7 @@ dashboards:
         x: 3
         y: 0
         id: flow-kpi-packets
-        name: 总包速
+        name: 总包速（$time$）
         itemType: widget
         description: 所选设备归一化后的 Flow 包速率
         valueConfig:
@@ -168,7 +168,7 @@ dashboards:
         x: 6
         y: 0
         id: flow-kpi-avg-size
-        name: 平均包大小
+        name: 平均包大小（$time$）
         itemType: widget
         description: 由归一化字节与包数计算的平均包大小
         valueConfig:
@@ -203,7 +203,7 @@ dashboards:
         x: 9
         y: 0
         id: flow-kpi-sampling
-        name: 有效采样率
+        name: 有效采样率（$time$）
         itemType: widget
         description: Flow 流量归一化使用的有效采样率
         valueConfig:
@@ -249,7 +249,7 @@ dashboards:
         x: 0
         y: 0
         id: flow-trend-bytes
-        name: 总流量趋势
+        name: 总流量趋势（$time$）
         itemType: widget
         description: 所选设备合计的 Flow 字节速率
         valueConfig:
@@ -293,7 +293,7 @@ dashboards:
         x: 4
         y: 0
         id: flow-trend-packets
-        name: 总包速趋势
+        name: 总包速趋势（$time$）
         itemType: widget
         description: 所选设备合计的 Flow 包速率
         valueConfig:
@@ -324,7 +324,7 @@ dashboards:
         x: 8
         y: 0
         id: flow-trend-protocol
-        name: 协议流量趋势
+        name: 协议流量趋势（$time$）
         itemType: widget
         description: 按协议折叠后的 Flow 字节速率
         valueConfig:
@@ -368,7 +368,7 @@ dashboards:
         x: 0
         y: 0
         id: flow-pie-protocol
-        name: 协议分布
+        name: 协议分布（$time$）
         itemType: widget
         description: 时间窗内按协议折叠的流量占比
         valueConfig:
@@ -400,7 +400,7 @@ dashboards:
         x: 6
         y: 0
         id: flow-topn
-        name: 流量 TopN
+        name: 流量 TopN（$time$）
         itemType: widget
         description: 切换源地址、目的地址、源 IP+端口、目标 IP+端口或协议查看占用
         valueConfig:
@@ -457,7 +457,7 @@ dashboards:
         x: 0
         y: 0
         id: flow-table-conversation
-        name: Top 会话
+        name: Top 会话（$time$）
         itemType: widget
         description: 时间窗内占用最高的通信对
         valueConfig:
@@ -528,7 +528,7 @@ dashboards:
         x: 0
         y: 0
         id: flow-node-graph-ip
-        name: 主机通信
+        name: 主机通信（$time$）
         itemType: widget
         description: 源 IP 与目的 IP 之间的有向流量
         valueConfig:
@@ -570,7 +570,7 @@ dashboards:
         x: 6
         y: 0
         id: flow-node-graph-service
-        name: 访问服务
+        name: 访问服务（$time$）
         itemType: widget
         description: 源 IP 访问目的 IP:端口 的有向流量
         valueConfig:

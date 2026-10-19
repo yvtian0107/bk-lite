@@ -83,6 +83,7 @@ def test_zombie_report_yaml_parses_and_binds_table_and_filters():
     assert len(sections) == 1
     table = sections[0]
     assert table["id"] == "zombie-table"
+    assert table["valueConfig"]["name"] == "僵尸机列表（$time$）"
     assert table["valueConfig"]["chartType"] == "table"
     assert table["valueConfig"]["dataSource"] == ZOMBIE_SOURCE_KEY
     assert table["valueConfig"]["interaction"] == {

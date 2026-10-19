@@ -73,6 +73,15 @@ def _title_link(name, url):
 
 ALERT_SOURCE_TITLE_LINK = _title_link("查看告警源", "/alarm/integration")
 COLLECT_TASK_TITLE_LINK = _title_link("查看采集", "/cmdb/assetManage/autoDiscovery/collection?view=tasks")
+INSTANCE_SCALE_TITLE_LINK = _title_link("查看实例规模", "/cmdb/assetOverview")
+MODEL_MANAGE_TITLE_LINK = _title_link("查看模型", "/cmdb/assetManage/management")
+# 主机模型实际分类是 host_manage。资产列表缺 classificationId 时会落到第一个分类。
+HOST_LIST_TITLE_LINK = _title_link(
+    "查看主机",
+    "/cmdb/assetData?modelId=host&classificationId=host_manage",
+)
+MONITOR_OBJECT_TITLE_LINK = _title_link("查看监控对象", "/monitor/integration/object")
+MONITOR_PLUGIN_TITLE_LINK = _title_link("查看插件", "/monitor/integration/list")
 # 比率按 0–100 计。≥90 绿、≥70 黄、其余红：90 为健康线，70 沿用原高位作为警告线。
 RATE_THRESHOLD_COLORS = [
     {"color": "#67a567", "value": "90"},
@@ -679,7 +688,13 @@ def test_builtin_canvas_title_links_and_alert_screen_trend_titles():
     incident_widget = screen_nodes["2bdee93c-3a75-49a6-93b2-bd0d448967b3"]
     incident_label = screen_nodes["label-2bdee93c-3a75-49a6-93b2-bd0d448967b3"]
     assert incident_widget["title"] == "新增事故数"
-    assert incident_label["content"] == "新增事故数"
+    assert incident_label["content"] == f"新增事故数{TREND_TITLE_SUFFIX}"
+    assert screen_nodes["label-f9156f59-ac47-48b9-b071-da3289f769af"]["content"] == f"告警关联事件数{TREND_TITLE_SUFFIX}"
+    assert screen_nodes["label-081f2a79-debe-4825-9d4d-1aeb02d9702e"]["content"] == f"渠道通知成功率{TREND_TITLE_SUFFIX}"
+    assert screen_nodes["label-alert-source-event-top"]["content"] == f"告警关联事件来源 TOP10{TREND_TITLE_SUFFIX}"
+    assert screen_nodes["f9156f59-ac47-48b9-b071-da3289f769af"]["title"] == "告警关联事件数"
+    assert screen_nodes["081f2a79-debe-4825-9d4d-1aeb02d9702e"]["title"] == "渠道通知成功率"
+    assert screen_nodes["alert-source-event-top"]["title"] == "告警关联事件来源 TOP10"
     assert "interaction" not in incident_widget["valueConfig"]
     assert "interaction" not in incident_label
     assert _load_builtin_alert_screen()["desc"] == ALERT_SCREEN_DESC
@@ -693,22 +708,27 @@ def test_builtin_canvas_title_links_and_alert_screen_trend_titles():
     alert_widgets = _widgets_by_name(
         next(item for item in payload["dashboards"] if item["name"] == "统一告警中心仪表盘")["view_sets"]
     )
-    assert "interaction" not in alert_widgets["新增事故数"]["valueConfig"]
+    assert "interaction" not in alert_widgets[f"新增事故数{TREND_TITLE_SUFFIX}"]["valueConfig"]
     assert alert_widgets["告警源总数"]["valueConfig"]["interaction"] == ALERT_SOURCE_TITLE_LINK
     assert "organization__string" not in (alert_widgets["告警源总数"]["valueConfig"].get("filterBindings") or {})
-    for name in ("已启用告警源数", "活跃告警源数", "告警源启用率"):
+    for name in ("已启用告警源数", f"活跃告警源数{TREND_TITLE_SUFFIX}", "告警源启用率"):
         value_config = alert_widgets[name]["valueConfig"]
         assert "interaction" not in value_config
         assert "organization__string" not in (value_config.get("filterBindings") or {})
     assert alert_widgets["告警源启用率"]["valueConfig"]["thresholdColors"] == RATE_THRESHOLD_COLORS
-    assert alert_widgets["通知成功率"]["valueConfig"]["thresholdColors"] == RATE_THRESHOLD_COLORS
-    assert alert_widgets["通知失败率"]["valueConfig"]["thresholdColors"] == [
+    assert alert_widgets[f"通知成功率{TREND_TITLE_SUFFIX}"]["valueConfig"]["thresholdColors"] == RATE_THRESHOLD_COLORS
+    assert alert_widgets[f"通知失败率{TREND_TITLE_SUFFIX}"]["valueConfig"]["thresholdColors"] == [
         {"color": "#fd666d", "value": "70"},
         {"color": "#EAB839", "value": "30"},
         {"color": "#366CE4", "value": "0"},
     ]
 
     cmdb_widgets = _widgets_by_name(next(item for item in payload["dashboards"] if item["name"] == "CMDB仪表盘")["view_sets"])
+    for name in ("模型分类数", "实例数", "非空模型数", "空模型数", "模型覆盖率"):
+        assert cmdb_widgets[name]["valueConfig"]["interaction"] == INSTANCE_SCALE_TITLE_LINK
+    assert cmdb_widgets["模型数"]["valueConfig"]["interaction"] == MODEL_MANAGE_TITLE_LINK
+    assert cmdb_widgets["主机操作系统分布"]["valueConfig"]["interaction"] == HOST_LIST_TITLE_LINK
+    assert cmdb_widgets[f"变更趋势{TREND_TITLE_SUFFIX}"]["valueConfig"]["filterBindings"]["time__timeRange"] is True
     assert cmdb_widgets["采集任务总数"]["valueConfig"]["interaction"] == COLLECT_TASK_TITLE_LINK
     for name in ("周期任务数", "采集成功任务数", "运行中任务数", "超时任务数", "从未执行任务数"):
         assert "interaction" not in cmdb_widgets[name]["valueConfig"]
@@ -734,6 +754,9 @@ def test_builtin_canvas_title_links_and_alert_screen_trend_titles():
         "无数据基准总数",
     ):
         assert "interaction" not in monitor_widgets[name]["valueConfig"]
+    assert monitor_widgets["监控对象总数"]["valueConfig"]["interaction"] == MONITOR_OBJECT_TITLE_LINK
+    assert monitor_widgets["监控对象分类数"]["valueConfig"]["interaction"] == MONITOR_OBJECT_TITLE_LINK
+    assert monitor_widgets["监控插件总数"]["valueConfig"]["interaction"] == MONITOR_PLUGIN_TITLE_LINK
 
     weopsx = yaml.safe_load(WEOPSX_DASHBOARD_PATH.read_text(encoding="utf-8"))
     weopsx_widgets = _widgets_by_name(next(item for item in weopsx["dashboards"] if item["name"] == "WeOpsX 平台使用")["view_sets"])
@@ -771,6 +794,24 @@ def test_builtin_canvas_title_links_and_alert_screen_trend_titles():
             ),
         }[language]
         assert screen_copy["desc"] == expected_desc
+        dashboards = catalog["dashboards"]
+        assert dashboards["dashboard::CMDB仪表盘_内置"]["widgets"]["4df1fa2e-a38d-48e9-b6ca-a16f91f768eb"]["name"].endswith(TREND_TITLE_SUFFIX)
+        alert_lang = dashboards["dashboard::统一告警中心仪表盘_内置"]["widgets"]
+        for widget_id in (
+            "99ff96a3-2055-4932-b882-bc2b896cc1e7",
+            "d0a485b5-9f7c-46ae-9c42-717aa5fca81b",
+            "8b710945-88a5-42d3-8fdd-a52507f54fe4",
+            "586576ee-f427-4c56-9e8a-6777c95c1290",
+            "083e3d04-08d6-4100-9d02-6bdb4a4e5a6f",
+            "fb51e119-3763-4a99-844f-274fa6c50577",
+            "8c4c5cb4-dfd9-4b01-9baa-33a9f758a4b6",
+        ):
+            assert alert_lang[widget_id]["name"].endswith(TREND_TITLE_SUFFIX)
+        assert alert_lang["e7b15832-9734-4eff-ae1b-96dc5148d286"]["name"] == {
+            "zh-Hans": "告警源总数",
+            "en": "Alert Sources",
+        }[language]
+        assert not alert_lang["02ed505a-d71b-4bbc-82c8-4a5338596c37"]["name"].endswith(TREND_TITLE_SUFFIX)
 
 
 @pytest.mark.unit
@@ -779,12 +820,12 @@ def test_builtin_alert_dashboard_separates_period_and_snapshot_bindings():
     widget_by_name = {widget["name"]: widget for widget in widgets}
 
     period_names = {
-        "告警关联事件数",
-        "新增告警数",
-        "新增事故数",
-        "事件聚合倍率",
-        "会话告警占比",
-        "告警关联事件来源 TOP 5",
+        f"告警关联事件数{TREND_TITLE_SUFFIX}",
+        f"新增告警数{TREND_TITLE_SUFFIX}",
+        f"新增事故数{TREND_TITLE_SUFFIX}",
+        f"事件聚合倍率{TREND_TITLE_SUFFIX}",
+        f"会话告警占比{TREND_TITLE_SUFFIX}",
+        f"告警关联事件来源 TOP 5{TREND_TITLE_SUFFIX}",
     }
     snapshot_names = {
         "活跃告警数",
