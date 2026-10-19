@@ -22,6 +22,8 @@ import {
   prepareInteractionNavigation,
   readChartClickPoint,
   readWidgetInteraction,
+  applicationTopologyLinkPoint,
+  interactionCapability,
   resolveInteractionUrl,
   sceneLinkPoint,
   shouldNavigateInteraction,
@@ -604,6 +606,35 @@ test('chart clicks expose the fields that exist on each widget', () => {
       items: [{ id: 'sys-1', name: '门户' }],
     }, applicationLabels).map((item) => [item.label, item.token]),
     systems.map((item) => [item.label, item.token]),
+  );
+
+  assert.deepEqual(interactionCapability('applicationTopology'), {
+    title: true,
+    data: 'contextMenu',
+  });
+  const topologyTokens = [
+    '$__data.fields.object.id$',
+    '$__data.fields.object.name$',
+    '$__data.fields.object.model_id$',
+  ];
+  const topology = listPresentDataVariables('applicationTopology', null, applicationLabels);
+  assert.deepEqual(topology.map((item) => item.token), topologyTokens);
+  const nodeId = '9f3c2a10-6b2e-4d11-9a77-0c1e8b44aa01';
+  const topologyPoint = applicationTopologyLinkPoint({
+    id: nodeId,
+    name: '订单服务',
+    modelId: 'application',
+  });
+  assert.equal(topologyPoint.fields?.['object.id'], nodeId);
+  assert.equal(topologyPoint.fields?.['object.name'], '订单服务');
+  assert.equal(topologyPoint.fields?.['object.model_id'], 'application');
+  assert.equal(topologyPoint.fields?.['object.type'], undefined);
+  assert.equal(
+    resolveInteractionUrl(
+      '/cmdb/assetData/detail/baseInfo?model_id=$__data.fields.object.model_id$&inst_uuid=$__data.fields.object.id$&inst_name=$__data.fields.object.name$',
+      { definitions: [], values: {}, point: topologyPoint, now },
+    ),
+    `/cmdb/assetData/detail/baseInfo?model_id=application&inst_uuid=${nodeId}&inst_name=${encodeURIComponent('订单服务')}`,
   );
 });
 

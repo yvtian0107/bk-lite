@@ -112,6 +112,7 @@ def test_builtin_application_topology_screen_filter_uses_canvas_contract():
         "textStyle": {"color": "canvas", "fontSize": 25, "fontWeight": 600},
     }
     assert widget["valueConfig"]["applicationTopology"] == {"depth": 3}
+    assert widget["valueConfig"]["interaction"] == SCENE_CMDB_DETAIL_LINK
     assert widget["valueConfig"]["filterBindings"] == {
         "application_system_id__string": True,
         "application_topology_depth__string": True,

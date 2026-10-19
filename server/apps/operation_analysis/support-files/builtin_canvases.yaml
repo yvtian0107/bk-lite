@@ -3593,6 +3593,11 @@ screens:
           application_topology_depth__string: true
         appearance:
           frame: bare
+        interaction:
+          kind: data
+          name: 查看 CMDB 详情
+          url: '/cmdb/assetData/detail/baseInfo?model_id=$__data.fields.object.model_id$&inst_uuid=$__data.fields.object.id$&inst_name=$__data.fields.object.name$'
+          openMode: newTab
     viewport:
       theme: screen-dark
       width: 1920

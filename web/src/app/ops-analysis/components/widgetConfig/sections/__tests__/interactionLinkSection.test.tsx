@@ -99,6 +99,23 @@ describe('InteractionLinkSection', () => {
     expect(screen.getByText('数据链接：点击数据点、柱、扇区或数字打开')).toBeTruthy();
   });
 
+  it('应用拓扑能选数据链接，并列出对象 id、名称和模型', async () => {
+    const user = userEvent.setup();
+    renderSection('applicationTopology', 'none');
+
+    expect(screen.getByRole('radio', { name: '数据链接' })).toBeTruthy();
+    await user.click(screen.getByText('数据链接'));
+    const url = await screen.findByPlaceholderText('输入 URL，键入 $ 插入变量');
+    await user.type(url, '/cmdb?id=');
+    await user.type(url, '$');
+
+    expect(await screen.findByRole('option', { name: /对象 ID/ })).toBeTruthy();
+    expect(screen.getByRole('option', { name: /对象名称/ })).toBeTruthy();
+    expect(screen.getByRole('option', { name: /对象模型 ID/ })).toBeTruthy();
+    expect(screen.queryByRole('option', { name: /对象类型/ })).toBeNull();
+    expect(screen.queryByRole('option', { name: /机柜 ID/ })).toBeNull();
+  });
+
   it('只支持标题链接的组件用同一分段选择器，并把数据链接收成标题链接', async () => {
     const user = userEvent.setup();
     renderSection('text', 'data');
