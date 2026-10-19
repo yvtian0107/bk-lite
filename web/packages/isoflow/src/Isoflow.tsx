@@ -1,4 +1,4 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useRef } from 'react';
 import { ThemeProvider } from '@mui/material/styles';
 import { Box } from '@mui/material';
 import { theme } from 'src/styles/theme';
@@ -12,7 +12,9 @@ import { UiOverlay } from 'src/components/UiOverlay/UiOverlay';
 import { UiStateProvider, useUiStateStore } from 'src/stores/uiStateStore';
 import { INITIAL_DATA, MAIN_MENU_OPTIONS } from 'src/config';
 import { useInitialDataManager } from 'src/hooks/useInitialDataManager';
+import { useScene } from 'src/hooks/useScene';
 import { DiagramOverlayProvider } from 'src/diagramOverlay/context';
+import type { IsoflowSceneApi } from 'src/types';
 
 const App = ({
   initialData,
@@ -23,7 +25,8 @@ const App = ({
   enableDebugTools = false,
   editorMode = 'EDITABLE',
   renderer,
-  enableGlobalDragHandlers = true
+  enableGlobalDragHandlers = true,
+  sceneApiRef
 }: IsoflowProps) => {
   const uiStateActions = useUiStateStore((state) => {
     return state.actions;
@@ -76,9 +79,37 @@ const App = ({
       >
         <Renderer {...renderer} enableGlobalDragHandlers={enableGlobalDragHandlers} />
         <UiOverlay />
+        <SceneApiBridge sceneApiRef={sceneApiRef} />
       </Box>
     </>
   );
+};
+
+const SceneApiBridge = ({
+  sceneApiRef
+}: {
+  sceneApiRef?: { current: IsoflowSceneApi | null };
+}) => {
+  const { updateViewItem, updateRectangle } = useScene();
+  const updateViewItemRef = useRef(updateViewItem);
+  const updateRectangleRef = useRef(updateRectangle);
+  updateViewItemRef.current = updateViewItem;
+  updateRectangleRef.current = updateRectangle;
+
+  useEffect(() => {
+    if (!sceneApiRef) return undefined;
+
+    sceneApiRef.current = {
+      updateViewItem: (id, updates) => updateViewItemRef.current(id, updates),
+      updateRectangle: (id, updates) => updateRectangleRef.current(id, updates)
+    };
+
+    return () => {
+      sceneApiRef.current = null;
+    };
+  }, [sceneApiRef]);
+
+  return null;
 };
 
 export const Isoflow = (props: IsoflowProps) => {

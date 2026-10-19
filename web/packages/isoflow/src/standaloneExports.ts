@@ -12,6 +12,7 @@ export type {
   NodeStatus,
   NodeStatusLevel,
   RectangleStatus,
-  RectangleBorderLevel
+  RectangleBorderLevel,
+  IsoflowSceneApi
 } from 'src/types';
 export type * from 'src/types/model';

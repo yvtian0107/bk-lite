@@ -440,7 +440,19 @@
       "restoreSuccess": "已恢复该快照"
     },
     "architecture": {
-      "loadFailed": "加载失败"
+      "loadFailed": "加载失败",
+      "bindingTitle": "资源绑定",
+      "bindingSearch": "名称、IP",
+      "bindingModel": "资源类型",
+      "bindingReplace": "更换",
+      "bindingUnbind": "解除绑定",
+      "bindingFollow": "跟随区域内资源告警",
+      "bindingInvalid": "绑定异常",
+      "bindingForbidden": "无权查看",
+      "bindingUnknown": "状态未知",
+      "bindingEmpty": "无匹配资源",
+      "bindingCurrent": "当前资源",
+      "bindingPick": "搜索并选择资源"
     },
     "screen": {
       "title": "大屏",

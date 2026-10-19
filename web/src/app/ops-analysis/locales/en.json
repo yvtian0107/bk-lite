@@ -440,7 +440,19 @@
       "restoreSuccess": "Snapshot restored"
     },
     "architecture": {
-      "loadFailed": "Failed to load"
+      "loadFailed": "Failed to load",
+      "bindingTitle": "Resource binding",
+      "bindingSearch": "Name or IP",
+      "bindingModel": "Resource type",
+      "bindingReplace": "Replace",
+      "bindingUnbind": "Unbind",
+      "bindingFollow": "Follow alerts in this area",
+      "bindingInvalid": "Binding invalid",
+      "bindingForbidden": "No permission",
+      "bindingUnknown": "Status unknown",
+      "bindingEmpty": "No matching resources",
+      "bindingCurrent": "Current resource",
+      "bindingPick": "Search and select a resource"
     },
     "screen": {
       "title": "Screen",

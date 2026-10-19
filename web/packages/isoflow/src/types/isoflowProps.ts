@@ -1,5 +1,5 @@
 import type { EditorModeEnum, MainMenuOptions } from './common';
-import type { Model } from './model';
+import type { Model, Rectangle, ViewItem } from './model';
 import type { RendererProps } from './rendererProps';
 
 export type InitialData = Model & {
@@ -82,4 +82,14 @@ export interface IsoflowProps {
   nodeStatus?: Record<string, NodeStatus>;
   /** Keyed by rectangle id. Labels, borders and badges are draw-only. */
   rectangleStatus?: Record<string, RectangleStatus>;
+  /**
+   * Edit mode. Calls the existing single-item updaters so a binding change
+   * goes through onModelUpdated without replacing initialData.
+   */
+  sceneApiRef?: { current: IsoflowSceneApi | null };
+}
+
+export interface IsoflowSceneApi {
+  updateViewItem: (id: string, updates: Partial<ViewItem>) => void;
+  updateRectangle: (id: string, updates: Partial<Rectangle>) => void;
 }

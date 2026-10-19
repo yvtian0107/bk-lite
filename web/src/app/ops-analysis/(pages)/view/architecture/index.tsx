@@ -6,13 +6,16 @@ import {
   forwardRef,
   useImperativeHandle,
   useCallback,
+  useMemo,
   useRef,
 } from 'react';
 import styles from './index.module.scss';
 import { useTranslation } from '@/utils/i18n';
 import { iconList } from '@/app/cmdb/utils/common';
 import { message, Spin } from 'antd';
+import type { DiagramItemHit, IsoflowSceneApi } from '@bk-lite/isoflow';
 import { useArchitectureApi } from '@/app/ops-analysis/api/architecture';
+import { useInstanceApi, useModelApi } from '@/app/cmdb/api';
 import { useCanvasShareAction } from '@/app/ops-analysis/hooks/useCanvasShareAction';
 import { flattenCollections } from '@isoflow/isopacks/dist/utils';
 import {
@@ -38,6 +41,16 @@ import {
   type CanvasDraftPayload,
 } from '@/app/ops-analysis/api/canvasDraft';
 import { bindCanvasDraftControls } from '@/app/ops-analysis/components/canvasDraftControls';
+import ResourceBindingPanel from './components/resourceBindingPanel';
+import {
+  filterBindingSearchHits,
+  findSelectionBinding,
+  flattenModelOptions,
+  normalizeBindingSearchHits,
+  type ArchitectureBinding,
+  type ArchitectureNodeStatusItem,
+  type ModelOption,
+} from './binding/model';
 
 const Isoflow = dynamic(
   () => import('@bk-lite/isoflow').then((mod) => ({ default: mod.Isoflow })),
@@ -74,7 +87,9 @@ export interface ArchitectureRef {
 const Architecture = forwardRef<ArchitectureRef, ArchitectureProps>(
   ({ selectedArchitecture, shareMode = false }, ref) => {
     const { t } = useTranslation();
-    const { getArchitectureDetail, saveArchitecture } = useArchitectureApi();
+    const { getArchitectureDetail, saveArchitecture, queryNodeStatus } = useArchitectureApi();
+    const { fulltextSearchInstances } = useInstanceApi();
+    const { getModelList } = useModelApi();
     const { shareLoading, openShare } = useCanvasShareAction('architecture');
     const [diagramName, setDiagramName] = useState('');
     const [fossflowKey, setFossflowKey] = useState(0);
@@ -83,6 +98,15 @@ const Architecture = forwardRef<ArchitectureRef, ArchitectureProps>(
     const [loading, setLoading] = useState(false);
     const [uniqueIcons, setUniqueIcons] = useState<any[]>([]);
     const [isEditMode, setIsEditMode] = useState(false);
+    const [selection, setSelection] = useState<DiagramItemHit | null>(null);
+    const [bindingStatus, setBindingStatus] = useState<ArchitectureNodeStatusItem | null>(null);
+    const [bindingStatusLoading, setBindingStatusLoading] = useState(false);
+    const [modelOptions, setModelOptions] = useState<ModelOption[]>([]);
+    const sceneApiRef = useRef<IsoflowSceneApi | null>(null);
+    const queryNodeStatusRef = useRef(queryNodeStatus);
+    const fulltextSearchRef = useRef(fulltextSearchInstances);
+    queryNodeStatusRef.current = queryNodeStatus;
+    fulltextSearchRef.current = fulltextSearchInstances;
     const [loadedArchitectureId, setLoadedArchitectureId] = useState<
       string | null
     >(null);
@@ -267,6 +291,7 @@ const Architecture = forwardRef<ArchitectureRef, ArchitectureProps>(
 
     const toggleEditMode = () => {
       const newEditMode = !isEditMode;
+      setSelection(null);
       setIsEditMode(newEditMode);
       if (newEditMode) {
         officialSnapshotRef.current = lastModelUpdateRef.current;
@@ -303,6 +328,7 @@ const Architecture = forwardRef<ArchitectureRef, ArchitectureProps>(
         }
       }
       setHasUnsaved(false);
+      setSelection(null);
       setIsEditMode(false);
     };
 
@@ -417,6 +443,88 @@ const Architecture = forwardRef<ArchitectureRef, ArchitectureProps>(
       [selectedArchitecture?.data_id, isEditMode]
     );
 
+    const selectedBinding = useMemo(
+      () => findSelectionBinding(currentModel?.views, selection),
+      [currentModel?.views, selection],
+    );
+    const showBindingPanel = Boolean(
+      isEditMode && !shareMode && selectedBinding,
+    );
+
+    useEffect(() => {
+      if (!showBindingPanel) return undefined;
+      let cancelled = false;
+      getModelList()
+        .then((data) => {
+          if (!cancelled) setModelOptions(flattenModelOptions(data));
+        })
+        .catch(() => {
+          if (!cancelled) setModelOptions([]);
+        });
+      return () => {
+        cancelled = true;
+      };
+    }, [getModelList, showBindingPanel]);
+
+    useEffect(() => {
+      const instUuid = selectedBinding?.binding?.inst_uuid;
+      if (!showBindingPanel || !instUuid) {
+        setBindingStatus(null);
+        setBindingStatusLoading(false);
+        return undefined;
+      }
+      let cancelled = false;
+      setBindingStatusLoading(true);
+      queryNodeStatusRef.current([instUuid])
+        .then((data) => {
+          if (cancelled) return;
+          const items = Array.isArray(data?.items) ? data.items : [];
+          setBindingStatus(items[0] || null);
+        })
+        .catch(() => {
+          if (!cancelled) setBindingStatus(null);
+        })
+        .finally(() => {
+          if (!cancelled) setBindingStatusLoading(false);
+        });
+      return () => {
+        cancelled = true;
+      };
+    }, [selectedBinding?.binding?.inst_uuid, showBindingPanel]);
+
+    const searchResources = useCallback(
+      async (keyword: string, modelId: string) => {
+        const raw = await fulltextSearchRef.current({
+          search: keyword,
+          case_sensitive: false,
+        });
+        return filterBindingSearchHits(normalizeBindingSearchHits(raw), modelId);
+      },
+      [],
+    );
+
+    const patchSelection = useCallback(
+      (updates: { bkBinding?: ArchitectureBinding; bkFollowAlert?: boolean }) => {
+        if (!selection || !sceneApiRef.current) return;
+        if (selection.type === 'ITEM') {
+          sceneApiRef.current.updateViewItem(selection.id, updates);
+          return;
+        }
+        if (selection.type === 'RECTANGLE') {
+          sceneApiRef.current.updateRectangle(selection.id, updates);
+        }
+      },
+      [selection],
+    );
+
+    const handleItemSelect = useCallback((item: DiagramItemHit | null) => {
+      if (!item || (item.type !== 'ITEM' && item.type !== 'RECTANGLE')) {
+        setSelection(null);
+        return;
+      }
+      setSelection(item);
+    }, []);
+
     const hasUnsavedChanges = () => {
       return isEditMode && hasUnsaved;
     };
@@ -489,7 +597,32 @@ const Architecture = forwardRef<ArchitectureRef, ArchitectureProps>(
             initialData={diagramData}
             onModelUpdated={handleModelUpdated}
             editorMode={shareMode || !isEditMode ? 'EXPLORABLE_READONLY' : 'EDITABLE'}
+            sceneApiRef={sceneApiRef}
+            onItemSelect={isEditMode && !shareMode ? handleItemSelect : undefined}
           />
+          {showBindingPanel && selectedBinding ? (
+            <ResourceBindingPanel
+              showFollow={selection?.type === 'RECTANGLE'}
+              followAlert={selectedBinding.followAlert}
+              bound={Boolean(selectedBinding.binding)}
+              statusLoading={bindingStatusLoading}
+              status={bindingStatus}
+              modelName={
+                modelOptions.find((model) => model.model_id === bindingStatus?.model_id)?.model_name
+                || bindingStatus?.model_id
+                || ''
+              }
+              models={modelOptions}
+              onSearch={searchResources}
+              onBind={(hit) => {
+                patchSelection({
+                  bkBinding: { inst_uuid: hit.inst_uuid, model_id: hit.model_id },
+                });
+              }}
+              onUnbind={() => patchSelection({ bkBinding: undefined })}
+              onFollowAlert={(enabled) => patchSelection({ bkFollowAlert: enabled })}
+            />
+          ) : null}
         </div>
       </div>
     );
