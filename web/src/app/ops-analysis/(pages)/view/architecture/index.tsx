@@ -46,10 +46,14 @@ import ResourceDetailDrawer, {
   type ArchitectureDetailState,
 } from './components/resourceDetailDrawer';
 import {
-  filterBindingSearchHits,
+  BINDING_SEARCH_LIMIT,
+  bindingSearchMode,
+  capBindingSearchHits,
   findSelectionBinding,
   flattenModelOptions,
   normalizeBindingSearchHits,
+  normalizeFulltextModelPage,
+  normalizeInstanceSearchPage,
   type ArchitectureBinding,
   type ModelOption,
 } from './binding/model';
@@ -101,7 +105,7 @@ const Architecture = forwardRef<ArchitectureRef, ArchitectureProps>(
   ({ selectedArchitecture, shareMode = false }, ref) => {
     const { t } = useTranslation();
     const { getArchitectureDetail, saveArchitecture } = useArchitectureApi();
-    const { fulltextSearchInstances } = useInstanceApi();
+    const { fulltextSearchInstances, fulltextSearchByModel, searchInstances } = useInstanceApi();
     const { getModelList } = useModelApi();
     const { shareLoading, openShare } = useCanvasShareAction('architecture');
     const [diagramName, setDiagramName] = useState('');
@@ -117,7 +121,11 @@ const Architecture = forwardRef<ArchitectureRef, ArchitectureProps>(
     const [modelOptions, setModelOptions] = useState<ModelOption[]>([]);
     const sceneApiRef = useRef<IsoflowSceneApi | null>(null);
     const fulltextSearchRef = useRef(fulltextSearchInstances);
+    const fulltextByModelRef = useRef(fulltextSearchByModel);
+    const searchInstancesRef = useRef(searchInstances);
     fulltextSearchRef.current = fulltextSearchInstances;
+    fulltextByModelRef.current = fulltextSearchByModel;
+    searchInstancesRef.current = searchInstances;
     const [loadedArchitectureId, setLoadedArchitectureId] = useState<
       string | null
     >(null);
@@ -509,11 +517,38 @@ const Architecture = forwardRef<ArchitectureRef, ArchitectureProps>(
 
     const searchResources = useCallback(
       async (keyword: string, modelId: string) => {
+        const mode = bindingSearchMode(keyword, modelId);
+        if (mode === 'idle') {
+          return capBindingSearchHits([], BINDING_SEARCH_LIMIT, 0);
+        }
+        if (mode === 'by-type') {
+          const raw = await searchInstancesRef.current({
+            model_id: modelId.trim(),
+            query_list: [],
+            page: 1,
+            page_size: BINDING_SEARCH_LIMIT,
+            case_sensitive: false,
+          });
+          const page = normalizeInstanceSearchPage(raw);
+          return capBindingSearchHits(page.hits, BINDING_SEARCH_LIMIT, page.total);
+        }
+        if (mode === 'by-model-text') {
+          const raw = await fulltextByModelRef.current({
+            search: keyword.trim(),
+            model_id: modelId.trim(),
+            page: 1,
+            page_size: BINDING_SEARCH_LIMIT,
+            case_sensitive: false,
+          });
+          const page = normalizeFulltextModelPage(raw, BINDING_SEARCH_LIMIT);
+          return capBindingSearchHits(page.hits, page.limit, page.total);
+        }
         const raw = await fulltextSearchRef.current({
-          search: keyword,
+          search: keyword.trim(),
           case_sensitive: false,
         });
-        return filterBindingSearchHits(normalizeBindingSearchHits(raw), modelId);
+        const hits = normalizeBindingSearchHits(raw);
+        return capBindingSearchHits(hits, BINDING_SEARCH_LIMIT, hits.length);
       },
       [],
     );

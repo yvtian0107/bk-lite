@@ -32,6 +32,17 @@ export interface ModelOption {
   model_name: string;
 }
 
+/** CMDB fulltext_search_by_model 的 page_size 上限。类型列表和关键字结果都只取这一页。 */
+export const BINDING_SEARCH_LIMIT = 100;
+
+export interface BindingSearchResult {
+  hits: BindingSearchHit[];
+  limit: number;
+  truncated: boolean;
+}
+
+export type BindingSearchMode = 'idle' | 'by-type' | 'by-model-text' | 'fulltext';
+
 export interface SelectionBinding {
   binding: ArchitectureBinding | null;
   followAlert: boolean;
@@ -86,6 +97,60 @@ export function normalizeBindingSearchHits(raw: unknown): BindingSearchHit[] {
     });
   }
   return hits;
+}
+
+export function bindingSearchMode(keyword: string, modelId: string): BindingSearchMode {
+  const text = keyword.trim();
+  const model = modelId.trim();
+  if (!text && !model) return 'idle';
+  if (!text) return 'by-type';
+  if (model) return 'by-model-text';
+  return 'fulltext';
+}
+
+export function capBindingSearchHits(
+  hits: BindingSearchHit[],
+  limit: number,
+  total: number,
+): BindingSearchResult {
+  const safeLimit = Number.isFinite(limit) && limit > 0 ? Math.floor(limit) : 0;
+  const shown = safeLimit > 0 ? hits.slice(0, safeLimit) : [];
+  const knownTotal = Number.isFinite(total) ? total : shown.length;
+  const truncated = knownTotal > shown.length;
+  return {
+    hits: shown,
+    limit: truncated ? shown.length : safeLimit,
+    truncated,
+  };
+}
+
+export function normalizeInstanceSearchPage(raw: unknown): { hits: BindingSearchHit[]; total: number } {
+  const record = isRecord(raw) ? raw : {};
+  const hits = normalizeBindingSearchHits(record.insts);
+  const total = typeof record.count === 'number' && Number.isFinite(record.count)
+    ? record.count
+    : hits.length;
+  return { hits, total };
+}
+
+export function normalizeFulltextModelPage(
+  raw: unknown,
+  fallbackLimit: number,
+): { hits: BindingSearchHit[]; total: number; limit: number } {
+  const record = isRecord(raw) ? raw : {};
+  const hits = normalizeBindingSearchHits(record.data);
+  const total = typeof record.total === 'number' && Number.isFinite(record.total)
+    ? record.total
+    : hits.length;
+  const pageSize = typeof record.page_size === 'number' && record.page_size > 0
+    ? record.page_size
+    : fallbackLimit;
+  return { hits, total, limit: pageSize };
+}
+
+export function bindingModelLabel(models: ModelOption[], modelId: string): string {
+  const name = models.find((model) => model.model_id === modelId)?.model_name.trim();
+  return name || modelId;
 }
 
 export function filterBindingSearchHits(

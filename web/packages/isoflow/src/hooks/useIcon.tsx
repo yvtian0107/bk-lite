@@ -5,7 +5,10 @@ import { IsometricIcon } from 'src/components/SceneLayers/Nodes/Node/IconTypes/I
 import { NonIsometricIcon } from 'src/components/SceneLayers/Nodes/Node/IconTypes/NonIsometricIcon';
 import { DEFAULT_ICON } from 'src/config';
 
-export const useIcon = (id: string | undefined) => {
+export const useIcon = (
+  id: string | undefined,
+  hit?: { id: string; order: number }
+) => {
   const [hasLoaded, setHasLoaded] = React.useState(false);
   const icons = useModelStore((state) => {
     return state.icons;
@@ -24,18 +27,22 @@ export const useIcon = (id: string | undefined) => {
   const iconComponent = useMemo(() => {
     if (!icon.isIsometric) {
       setHasLoaded(true);
-      return <NonIsometricIcon icon={icon} />;
+      return (
+        <NonIsometricIcon icon={icon} hitId={hit?.id} hitOrder={hit?.order} />
+      );
     }
 
     return (
       <IsometricIcon
         url={icon.url}
+        hitId={hit?.id}
+        hitOrder={hit?.order}
         onImageLoaded={() => {
           setHasLoaded(true);
         }}
       />
     );
-  }, [icon]);
+  }, [icon, hit?.id, hit?.order]);
 
   return {
     icon,

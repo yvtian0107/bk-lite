@@ -6,9 +6,11 @@ import { useResizeObserver } from 'src/hooks/useResizeObserver';
 interface Props {
   url: string;
   onImageLoaded?: () => void;
+  hitId?: string;
+  hitOrder?: number;
 }
 
-export const IsometricIcon = ({ url, onImageLoaded }: Props) => {
+export const IsometricIcon = ({ url, onImageLoaded, hitId, hitOrder }: Props) => {
   const ref = useRef<HTMLDivElement>(null);
   const { size, observe, disconnect } = useResizeObserver();
 
@@ -26,6 +28,8 @@ export const IsometricIcon = ({ url, onImageLoaded }: Props) => {
       component="img"
       onLoad={onImageLoaded}
       src={url}
+      data-icon-hit={hitId}
+      data-icon-order={hitOrder}
       sx={{
         position: 'absolute',
         width: PROJECTED_TILE_SIZE.width * 0.8,

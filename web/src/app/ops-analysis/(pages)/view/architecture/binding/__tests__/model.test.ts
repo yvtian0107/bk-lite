@@ -1,10 +1,16 @@
 import { describe, expect, it } from 'vitest';
 import {
+  BINDING_SEARCH_LIMIT,
   bindingDisplay,
+  bindingModelLabel,
+  bindingSearchMode,
+  capBindingSearchHits,
   filterBindingSearchHits,
   findSelectionBinding,
   flattenModelOptions,
   normalizeBindingSearchHits,
+  normalizeFulltextModelPage,
+  normalizeInstanceSearchPage,
 } from '../model';
 
 const views = [
@@ -82,6 +88,51 @@ describe('architecture binding model', () => {
       model_id: 'host',
       inst_name: 'web-01',
     }, '主机')).toEqual({ name: 'web-01', typeName: '主机', blocked: null });
+  });
+
+  it('lists a selected type without a keyword and caps the returned page', () => {
+    expect(BINDING_SEARCH_LIMIT).toBe(100);
+    expect(bindingSearchMode('', '')).toBe('idle');
+    expect(bindingSearchMode('  ', 'host')).toBe('by-type');
+    expect(bindingSearchMode('web', 'host')).toBe('by-model-text');
+    expect(bindingSearchMode('web', '')).toBe('fulltext');
+
+    const listed = normalizeInstanceSearchPage({
+      count: 120,
+      insts: [
+        { inst_uuid: 'u1', model_id: 'host', inst_name: 'web-01', ip_addr: '10.0.0.1' },
+        { inst_name: 'skip' },
+      ],
+    });
+    expect(listed.total).toBe(120);
+    expect(capBindingSearchHits(listed.hits, BINDING_SEARCH_LIMIT, listed.total)).toEqual({
+      hits: listed.hits,
+      limit: listed.hits.length,
+      truncated: true,
+    });
+
+    const page = normalizeFulltextModelPage({
+      total: 140,
+      page_size: 100,
+      data: [{ inst_uuid: 'u1', model_id: 'host', inst_name: 'web-01', ip_addr: '10.0.0.1' }],
+    }, BINDING_SEARCH_LIMIT);
+    expect(capBindingSearchHits(page.hits, page.limit, page.total)).toMatchObject({
+      truncated: true,
+      limit: 1,
+    });
+    const exact = capBindingSearchHits(page.hits, 100, 1);
+    expect(exact.truncated).toBe(false);
+    expect(exact.limit).toBe(100);
+  });
+
+  it('uses the model list display name on search rows', () => {
+    const models = flattenModelOptions([
+      { model_id: 'host', model_name: '主机' },
+      { model_id: 'switch', model_name: '  ' },
+    ]);
+    expect(bindingModelLabel(models, 'host')).toBe('主机');
+    expect(bindingModelLabel(models, 'switch')).toBe('switch');
+    expect(bindingModelLabel(models, 'missing')).toBe('missing');
   });
 
   it('flattens grouped model lists', () => {

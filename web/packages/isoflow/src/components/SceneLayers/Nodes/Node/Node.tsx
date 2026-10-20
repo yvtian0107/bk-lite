@@ -20,7 +20,10 @@ interface Props {
 
 export const Node = ({ node, order }: Props) => {
   const modelItem = useModelItem(node.id);
-  const { iconComponent } = useIcon(modelItem.icon);
+  const { iconComponent } = useIcon(modelItem.icon, {
+    id: node.id,
+    order
+  });
 
   const position = useMemo(() => {
     return getTilePosition({
@@ -89,7 +92,7 @@ export const Node = ({ node, order }: Props) => {
             {iconComponent}
           </Box>
         )}
-        <NodeStatusMark nodeId={node.id} />
+        <NodeStatusMark nodeId={node.id} order={order} />
       </Box>
     </Box>
   );

@@ -6,9 +6,10 @@ import { useTranslation } from '@/utils/i18n';
 import type {
   ArchitectureNodeStatusItem,
   BindingSearchHit,
+  BindingSearchResult,
   ModelOption,
 } from '../binding/model';
-import { bindingDisplay } from '../binding/model';
+import { bindingDisplay, bindingModelLabel, bindingSearchMode } from '../binding/model';
 
 interface ResourceBindingPanelProps {
   showFollow: boolean;
@@ -18,7 +19,7 @@ interface ResourceBindingPanelProps {
   status: ArchitectureNodeStatusItem | null;
   modelName: string;
   models: ModelOption[];
-  onSearch: (keyword: string, modelId: string) => Promise<BindingSearchHit[]>;
+  onSearch: (keyword: string, modelId: string) => Promise<BindingSearchResult>;
   onBind: (hit: BindingSearchHit) => void;
   onUnbind: () => void;
   onFollowAlert: (enabled: boolean) => void;
@@ -42,7 +43,11 @@ const ResourceBindingPanel = ({
   const [keyword, setKeyword] = useState('');
   const [modelId, setModelId] = useState('');
   const [hits, setHits] = useState<BindingSearchHit[]>([]);
+  const [resultLimit, setResultLimit] = useState(0);
+  const [truncated, setTruncated] = useState(false);
+  const [searchError, setSearchError] = useState(false);
   const [searching, setSearching] = useState(false);
+  const [retryToken, setRetryToken] = useState(0);
   const display = bindingDisplay(status, modelName);
   const showSearch = !bound || replacing;
 
@@ -53,22 +58,39 @@ const ResourceBindingPanel = ({
     setHits([]);
   }, [bound, status?.inst_uuid]);
 
+  const cancelReplace = () => {
+    setReplacing(false);
+    setKeyword('');
+    setModelId('');
+    setHits([]);
+    setTruncated(false);
+    setSearchError(false);
+  };
+
   useEffect(() => {
-    if (!showSearch) return undefined;
-    const text = keyword.trim();
-    if (!text) {
+    if (!showSearch || bindingSearchMode(keyword, modelId) === 'idle') {
       setHits([]);
+      setTruncated(false);
+      setSearchError(false);
+      setSearching(false);
       return undefined;
     }
     let cancelled = false;
     setSearching(true);
+    setSearchError(false);
     const timer = window.setTimeout(() => {
-      onSearch(text, modelId)
+      onSearch(keyword.trim(), modelId)
         .then((next) => {
-          if (!cancelled) setHits(next);
+          if (cancelled) return;
+          setHits(next.hits);
+          setResultLimit(next.limit);
+          setTruncated(next.truncated);
         })
         .catch(() => {
-          if (!cancelled) setHits([]);
+          if (cancelled) return;
+          setHits([]);
+          setTruncated(false);
+          setSearchError(true);
         })
         .finally(() => {
           if (!cancelled) setSearching(false);
@@ -78,7 +100,7 @@ const ResourceBindingPanel = ({
       cancelled = true;
       window.clearTimeout(timer);
     };
-  }, [keyword, modelId, onSearch, showSearch]);
+  }, [keyword, modelId, onSearch, retryToken, showSearch]);
 
   const blockedText = display.blocked === 'invalid'
     ? t('opsAnalysis.architecture.bindingInvalid')
@@ -96,7 +118,7 @@ const ResourceBindingPanel = ({
       <div className="text-sm font-medium text-[var(--color-text-1)]">
         {t('opsAnalysis.architecture.bindingTitle')}
       </div>
-      {bound && !replacing ? (
+      {bound ? (
         <div className="flex flex-col gap-2">
           <div className="text-xs text-[var(--color-text-3)]">
             {t('opsAnalysis.architecture.bindingCurrent')}
@@ -111,6 +133,11 @@ const ResourceBindingPanel = ({
             <Button size="small" onClick={onUnbind}>
               {t('opsAnalysis.architecture.bindingUnbind')}
             </Button>
+            {replacing ? (
+              <Button size="small" onClick={cancelReplace}>
+                {t('opsAnalysis.architecture.bindingCancel')}
+              </Button>
+            ) : null}
           </div>
         </div>
       ) : null}
@@ -138,7 +165,20 @@ const ResourceBindingPanel = ({
             onChange={(event) => setKeyword(event.target.value)}
           />
           {searching ? <Spin size="small" /> : null}
-          {!searching && keyword.trim() && hits.length === 0 ? (
+          {!searching && searchError ? (
+            <div className="flex items-center gap-2 text-xs text-[var(--color-text-3)]">
+              <span>{t('opsAnalysis.architecture.bindingSearchFailed')}</span>
+              <Button
+                type="link"
+                size="small"
+                className="h-auto p-0"
+                onClick={() => setRetryToken((current) => current + 1)}
+              >
+                {t('opsAnalysis.architecture.bindingSearchRetry')}
+              </Button>
+            </div>
+          ) : null}
+          {!searching && !searchError && bindingSearchMode(keyword, modelId) !== 'idle' && hits.length === 0 ? (
             <div className="text-xs text-[var(--color-text-3)]">
               {t('opsAnalysis.architecture.bindingEmpty')}
             </div>
@@ -156,10 +196,15 @@ const ResourceBindingPanel = ({
               >
                 <div className="text-[var(--color-text-1)]">{hit.inst_name || hit.inst_uuid}</div>
                 <div className="text-xs text-[var(--color-text-3)]">
-                  {[hit.ip_addr, hit.model_id].filter(Boolean).join(' · ')}
+                  {[hit.ip_addr, bindingModelLabel(models, hit.model_id)].filter(Boolean).join(' · ')}
                 </div>
               </button>
             ))}
+            {!searching && !searchError && truncated ? (
+              <div className="px-2 py-1.5 text-xs text-[var(--color-text-3)]">
+                {t('opsAnalysis.architecture.bindingSearchTruncated', undefined, { limit: resultLimit })}
+              </div>
+            ) : null}
           </div>
         </div>
       ) : null}

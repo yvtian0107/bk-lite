@@ -7,7 +7,12 @@ import type { NodeStatus, NodeStatusLevel } from 'src/types';
 
 interface Props {
   nodeId: string;
+  order: number;
 }
+
+// Highlight stroke is 5px. Expand the outline hit box by half of that so the
+// stroke edge still counts as the icon.
+const STATUS_OUTLINE_HIT_PAD = 3;
 
 const BADGE_TEXT: Partial<Record<NodeStatusLevel, string>> = {
   unknown: '?',
@@ -26,7 +31,7 @@ const badgeLabel = (status: NodeStatus) => {
   return BADGE_TEXT[status.level] ?? null;
 };
 
-export const NodeStatusMark = ({ nodeId }: Props) => {
+export const NodeStatusMark = ({ nodeId, order }: Props) => {
   const visual = useDiagramVisual();
   const status = visual.nodeStatus?.[nodeId];
   const highlighted =
@@ -46,6 +51,9 @@ export const NodeStatusMark = ({ nodeId }: Props) => {
       aria-hidden
       data-node-status={status?.level ?? ''}
       data-node-highlight={highlighted ? 'true' : 'false'}
+      data-icon-hit={nodeId}
+      data-icon-order={order}
+      data-icon-pad={STATUS_OUTLINE_HIT_PAD}
       sx={{
         position: 'absolute',
         left: -width / 2,
@@ -94,6 +102,8 @@ export const NodeStatusMark = ({ nodeId }: Props) => {
       </svg>
       {status?.level === 'forbidden' && (
         <Box
+          data-icon-hit={nodeId}
+          data-icon-order={order}
           sx={{
             position: 'absolute',
             left: width - 2,
@@ -122,6 +132,8 @@ export const NodeStatusMark = ({ nodeId }: Props) => {
       )}
       {label && (
         <Box
+          data-icon-hit={nodeId}
+          data-icon-order={order}
           sx={{
             position: 'absolute',
             left: width - 2,

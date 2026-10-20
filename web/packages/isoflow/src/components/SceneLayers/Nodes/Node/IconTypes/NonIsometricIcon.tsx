@@ -6,9 +6,11 @@ import { getIsoProjectionCss } from 'src/utils';
 
 interface Props {
   icon: Icon;
+  hitId?: string;
+  hitOrder?: number;
 }
 
-export const NonIsometricIcon = ({ icon }: Props) => {
+export const NonIsometricIcon = ({ icon, hitId, hitOrder }: Props) => {
   return (
     <Box sx={{ pointerEvents: 'none' }}>
       <Box
@@ -24,6 +26,8 @@ export const NonIsometricIcon = ({ icon }: Props) => {
           component="img"
           src={icon.url}
           alt={`icon-${icon.id}`}
+          data-icon-hit={hitId}
+          data-icon-order={hitOrder}
           sx={{ width: PROJECTED_TILE_SIZE.width * 0.7 }}
         />
       </Box>

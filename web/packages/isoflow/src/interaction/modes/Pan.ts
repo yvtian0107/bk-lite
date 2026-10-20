@@ -1,6 +1,11 @@
 import { produce } from 'immer';
 import { CoordsUtils, getItemAtTile, setWindowCursor } from 'src/utils';
 import { ModeActions, State } from 'src/types';
+import {
+  findDrawnIconId,
+  resolveViewClick,
+  viewHoverCursor
+} from 'src/interaction/viewPointer';
 
 const CLICK_THRESHOLD_PX = 4;
 
@@ -13,6 +18,32 @@ const isCanvasPointer = (state: State) => {
   return target instanceof Node && !!rendererEl && rendererEl.contains(target);
 };
 
+const isViewClickMode = (state: State) => {
+  return (
+    state.uiState.editorMode === 'EXPLORABLE_READONLY' &&
+    state.callbacksRef.current.editorMode === 'EXPLORABLE_READONLY' &&
+    !!state.callbacksRef.current.onItemClick
+  );
+};
+
+const updateViewCursor = (state: State, element: HTMLElement) => {
+  if (!isViewClickMode(state) || !isCanvasPointer(state)) {
+    setWindowCursor('grab', element);
+    return;
+  }
+
+  const iconId = findDrawnIconId(state.uiState.rendererEl, {
+    x: state.pointer.event.clientX,
+    y: state.pointer.event.clientY
+  });
+  const tileHit = getItemAtTile({
+    tile: state.pointer.mouse.position.tile,
+    scene: state.scene
+  });
+
+  setWindowCursor(viewHoverCursor({ iconId, tileHit }), element);
+};
+
 export const Pan: ModeActions = {
   entry: (state, element) => {
     setWindowCursor('grab', element);
@@ -20,7 +51,9 @@ export const Pan: ModeActions = {
   exit: (state, element) => {
     setWindowCursor('default', element);
   },
-  mousemove: ({ uiState }) => {
+  mousemove: (state, element) => {
+    const { uiState } = state;
+
     if (uiState.mode.type !== 'PAN') return;
 
     if (uiState.mouse.mousedown !== null) {
@@ -31,7 +64,10 @@ export const Pan: ModeActions = {
       });
 
       uiState.actions.setScroll(newScroll);
+      return;
     }
+
+    updateViewCursor(state, element);
   },
   mousedown: (state, element) => {
     const { uiState, isRendererInteraction, pointer, panPressRef } = state;
@@ -53,15 +89,14 @@ export const Pan: ModeActions = {
     setWindowCursor('grabbing', element);
   },
   mouseup: (state, element) => {
-    setWindowCursor('grab', element);
+    updateViewCursor(state, element);
 
     const { uiState, scene, pointer, panPressRef, callbacksRef } = state;
     const press = panPressRef.current;
     panPressRef.current = null;
 
     if (uiState.mode.type !== 'PAN') return;
-    if (uiState.editorMode !== 'EXPLORABLE_READONLY') return;
-    if (callbacksRef.current.editorMode !== 'EXPLORABLE_READONLY') return;
+    if (!isViewClickMode(state)) return;
     if (!press || !isCanvasPointer(state)) return;
 
     const dx = pointer.mouse.position.screen.x - press.x;
@@ -73,23 +108,20 @@ export const Pan: ModeActions = {
 
     if (!onItemClick) return;
 
-    const hit = getItemAtTile({
-      tile: pointer.mouse.position.tile,
-      scene
+    const iconId = findDrawnIconId(uiState.rendererEl, {
+      x: pointer.event.clientX,
+      y: pointer.event.clientY
+    });
+    const decision = resolveViewClick({
+      iconId,
+      tileHit: getItemAtTile({
+        tile: pointer.mouse.position.tile,
+        scene
+      })
     });
 
-    if (hit?.type === 'TEXTBOX') return;
-
-    if (
-      hit &&
-      (hit.type === 'ITEM' ||
-        hit.type === 'RECTANGLE' ||
-        hit.type === 'CONNECTOR')
-    ) {
-      onItemClick({ type: hit.type, id: hit.id }, pointer.event);
-      return;
+    if (decision.kind === 'click') {
+      onItemClick(decision.item, pointer.event);
     }
-
-    if (!hit) onItemClick(null, pointer.event);
   }
 };
