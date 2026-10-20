@@ -62,8 +62,10 @@ import {
   ARCHITECTURE_STATUS_POLL_MS,
   architectureStatusRequestMode,
   blockResourceOpen,
+  buildIconPlates,
   buildNodeStatus,
   buildRectangleOverlays,
+  canvasLegendSignal,
   collectBoundUuids,
   decideDiagramClick,
   iconBindingStats,
@@ -123,6 +125,7 @@ const Architecture = forwardRef<ArchitectureRef, ArchitectureProps>(
     const [highlightId, setHighlightId] = useState<string | undefined>(undefined);
     const [highlightUnbound, setHighlightUnbound] = useState(false);
     const [modelOptions, setModelOptions] = useState<ModelOption[]>([]);
+    const [legendOpen, setLegendOpen] = useState(false);
     const sceneApiRef = useRef<IsoflowSceneApi | null>(null);
     const fulltextSearchRef = useRef(fulltextSearchInstances);
     const fulltextByModelRef = useRef(fulltextSearchByModel);
@@ -475,7 +478,6 @@ const Architecture = forwardRef<ArchitectureRef, ArchitectureProps>(
     );
 
     useEffect(() => {
-      if (shareMode) return undefined;
       let cancelled = false;
       getModelList()
         .then((data) => {
@@ -487,7 +489,7 @@ const Architecture = forwardRef<ArchitectureRef, ArchitectureProps>(
       return () => {
         cancelled = true;
       };
-    }, [getModelList, shareMode]);
+    }, [getModelList]);
 
     const diagramViews = currentModel?.views ?? diagramData.views;
     const boundUuids = useMemo(() => collectBoundUuids(diagramViews), [diagramViews]);
@@ -499,10 +501,23 @@ const Architecture = forwardRef<ArchitectureRef, ArchitectureProps>(
       () => Object.fromEntries(modelOptions.map((model) => [model.model_id, model.model_name])),
       [modelOptions],
     );
+    const iconNames = useMemo(() => {
+      const source = currentModel?.items ?? diagramData.items;
+      const names: Record<string, string> = {};
+      if (!Array.isArray(source)) return names;
+      for (const item of source) {
+        if (!item || typeof item !== 'object') continue;
+        const id = (item as { id?: unknown }).id;
+        const name = (item as { name?: unknown }).name;
+        if (typeof id === 'string') names[id] = typeof name === 'string' ? name : '';
+      }
+      return names;
+    }, [currentModel?.items, diagramData.items]);
     const viewStatus = useArchitectureNodeStatus({
       enabled: requestMode === 'poll',
       uuids: boundUuids,
       intervalMs: ARCHITECTURE_STATUS_POLL_MS,
+      suppressErrors: shareMode,
     });
     const editStatus = useArchitectureNodeStatus({
       enabled: requestMode === 'once',
@@ -518,6 +533,7 @@ const Architecture = forwardRef<ArchitectureRef, ArchitectureProps>(
       setDetail(null);
       setHighlightId(undefined);
       setHighlightUnbound(false);
+      setLegendOpen(false);
     }, [loadedArchitectureId, isEditMode, shareMode]);
 
     const searchResources = useCallback(
@@ -614,9 +630,30 @@ const Architecture = forwardRef<ArchitectureRef, ArchitectureProps>(
         return undefined;
       }
       const overlays = buildNodeStatus(diagramViews, viewStatus.byUuid);
-      const next: Record<string, { level: 'normal' | 'warning' | 'critical' | 'unmonitored' | 'unknown' | 'invalid' | 'forbidden'; count?: number; hint?: string; badgeHint?: string }> = {};
+      const plates = buildIconPlates(diagramViews, viewStatus.byUuid, modelNames, iconNames);
+      const next: Record<string, {
+        level: 'normal' | 'warning' | 'critical' | 'unmonitored' | 'unknown' | 'invalid' | 'forbidden';
+        count?: number;
+        hint?: string;
+        badgeHint?: string;
+        plateTitle?: string;
+        plateSubtitle?: string;
+        hoverName?: string;
+        hoverModel?: string;
+        hoverAlert?: string;
+      }> = {};
       for (const [id, overlay] of Object.entries(overlays)) {
-        const entry: { level: typeof overlay.level; count?: number; hint?: string; badgeHint?: string } = {
+        const entry: {
+          level: typeof overlay.level;
+          count?: number;
+          hint?: string;
+          badgeHint?: string;
+          plateTitle?: string;
+          plateSubtitle?: string;
+          hoverName?: string;
+          hoverModel?: string;
+          hoverAlert?: string;
+        } = {
           level: overlay.level,
         };
         if (typeof overlay.count === 'number') entry.count = overlay.count;
@@ -628,12 +665,32 @@ const Architecture = forwardRef<ArchitectureRef, ArchitectureProps>(
             level: alertLevelLabel(overlay.badgeLevel || overlay.level),
           });
         }
+        const plate = plates[id];
+        if (plate?.title) entry.plateTitle = plate.title;
+        if (plate?.line === 'forbidden') entry.plateSubtitle = t('opsAnalysis.architecture.bindingForbidden');
+        else if (plate?.line === 'invalid') entry.plateSubtitle = t('opsAnalysis.architecture.plateInvalid');
+        else if (plate?.subtitle) entry.plateSubtitle = plate.subtitle;
+        if (plate) {
+          const hoverName = plate.hoverName
+            || (plate.line === 'forbidden' ? t('opsAnalysis.architecture.bindingForbidden') : '')
+            || (plate.line === 'invalid' ? t('opsAnalysis.architecture.plateInvalid') : '');
+          if (hoverName) entry.hoverName = hoverName;
+          if (plate.hoverModel) entry.hoverModel = plate.hoverModel;
+          if (typeof plate.alertCount === 'number') {
+            entry.hoverAlert = t('opsAnalysis.architecture.hoverAlert', undefined, {
+              count: plate.alertCount,
+              level: alertLevelLabel(plate.alertLevel || overlay.level),
+            });
+          }
+        }
         next[id] = entry;
       }
       return Object.keys(next).length ? next : undefined;
     }, [
       alertLevelLabel,
       diagramViews,
+      iconNames,
+      modelNames,
       requestMode,
       statusHintText,
       t,
@@ -668,9 +725,10 @@ const Architecture = forwardRef<ArchitectureRef, ArchitectureProps>(
         } = {};
         if (label) entry.label = label;
         if (overlay.borderLevel) entry.borderLevel = overlay.borderLevel;
-        if (viewing && overlay.badgeCount) {
-          entry.badgeText = t('opsAnalysis.architecture.resourceAlertBadge', undefined, {
-            count: overlay.badgeCount,
+        if (viewing && overlay.resourceCount !== undefined) {
+          entry.badgeText = t('opsAnalysis.architecture.resourceAlertTab', undefined, {
+            n: overlay.resourceCount,
+            m: overlay.alertTotal ?? 0,
           });
         }
         if (overlay.summary) entry.summaryText = t('opsAnalysis.architecture.summaryMark');
@@ -687,6 +745,10 @@ const Architecture = forwardRef<ArchitectureRef, ArchitectureProps>(
       viewStatus.phase,
     ]);
 
+    const legendSignal = useMemo(
+      () => canvasLegendSignal(Object.values(viewStatus.byUuid).map((item) => item.status)),
+      [viewStatus.byUuid],
+    );
     const bindingStats = useMemo(() => iconBindingStats(diagramViews), [diagramViews]);
     const regionCounts = useMemo(() => {
       if (selection?.type !== 'RECTANGLE') return { total: 0, bound: 0 };
@@ -725,6 +787,7 @@ const Architecture = forwardRef<ArchitectureRef, ArchitectureProps>(
       }
       if (action.type === 'close') {
         closeDetail();
+        setLegendOpen(false);
         return;
       }
       if (action.type === 'resource') {
@@ -855,16 +918,14 @@ const Architecture = forwardRef<ArchitectureRef, ArchitectureProps>(
             nodeBinding={nodeBinding}
             rectangleStatus={rectangleStatus}
             appearancePanelTitle={t('opsAnalysis.architecture.appearancePanelTitle')}
+            viewLegend={requestMode === 'poll' ? (
+              <StatusLegend
+                open={legendOpen}
+                signal={legendSignal}
+                onToggle={() => setLegendOpen((current) => !current)}
+              />
+            ) : undefined}
           />
-          {shareMode ? (
-            <div
-              data-testid="architecture-share-hint"
-              className="pointer-events-none absolute right-3 top-3 z-20 rounded bg-[var(--color-fill-2)] px-2 py-1 text-xs text-[var(--color-text-3)]"
-            >
-              {t('opsAnalysis.architecture.shareStatusHint')}
-            </div>
-          ) : null}
-          {requestMode === 'poll' ? <StatusLegend /> : null}
           {showBindingPanel && selectedBinding ? (
             <ResourceBindingPanel
               showFollow={selection?.type === 'RECTANGLE'}

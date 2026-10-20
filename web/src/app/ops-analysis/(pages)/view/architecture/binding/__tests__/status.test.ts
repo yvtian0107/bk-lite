@@ -3,8 +3,10 @@ import {
   ARCHITECTURE_STATUS_POLL_MS,
   architectureStatusRequestMode,
   blockResourceOpen,
+  buildIconPlates,
   buildNodeStatus,
   buildRectangleOverlays,
+  canvasLegendSignal,
   buildRegionList,
   collectBoundUuids,
   connectorEndpointNames,
@@ -95,9 +97,10 @@ const views = [
 const names = { host: '主机', mysql: '数据库', room: '机房' };
 
 describe('architecture view status', () => {
-  it('polls only in view mode and pauses while hidden', () => {
+  it('polls in view and share mode, and pauses while hidden', () => {
     expect(ARCHITECTURE_STATUS_POLL_MS).toBe(60_000);
-    expect(architectureStatusRequestMode({ shareMode: true, editMode: false })).toBe('off');
+    expect(architectureStatusRequestMode({ shareMode: true, editMode: false })).toBe('poll');
+    expect(architectureStatusRequestMode({ shareMode: true, editMode: true })).toBe('poll');
     expect(architectureStatusRequestMode({ shareMode: false, editMode: true })).toBe('once');
     expect(architectureStatusRequestMode({ shareMode: false, editMode: false })).toBe('poll');
     expect(shouldPauseArchitectureStatusRefresh(true)).toBe(true);
@@ -157,10 +160,11 @@ describe('architecture view status', () => {
     const overlays = buildRectangleOverlays(views, byUuid, { followBorders: true });
     expect(overlays.zone).toEqual({
       borderLevel: 'critical',
-      badgeCount: 2,
+      resourceCount: 3,
+      alertTotal: 11,
     });
     expect(overlays.zone?.label).toBeUndefined();
-    expect(overlays.overlap).toEqual({ borderLevel: 'critical', badgeCount: 2 });
+    expect(overlays.overlap).toEqual({ borderLevel: 'critical', resourceCount: 2, alertTotal: 11 });
     expect(overlays.quiet).toBeUndefined();
     expect(buildRectangleOverlays(views, byUuid, { followBorders: false }).zone).toBeUndefined();
     expect(buildRectangleOverlays(views, byUuid, { followBorders: false, markSummary: true }).zone).toEqual({
@@ -171,7 +175,7 @@ describe('architecture view status', () => {
     }, { followBorders: false, markSummary: true }).zone).toEqual({ summary: true });
   });
 
-  it('counts unique alerting resources for an area badge', () => {
+  it('counts unique resources and sums each alerting resource once', () => {
     const duplicated = [{
       items: [
         { id: 'a', tile: { x: 1, y: 1 }, bkBinding: { inst_uuid: 'same', model_id: 'host' } },
@@ -186,7 +190,10 @@ describe('architecture view status', () => {
       other: status('other', 'warning', { alert_count: 1, max_level: 'warning' }),
       far: status('far', 'critical', { alert_count: 8, max_level: 'fatal' }),
     };
-    expect(buildRectangleOverlays(duplicated, byUuid, { followBorders: true }).zone?.badgeCount).toBe(2);
+    expect(buildRectangleOverlays(duplicated, byUuid, { followBorders: true }).zone).toMatchObject({
+      resourceCount: 2,
+      alertTotal: 5,
+    });
     const onlyDuplicate = [{
       items: [
         { id: 'a', tile: { x: 1, y: 1 }, bkBinding: { inst_uuid: 'same', model_id: 'host' } },
@@ -194,7 +201,11 @@ describe('architecture view status', () => {
       ],
       rectangles: [{ id: 'zone', from: { x: 0, y: 0 }, to: { x: 3, y: 3 }, bkFollowAlert: true }],
     }];
-    expect(buildRectangleOverlays(onlyDuplicate, byUuid, { followBorders: true }).zone?.badgeCount).toBe(1);
+    expect(buildRectangleOverlays(onlyDuplicate, byUuid, { followBorders: true }).zone).toEqual({
+      borderLevel: 'critical',
+      resourceCount: 1,
+      alertTotal: 4,
+    });
   });
 
   it('ignores normal, unmonitored and unbound icons when coloring a border', () => {
@@ -205,7 +216,64 @@ describe('architecture view status', () => {
     };
     expect(buildRectangleOverlays(views, byUuid, { followBorders: true }).zone).toEqual({
       borderLevel: 'unknown',
+      resourceCount: 3,
+      alertTotal: 0,
     });
+  });
+
+  it('builds a two-line name plate and keeps one line when the names match or the icon is untitled', () => {
+    const byUuid = {
+      'uuid-web': status('uuid-web', 'warning', {
+        alert_count: 6,
+        max_level: 'critical',
+        inst_name: 'mysql-master-02-very-long',
+      }),
+      'uuid-db': status('uuid-db', 'normal', { inst_name: '数据库', model_id: 'mysql' }),
+      'uuid-cache': status('uuid-cache', 'unknown', { inst_name: '缓存-01' }),
+      'uuid-edge': status('uuid-edge', 'forbidden', { inst_name: 'hidden-edge' }),
+    };
+    const plates = buildIconPlates(views, byUuid, names, {
+      web: '接入层',
+      db: '数据库',
+      cache: 'Untitled',
+      edge: '边缘',
+    });
+    expect(plates.web).toMatchObject({
+      subtitle: 'mysql-master-02-…',
+      hoverName: 'mysql-master-02-very-long',
+      hoverModel: '主机',
+      alertCount: 6,
+      alertLevel: 'critical',
+    });
+    expect(plates.web?.title).toBeUndefined();
+    expect(plates.db).toEqual({
+      hoverName: '数据库',
+      hoverModel: '数据库',
+    });
+    expect(plates.cache).toMatchObject({
+      title: '缓存-01',
+      hoverName: '缓存-01',
+    });
+    expect(plates.cache?.subtitle).toBeUndefined();
+    expect(plates.edge).toMatchObject({ line: 'forbidden', hoverName: 'hidden-edge' });
+    expect(plates.plain).toBeUndefined();
+
+    const invalidViews = [{
+      items: [
+        { id: 'gone', tile: { x: 0, y: 0 }, bkBinding: { inst_uuid: 'uuid-gone', model_id: 'host' } },
+      ],
+    }];
+    expect(buildIconPlates(invalidViews, {
+      'uuid-gone': status('uuid-gone', 'invalid', { inst_name: '' }),
+    }, names, { gone: '旧图标' }).gone).toMatchObject({
+      line: 'invalid',
+      hoverName: '',
+      hoverModel: '主机',
+    });
+    expect(canvasLegendSignal(['normal', 'unmonitored'])).toBe('gray');
+    expect(canvasLegendSignal(['warning', 'unknown'])).toBe('warning');
+    expect(canvasLegendSignal(['critical', 'warning'])).toBe('critical');
+    expect(canvasLegendSignal(['normal'])).toBeNull();
   });
 
   it('lists bound icons inside a rectangle and both connector ends', () => {

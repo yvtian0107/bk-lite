@@ -6,6 +6,7 @@ import { useColor } from 'src/hooks/useColor';
 import { useDiagramVisual } from 'src/diagramOverlay/context';
 import {
   RECTANGLE_BORDER_COLOR,
+  RECTANGLE_STATUS_STROKE_HOVER_WIDTH,
   RECTANGLE_STATUS_STROKE_WIDTH
 } from 'src/diagramOverlay/colors';
 
@@ -13,7 +14,9 @@ type Props = ReturnType<typeof useScene>['rectangles'][0];
 
 export const Rectangle = ({ id, from, to, color: colorId }: Props) => {
   const color = useColor(colorId);
-  const borderLevel = useDiagramVisual().rectangleStatus?.[id]?.borderLevel;
+  const visual = useDiagramVisual();
+  const borderLevel = visual.rectangleStatus?.[id]?.borderLevel;
+  const hovered = visual.hoveredRectangleId === id;
   const strokeColor = borderLevel
     ? RECTANGLE_BORDER_COLOR[borderLevel]
     : getColorVariant(color.value, 'dark', { grade: 2 });
@@ -26,7 +29,12 @@ export const Rectangle = ({ id, from, to, color: colorId }: Props) => {
       cornerRadius={22}
       stroke={{
         color: strokeColor,
-        width: borderLevel ? RECTANGLE_STATUS_STROKE_WIDTH : 1
+        width: borderLevel
+          ? hovered
+            ? RECTANGLE_STATUS_STROKE_HOVER_WIDTH
+            : RECTANGLE_STATUS_STROKE_WIDTH
+          : 1,
+        glow: borderLevel ? strokeColor : undefined
       }}
     />
   );

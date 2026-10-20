@@ -18,9 +18,31 @@ export type RectangleBorderLevel = 'warning' | 'critical' | 'unknown';
 export interface RectangleOverlay {
   label?: OverlayLabel;
   borderLevel?: RectangleBorderLevel;
-  badgeCount?: number;
+  /** Unique bound resource uuids inside the area. */
+  resourceCount?: number;
+  /** Sum of alert_count for unique warning/critical uuids inside the area. */
+  alertTotal?: number;
   summary?: boolean;
 }
+
+export const RESOURCE_NAME_PLATE_LIMIT = 16;
+export const DEFAULT_ICON_TITLE = 'Untitled';
+
+export type IconPlateLine = 'forbidden' | 'invalid';
+
+export interface IconPlate {
+  /** Shown instead of the icon name. Set when the icon name is empty or Untitled. */
+  title?: string;
+  /** Second line, or a sentinel the host translates. */
+  subtitle?: string;
+  line?: IconPlateLine;
+  hoverName: string;
+  hoverModel: string;
+  alertCount?: number;
+  alertLevel?: string;
+}
+
+export type LegendSignal = 'critical' | 'warning' | 'gray';
 
 export interface IconOverlay {
   level: ArchitectureNodeStatusItem['status'];
@@ -95,8 +117,7 @@ export function architectureStatusRequestMode(input: {
   shareMode: boolean;
   editMode: boolean;
 }): 'off' | 'once' | 'poll' {
-  if (input.shareMode) return 'off';
-  if (input.editMode) return 'once';
+  if (input.editMode && !input.shareMode) return 'once';
   return 'poll';
 }
 
@@ -290,6 +311,69 @@ const BORDER_RANK: Record<RectangleBorderLevel, number> = {
   critical: 3,
 };
 
+export function truncateResourceName(name: string, limit = RESOURCE_NAME_PLATE_LIMIT): string {
+  const chars = Array.from(name);
+  if (chars.length <= limit) return name;
+  return `${chars.slice(0, limit).join('')}…`;
+}
+
+const blankIconTitle = (name: string) => {
+  const trimmed = name.trim();
+  return !trimmed || trimmed === DEFAULT_ICON_TITLE;
+};
+
+export function buildIconPlates(
+  views: unknown,
+  statusByUuid: Record<string, ArchitectureNodeStatusItem>,
+  modelNames: Record<string, string>,
+  iconNames: Record<string, string>,
+): Record<string, IconPlate> {
+  const plates: Record<string, IconPlate> = {};
+  for (const view of asViews(views)) {
+    for (const icon of boundIcons(view)) {
+      const status = statusByUuid[icon.instUuid];
+      if (!status) continue;
+      const modelName = modelNames[status.model_id] || status.model_id || '';
+      const alerting = status.status === 'warning' || status.status === 'critical';
+      const plate: IconPlate = {
+        hoverName: status.inst_name.trim(),
+        hoverModel: modelName,
+      };
+      if (alerting && Number.isFinite(status.alert_count)) {
+        plate.alertCount = status.alert_count;
+        plate.alertLevel = status.max_level || status.status;
+      }
+      if (status.status === 'forbidden' || status.status === 'invalid') {
+        plate.line = status.status;
+        plates[icon.id] = plate;
+        continue;
+      }
+      const resourceName = status.inst_name.trim();
+      if (!resourceName) continue;
+      const iconName = (iconNames[icon.id] ?? '').trim();
+      if (blankIconTitle(iconName)) {
+        plate.title = truncateResourceName(resourceName);
+      } else if (iconName !== resourceName) {
+        plate.subtitle = truncateResourceName(resourceName);
+      }
+      plates[icon.id] = plate;
+    }
+  }
+  return plates;
+}
+
+const GRAY_LEGEND_LEVEL = new Set(['unmonitored', 'unknown', 'invalid', 'forbidden']);
+
+export function canvasLegendSignal(levels: Iterable<string>): LegendSignal | null {
+  let signal: LegendSignal | null = null;
+  for (const level of levels) {
+    if (level === 'critical') return 'critical';
+    if (level === 'warning') signal = 'warning';
+    else if (signal !== 'warning' && GRAY_LEGEND_LEVEL.has(level)) signal = 'gray';
+  }
+  return signal;
+}
+
 export function buildNodeStatus(
   views: unknown,
   statusByUuid: Record<string, ArchitectureNodeStatusItem>,
@@ -338,22 +422,32 @@ export function buildRectangleOverlays(
       if (options.followBorders && entry.bkFollowAlert === true && from && to) {
         const inside = icons.filter((icon) => tileInside(icon.tile, from, to));
         let border: RectangleBorderLevel | null = null;
-        const alertingResources = new Set<string>();
+        const resources = new Map<string, ArchitectureNodeStatusItem>();
         for (const icon of inside) {
           const status = statusByUuid[icon.instUuid];
-          if (!status) continue;
+          if (!status || resources.has(icon.instUuid)) continue;
+          resources.set(icon.instUuid, status);
+        }
+        let alertTotal = 0;
+        for (const status of resources.values()) {
           const contribution = borderContribution(status.status);
           if (contribution && (!border || BORDER_RANK[contribution] > BORDER_RANK[border])) {
             border = contribution;
           }
           if (status.status === 'warning' || status.status === 'critical') {
-            alertingResources.add(icon.instUuid);
+            alertTotal += Number.isFinite(status.alert_count) ? status.alert_count : 0;
           }
         }
         if (border) overlay.borderLevel = border;
-        if (alertingResources.size > 0) overlay.badgeCount = alertingResources.size;
+        overlay.resourceCount = resources.size;
+        overlay.alertTotal = alertTotal;
       }
-      if (overlay.label || overlay.borderLevel || overlay.badgeCount || overlay.summary) {
+      if (
+        overlay.label
+        || overlay.borderLevel
+        || overlay.resourceCount !== undefined
+        || overlay.summary
+      ) {
         overlays[entry.id] = overlay;
       }
     }

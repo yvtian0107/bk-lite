@@ -1,3 +1,4 @@
+import type { ReactNode } from 'react';
 import type { EditorModeEnum, MainMenuOptions } from './common';
 import type { Model, Rectangle, ViewItem } from './model';
 import type { RendererProps } from './rendererProps';
@@ -26,6 +27,14 @@ export interface NodeStatus {
   hint?: string;
   /** Hover text for the alert-count badge. */
   badgeHint?: string;
+  /** Replaces the icon title when the icon name is empty or the default Untitled. */
+  plateTitle?: string;
+  /** Second line under the icon name. Hidden by the scene when zoom is below 70%. */
+  plateSubtitle?: string;
+  /** Hover card. The host supplies localized lines; omitted fields are not drawn. */
+  hoverName?: string;
+  hoverModel?: string;
+  hoverAlert?: string;
 }
 
 /** Edit-mode binding marks. These are not status and must not carry alert color. */
@@ -102,6 +111,11 @@ export interface IsoflowProps {
   appearancePanelTitle?: string;
   /** Keyed by rectangle id. Labels, borders and badges are draw-only. */
   rectangleStatus?: Record<string, RectangleStatus>;
+  /**
+   * View mode. Rendered after the zoom row (`- 100% +` and fit-to-screen).
+   * The host owns the copy and the open state.
+   */
+  viewLegend?: ReactNode;
   /**
    * Edit mode. Calls the existing single-item updaters so a binding change
    * goes through onModelUpdated without replacing initialData.

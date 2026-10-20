@@ -11,6 +11,7 @@ import { IconButton } from 'src/components/IconButton/IconButton';
 import { MAX_ZOOM, MIN_ZOOM } from 'src/config';
 import { useUiStateStore } from 'src/stores/uiStateStore';
 import { useDiagramUtils } from 'src/hooks/useDiagramUtils';
+import { useDiagramVisual } from 'src/diagramOverlay/context';
 
 export const ZoomControls = () => {
   const uiStateStoreActions = useUiStateStore((state) => {
@@ -20,10 +21,12 @@ export const ZoomControls = () => {
     return state.zoom;
   });
   const { fitToView } = useDiagramUtils();
+  const viewLegend = useDiagramVisual().viewLegend;
 
   return (
-    <Stack direction="row" spacing={1}>
-      <UiElement>
+    <Box sx={{ position: 'relative' }}>
+      <Stack direction="row" spacing={1} sx={{ alignItems: 'center' }}>
+        <UiElement>
         <Stack direction="row">
           <IconButton
             name="Zoom out"
@@ -52,14 +55,16 @@ export const ZoomControls = () => {
             disabled={zoom <= MIN_ZOOM}
           />
         </Stack>
-      </UiElement>
-      <UiElement>
+        </UiElement>
+        <UiElement>
         <IconButton
           name="Fit to screen"
           Icon={<FitToScreenIcon />}
           onClick={fitToView}
         />
-      </UiElement>
-    </Stack>
+        </UiElement>
+        {viewLegend}
+      </Stack>
+    </Box>
   );
 };

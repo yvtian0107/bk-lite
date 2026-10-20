@@ -43,8 +43,9 @@ const MarkDisc = ({
   title,
   color,
   filled,
-  dashed,
   grow,
+  ring,
+  shadow,
   size = MARK_SIZE,
   children
 }: {
@@ -55,8 +56,9 @@ const MarkDisc = ({
   title?: string;
   color: string;
   filled?: boolean;
-  dashed?: boolean;
   grow?: boolean;
+  ring?: string;
+  shadow?: boolean;
   size?: number;
   children: React.ReactNode;
 }) => {
@@ -66,6 +68,7 @@ const MarkDisc = ({
       data-icon-hit={nodeId}
       data-icon-order={order}
       data-corner-badge={size === CORNER_BADGE ? 'true' : undefined}
+      data-status-disc={ring ? 'badge' : undefined}
       sx={{
         position: 'absolute',
         left,
@@ -76,9 +79,18 @@ const MarkDisc = ({
         px: grow ? '4px' : 0,
         transform: 'translate(-50%, -50%)',
         borderRadius: size,
-        border: filled ? 'none' : `1.5px ${dashed ? 'dashed' : 'solid'} ${color}`,
-        bgcolor: filled ? color : '#fff',
-        color: filled ? (color === NODE_STATUS_COLOR.warning ? '#1f2937' : '#fff') : color,
+        border: ring
+          ? `1.5px solid ${ring}`
+          : filled
+            ? 'none'
+            : `1.5px solid ${color}`,
+        bgcolor: filled || ring ? color : '#fff',
+        color: filled || ring
+          ? color === NODE_STATUS_COLOR.warning
+            ? '#1f2937'
+            : '#fff'
+          : color,
+        boxShadow: shadow ? '0 1px 2px rgba(15, 23, 42, 0.28)' : undefined,
         pointerEvents: title ? 'auto' : 'none',
         display: 'flex',
         alignItems: 'center',
@@ -91,7 +103,34 @@ const MarkDisc = ({
   );
 };
 
+const PlugGlyph = () => (
+  <svg width="10" height="10" viewBox="0 0 16 16" aria-hidden>
+    <path
+      d="M5 1.4v3.1M11 1.4v3.1"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.7"
+      strokeLinecap="round"
+    />
+    <path
+      d="M3.6 6.2h8.8v2.3a3.1 3.1 0 0 1-3.1 3.1H6.7a3.1 3.1 0 0 1-3.1-3.1V6.2z"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.5"
+    />
+    <path
+      d="M8 11.6v2.2"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.7"
+      strokeLinecap="round"
+    />
+  </svg>
+);
+
 const GrayGlyph = ({ level }: { level: NodeStatusLevel }) => {
+  if (level === 'unmonitored') return <PlugGlyph />;
+
   if (level === 'unknown') {
     return (
       <Box component="span" sx={{ fontSize: 13, fontWeight: 700, lineHeight: 1 }}>
@@ -275,8 +314,10 @@ export const NodeStatusMark = ({ nodeId, order }: Props) => {
           top={bottomRight.top}
           title={status.hint}
           color={color}
-          dashed={status.level === 'unmonitored'}
-          size={CORNER_BADGE}
+          filled
+          ring="#fff"
+          shadow
+          size={MARK_SIZE}
         >
           <GrayGlyph level={status.level} />
         </MarkDisc>

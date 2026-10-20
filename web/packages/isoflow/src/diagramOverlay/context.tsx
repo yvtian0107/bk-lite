@@ -1,10 +1,12 @@
 import React, {
   createContext,
+  useCallback,
   useContext,
   useEffect,
   useLayoutEffect,
   useMemo,
-  useRef
+  useRef,
+  useState
 } from 'react';
 import type {
   EditorModeEnum,
@@ -27,10 +29,15 @@ export interface DiagramVisual {
   highlightedItemId?: string;
   appearancePanelTitle?: string;
   editorMode: keyof typeof EditorModeEnum;
+  viewLegend?: React.ReactNode;
+  hoveredRectangleId: string | null;
+  setHoveredRectangleId: (id: string | null) => void;
 }
 
 const EMPTY_VISUAL: DiagramVisual = {
-  editorMode: 'EDITABLE'
+  editorMode: 'EDITABLE',
+  hoveredRectangleId: null,
+  setHoveredRectangleId: () => undefined
 };
 
 const DiagramVisualContext = createContext<DiagramVisual>(EMPTY_VISUAL);
@@ -52,6 +59,7 @@ interface ProviderProps {
   highlightedItemId?: string;
   appearancePanelTitle?: string;
   editorMode?: keyof typeof EditorModeEnum;
+  viewLegend?: React.ReactNode;
 }
 
 export const DiagramOverlayProvider = ({
@@ -63,8 +71,13 @@ export const DiagramOverlayProvider = ({
   rectangleStatus,
   highlightedItemId,
   appearancePanelTitle,
-  editorMode = 'EDITABLE'
+  editorMode = 'EDITABLE',
+  viewLegend
 }: ProviderProps) => {
+  const [hoveredRectangleId, setHoveredRectangleId] = useState<string | null>(null);
+  const setHovered = useCallback((id: string | null) => {
+    setHoveredRectangleId(id);
+  }, []);
   const callbacksRef = useRef<DiagramCallbacksRef['current']>({
     editorMode,
     lastSelectKey: ''
@@ -104,15 +117,21 @@ export const DiagramOverlayProvider = ({
       rectangleStatus,
       highlightedItemId,
       appearancePanelTitle,
-      editorMode
+      editorMode,
+      viewLegend,
+      hoveredRectangleId,
+      setHoveredRectangleId: setHovered
     };
   }, [
     appearancePanelTitle,
     editorMode,
     highlightedItemId,
+    hoveredRectangleId,
     nodeBinding,
     nodeStatus,
-    rectangleStatus
+    rectangleStatus,
+    setHovered,
+    viewLegend
   ]);
 
   return (

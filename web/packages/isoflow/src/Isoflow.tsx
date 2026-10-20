@@ -127,6 +127,7 @@ export const Isoflow = (props: IsoflowProps) => {
               highlightedItemId={props.highlightedItemId}
               appearancePanelTitle={props.appearancePanelTitle}
               editorMode={props.editorMode}
+              viewLegend={props.viewLegend}
             >
               <App {...props} />
             </DiagramOverlayProvider>
