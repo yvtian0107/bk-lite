@@ -19,11 +19,35 @@ export interface RectangleOverlay {
   label?: OverlayLabel;
   borderLevel?: RectangleBorderLevel;
   badgeCount?: number;
+  summary?: boolean;
 }
 
 export interface IconOverlay {
   level: ArchitectureNodeStatusItem['status'];
   count?: number;
+  hint?: 'unmonitored' | 'unknown' | 'forbidden' | 'invalid';
+  badgeName?: string;
+  badgeLevel?: string;
+}
+
+export interface IconBindingStats {
+  bound: number;
+  total: number;
+  boundIds: string[];
+  unboundIds: string[];
+}
+
+export interface RegionListSummary {
+  total: number;
+  alert: number;
+  normal: number;
+  other: number;
+}
+
+export interface RegionList {
+  summary: RegionListSummary;
+  self: ResourceLine | null;
+  icons: ResourceLine[];
 }
 
 export interface ResourceLine {
@@ -176,6 +200,13 @@ const tileInside = (
   return tile.x >= minX && tile.x <= maxX && tile.y >= minY && tile.y <= maxY;
 };
 
+interface PlacedIcon {
+  id: string;
+  tile: { x: number; y: number } | null;
+  instUuid: string | null;
+  modelId: string | null;
+}
+
 interface BoundIcon {
   id: string;
   tile: { x: number; y: number };
@@ -183,23 +214,68 @@ interface BoundIcon {
   modelId: string;
 }
 
-const boundIcons = (view: Record<string, unknown>): BoundIcon[] => {
+const placedIcons = (view: Record<string, unknown>): PlacedIcon[] => {
   if (!Array.isArray(view.items)) return [];
-  const icons: BoundIcon[] = [];
+  const icons: PlacedIcon[] = [];
   for (const entry of view.items) {
     if (!isRecord(entry) || typeof entry.id !== 'string') continue;
-    const tile = readCoord(entry.tile);
     const binding = readBinding(entry.bkBinding);
-    if (!tile || !binding) continue;
     icons.push({
       id: entry.id,
-      tile,
-      instUuid: binding.inst_uuid,
-      modelId: binding.model_id,
+      tile: readCoord(entry.tile),
+      instUuid: binding?.inst_uuid ?? null,
+      modelId: binding?.model_id ?? null,
     });
   }
   return icons;
 };
+
+const boundIcons = (view: Record<string, unknown>): BoundIcon[] => {
+  const icons: BoundIcon[] = [];
+  for (const icon of placedIcons(view)) {
+    if (!icon.tile || !icon.instUuid || !icon.modelId) continue;
+    icons.push({
+      id: icon.id,
+      tile: icon.tile,
+      instUuid: icon.instUuid,
+      modelId: icon.modelId,
+    });
+  }
+  return icons;
+};
+
+export function iconBindingStats(views: unknown): IconBindingStats {
+  const boundIds: string[] = [];
+  const unboundIds: string[] = [];
+  for (const view of asViews(views)) {
+    for (const icon of placedIcons(view)) {
+      if (icon.instUuid && icon.modelId) boundIds.push(icon.id);
+      else unboundIds.push(icon.id);
+    }
+  }
+  return {
+    bound: boundIds.length,
+    total: boundIds.length + unboundIds.length,
+    boundIds,
+    unboundIds,
+  };
+}
+
+export function rectangleIconCounts(
+  views: unknown,
+  rectangleId: string,
+): { total: number; bound: number } {
+  const found = findEntry(views, 'rectangles', rectangleId);
+  if (!found) return { total: 0, bound: 0 };
+  const from = readCoord(found.entry.from);
+  const to = readCoord(found.entry.to);
+  if (!from || !to) return { total: 0, bound: 0 };
+  const inside = placedIcons(found.view).filter((icon) => icon.tile && tileInside(icon.tile, from, to));
+  return {
+    total: inside.length,
+    bound: inside.filter((icon) => Boolean(icon.instUuid && icon.modelId)).length,
+  };
+}
 
 const borderContribution = (
   level: ArchitectureNodeStatusItem['status'] | undefined,
@@ -226,11 +302,17 @@ export function buildNodeStatus(
       const status = statusByUuid[icon.instUuid];
       if (!status) continue;
       const overlay: IconOverlay = { level: status.status };
-      if (
-        (status.status === 'warning' || status.status === 'critical')
-        && Number.isFinite(status.alert_count)
+      if (status.status === 'warning' || status.status === 'critical') {
+        if (Number.isFinite(status.alert_count)) overlay.count = status.alert_count;
+        overlay.badgeName = status.inst_name || status.inst_uuid;
+        overlay.badgeLevel = status.max_level || status.status;
+      } else if (
+        status.status === 'unmonitored'
+        || status.status === 'unknown'
+        || status.status === 'forbidden'
+        || status.status === 'invalid'
       ) {
-        overlay.count = status.alert_count;
+        overlay.hint = status.status;
       }
       overlays[icon.id] = overlay;
     }
@@ -242,7 +324,7 @@ export function buildRectangleOverlays(
   views: unknown,
   statusByUuid: Record<string, ArchitectureNodeStatusItem>,
   modelNames: Record<string, string>,
-  options: { followBorders: boolean },
+  options: { followBorders: boolean; markSummary?: boolean },
 ): Record<string, RectangleOverlay> {
   const overlays: Record<string, RectangleOverlay> = {};
   for (const view of asViews(views)) {
@@ -256,12 +338,19 @@ export function buildRectangleOverlays(
       const overlay: RectangleOverlay = {};
       if (binding) {
         const title = resourceTitle(statusByUuid[binding.inst_uuid], modelNames);
-        if (title.type !== 'pending') overlay.label = title;
+        if (options.followBorders) {
+          if (title.type !== 'pending') overlay.label = title;
+        } else if (title.type === 'text') {
+          overlay.label = title;
+        }
+      }
+      if (options.markSummary && entry.bkFollowAlert === true) {
+        overlay.summary = true;
       }
       if (options.followBorders && entry.bkFollowAlert === true && from && to) {
         const inside = icons.filter((icon) => tileInside(icon.tile, from, to));
         let border: RectangleBorderLevel | null = null;
-        let badge = 0;
+        const alertingResources = new Set<string>();
         for (const icon of inside) {
           const status = statusByUuid[icon.instUuid];
           if (!status) continue;
@@ -269,12 +358,14 @@ export function buildRectangleOverlays(
           if (contribution && (!border || BORDER_RANK[contribution] > BORDER_RANK[border])) {
             border = contribution;
           }
-          if (status.status === 'warning' || status.status === 'critical') badge += 1;
+          if (status.status === 'warning' || status.status === 'critical') {
+            alertingResources.add(icon.instUuid);
+          }
         }
         if (border) overlay.borderLevel = border;
-        if (badge > 0) overlay.badgeCount = badge;
+        if (alertingResources.size > 0) overlay.badgeCount = alertingResources.size;
       }
-      if (overlay.label || overlay.borderLevel || overlay.badgeCount) {
+      if (overlay.label || overlay.borderLevel || overlay.badgeCount || overlay.summary) {
         overlays[entry.id] = overlay;
       }
     }
@@ -325,32 +416,87 @@ const emptyLine = (key: string): ResourceLine => ({
   alertCount: null,
 });
 
+const emptyRegionSummary = (): RegionListSummary => ({
+  total: 0,
+  alert: 0,
+  normal: 0,
+  other: 0,
+});
+
+const regionBucket = (
+  level: ArchitectureNodeStatusItem['status'] | null,
+): keyof Omit<RegionListSummary, 'total'> => {
+  if (level === 'warning' || level === 'critical') return 'alert';
+  if (level === 'normal') return 'normal';
+  return 'other';
+};
+
+const ALERT_SEVERITY_RANK: Record<string, number> = {
+  fatal: 60,
+  severity: 50,
+  critical: 40,
+  error: 30,
+  warning: 20,
+  remain: 10,
+};
+
+const alertSeverityRank = (
+  level: ArchitectureNodeStatusItem['status'] | null,
+  maxLevel: string | null,
+): number => {
+  if (level !== 'warning' && level !== 'critical') return 0;
+  const named = maxLevel ? ALERT_SEVERITY_RANK[maxLevel.trim().toLowerCase()] : undefined;
+  if (typeof named === 'number') return named;
+  return level === 'critical' ? 40 : 20;
+};
+
+const BUCKET_RANK = { alert: 0, normal: 1, other: 2 };
+
+export function buildRegionList(
+  views: unknown,
+  rectangleId: string,
+  statusByUuid: Record<string, ArchitectureNodeStatusItem>,
+  modelNames: Record<string, string>,
+): RegionList {
+  const found = findEntry(views, 'rectangles', rectangleId);
+  if (!found) return { summary: emptyRegionSummary(), self: null, icons: [] };
+  const binding = readBinding(found.entry.bkBinding);
+  const self = binding ? lineFromBinding('self', binding, statusByUuid, modelNames) : null;
+  const from = readCoord(found.entry.from);
+  const to = readCoord(found.entry.to);
+  if (!from || !to) return { summary: emptyRegionSummary(), self, icons: [] };
+  const icons = boundIcons(found.view)
+    .filter((icon) => tileInside(icon.tile, from, to))
+    .sort((left, right) => {
+      const leftStatus = statusByUuid[left.instUuid];
+      const rightStatus = statusByUuid[right.instUuid];
+      const leftBucket = regionBucket(leftStatus?.status ?? null);
+      const rightBucket = regionBucket(rightStatus?.status ?? null);
+      const bucketDelta = BUCKET_RANK[leftBucket] - BUCKET_RANK[rightBucket];
+      if (bucketDelta) return bucketDelta;
+      const severityDelta = alertSeverityRank(rightStatus?.status ?? null, rightStatus?.max_level ?? null)
+        - alertSeverityRank(leftStatus?.status ?? null, leftStatus?.max_level ?? null);
+      if (severityDelta) return severityDelta;
+      return left.tile.y - right.tile.y || left.tile.x - right.tile.x || left.id.localeCompare(right.id);
+    });
+  const lines = icons.map((icon) => lineFromBinding(icon.id, {
+    inst_uuid: icon.instUuid,
+    model_id: icon.modelId,
+  }, statusByUuid, modelNames, icon.id));
+  const summary = emptyRegionSummary();
+  summary.total = lines.length;
+  for (const line of lines) summary[regionBucket(line.level)] += 1;
+  return { summary, self, icons: lines };
+}
+
 export function regionResourceLines(
   views: unknown,
   rectangleId: string,
   statusByUuid: Record<string, ArchitectureNodeStatusItem>,
   modelNames: Record<string, string>,
 ): ResourceLine[] {
-  const found = findEntry(views, 'rectangles', rectangleId);
-  if (!found) return [];
-  const lines: ResourceLine[] = [];
-  const binding = readBinding(found.entry.bkBinding);
-  if (binding) {
-    lines.push(lineFromBinding('self', binding, statusByUuid, modelNames));
-  }
-  const from = readCoord(found.entry.from);
-  const to = readCoord(found.entry.to);
-  if (!from || !to) return lines;
-  const icons = boundIcons(found.view)
-    .filter((icon) => tileInside(icon.tile, from, to))
-    .sort((left, right) => left.tile.y - right.tile.y || left.tile.x - right.tile.x || left.id.localeCompare(right.id));
-  for (const icon of icons) {
-    lines.push(lineFromBinding(icon.id, {
-      inst_uuid: icon.instUuid,
-      model_id: icon.modelId,
-    }, statusByUuid, modelNames, icon.id));
-  }
-  return lines;
+  const list = buildRegionList(views, rectangleId, statusByUuid, modelNames);
+  return list.self ? [list.self, ...list.icons] : list.icons;
 }
 
 interface ResolvedAnchor {
@@ -391,6 +537,30 @@ const resolveAnchor = (
   }
   return { binding: null };
 };
+
+const modelItemName = (items: unknown, id: string | undefined): string => {
+  if (!id || !Array.isArray(items)) return '';
+  const match = items.find((entry) => isRecord(entry) && entry.id === id);
+  if (!isRecord(match) || typeof match.name !== 'string') return '';
+  return match.name.trim();
+};
+
+export function connectorEndpointNames(
+  views: unknown,
+  items: unknown,
+  connectorId: string,
+): { start: string; end: string } {
+  const found = findEntry(views, 'connectors', connectorId);
+  const anchors = found && Array.isArray(found.entry.anchors)
+    ? found.entry.anchors.filter(isRecord)
+    : [];
+  const ends = [anchors[0] ?? null, anchors.length ? anchors[anchors.length - 1] : null];
+  const names = ends.map((anchor) => {
+    if (!found || !anchor) return '';
+    return modelItemName(items, resolveAnchor(anchor, found.view, new Set()).itemId);
+  });
+  return { start: names[0] ?? '', end: names[1] ?? '' };
+}
 
 export function connectorResourceLines(
   views: unknown,

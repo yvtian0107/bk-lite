@@ -1,5 +1,6 @@
 import React, { useMemo } from 'react';
-import { Box } from '@mui/material';
+import { Box, Typography } from '@mui/material';
+import { useDiagramVisual } from 'src/diagramOverlay/context';
 import { useUiStateStore } from 'src/stores/uiStateStore';
 import { IconSelectionControls } from 'src/components/ItemControls/IconSelectionControls/IconSelectionControls';
 import { NodeControls } from './NodeControls/NodeControls';
@@ -11,6 +12,7 @@ export const ItemControlsManager = () => {
   const itemControls = useUiStateStore((state) => {
     return state.itemControls;
   });
+  const appearancePanelTitle = useDiagramVisual().appearancePanelTitle?.trim();
 
   const Controls = useMemo(() => {
     switch (itemControls?.type) {
@@ -35,6 +37,18 @@ export const ItemControlsManager = () => {
         width: '100%'
       }}
     >
+      {appearancePanelTitle ? (
+        <Box sx={{ px: 2, pt: 1.5, pb: 0.5 }}>
+          <Typography
+            variant="body2"
+            fontWeight={600}
+            color="text.primary"
+            sx={{ lineHeight: 1.4 }}
+          >
+            {appearancePanelTitle}
+          </Typography>
+        </Box>
+      ) : null}
       {Controls}
     </Box>
   );

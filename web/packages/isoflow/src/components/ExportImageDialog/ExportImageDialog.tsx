@@ -150,6 +150,7 @@ export const ExportImageDialog = ({ onClose, quality = 1.5 }: Props) => {
                     editorMode="NON_INTERACTIVE"
                     onModelUpdated={exportImage}
                     nodeStatus={diagramVisual.nodeStatus}
+                    nodeBinding={diagramVisual.nodeBinding}
                     rectangleStatus={diagramVisual.rectangleStatus}
                     highlightedItemId={diagramVisual.highlightedItemId}
                     initialData={{

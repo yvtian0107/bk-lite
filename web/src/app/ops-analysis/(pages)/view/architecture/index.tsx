@@ -45,6 +45,7 @@ import ResourceBindingPanel from './components/resourceBindingPanel';
 import ResourceDetailDrawer, {
   type ArchitectureDetailState,
 } from './components/resourceDetailDrawer';
+import StatusLegend from './components/statusLegend';
 import {
   BINDING_SEARCH_LIMIT,
   bindingSearchMode,
@@ -65,6 +66,8 @@ import {
   buildRectangleOverlays,
   collectBoundUuids,
   decideDiagramClick,
+  iconBindingStats,
+  rectangleIconCounts,
   type OverlayLabel,
 } from './binding/status';
 import { useArchitectureNodeStatus } from './binding/useNodeStatus';
@@ -118,6 +121,7 @@ const Architecture = forwardRef<ArchitectureRef, ArchitectureProps>(
     const [selection, setSelection] = useState<DiagramItemHit | null>(null);
     const [detail, setDetail] = useState<ArchitectureDetailState | null>(null);
     const [highlightId, setHighlightId] = useState<string | undefined>(undefined);
+    const [highlightUnbound, setHighlightUnbound] = useState(false);
     const [modelOptions, setModelOptions] = useState<ModelOption[]>([]);
     const sceneApiRef = useRef<IsoflowSceneApi | null>(null);
     const fulltextSearchRef = useRef(fulltextSearchInstances);
@@ -513,6 +517,7 @@ const Architecture = forwardRef<ArchitectureRef, ArchitectureProps>(
     useEffect(() => {
       setDetail(null);
       setHighlightId(undefined);
+      setHighlightUnbound(false);
     }, [loadedArchitectureId, isEditMode, shareMode]);
 
     const searchResources = useCallback(
@@ -575,6 +580,26 @@ const Architecture = forwardRef<ArchitectureRef, ArchitectureProps>(
       setSelection(item);
     }, []);
 
+    const alertLevelLabel = useCallback((level: string) => {
+      const key: Record<string, string> = {
+        fatal: 'opsAnalysis.architecture.levelFatal',
+        severity: 'opsAnalysis.architecture.levelSeverity',
+        critical: 'opsAnalysis.architecture.levelCritical',
+        error: 'opsAnalysis.architecture.levelError',
+        warning: 'opsAnalysis.architecture.levelWarning',
+        remain: 'opsAnalysis.architecture.levelRemain',
+      };
+      const messageKey = key[level.trim().toLowerCase()];
+      return messageKey ? t(messageKey) : level;
+    }, [t]);
+
+    const statusHintText = useCallback((hint: 'unmonitored' | 'unknown' | 'forbidden' | 'invalid') => {
+      if (hint === 'unmonitored') return t('opsAnalysis.architecture.hintUnmonitored');
+      if (hint === 'forbidden') return t('opsAnalysis.architecture.hintForbidden');
+      if (hint === 'invalid') return t('opsAnalysis.architecture.hintInvalid');
+      return t('opsAnalysis.architecture.hintUnknown');
+    }, [t]);
+
     const overlayText = useCallback((label: OverlayLabel | undefined) => {
       if (!label || label.type === 'pending' || label.type === 'empty') return undefined;
       if (label.type === 'text') return label.value;
@@ -589,41 +614,94 @@ const Architecture = forwardRef<ArchitectureRef, ArchitectureProps>(
         return undefined;
       }
       const overlays = buildNodeStatus(diagramViews, viewStatus.byUuid);
-      return Object.keys(overlays).length ? overlays : undefined;
-    }, [diagramViews, requestMode, viewStatus.byUuid, viewStatus.phase]);
+      const next: Record<string, { level: 'normal' | 'warning' | 'critical' | 'unmonitored' | 'unknown' | 'invalid' | 'forbidden'; count?: number; hint?: string; badgeHint?: string }> = {};
+      for (const [id, overlay] of Object.entries(overlays)) {
+        const entry: { level: typeof overlay.level; count?: number; hint?: string; badgeHint?: string } = {
+          level: overlay.level,
+        };
+        if (typeof overlay.count === 'number') entry.count = overlay.count;
+        if (overlay.hint) entry.hint = statusHintText(overlay.hint);
+        if (overlay.badgeName && typeof overlay.count === 'number') {
+          entry.badgeHint = t('opsAnalysis.architecture.alertBadgeHint', undefined, {
+            name: overlay.badgeName,
+            count: overlay.count,
+            level: alertLevelLabel(overlay.badgeLevel || overlay.level),
+          });
+        }
+        next[id] = entry;
+      }
+      return Object.keys(next).length ? next : undefined;
+    }, [
+      alertLevelLabel,
+      diagramViews,
+      requestMode,
+      statusHintText,
+      t,
+      viewStatus.byUuid,
+      viewStatus.phase,
+    ]);
 
     const rectangleStatus = useMemo(() => {
       if (requestMode === 'off') return undefined;
-      const source = requestMode === 'poll' ? viewStatus.byUuid : editStatus.byUuid;
-      if (
-        (requestMode === 'poll' ? viewStatus.phase : editStatus.phase) === 'idle'
-        && Object.keys(source).length === 0
-      ) {
+      const viewing = requestMode === 'poll';
+      const source = viewing ? viewStatus.byUuid : editStatus.byUuid;
+      if (viewing && viewStatus.phase === 'idle' && Object.keys(source).length === 0) {
         return undefined;
       }
       const overlays = buildRectangleOverlays(diagramViews, source, modelNames, {
-        followBorders: requestMode === 'poll',
+        followBorders: viewing,
+        markSummary: !viewing,
       });
-      const next: Record<string, { label?: string; borderLevel?: 'warning' | 'critical' | 'unknown'; badgeCount?: number }> = {};
+      const next: Record<string, {
+        label?: string;
+        borderLevel?: 'warning' | 'critical' | 'unknown';
+        badgeText?: string;
+        summaryText?: string;
+      }> = {};
       for (const [id, overlay] of Object.entries(overlays)) {
         const label = overlayText(overlay.label);
-        const entry: { label?: string; borderLevel?: 'warning' | 'critical' | 'unknown'; badgeCount?: number } = {};
+        const entry: {
+          label?: string;
+          borderLevel?: 'warning' | 'critical' | 'unknown';
+          badgeText?: string;
+          summaryText?: string;
+        } = {};
         if (label) entry.label = label;
         if (overlay.borderLevel) entry.borderLevel = overlay.borderLevel;
-        if (overlay.badgeCount) entry.badgeCount = overlay.badgeCount;
-        if (entry.label || entry.borderLevel || entry.badgeCount) next[id] = entry;
+        if (viewing && overlay.badgeCount) {
+          entry.badgeText = t('opsAnalysis.architecture.resourceAlertBadge', undefined, {
+            count: overlay.badgeCount,
+          });
+        }
+        if (overlay.summary) entry.summaryText = t('opsAnalysis.architecture.summaryMark');
+        if (entry.label || entry.borderLevel || entry.badgeText || entry.summaryText) next[id] = entry;
       }
       return Object.keys(next).length ? next : undefined;
     }, [
       diagramViews,
       editStatus.byUuid,
-      editStatus.phase,
       modelNames,
       overlayText,
       requestMode,
+      t,
       viewStatus.byUuid,
       viewStatus.phase,
     ]);
+
+    const bindingStats = useMemo(() => iconBindingStats(diagramViews), [diagramViews]);
+    const regionCounts = useMemo(() => {
+      if (selection?.type !== 'RECTANGLE') return { total: 0, bound: 0 };
+      return rectangleIconCounts(diagramViews, selection.id);
+    }, [diagramViews, selection]);
+    const nodeBinding = useMemo(() => {
+      if (requestMode !== 'once') return undefined;
+      const marks: Record<string, { chain?: boolean; unbound?: boolean }> = {};
+      for (const id of bindingStats.boundIds) marks[id] = { chain: true };
+      if (highlightUnbound) {
+        for (const id of bindingStats.unboundIds) marks[id] = { unbound: true };
+      }
+      return Object.keys(marks).length ? marks : undefined;
+    }, [bindingStats, highlightUnbound, requestMode]);
 
     const closeDetail = useCallback(() => {
       setDetail(null);
@@ -741,6 +819,12 @@ const Architecture = forwardRef<ArchitectureRef, ArchitectureProps>(
             onSave={saveDiagram}
             editExtra={bindCanvasDraftControls(architectureDraft)}
             onFullscreenToggle={handleFullscreenToggle}
+            bindingMeter={isEditMode ? {
+              bound: bindingStats.bound,
+              total: bindingStats.total,
+              highlightUnbound,
+              onToggleHighlight: () => setHighlightUnbound((current) => !current),
+            } : undefined}
           />
         )}
 
@@ -769,13 +853,27 @@ const Architecture = forwardRef<ArchitectureRef, ArchitectureProps>(
             onItemClick={requestMode === 'poll' ? handleItemClick : undefined}
             highlightedItemId={requestMode === 'poll' ? highlightId : undefined}
             nodeStatus={nodeStatus}
+            nodeBinding={nodeBinding}
             rectangleStatus={rectangleStatus}
+            appearancePanelTitle={t('opsAnalysis.architecture.appearancePanelTitle')}
           />
+          {shareMode ? (
+            <div
+              data-testid="architecture-share-hint"
+              className="pointer-events-none absolute right-3 top-3 z-20 rounded bg-[var(--color-fill-2)] px-2 py-1 text-xs text-[var(--color-text-3)]"
+            >
+              {t('opsAnalysis.architecture.shareStatusHint')}
+            </div>
+          ) : null}
+          {requestMode === 'poll' ? <StatusLegend /> : null}
           {showBindingPanel && selectedBinding ? (
             <ResourceBindingPanel
               showFollow={selection?.type === 'RECTANGLE'}
               followAlert={selectedBinding.followAlert}
               bound={Boolean(selectedBinding.binding)}
+              binding={selectedBinding.binding}
+              iconTotal={regionCounts.total}
+              iconBound={regionCounts.bound}
               statusLoading={Boolean(selectedBinding.binding && !selectedStatus)}
               status={selectedStatus}
               modelName={
@@ -789,6 +887,9 @@ const Architecture = forwardRef<ArchitectureRef, ArchitectureProps>(
                 patchSelection({
                   bkBinding: { inst_uuid: hit.inst_uuid, model_id: hit.model_id },
                 });
+                message.success(t('opsAnalysis.architecture.bindingBound', undefined, {
+                  name: hit.inst_name || hit.inst_uuid,
+                }));
               }}
               onUnbind={() => patchSelection({ bkBinding: undefined })}
               onFollowAlert={(enabled) => patchSelection({ bkFollowAlert: enabled })}
@@ -798,6 +899,7 @@ const Architecture = forwardRef<ArchitectureRef, ArchitectureProps>(
             <ResourceDetailDrawer
               detail={detail}
               views={diagramViews}
+              items={currentModel?.items ?? diagramData.items}
               statusByUuid={viewStatus.byUuid}
               modelNames={modelNames}
               onClose={closeDetail}

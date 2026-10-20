@@ -3,9 +3,9 @@ import { Box } from '@mui/material';
 import { useScene } from 'src/hooks/useScene';
 import { useDiagramVisual } from 'src/diagramOverlay/context';
 import { RECTANGLE_BORDER_COLOR } from 'src/diagramOverlay/colors';
-import { getRectangleTopVertex } from 'src/diagramOverlay/rectangleAnchor';
+import { getRectangleFrontVertex } from 'src/diagramOverlay/rectangleAnchor';
 
-const LABEL_GAP_PX = 8;
+const TAB_GAP_PX = 6;
 
 export const RectangleStatusLayer = () => {
   const { rectangles } = useScene();
@@ -21,14 +21,12 @@ export const RectangleStatusLayer = () => {
         if (!status) return null;
 
         const label = status.label?.trim() ? status.label : undefined;
-        const showBadge =
-          typeof status.badgeCount === 'number' &&
-          Number.isFinite(status.badgeCount) &&
-          status.badgeCount > 0;
+        const badgeText = status.badgeText?.trim() ? status.badgeText : undefined;
+        const summaryText = status.summaryText?.trim() ? status.summaryText : undefined;
 
-        if (!label && !showBadge) return null;
+        if (!label && !badgeText && !summaryText) return null;
 
-        const vertex = getRectangleTopVertex(rectangle.from, rectangle.to);
+        const vertex = getRectangleFrontVertex(rectangle.from, rectangle.to);
         const accent = status.borderLevel
           ? RECTANGLE_BORDER_COLOR[status.borderLevel]
           : '#6b7280';
@@ -37,58 +35,75 @@ export const RectangleStatusLayer = () => {
           <Box
             key={rectangle.id}
             data-rectangle-id={rectangle.id}
+            data-rectangle-anchor="front"
             data-rectangle-label={label ?? ''}
-            data-rectangle-badge={showBadge ? String(status.badgeCount) : ''}
+            data-rectangle-badge={badgeText ?? ''}
+            data-rectangle-summary={summaryText ?? ''}
             sx={{
               position: 'absolute',
               left: vertex.x,
-              top: vertex.y - LABEL_GAP_PX,
-              transform: 'translate(-50%, -100%)',
+              top: vertex.y + TAB_GAP_PX,
+              transform: 'translate(-50%, 0)',
               display: 'flex',
               alignItems: 'center',
               gap: '4px',
               pointerEvents: 'none',
-              userSelect: 'none'
+              userSelect: 'none',
+              px: '8px',
+              py: '3px',
+              borderRadius: '0 0 8px 8px',
+              border: '1px solid #d1d5db',
+              borderTop: 'none',
+              bgcolor: '#fff',
+              boxShadow: '0 1px 2px rgba(15, 23, 42, 0.16)',
+              fontFamily:
+                '"WenQuanYi Micro Hei", "Noto Sans CJK SC", "Noto Sans SC", sans-serif'
             }}
           >
             {label && (
               <Box
                 sx={{
-                  px: '8px',
-                  py: '2px',
-                  borderRadius: '4px',
-                  border: `1px solid ${accent}`,
-                  bgcolor: '#fff',
                   color: '#111827',
                   fontSize: 12,
                   fontWeight: 600,
                   lineHeight: 1.3,
-                  whiteSpace: 'nowrap',
-                  fontFamily:
-                    '"WenQuanYi Micro Hei", "Noto Sans CJK SC", "Noto Sans SC", sans-serif',
-                  boxShadow: '0 1px 2px rgba(15, 23, 42, 0.18)'
+                  whiteSpace: 'nowrap'
                 }}
               >
                 {label}
               </Box>
             )}
-            {showBadge && (
+            {summaryText && (
               <Box
                 sx={{
-                  minWidth: 18,
-                  height: 18,
                   px: '5px',
-                  borderRadius: 9,
-                  bgcolor: accent,
-                  color: status.borderLevel === 'warning' ? '#1f2937' : '#fff',
+                  borderRadius: '4px',
+                  border: '1px solid #94a3b8',
+                  color: '#475569',
                   fontSize: 11,
-                  fontWeight: 700,
-                  lineHeight: '18px',
-                  textAlign: 'center',
-                  boxSizing: 'border-box'
+                  fontWeight: 600,
+                  lineHeight: '16px',
+                  whiteSpace: 'nowrap'
                 }}
               >
-                {status.badgeCount}
+                {summaryText}
+              </Box>
+            )}
+            {badgeText && (
+              <Box
+                sx={{
+                  px: '6px',
+                  borderRadius: 999,
+                  border: `1px solid ${accent}`,
+                  bgcolor: '#fff',
+                  color: accent,
+                  fontSize: 11,
+                  fontWeight: 700,
+                  lineHeight: '16px',
+                  whiteSpace: 'nowrap'
+                }}
+              >
+                {badgeText}
               </Box>
             )}
           </Box>

@@ -1,6 +1,8 @@
 import assert from 'node:assert/strict';
 import { getTilePosition } from 'src/utils/renderer';
 import {
+  getRectangleFrontTile,
+  getRectangleFrontVertex,
   getRectangleTopTile,
   getRectangleTopVertex
 } from '../rectangleAnchor';
@@ -29,6 +31,22 @@ const corners = [
 corners.forEach((tile) => {
   const top = getTilePosition({ tile, origin: 'TOP' });
   assert.ok(peak.y <= top.y);
+});
+
+assert.deepEqual(getRectangleFrontTile(forward.from, forward.to), { x: 0, y: 1 });
+assert.deepEqual(
+  getRectangleFrontTile(reversed.from, reversed.to),
+  getRectangleFrontTile(forward.from, forward.to)
+);
+assert.deepEqual(
+  getRectangleFrontVertex(reversed.from, reversed.to),
+  getRectangleFrontVertex(forward.from, forward.to)
+);
+
+const front = getRectangleFrontVertex(forward.from, forward.to);
+corners.forEach((tile) => {
+  const bottom = getTilePosition({ tile, origin: 'BOTTOM' });
+  assert.ok(front.y >= bottom.y);
 });
 
 console.log('rectangleAnchor ok');

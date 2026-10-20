@@ -16,3 +16,18 @@ export const getRectangleTopVertex = (from: Coords, to: Coords): Coords => {
     origin: 'TOP'
   });
 };
+
+// Screen-front vertex. The corner with the smallest x + y is nearest the
+// viewer, and BOTTOM origin sits on the outside of that corner.
+export const getRectangleFrontTile = (from: Coords, to: Coords): Coords => {
+  const { lowX, lowY } = sortByPosition([from, to]);
+
+  return { x: lowX, y: lowY };
+};
+
+export const getRectangleFrontVertex = (from: Coords, to: Coords): Coords => {
+  return getTilePosition({
+    tile: getRectangleFrontTile(from, to),
+    origin: 'BOTTOM'
+  });
+};

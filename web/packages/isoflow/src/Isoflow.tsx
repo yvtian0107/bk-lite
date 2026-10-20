@@ -122,8 +122,10 @@ export const Isoflow = (props: IsoflowProps) => {
               onItemClick={props.onItemClick}
               onItemSelect={props.onItemSelect}
               nodeStatus={props.nodeStatus}
+              nodeBinding={props.nodeBinding}
               rectangleStatus={props.rectangleStatus}
               highlightedItemId={props.highlightedItemId}
+              appearancePanelTitle={props.appearancePanelTitle}
               editorMode={props.editorMode}
             >
               <App {...props} />

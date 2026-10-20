@@ -9,6 +9,7 @@ import React, {
 import type {
   EditorModeEnum,
   ItemControls,
+  NodeBindingMark,
   NodeStatus,
   RectangleStatus
 } from 'src/types';
@@ -21,8 +22,10 @@ import {
 
 export interface DiagramVisual {
   nodeStatus?: Record<string, NodeStatus>;
+  nodeBinding?: Record<string, NodeBindingMark>;
   rectangleStatus?: Record<string, RectangleStatus>;
   highlightedItemId?: string;
+  appearancePanelTitle?: string;
   editorMode: keyof typeof EditorModeEnum;
 }
 
@@ -44,8 +47,10 @@ interface ProviderProps {
   onItemClick?: DiagramCallbacksRef['current']['onItemClick'];
   onItemSelect?: DiagramCallbacksRef['current']['onItemSelect'];
   nodeStatus?: Record<string, NodeStatus>;
+  nodeBinding?: Record<string, NodeBindingMark>;
   rectangleStatus?: Record<string, RectangleStatus>;
   highlightedItemId?: string;
+  appearancePanelTitle?: string;
   editorMode?: keyof typeof EditorModeEnum;
 }
 
@@ -54,8 +59,10 @@ export const DiagramOverlayProvider = ({
   onItemClick,
   onItemSelect,
   nodeStatus,
+  nodeBinding,
   rectangleStatus,
   highlightedItemId,
+  appearancePanelTitle,
   editorMode = 'EDITABLE'
 }: ProviderProps) => {
   const callbacksRef = useRef<DiagramCallbacksRef['current']>({
@@ -93,11 +100,20 @@ export const DiagramOverlayProvider = ({
   const visual = useMemo<DiagramVisual>(() => {
     return {
       nodeStatus,
+      nodeBinding,
       rectangleStatus,
       highlightedItemId,
+      appearancePanelTitle,
       editorMode
     };
-  }, [editorMode, highlightedItemId, nodeStatus, rectangleStatus]);
+  }, [
+    appearancePanelTitle,
+    editorMode,
+    highlightedItemId,
+    nodeBinding,
+    nodeStatus,
+    rectangleStatus
+  ]);
 
   return (
     <DiagramCallbacksContext.Provider value={callbacksRef}>

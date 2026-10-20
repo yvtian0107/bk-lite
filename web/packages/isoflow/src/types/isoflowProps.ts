@@ -22,6 +22,16 @@ export type NodeStatusLevel = (typeof nodeStatusLevels)[number];
 export interface NodeStatus {
   level: NodeStatusLevel;
   count?: number;
+  /** Hover text for a gray status mark. The host supplies the localized sentence. */
+  hint?: string;
+  /** Hover text for the alert-count badge. */
+  badgeHint?: string;
+}
+
+/** Edit-mode binding marks. These are not status and must not carry alert color. */
+export interface NodeBindingMark {
+  chain?: boolean;
+  unbound?: boolean;
 }
 
 export const rectangleBorderLevels = ['warning', 'critical', 'unknown'] as const;
@@ -31,7 +41,10 @@ export type RectangleBorderLevel = (typeof rectangleBorderLevels)[number];
 export interface RectangleStatus {
   label?: string;
   borderLevel?: RectangleBorderLevel;
-  badgeCount?: number;
+  /** Outlined capsule drawn beside the area tab. Host supplies the full text. */
+  badgeText?: string;
+  /** Binding mark shown on the area tab when child alerts are summarized. */
+  summaryText?: string;
 }
 
 export type DiagramItemHit = {
@@ -80,6 +93,13 @@ export interface IsoflowProps {
   highlightedItemId?: string;
   /** Keyed by view item id. Icons omitted from the map are drawn unchanged. */
   nodeStatus?: Record<string, NodeStatus>;
+  /**
+   * Edit mode. Keyed by view item id. Chain and unbound outlines are binding
+   * marks, drawn only for ids present in the map.
+   */
+  nodeBinding?: Record<string, NodeBindingMark>;
+  /** Edit mode. Title for the left appearance panel. Other Isoflow copy stays in English. */
+  appearancePanelTitle?: string;
   /** Keyed by rectangle id. Labels, borders and badges are draw-only. */
   rectangleStatus?: Record<string, RectangleStatus>;
   /**
