@@ -40,8 +40,13 @@ const updateViewCursor = (state: State, element: HTMLElement) => {
     tile: state.pointer.mouse.position.tile,
     scene: state.scene
   });
+  const rectangleInteractive =
+    tileHit?.type === 'RECTANGLE' &&
+    state.scene.rectangles.some(
+      (rectangle) => rectangle.id === tileHit.id && rectangle.bkFollowAlert === true
+    );
 
-  setWindowCursor(viewHoverCursor({ iconId, tileHit }), element);
+  setWindowCursor(viewHoverCursor({ iconId, tileHit, rectangleInteractive }), element);
 };
 
 export const Pan: ModeActions = {

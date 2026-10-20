@@ -46,7 +46,6 @@ export interface RegionListSummary {
 
 export interface RegionList {
   summary: RegionListSummary;
-  self: ResourceLine | null;
   icons: ResourceLine[];
 }
 
@@ -158,12 +157,10 @@ export function mergeStatusResponse(
 export function collectBoundUuids(views: unknown): string[] {
   const found: string[] = [];
   for (const view of asViews(views)) {
-    for (const collection of [view.items, view.rectangles]) {
-      if (!Array.isArray(collection)) continue;
-      for (const entry of collection) {
-        const binding = isRecord(entry) ? readBinding(entry.bkBinding) : null;
-        if (binding) found.push(binding.inst_uuid);
-      }
+    if (!Array.isArray(view.items)) continue;
+    for (const entry of view.items) {
+      const binding = isRecord(entry) ? readBinding(entry.bkBinding) : null;
+      if (binding) found.push(binding.inst_uuid);
     }
   }
   return Array.from(new Set(found)).sort();
@@ -324,7 +321,6 @@ export function buildNodeStatus(
 export function buildRectangleOverlays(
   views: unknown,
   statusByUuid: Record<string, ArchitectureNodeStatusItem>,
-  modelNames: Record<string, string>,
   options: { followBorders: boolean; markSummary?: boolean },
 ): Record<string, RectangleOverlay> {
   const overlays: Record<string, RectangleOverlay> = {};
@@ -335,16 +331,7 @@ export function buildRectangleOverlays(
       if (!isRecord(entry) || typeof entry.id !== 'string') continue;
       const from = readCoord(entry.from);
       const to = readCoord(entry.to);
-      const binding = readBinding(entry.bkBinding);
       const overlay: RectangleOverlay = {};
-      if (binding) {
-        const title = resourceTitle(statusByUuid[binding.inst_uuid], modelNames);
-        if (options.followBorders) {
-          if (title.type !== 'pending') overlay.label = title;
-        } else if (title.type === 'text') {
-          overlay.label = title;
-        }
-      }
       if (options.markSummary && entry.bkFollowAlert === true) {
         overlay.summary = true;
       }
@@ -463,12 +450,10 @@ export function buildRegionList(
   items?: unknown,
 ): RegionList {
   const found = findEntry(views, 'rectangles', rectangleId);
-  if (!found) return { summary: emptyRegionSummary(), self: null, icons: [] };
-  const binding = readBinding(found.entry.bkBinding);
-  const self = binding ? lineFromBinding('self', binding, statusByUuid, modelNames) : null;
+  if (!found) return { summary: emptyRegionSummary(), icons: [] };
   const from = readCoord(found.entry.from);
   const to = readCoord(found.entry.to);
-  if (!from || !to) return { summary: emptyRegionSummary(), self, icons: [] };
+  if (!from || !to) return { summary: emptyRegionSummary(), icons: [] };
   const icons = boundIcons(found.view)
     .filter((icon) => tileInside(icon.tile, from, to))
     .sort((left, right) => {
@@ -490,18 +475,7 @@ export function buildRegionList(
   const summary = emptyRegionSummary();
   summary.total = lines.length;
   for (const line of lines) summary[regionBucket(line.level)] += 1;
-  return { summary, self, icons: lines };
-}
-
-export function regionResourceLines(
-  views: unknown,
-  rectangleId: string,
-  statusByUuid: Record<string, ArchitectureNodeStatusItem>,
-  modelNames: Record<string, string>,
-  items?: unknown,
-): ResourceLine[] {
-  const list = buildRegionList(views, rectangleId, statusByUuid, modelNames, items);
-  return list.self ? [list.self, ...list.icons] : list.icons;
+  return { summary, icons: lines };
 }
 
 interface ResolvedAnchor {
@@ -634,9 +608,7 @@ export function decideDiagramClick(input: {
     if (found.entry.bkFollowAlert === true) {
       return { type: 'region', rectangleId: hit.id };
     }
-    const binding = readBinding(found.entry.bkBinding);
-    if (!binding) return { type: 'close' };
-    return openBoundResource(binding, input.statusByUuid);
+    return { type: 'close' };
   }
   return { type: 'close' };
 }

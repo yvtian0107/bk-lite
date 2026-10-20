@@ -170,7 +170,15 @@ assert.equal(findDrawnIconId(null, { x: 0, y: 0 }), null);
 
 assert.equal(viewHoverCursor({ iconId: 'node-a', tileHit: { type: 'RECTANGLE', id: 'zone' } }), 'pointer');
 assert.equal(viewHoverCursor({ iconId: null, tileHit: { type: 'ITEM', id: 'node-a' } }), 'pointer');
-assert.equal(viewHoverCursor({ iconId: null, tileHit: { type: 'RECTANGLE', id: 'zone' } }), 'pointer');
+assert.equal(viewHoverCursor({ iconId: null, tileHit: { type: 'RECTANGLE', id: 'zone' } }), 'grab');
+assert.equal(
+  viewHoverCursor({
+    iconId: null,
+    tileHit: { type: 'RECTANGLE', id: 'zone' },
+    rectangleInteractive: true
+  }),
+  'pointer'
+);
 assert.equal(viewHoverCursor({ iconId: null, tileHit: { type: 'CONNECTOR', id: 'line' } }), 'pointer');
 assert.equal(viewHoverCursor({ iconId: null, tileHit: { type: 'TEXTBOX', id: 'caption' } }), 'grab');
 assert.equal(viewHoverCursor({ iconId: null, tileHit: null }), 'grab');

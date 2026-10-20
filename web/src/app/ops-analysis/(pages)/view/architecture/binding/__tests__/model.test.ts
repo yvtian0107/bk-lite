@@ -34,14 +34,14 @@ const views = [
 ];
 
 describe('architecture binding model', () => {
-  it('reads icon and rectangle bindings and ignores other shapes', () => {
+  it('reads icon bindings and ignores a rectangle resource binding', () => {
     expect(findSelectionBinding(views, { type: 'ITEM', id: 'node-1' })).toEqual({
       binding: { inst_uuid: 'uuid-host', model_id: 'host' },
       followAlert: false,
     });
     expect(findSelectionBinding(views, { type: 'ITEM', id: 'node-2' })?.binding).toBeNull();
     expect(findSelectionBinding(views, { type: 'RECTANGLE', id: 'rect-1' })).toEqual({
-      binding: { inst_uuid: 'uuid-room', model_id: 'room' },
+      binding: null,
       followAlert: true,
     });
     expect(findSelectionBinding(views, { type: 'RECTANGLE', id: 'rect-2' })?.followAlert).toBe(false);

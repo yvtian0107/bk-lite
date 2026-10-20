@@ -74,7 +74,7 @@ export function findSelectionBinding(
     const match = list.find((entry) => isRecord(entry) && entry.id === selection.id);
     if (!isRecord(match)) continue;
     return {
-      binding: readBinding(match.bkBinding),
+      binding: selection.type === 'ITEM' ? readBinding(match.bkBinding) : null,
       followAlert: selection.type === 'RECTANGLE' && match.bkFollowAlert === true,
     };
   }

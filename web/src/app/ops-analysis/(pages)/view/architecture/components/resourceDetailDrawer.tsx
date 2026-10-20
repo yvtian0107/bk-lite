@@ -307,18 +307,6 @@ const RegionListView = ({
       </div>
       <section className="flex flex-col gap-2">
         <div className="text-xs font-medium text-[var(--color-text-3)]">
-          {t('opsAnalysis.architecture.regionResource')}
-        </div>
-        {list.self ? (
-          <LineCard line={list.self} onOpen={onOpen} />
-        ) : (
-          <div className="text-sm text-[var(--color-text-3)]">
-            {t('opsAnalysis.architecture.regionResourceEmpty')}
-          </div>
-        )}
-      </section>
-      <section className="flex flex-col gap-2">
-        <div className="text-xs font-medium text-[var(--color-text-3)]">
           {t('opsAnalysis.architecture.regionIcons')}
         </div>
         {list.icons.length ? list.icons.map((line) => (

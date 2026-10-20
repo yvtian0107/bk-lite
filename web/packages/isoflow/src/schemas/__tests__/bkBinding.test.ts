@@ -70,4 +70,14 @@ assert.deepEqual(exported.views[0].items[0].bkBinding, {
 assert.equal(exported.views[0].rectangles[0].bkFollowAlert, true);
 assert.equal(exported.views[0].connectors[0].color, 'color1');
 
+const legacyRectangle = produce(modelFixture, (draft) => {
+  const rectangle = draft.views[0].rectangles?.[0];
+
+  if (!rectangle) throw new Error('missing rectangle');
+
+  rectangle.bkBinding = 'legacy-region-binding';
+});
+
+assert.equal(modelSchema.safeParse(legacyRectangle).success, true);
+
 console.log('bkBinding ok');

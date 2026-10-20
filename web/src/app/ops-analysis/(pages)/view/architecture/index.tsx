@@ -565,8 +565,8 @@ const Architecture = forwardRef<ArchitectureRef, ArchitectureProps>(
           sceneApiRef.current.updateViewItem(selection.id, updates);
           return;
         }
-        if (selection.type === 'RECTANGLE') {
-          sceneApiRef.current.updateRectangle(selection.id, updates);
+        if (selection.type === 'RECTANGLE' && typeof updates.bkFollowAlert === 'boolean') {
+          sceneApiRef.current.updateRectangle(selection.id, { bkFollowAlert: updates.bkFollowAlert });
         }
       },
       [selection],
@@ -648,7 +648,7 @@ const Architecture = forwardRef<ArchitectureRef, ArchitectureProps>(
       if (viewing && viewStatus.phase === 'idle' && Object.keys(source).length === 0) {
         return undefined;
       }
-      const overlays = buildRectangleOverlays(diagramViews, source, modelNames, {
+      const overlays = buildRectangleOverlays(diagramViews, source, {
         followBorders: viewing,
         markSummary: !viewing,
       });
@@ -680,7 +680,6 @@ const Architecture = forwardRef<ArchitectureRef, ArchitectureProps>(
     }, [
       diagramViews,
       editStatus.byUuid,
-      modelNames,
       overlayText,
       requestMode,
       t,

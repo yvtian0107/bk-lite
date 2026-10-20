@@ -136,15 +136,17 @@ export const resolveViewClick = (input: {
 export const viewHoverCursor = (input: {
   iconId: string | null;
   tileHit: { type: string; id: string } | null;
+  rectangleInteractive?: boolean;
 }): 'pointer' | 'grab' => {
   if (input.iconId) return 'pointer';
 
   const hit = input.tileHit;
 
-  if (
-    hit &&
-    (hit.type === 'ITEM' || hit.type === 'RECTANGLE' || hit.type === 'CONNECTOR')
-  ) {
+  if (hit?.type === 'RECTANGLE') {
+    return input.rectangleInteractive ? 'pointer' : 'grab';
+  }
+
+  if (hit && (hit.type === 'ITEM' || hit.type === 'CONNECTOR')) {
     return 'pointer';
   }
 

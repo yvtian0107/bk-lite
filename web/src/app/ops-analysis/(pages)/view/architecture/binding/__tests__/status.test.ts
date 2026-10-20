@@ -13,7 +13,6 @@ import {
   iconBindingStats,
   mergeStatusResponse,
   rectangleIconCounts,
-  regionResourceLines,
   resourceTitle,
   shouldPauseArchitectureStatusRefresh,
   unknownStatusMap,
@@ -105,14 +104,12 @@ describe('architecture view status', () => {
     expect(shouldPauseArchitectureStatusRefresh(false)).toBe(false);
   });
 
-  it('dedupes icon and rectangle uuids', () => {
+  it('collects icon uuids and ignores rectangle bindings', () => {
     expect(collectBoundUuids(views)).toEqual([
       'uuid-cache',
       'uuid-db',
       'uuid-edge',
-      'uuid-quiet',
       'uuid-web',
-      'uuid-zone',
     ]);
   });
 
@@ -157,24 +154,21 @@ describe('architecture view status', () => {
       'uuid-zone': status('uuid-zone', 'critical', { alert_count: 7, inst_name: '核心区', model_id: 'room' }),
       'uuid-quiet': status('uuid-quiet', 'critical', { inst_name: '空区', model_id: 'room' }),
     };
-    const overlays = buildRectangleOverlays(views, byUuid, names, { followBorders: true });
+    const overlays = buildRectangleOverlays(views, byUuid, { followBorders: true });
     expect(overlays.zone).toEqual({
-      label: { type: 'text', value: '核心区 · 机房' },
       borderLevel: 'critical',
       badgeCount: 2,
     });
+    expect(overlays.zone?.label).toBeUndefined();
     expect(overlays.overlap).toEqual({ borderLevel: 'critical', badgeCount: 2 });
-    expect(overlays.quiet).toEqual({ label: { type: 'text', value: '空区 · 机房' } });
-    expect(buildRectangleOverlays(views, byUuid, names, { followBorders: false }).zone).toEqual({
-      label: { type: 'text', value: '核心区 · 机房' },
-    });
-    expect(buildRectangleOverlays(views, byUuid, names, { followBorders: false, markSummary: true }).zone).toEqual({
-      label: { type: 'text', value: '核心区 · 机房' },
+    expect(overlays.quiet).toBeUndefined();
+    expect(buildRectangleOverlays(views, byUuid, { followBorders: false }).zone).toBeUndefined();
+    expect(buildRectangleOverlays(views, byUuid, { followBorders: false, markSummary: true }).zone).toEqual({
       summary: true,
     });
     expect(buildRectangleOverlays(views, {
       'uuid-zone': status('uuid-zone', 'unknown', { inst_name: '' }),
-    }, names, { followBorders: false, markSummary: true }).zone).toEqual({ summary: true });
+    }, { followBorders: false, markSummary: true }).zone).toEqual({ summary: true });
   });
 
   it('counts unique alerting resources for an area badge', () => {
@@ -192,7 +186,7 @@ describe('architecture view status', () => {
       other: status('other', 'warning', { alert_count: 1, max_level: 'warning' }),
       far: status('far', 'critical', { alert_count: 8, max_level: 'fatal' }),
     };
-    expect(buildRectangleOverlays(duplicated, byUuid, names, { followBorders: true }).zone?.badgeCount).toBe(2);
+    expect(buildRectangleOverlays(duplicated, byUuid, { followBorders: true }).zone?.badgeCount).toBe(2);
     const onlyDuplicate = [{
       items: [
         { id: 'a', tile: { x: 1, y: 1 }, bkBinding: { inst_uuid: 'same', model_id: 'host' } },
@@ -200,7 +194,7 @@ describe('architecture view status', () => {
       ],
       rectangles: [{ id: 'zone', from: { x: 0, y: 0 }, to: { x: 3, y: 3 }, bkFollowAlert: true }],
     }];
-    expect(buildRectangleOverlays(onlyDuplicate, byUuid, names, { followBorders: true }).zone?.badgeCount).toBe(1);
+    expect(buildRectangleOverlays(onlyDuplicate, byUuid, { followBorders: true }).zone?.badgeCount).toBe(1);
   });
 
   it('ignores normal, unmonitored and unbound icons when coloring a border', () => {
@@ -209,7 +203,7 @@ describe('architecture view status', () => {
       'uuid-db': status('uuid-db', 'unmonitored'),
       'uuid-edge': status('uuid-edge', 'forbidden'),
     };
-    expect(buildRectangleOverlays(views, byUuid, names, { followBorders: true }).zone).toEqual({
+    expect(buildRectangleOverlays(views, byUuid, { followBorders: true }).zone).toEqual({
       borderLevel: 'unknown',
     });
   });
@@ -221,20 +215,19 @@ describe('architecture view status', () => {
       'uuid-edge': status('uuid-edge', 'normal', { inst_name: 'edge-01' }),
       'uuid-zone': status('uuid-zone', 'forbidden', { inst_name: 'old-zone' }),
     };
-    const lines = regionResourceLines(views, 'zone', byUuid, names);
-    expect(lines.map((line) => line.key)).toEqual(['self', 'web', 'edge', 'db']);
-    expect(lines[0]).toMatchObject({ clickable: false, title: { type: 'forbidden' } });
-    expect(lines[1]).toMatchObject({
+    const lines = buildRegionList(views, 'zone', byUuid, names).icons;
+    expect(lines.map((line) => line.key)).toEqual(['web', 'edge', 'db']);
+    expect(lines[0]).toMatchObject({
       clickable: true,
       highlightId: 'web',
       alertCount: 1,
       title: { type: 'text', value: 'web-01 · 主机' },
     });
-    expect(lines[2]).toMatchObject({
+    expect(lines[1]).toMatchObject({
       clickable: true,
       title: { type: 'text', value: 'edge-01 · 主机' },
     });
-    expect(lines[3]).toMatchObject({ clickable: false, title: { type: 'invalid' } });
+    expect(lines[2]).toMatchObject({ clickable: false, title: { type: 'invalid' } });
 
     const direct = connectorResourceLines(views, 'line-item', byUuid, names);
     expect(direct[0].title).toEqual({ type: 'text', value: 'web-01 · 主机' });
@@ -275,8 +268,7 @@ describe('architecture view status', () => {
       rectangleId: 'zone',
     });
     expect(decideDiagramClick({ hit: { type: 'RECTANGLE', id: 'quiet' }, views, statusByUuid: byUuid })).toEqual({
-      type: 'toast',
-      reason: 'forbidden',
+      type: 'close',
     });
     expect(decideDiagramClick({ hit: { type: 'RECTANGLE', id: 'overlap' }, views, statusByUuid: byUuid })).toEqual({
       type: 'region',
@@ -316,7 +308,7 @@ describe('architecture view status', () => {
     };
     const list = buildRegionList(diagram, 'zone', byUuid, names);
     expect(list.summary).toEqual({ total: 6, alert: 3, normal: 1, other: 2 });
-    expect(list.self?.key).toBe('self');
+    expect(list).not.toHaveProperty('self');
     expect(list.icons.map((line) => line.key)).toEqual([
       'critical-icon',
       'error-icon',

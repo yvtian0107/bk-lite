@@ -57,7 +57,7 @@ const ResourceBindingPanel = ({
   const [searching, setSearching] = useState(false);
   const [retryToken, setRetryToken] = useState(0);
   const display = bindingDisplay(status, modelName);
-  const showSearch = !bound || replacing;
+  const showSearch = !showFollow && (!bound || replacing);
 
   useEffect(() => {
     setReplacing(false);
@@ -219,40 +219,28 @@ const ResourceBindingPanel = ({
       className="absolute right-3 top-3 z-20 flex max-h-[calc(100%-24px)] w-80 flex-col gap-3 overflow-auto rounded-md border border-[var(--color-border-2)] bg-[var(--color-bg-1)] p-3 shadow-sm"
       data-testid="architecture-binding-panel"
     >
-      <div className="flex items-center gap-1.5 text-sm font-medium text-[var(--color-text-1)]">
-        <LinkOutlined className="text-[#0891b2]" />
-        <span>{t('opsAnalysis.architecture.bindingTitle')}</span>
-      </div>
       {showFollow ? (
-        <>
-          <section className="flex flex-col gap-2">
-            <div className="text-xs font-medium text-[var(--color-text-3)]">
-              {t('opsAnalysis.architecture.regionResource')}
-            </div>
-            {boundCard}
-            {showSearch ? searchBlock : null}
-          </section>
-          <section className="flex flex-col gap-2 border-t border-[var(--color-border-2)] pt-3">
-            <div className="text-xs font-medium text-[var(--color-text-3)]">
-              {t('opsAnalysis.architecture.alertSummary')}
-            </div>
-            <label className="flex items-center justify-between gap-3 text-sm text-[var(--color-text-1)]">
-              <span>{t('opsAnalysis.architecture.followAlertSwitch')}</span>
-              <Switch checked={followAlert} onChange={onFollowAlert} />
-            </label>
-            <p className="m-0 text-xs text-[var(--color-text-3)]">
-              {t('opsAnalysis.architecture.followAlertHint')}
-            </p>
-            <p className="m-0 text-xs text-[var(--color-text-2)]">
-              {t('opsAnalysis.architecture.regionIconCount', undefined, {
-                total: iconTotal,
-                bound: iconBound,
-              })}
-            </p>
-          </section>
-        </>
+        <section className="flex flex-col gap-2">
+          <label className="flex items-center justify-between gap-3 text-sm text-[var(--color-text-1)]">
+            <span>{t('opsAnalysis.architecture.followAlertSwitch')}</span>
+            <Switch checked={followAlert} onChange={onFollowAlert} />
+          </label>
+          <p className="m-0 text-xs text-[var(--color-text-3)]">
+            {t('opsAnalysis.architecture.followAlertHint')}
+          </p>
+          <p className="m-0 text-xs text-[var(--color-text-2)]">
+            {t('opsAnalysis.architecture.regionIconCount', undefined, {
+              total: iconTotal,
+              bound: iconBound,
+            })}
+          </p>
+        </section>
       ) : (
         <>
+          <div className="flex items-center gap-1.5 text-sm font-medium text-[var(--color-text-1)]">
+            <LinkOutlined className="text-[#0891b2]" />
+            <span>{t('opsAnalysis.architecture.bindingTitle')}</span>
+          </div>
           {boundCard}
           {showSearch ? searchBlock : null}
         </>
