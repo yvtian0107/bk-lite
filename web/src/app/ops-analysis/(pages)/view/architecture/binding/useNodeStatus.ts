@@ -13,7 +13,6 @@ export function useArchitectureNodeStatus(options: {
   enabled: boolean;
   uuids: string[];
   intervalMs: number;
-  suppressErrors?: boolean;
 }) {
   const { queryNodeStatus } = useArchitectureApi();
   const queryRef = useRef(queryNodeStatus);
@@ -21,8 +20,6 @@ export function useArchitectureNodeStatus(options: {
   const [byUuid, setByUuid] = useState<Record<string, ArchitectureNodeStatusItem>>({});
   const [phase, setPhase] = useState<'idle' | 'ready' | 'failed'>('idle');
   const signature = options.uuids.join('\n');
-  const suppressRef = useRef(Boolean(options.suppressErrors));
-  suppressRef.current = Boolean(options.suppressErrors);
 
   useEffect(() => {
     if (!options.enabled) {
@@ -54,9 +51,7 @@ export function useArchitectureNodeStatus(options: {
         return;
       }
       const current = ++seq;
-      queryRef.current(requested, {
-        suppressErrorNotification: suppressRef.current,
-      })
+      queryRef.current(requested)
         .then((data) => {
           const items = Array.isArray(data?.items) ? data.items : [];
           apply(mergeStatusResponse(requested, items), 'ready', current);

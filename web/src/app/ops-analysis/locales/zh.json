@@ -509,6 +509,7 @@
       "connectorHeading": "连线：{start} → {end}",
       "connectorSubtitle": "连线本身不显示状态，下面是两端资源的状态",
       "unnamedIcon": "未命名",
+      "shareStatusHint": "ⓘ 分享页只展示架构，不显示实时状态和告警",
       "tabMonitorUnmonitored": "监控 · 未接入",
       "tabAlertUnmonitored": "告警 · 未接入",
       "linkOpenCmdb": "在 CMDB 中打开 ↗",

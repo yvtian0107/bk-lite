@@ -509,6 +509,7 @@
       "connectorHeading": "Connector: {start} → {end}",
       "connectorSubtitle": "Connectors do not show status. The resources at each end are listed below.",
       "unnamedIcon": "Unnamed",
+      "shareStatusHint": "ⓘ Shared pages show the architecture only, without live status or alerts",
       "tabMonitorUnmonitored": "Monitoring · Not connected",
       "tabAlertUnmonitored": "Alerts · Not connected",
       "linkOpenCmdb": "Open in CMDB ↗",

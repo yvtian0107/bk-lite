@@ -24,13 +24,10 @@ export const useArchitectureApi = () => {
     return del(`/operation_analysis/api/architecture/${id}/`);
   };
 
-  const queryNodeStatus = async (
-    instUuids: string[],
-    config?: { suppressErrorNotification?: boolean },
-  ) => {
+  const queryNodeStatus = async (instUuids: string[]) => {
     return post('/operation_analysis/api/architecture/node_status/', {
       inst_uuids: instUuids,
-    }, config);
+    });
   };
 
   return {

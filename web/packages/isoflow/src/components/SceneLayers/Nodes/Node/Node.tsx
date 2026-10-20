@@ -1,4 +1,5 @@
-import React, { useMemo, useState } from 'react';
+import React, { createContext, useContext, useMemo, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { Box, Typography, Stack } from '@mui/material';
 import {
   PROJECTED_TILE_SIZE,
@@ -16,6 +17,8 @@ import { MarkdownEditor } from 'src/components/MarkdownEditor/MarkdownEditor';
 import { NodeStatusMark } from './NodeStatusMark';
 
 const PLATE_DETAIL_MIN_ZOOM = 0.7;
+
+export const NodeLabelLayerContext = createContext<HTMLElement | null>(null);
 
 interface Props {
   node: ViewItem;
@@ -48,6 +51,7 @@ export const Node = ({ node, order }: Props) => {
   const hoverAlert = status?.hoverAlert?.trim() || '';
   const showHover = hovering && Boolean(hoverName || hoverModel || hoverAlert);
   const labelHeight = node.labelHeight ?? DEFAULT_LABEL_HEIGHT;
+  const labelLayer = useContext(NodeLabelLayerContext);
 
   const description = useMemo(() => {
     if (
@@ -59,15 +63,94 @@ export const Node = ({ node, order }: Props) => {
     return modelItem.description;
   }, [modelItem.description]);
 
+  const plate =
+    title || description || showSubtitle ? (
+      <Box
+        data-plate-subtitle={showSubtitle ? subtitle : ''}
+        onMouseEnter={() => setHovering(true)}
+        onMouseLeave={() => setHovering(false)}
+        sx={{ position: 'absolute', pointerEvents: 'auto' }}
+        style={{ left: position.x, top: position.y }}
+      >
+        <Box
+          sx={{ position: 'absolute' }}
+          style={{ bottom: PROJECTED_TILE_SIZE.height / 2 }}
+        >
+          {showHover ? (
+            <Box
+              data-testid="architecture-resource-hover"
+              sx={{
+                position: 'absolute',
+                left: 0,
+                bottom: labelHeight + 72,
+                transform: 'translate(-50%, 0)',
+                zIndex: 6,
+                pointerEvents: 'none',
+                bgcolor: '#fff',
+                border: '1px solid #d1d5db',
+                borderRadius: '8px',
+                px: '8px',
+                py: '6px',
+                minWidth: 120,
+                maxWidth: 220,
+                boxShadow: '0 6px 16px rgba(15, 23, 42, 0.12)',
+                fontFamily:
+                  '"WenQuanYi Micro Hei", "Noto Sans CJK SC", "Noto Sans SC", sans-serif'
+              }}
+            >
+              {hoverName ? (
+                <Box sx={{ color: '#111827', fontSize: 12, fontWeight: 600, lineHeight: 1.35 }}>
+                  {hoverName}
+                </Box>
+              ) : null}
+              {hoverModel ? (
+                <Box sx={{ color: '#6b7280', fontSize: 11, lineHeight: 1.35 }}>
+                  {hoverModel}
+                </Box>
+              ) : null}
+              {hoverAlert ? (
+                <Box sx={{ color: '#92400e', fontSize: 11, lineHeight: 1.35 }}>
+                  {hoverAlert}
+                </Box>
+              ) : null}
+            </Box>
+          ) : null}
+          <ExpandableLabel
+            maxWidth={250}
+            expandDirection="BOTTOM"
+            labelHeight={labelHeight}
+          >
+            <Stack spacing={0.25}>
+              {title && (
+                <Typography fontWeight={600}>{title}</Typography>
+              )}
+              {showSubtitle ? (
+                <Typography sx={{ color: '#6b7280', fontSize: 11, lineHeight: 1.3 }}>
+                  {subtitle}
+                </Typography>
+              ) : null}
+              {modelItem.description &&
+                modelItem.description !== MARKDOWN_EMPTY_VALUE && (
+                  <MarkdownEditor
+                    value={modelItem.description || ''}
+                    onChange={() => {}}
+                    readOnly
+                  />
+                )}
+            </Stack>
+          </ExpandableLabel>
+        </Box>
+      </Box>
+    ) : null;
+
   return (
     <Box
-      onMouseEnter={() => setHovering(true)}
-      onMouseLeave={() => setHovering(false)}
       sx={{
         position: 'absolute',
         zIndex: order
       }}
     >
+      {labelLayer ? createPortal(plate, labelLayer) : plate}
       <Box
         sx={{ position: 'absolute' }}
         style={{
@@ -75,77 +158,6 @@ export const Node = ({ node, order }: Props) => {
           top: position.y
         }}
       >
-        {(title || description || showSubtitle) && (
-          <Box
-            data-plate-subtitle={showSubtitle ? subtitle : ''}
-            sx={{ position: 'absolute' }}
-            style={{ bottom: PROJECTED_TILE_SIZE.height / 2 }}
-          >
-            {showHover ? (
-              <Box
-                data-testid="architecture-resource-hover"
-                sx={{
-                  position: 'absolute',
-                  left: 0,
-                  bottom: labelHeight + 72,
-                  transform: 'translate(-50%, 0)',
-                  zIndex: 6,
-                  pointerEvents: 'none',
-                  bgcolor: '#fff',
-                  border: '1px solid #d1d5db',
-                  borderRadius: '8px',
-                  px: '8px',
-                  py: '6px',
-                  minWidth: 120,
-                  maxWidth: 220,
-                  boxShadow: '0 6px 16px rgba(15, 23, 42, 0.12)',
-                  fontFamily:
-                    '"WenQuanYi Micro Hei", "Noto Sans CJK SC", "Noto Sans SC", sans-serif'
-                }}
-              >
-                {hoverName ? (
-                  <Box sx={{ color: '#111827', fontSize: 12, fontWeight: 600, lineHeight: 1.35 }}>
-                    {hoverName}
-                  </Box>
-                ) : null}
-                {hoverModel ? (
-                  <Box sx={{ color: '#6b7280', fontSize: 11, lineHeight: 1.35 }}>
-                    {hoverModel}
-                  </Box>
-                ) : null}
-                {hoverAlert ? (
-                  <Box sx={{ color: '#92400e', fontSize: 11, lineHeight: 1.35 }}>
-                    {hoverAlert}
-                  </Box>
-                ) : null}
-              </Box>
-            ) : null}
-            <ExpandableLabel
-              maxWidth={250}
-              expandDirection="BOTTOM"
-              labelHeight={labelHeight}
-            >
-              <Stack spacing={0.25}>
-                {title && (
-                  <Typography fontWeight={600}>{title}</Typography>
-                )}
-                {showSubtitle ? (
-                  <Typography sx={{ color: '#6b7280', fontSize: 11, lineHeight: 1.3 }}>
-                    {subtitle}
-                  </Typography>
-                ) : null}
-                {modelItem.description &&
-                  modelItem.description !== MARKDOWN_EMPTY_VALUE && (
-                    <MarkdownEditor 
-                      value={modelItem.description || ''} 
-                      onChange={() => {}} 
-                      readOnly 
-                    />
-                  )}
-              </Stack>
-            </ExpandableLabel>
-          </Box>
-        )}
         {iconComponent && (
           <Box
             sx={{

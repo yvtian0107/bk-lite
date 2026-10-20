@@ -478,6 +478,7 @@ const Architecture = forwardRef<ArchitectureRef, ArchitectureProps>(
     );
 
     useEffect(() => {
+      if (shareMode) return undefined;
       let cancelled = false;
       getModelList()
         .then((data) => {
@@ -489,7 +490,7 @@ const Architecture = forwardRef<ArchitectureRef, ArchitectureProps>(
       return () => {
         cancelled = true;
       };
-    }, [getModelList]);
+    }, [getModelList, shareMode]);
 
     const diagramViews = currentModel?.views ?? diagramData.views;
     const boundUuids = useMemo(() => collectBoundUuids(diagramViews), [diagramViews]);
@@ -517,7 +518,6 @@ const Architecture = forwardRef<ArchitectureRef, ArchitectureProps>(
       enabled: requestMode === 'poll',
       uuids: boundUuids,
       intervalMs: ARCHITECTURE_STATUS_POLL_MS,
-      suppressErrors: shareMode,
     });
     const editStatus = useArchitectureNodeStatus({
       enabled: requestMode === 'once',
@@ -926,6 +926,14 @@ const Architecture = forwardRef<ArchitectureRef, ArchitectureProps>(
               />
             ) : undefined}
           />
+          {shareMode ? (
+            <div
+              data-testid="architecture-share-hint"
+              className="pointer-events-none absolute right-3 top-3 z-20 rounded bg-[var(--color-fill-2)] px-2 py-1 text-xs text-[var(--color-text-3)]"
+            >
+              {t('opsAnalysis.architecture.shareStatusHint')}
+            </div>
+          ) : null}
           {showBindingPanel && selectedBinding ? (
             <ResourceBindingPanel
               showFollow={selection?.type === 'RECTANGLE'}

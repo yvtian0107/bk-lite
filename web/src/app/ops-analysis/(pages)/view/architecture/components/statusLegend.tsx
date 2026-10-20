@@ -129,7 +129,7 @@ const StatusLegend = ({
         data-testid="architecture-status-legend"
         data-legend-open={open ? 'true' : 'false'}
         data-legend-signal={signal ?? ''}
-        className="box-border flex h-10 items-center gap-1 rounded-lg border bg-white px-2.5 text-xs text-[#111827]"
+        className="box-border flex h-10 min-w-max shrink-0 flex-row items-center gap-1 whitespace-nowrap rounded-lg border bg-white px-2.5 text-xs leading-none text-[#111827]"
         style={{
           borderColor: open ? '#155aef' : '#bdbdbd',
           background: open ? '#e8f1ff' : '#fff',

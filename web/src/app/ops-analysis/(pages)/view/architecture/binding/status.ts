@@ -117,7 +117,8 @@ export function architectureStatusRequestMode(input: {
   shareMode: boolean;
   editMode: boolean;
 }): 'off' | 'once' | 'poll' {
-  if (input.editMode && !input.shareMode) return 'once';
+  if (input.shareMode) return 'off';
+  if (input.editMode) return 'once';
   return 'poll';
 }
 

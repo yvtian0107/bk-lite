@@ -97,10 +97,10 @@ const views = [
 const names = { host: '主机', mysql: '数据库', room: '机房' };
 
 describe('architecture view status', () => {
-  it('polls in view and share mode, and pauses while hidden', () => {
+  it('polls only in view mode and pauses while hidden', () => {
     expect(ARCHITECTURE_STATUS_POLL_MS).toBe(60_000);
-    expect(architectureStatusRequestMode({ shareMode: true, editMode: false })).toBe('poll');
-    expect(architectureStatusRequestMode({ shareMode: true, editMode: true })).toBe('poll');
+    expect(architectureStatusRequestMode({ shareMode: true, editMode: false })).toBe('off');
+    expect(architectureStatusRequestMode({ shareMode: true, editMode: true })).toBe('off');
     expect(architectureStatusRequestMode({ shareMode: false, editMode: true })).toBe('once');
     expect(architectureStatusRequestMode({ shareMode: false, editMode: false })).toBe('poll');
     expect(shouldPauseArchitectureStatusRefresh(true)).toBe(true);

@@ -104,10 +104,11 @@ export const Renderer = ({ showGrid, backgroundColor, enableGlobalDragHandlers }
       <SceneLayer>
         <Nodes nodes={items} />
       </SceneLayer>
-      <SceneLayer>
+      {/* Above icons and text boxes. Transform handles stay above the tabs. */}
+      <SceneLayer order={1}>
         <RectangleStatusLayer />
       </SceneLayer>
-      <SceneLayer>
+      <SceneLayer order={2}>
         <TransformControlsManager />
       </SceneLayer>
     </Box>
