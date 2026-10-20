@@ -78,7 +78,7 @@ const Isoflow = dynamic(
     ssr: false,
     loading: () => (
       <div className="flex items-center justify-center h-full">
-        <Spin size="large" tip="Loading..." />
+        <Spin size="large" />
       </div>
     ),
   }

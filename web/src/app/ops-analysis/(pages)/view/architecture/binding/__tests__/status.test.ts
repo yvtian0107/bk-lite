@@ -311,7 +311,7 @@ describe('architecture view status', () => {
       'u-error': status('u-error', 'critical', { alert_count: 2, max_level: 'error', inst_name: 'error' }),
       'u-critical': status('u-critical', 'critical', { alert_count: 3, max_level: 'critical', inst_name: 'critical' }),
       'u-plain': status('u-plain', 'unmonitored', { inst_name: 'plain' }),
-      'u-unknown': status('u-unknown', 'unknown'),
+      'u-unknown': status('u-unknown', 'unknown', { inst_name: '' }),
       'u-zone': status('u-zone', 'normal', { inst_name: 'zone', model_id: 'room' }),
     };
     const list = buildRegionList(diagram, 'zone', byUuid, names);
@@ -325,6 +325,16 @@ describe('architecture view status', () => {
       'plain-icon',
       'unknown-icon',
     ]);
+    const named = buildRegionList(diagram, 'zone', byUuid, names, [
+      { id: 'unknown-icon', name: '支付网关' },
+      { id: 'plain-icon', name: '  未接入主机  ' },
+    ]);
+    expect(named.icons.find((line) => line.key === 'unknown-icon')).toMatchObject({
+      title: { type: 'unknown' },
+      iconName: '支付网关',
+    });
+    expect(named.icons.find((line) => line.key === 'plain-icon')?.iconName).toBe('未接入主机');
+    expect(named.icons.find((line) => line.key === 'normal-icon')?.iconName).toBeUndefined();
   });
 
   it('counts bound icons and detects unbound ones without treating the count as status', () => {

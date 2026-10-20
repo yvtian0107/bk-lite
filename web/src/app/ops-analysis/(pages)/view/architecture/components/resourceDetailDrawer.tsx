@@ -13,6 +13,7 @@ import {
   buildRegionList,
   connectorEndpointNames,
   connectorResourceLines,
+  diagramItemName,
   resourceTitle,
   type OverlayLabel,
   type RegionList,
@@ -93,10 +94,10 @@ const ResourceDetailDrawer = ({
   const showBack = detail.kind === 'resource' && Boolean(detail.returnTo);
   const resource = detail.kind === 'resource' ? detail : null;
   const regionList = detail.kind === 'region'
-    ? buildRegionList(views, detail.rectangleId, statusByUuid, modelNames)
+    ? buildRegionList(views, detail.rectangleId, statusByUuid, modelNames, items)
     : null;
   const lines = detail.kind === 'connector'
-    ? connectorResourceLines(views, detail.connectorId, statusByUuid, modelNames)
+    ? connectorResourceLines(views, detail.connectorId, statusByUuid, modelNames, items)
     : [];
   const endpointNames = detail.kind === 'connector'
     ? connectorEndpointNames(views, items, detail.connectorId)
@@ -104,6 +105,10 @@ const ResourceDetailDrawer = ({
   const status = resource ? statusByUuid[resource.instUuid] : undefined;
   const titleLabel = resource ? resourceTitle(status, modelNames) : null;
   const unnamed = t('opsAnalysis.architecture.unnamedIcon');
+  const iconName = resource ? diagramItemName(items, resource.highlightId) : '';
+  const missingResourceName = Boolean(
+    titleLabel && titleLabel.type !== 'text' && titleLabel.type !== 'pending' && iconName,
+  );
   const heading = detail.kind === 'region'
     ? t('opsAnalysis.architecture.regionTitle')
     : detail.kind === 'connector'
@@ -111,16 +116,26 @@ const ResourceDetailDrawer = ({
         start: endpointNames?.start || unnamed,
         end: endpointNames?.end || unnamed,
       })
-      : titleLabel && titleLabel.type !== 'pending'
-        ? labelText(titleLabel, t)
-        : t('opsAnalysis.architecture.detailTitle');
+      : missingResourceName
+        ? iconName
+        : titleLabel && titleLabel.type !== 'pending'
+          ? labelText(titleLabel, t)
+          : t('opsAnalysis.architecture.detailTitle');
+  const headingTag = missingResourceName && titleLabel
+    ? labelText(titleLabel, t)
+    : '';
 
   return (
     <OperateDrawer
       open
       width={800}
       destroyOnHidden
-      title={heading}
+      title={headingTag ? (
+        <span className="inline-flex items-center gap-2">
+          <span>{heading}</span>
+          <Tag>{headingTag}</Tag>
+        </span>
+      ) : heading}
       onClose={onClose}
       classNames={{ body: 'flex min-h-0 flex-col overflow-hidden' }}
       styles={{ body: { overflow: 'hidden', padding: 0 } }}
@@ -180,7 +195,17 @@ const LineCard = ({
   onOpen: ResourceDetailDrawerProps['onOpenResource'];
 }) => {
   const { t } = useTranslation();
-  const title = line.title.type === 'pending' ? '' : labelText(line.title, t);
+  const resourceName = line.title.type === 'text' ? labelText(line.title, t) : '';
+  const iconFallback = !resourceName && line.iconName
+    && line.title.type !== 'pending'
+    && line.title.type !== 'empty'
+    ? line.iconName
+    : '';
+  const title = resourceName || iconFallback || (line.title.type === 'pending' ? '' : labelText(line.title, t));
+  const showStatusTag = Boolean(line.level) && (line.title.type === 'text' || Boolean(iconFallback));
+  const statusLabel = showStatusTag && line.level
+    ? (iconFallback ? labelText(line.title, t) : t(LEVEL_LABEL[line.level]))
+    : '';
   const meta = line.alertCount != null && line.title.type === 'text'
     ? t('opsAnalysis.architecture.alertCount', undefined, { count: line.alertCount })
     : '';
@@ -193,8 +218,8 @@ const LineCard = ({
         {line.title.type === 'pending' ? <Spin size="small" /> : (
           <span className="text-sm text-[var(--color-text-1)]">{title}</span>
         )}
-        {line.level && line.title.type === 'text' ? (
-          <Tag color={levelColor(line.level)}>{t(LEVEL_LABEL[line.level])}</Tag>
+        {statusLabel && line.level ? (
+          <Tag color={levelColor(line.level)}>{statusLabel}</Tag>
         ) : null}
       </div>
       {meta && line.title.type !== 'empty' ? (

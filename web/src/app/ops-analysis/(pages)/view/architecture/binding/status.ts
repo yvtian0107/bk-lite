@@ -59,6 +59,7 @@ export interface ResourceLine {
   title: OverlayLabel;
   level: ArchitectureNodeStatusItem['status'] | null;
   alertCount: number | null;
+  iconName?: string;
 }
 
 export type DiagramClickAction =
@@ -392,6 +393,7 @@ const lineFromBinding = (
   statusByUuid: Record<string, ArchitectureNodeStatusItem>,
   modelNames: Record<string, string>,
   highlightId?: string,
+  iconName?: string,
 ): ResourceLine => {
   const status = statusByUuid[binding.inst_uuid];
   return {
@@ -403,6 +405,7 @@ const lineFromBinding = (
     title: resourceTitle(status, modelNames),
     level: status?.status ?? null,
     alertCount: status ? status.alert_count : null,
+    iconName: iconName || undefined,
   };
 };
 
@@ -457,6 +460,7 @@ export function buildRegionList(
   rectangleId: string,
   statusByUuid: Record<string, ArchitectureNodeStatusItem>,
   modelNames: Record<string, string>,
+  items?: unknown,
 ): RegionList {
   const found = findEntry(views, 'rectangles', rectangleId);
   if (!found) return { summary: emptyRegionSummary(), self: null, icons: [] };
@@ -482,7 +486,7 @@ export function buildRegionList(
   const lines = icons.map((icon) => lineFromBinding(icon.id, {
     inst_uuid: icon.instUuid,
     model_id: icon.modelId,
-  }, statusByUuid, modelNames, icon.id));
+  }, statusByUuid, modelNames, icon.id, modelItemName(items, icon.id)));
   const summary = emptyRegionSummary();
   summary.total = lines.length;
   for (const line of lines) summary[regionBucket(line.level)] += 1;
@@ -494,8 +498,9 @@ export function regionResourceLines(
   rectangleId: string,
   statusByUuid: Record<string, ArchitectureNodeStatusItem>,
   modelNames: Record<string, string>,
+  items?: unknown,
 ): ResourceLine[] {
-  const list = buildRegionList(views, rectangleId, statusByUuid, modelNames);
+  const list = buildRegionList(views, rectangleId, statusByUuid, modelNames, items);
   return list.self ? [list.self, ...list.icons] : list.icons;
 }
 
@@ -545,6 +550,10 @@ const modelItemName = (items: unknown, id: string | undefined): string => {
   return match.name.trim();
 };
 
+export function diagramItemName(items: unknown, id: string | undefined): string {
+  return modelItemName(items, id);
+}
+
 export function connectorEndpointNames(
   views: unknown,
   items: unknown,
@@ -567,6 +576,7 @@ export function connectorResourceLines(
   connectorId: string,
   statusByUuid: Record<string, ArchitectureNodeStatusItem>,
   modelNames: Record<string, string>,
+  items?: unknown,
 ): ResourceLine[] {
   const found = findEntry(views, 'connectors', connectorId);
   const anchors = found && Array.isArray(found.entry.anchors)
@@ -578,7 +588,14 @@ export function connectorResourceLines(
     if (!found || !anchor) return emptyLine(key);
     const resolved = resolveAnchor(anchor, found.view, new Set());
     if (!resolved.binding) return emptyLine(key);
-    return lineFromBinding(key, resolved.binding, statusByUuid, modelNames, resolved.itemId);
+    return lineFromBinding(
+      key,
+      resolved.binding,
+      statusByUuid,
+      modelNames,
+      resolved.itemId,
+      modelItemName(items, resolved.itemId),
+    );
   });
 }
 
