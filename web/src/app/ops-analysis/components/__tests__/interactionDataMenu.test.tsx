@@ -2,7 +2,7 @@ import React from 'react';
 import '@ant-design/v5-patch-for-react-19';
 import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { IntlProvider } from 'react-intl';
-import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeAll, describe, expect, it, vi, type Mock } from 'vitest';
 
 import { InteractionMenuScaleProvider } from '@/app/ops-analysis/context/interactionMenuScale';
 import { InteractionSurfaceProvider } from '@/app/ops-analysis/context/interactionSurface';
@@ -59,8 +59,8 @@ const renderMenu = ({
 }: {
   editing?: boolean;
   theme?: 'screen-dark' | 'screen-light';
-  onSelect?: () => void;
-  onClose?: () => void;
+  onSelect?: Mock;
+  onClose?: Mock;
 } = {}) => {
   const view = render(
     <IntlProvider locale="zh" messages={{}}>

@@ -26,14 +26,11 @@ type MenuScaleInput = Pick<
  */
 export const clampInteractionMenuScale = (raw: number): number => {
   if (!Number.isFinite(raw) || raw <= 0) return NEUTRAL_SCALE;
-  const clamped = Math.min(
+  const rounded = Math.round(raw * 1000) / 1000;
+  return Math.min(
     INTERACTION_MENU_SCALE_MAX,
-    Math.max(INTERACTION_MENU_SCALE_MIN, raw),
+    Math.max(INTERACTION_MENU_SCALE_MIN, rounded),
   );
-  const rounded = Math.round(clamped * 1000) / 1000;
-  return rounded * INTERACTION_MENU_FONT_PX < INTERACTION_MENU_FONT_FLOOR_PX
-    ? INTERACTION_MENU_SCALE_MIN
-    : rounded;
 };
 
 /**

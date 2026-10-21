@@ -322,7 +322,7 @@ const chartWithTitleLink = (
     valueConfig: Record<string, unknown>;
     name?: string;
   };
-  node.getData = () => ({
+  node.getData = (() => ({
     ...data,
     ...overrides,
     valueConfig: {
@@ -331,7 +331,7 @@ const chartWithTitleLink = (
       interaction: titleInteraction,
       ...(overrides.valueConfig as Record<string, unknown> | undefined),
     },
-  });
+  })) as Node['getData'];
   return node;
 };
 
@@ -363,7 +363,7 @@ describe('ChartNode title link', () => {
     expect(link.getAttribute('data-export-hidden')).toBe('true');
     expect(link.className).toContain('no-drag');
     const row = title.parentElement?.parentElement as HTMLElement;
-    expect(csv.compareDocumentPosition(link) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(csv.compareDocumentPosition(link) & globalThis.Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     expect(row.lastElementChild === link || row.lastElementChild?.contains(link)).toBe(true);
     expect(title.closest('button')).toBeNull();
   });

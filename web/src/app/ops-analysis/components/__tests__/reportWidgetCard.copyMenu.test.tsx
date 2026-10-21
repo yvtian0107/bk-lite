@@ -293,7 +293,12 @@ describe('ReportWidgetCard csv export', () => {
   it('runs the registered exporter for the section', () => {
     const run = vi.fn().mockResolvedValue(true);
     render(
-      <WidgetCsvExportRegistryProvider registry={{ register: () => () => undefined, run }}>
+      <WidgetCsvExportRegistryProvider registry={{
+        register: () => () => undefined,
+        run,
+        publishWidgetRawData: () => undefined,
+        readWidgetRawData: () => undefined,
+      }}>
         <ReportWidgetCard
           section={section as never}
           index={0}
