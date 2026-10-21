@@ -4,8 +4,10 @@ import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { IntlProvider } from 'react-intl';
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 
+import { InteractionMenuScaleProvider } from '@/app/ops-analysis/context/interactionMenuScale';
 import { InteractionSurfaceProvider } from '@/app/ops-analysis/context/interactionSurface';
 import ScreenWidgetThemeProvider from '@/app/ops-analysis/components/screenWidgetThemeProvider';
+import type { ScreenRenderContext } from '@/app/ops-analysis/types/dashBoard';
 import InteractionDataMenu from '../interactionDataMenu';
 
 beforeAll(() => {
@@ -151,5 +153,71 @@ describe('interaction data context menu', () => {
     const popup = item.closest('.ant-dropdown');
     expect(popup?.className).toContain('ops-screen-light');
     expect(popup?.className).not.toContain('ops-screen-dark');
+  });
+
+  it('keeps dashboard-sized type outside a big screen and does not transform the menu', () => {
+    renderMenu();
+    const item = screen.getByRole('menuitem', { name: '查看 CMDB 详情' });
+    const menu = item.closest('.ant-dropdown-menu') as HTMLElement;
+    const icon = item.querySelector('.anticon') as HTMLElement;
+
+    // jsdom 会把 calc(Npx * 1) 收成 calc(Npx)。
+    expect(item.style.fontSize).toBe('calc(14px)');
+    expect(item.style.lineHeight).toBe('calc(22px)');
+    expect(item.style.padding).toBe('calc(5px) calc(12px)');
+    expect(item.style.borderRadius).toBe('calc(4px)');
+    expect(menu.style.minWidth).toBe('calc(96px)');
+    expect(menu.style.borderRadius).toBe('calc(8px)');
+    expect(icon.style.fontSize).toBe('calc(12px)');
+    expect(item.getAttribute('style')).not.toContain('transform');
+    expect(menu.getAttribute('style')).not.toContain('transform');
+    expect(icon.getAttribute('style')).not.toContain('transform');
+  });
+
+  it('scales the menu with font metrics on a big screen and still skips transform', () => {
+    const context: ScreenRenderContext = {
+      enabled: true,
+      fitScale: 2,
+      scaleX: 2,
+      scaleY: 2,
+      screenDensity: 1,
+      screenUiScale: 1,
+      widgetDensity: 1,
+      widgetUiScale: 1,
+    };
+    render(
+      <IntlProvider locale="zh" messages={{}}>
+        <InteractionMenuScaleProvider context={context}>
+          <InteractionDataMenu
+            open
+            x={24}
+            y={36}
+            label="查看 CMDB 详情"
+            onSelect={vi.fn()}
+            onClose={vi.fn()}
+          />
+        </InteractionMenuScaleProvider>
+      </IntlProvider>,
+    );
+
+    const item = screen.getByRole('menuitem', { name: '查看 CMDB 详情' });
+    const menu = item.closest('.ant-dropdown-menu') as HTMLElement;
+    const icon = item.querySelector('.anticon') as HTMLElement;
+    const anchor = document.querySelector('[data-interaction-menu-anchor]') as HTMLElement;
+
+    // jsdom 会先算出 calc(Npx * 1.6)，留下放大后的像素。
+    expect(item.style.fontSize).toBe('calc(22.4px)');
+    expect(item.style.lineHeight).toBe('calc(35.2px)');
+    expect(item.style.padding).toBe('calc(8px) calc(19.2px)');
+    expect(item.style.borderRadius).toBe('calc(6.4px)');
+    expect(menu.style.minWidth).toBe('calc(153.6px)');
+    expect(menu.style.borderRadius).toBe('calc(12.8px)');
+    expect(icon.style.fontSize).toBe('calc(19.2px)');
+    expect(item.getAttribute('style')).not.toContain('transform');
+    expect(menu.getAttribute('style')).not.toContain('transform');
+    expect(icon.getAttribute('style')).not.toContain('transform');
+    expect(anchor.style.left).toBe('24px');
+    expect(anchor.style.top).toBe('36px');
+    expect(anchor.style.transform).toBe('');
   });
 });
