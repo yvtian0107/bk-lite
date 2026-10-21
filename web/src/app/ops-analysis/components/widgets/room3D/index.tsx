@@ -13,6 +13,8 @@ import { useParams } from "next/navigation";
 import { useTranslation } from "@/utils/i18n";
 import { useShareMode } from "@/app/ops-analysis/context/shareMode";
 import InteractionDataMenu from "@/app/ops-analysis/components/interactionDataMenu";
+import { InteractionMenuScaleProvider } from "@/app/ops-analysis/context/interactionMenuScale";
+import { resolvePortaledMenuScale } from "@/app/ops-analysis/utils/interactionMenuScale";
 import { useWidgetDataLink } from "@/app/ops-analysis/components/interactionTitleIcon";
 import {
   sceneLinkPoint,
@@ -203,6 +205,11 @@ const Room3D: React.FC<Room3DProps> = ({
 
     return Math.max(uiScale, 1 / fitScale, 1);
   }, [screenRenderContext]);
+  // 悬停卡在画布 transform 里。菜单在 body 上，倍数要乘回画布倍数，屏幕字号才一致。
+  const linkMenuScale = useMemo(
+    () => resolvePortaledMenuScale(readableOverlayScale, screenRenderContext),
+    [readableOverlayScale, screenRenderContext],
+  );
 
   const onErrorRef = useRef(onError);
   const onRawDataRef = useRef(onRawData);
@@ -641,14 +648,16 @@ const Room3D: React.FC<Room3DProps> = ({
       } as React.CSSProperties}
     >
       <div ref={mountRef} className={styles.canvas} />
-      <InteractionDataMenu
-        open={Boolean(linkMenu)}
-        x={linkMenu?.x ?? 0}
-        y={linkMenu?.y ?? 0}
-        label={dataLink?.name || t("dashboard.interactionOpen", "打开链接")}
-        onSelect={() => openPoint(linkMenu?.point)}
-        onClose={() => setLinkMenu(null)}
-      />
+      <InteractionMenuScaleProvider scale={linkMenuScale}>
+        <InteractionDataMenu
+          open={Boolean(linkMenu)}
+          x={linkMenu?.x ?? 0}
+          y={linkMenu?.y ?? 0}
+          label={dataLink?.name || t("dashboard.interactionOpen", "打开链接")}
+          onSelect={() => openPoint(linkMenu?.point)}
+          onClose={() => setLinkMenu(null)}
+        />
+      </InteractionMenuScaleProvider>
       <div className={styles.topBar}>
         <div className={styles.roomTitle} title={roomSummaryText}>
           <strong className={styles.roomTitleName}>{roomData.room.name}</strong>
