@@ -6,13 +6,16 @@ import {
   forwardRef,
   useImperativeHandle,
   useCallback,
+  useMemo,
   useRef,
 } from 'react';
 import styles from './index.module.scss';
 import { useTranslation } from '@/utils/i18n';
 import { iconList } from '@/app/cmdb/utils/common';
 import { message, Spin } from 'antd';
+import type { DiagramItemHit, IsoflowSceneApi } from '@bk-lite/isoflow';
 import { useArchitectureApi } from '@/app/ops-analysis/api/architecture';
+import { useInstanceApi, useModelApi } from '@/app/cmdb/api';
 import { useCanvasShareAction } from '@/app/ops-analysis/hooks/useCanvasShareAction';
 import { flattenCollections } from '@isoflow/isopacks/dist/utils';
 import {
@@ -38,14 +41,45 @@ import {
   type CanvasDraftPayload,
 } from '@/app/ops-analysis/api/canvasDraft';
 import { bindCanvasDraftControls } from '@/app/ops-analysis/components/canvasDraftControls';
+import ResourceBindingPanel from './components/resourceBindingPanel';
+import ResourceDetailDrawer, {
+  type ArchitectureDetailState,
+} from './components/resourceDetailDrawer';
+import {
+  BINDING_SEARCH_LIMIT,
+  bindingSearchMode,
+  capBindingSearchHits,
+  findSelectionBinding,
+  flattenModelOptions,
+  normalizeBindingSearchHits,
+  normalizeFulltextModelPage,
+  normalizeInstanceSearchPage,
+  type ArchitectureBinding,
+  type ModelOption,
+} from './binding/model';
+import {
+  ARCHITECTURE_STATUS_POLL_MS,
+  architectureStatusRequestMode,
+  blockResourceOpen,
+  buildIconPlates,
+  buildNodeStatus,
+  buildRectangleOverlays,
+  regionAlertBadgeParts,
+  collectBoundUuids,
+  decideDiagramClick,
+  iconBindingStats,
+  rectangleIconCounts,
+  type OverlayLabel,
+} from './binding/status';
+import { useArchitectureNodeStatus } from './binding/useNodeStatus';
 
 const Isoflow = dynamic(
-  () => import('x-isoflow-react-19').then((mod) => ({ default: mod.Isoflow })),
+  () => import('@bk-lite/isoflow').then((mod) => ({ default: mod.Isoflow })),
   {
     ssr: false,
     loading: () => (
       <div className="flex items-center justify-center h-full">
-        <Spin size="large" tip="Loading..." />
+        <Spin size="large" />
       </div>
     ),
   }
@@ -75,6 +109,8 @@ const Architecture = forwardRef<ArchitectureRef, ArchitectureProps>(
   ({ selectedArchitecture, shareMode = false }, ref) => {
     const { t } = useTranslation();
     const { getArchitectureDetail, saveArchitecture } = useArchitectureApi();
+    const { fulltextSearchInstances, fulltextSearchByModel, searchInstances } = useInstanceApi();
+    const { getModelList } = useModelApi();
     const { shareLoading, openShare } = useCanvasShareAction('architecture');
     const [diagramName, setDiagramName] = useState('');
     const [fossflowKey, setFossflowKey] = useState(0);
@@ -83,6 +119,18 @@ const Architecture = forwardRef<ArchitectureRef, ArchitectureProps>(
     const [loading, setLoading] = useState(false);
     const [uniqueIcons, setUniqueIcons] = useState<any[]>([]);
     const [isEditMode, setIsEditMode] = useState(false);
+    const [selection, setSelection] = useState<DiagramItemHit | null>(null);
+    const [detail, setDetail] = useState<ArchitectureDetailState | null>(null);
+    const [highlightId, setHighlightId] = useState<string | undefined>(undefined);
+    const [highlightUnbound, setHighlightUnbound] = useState(false);
+    const [modelOptions, setModelOptions] = useState<ModelOption[]>([]);
+    const sceneApiRef = useRef<IsoflowSceneApi | null>(null);
+    const fulltextSearchRef = useRef(fulltextSearchInstances);
+    const fulltextByModelRef = useRef(fulltextSearchByModel);
+    const searchInstancesRef = useRef(searchInstances);
+    fulltextSearchRef.current = fulltextSearchInstances;
+    fulltextByModelRef.current = fulltextSearchByModel;
+    searchInstancesRef.current = searchInstances;
     const [loadedArchitectureId, setLoadedArchitectureId] = useState<
       string | null
     >(null);
@@ -94,6 +142,14 @@ const Architecture = forwardRef<ArchitectureRef, ArchitectureProps>(
     const debounceTimeoutRef = useRef<NodeJS.Timeout | null>(null);
     const lastModelUpdateRef = useRef<string>('');
     const isUpdatingRef = useRef<boolean>(false);
+    const modelWriteEpochRef = useRef(0);
+    const invalidatePendingModelWrite = useCallback(() => {
+      modelWriteEpochRef.current += 1;
+      if (debounceTimeoutRef.current) {
+        clearTimeout(debounceTimeoutRef.current);
+        debounceTimeoutRef.current = null;
+      }
+    }, []);
     const [diagramData, setDiagramData] = useState<DiagramData>(() => {
       return {
         title: 'Untitled Diagram',
@@ -162,6 +218,7 @@ const Architecture = forwardRef<ArchitectureRef, ArchitectureProps>(
               setLoadedArchitectureId(currentArchitectureId);
               setIsEditMode(false);
 
+              invalidatePendingModelWrite();
               lastModelUpdateRef.current = JSON.stringify({
                 items: viewSets.items || [],
                 views: viewSets.views || [],
@@ -193,7 +250,12 @@ const Architecture = forwardRef<ArchitectureRef, ArchitectureProps>(
         setLoadedArchitectureId(null);
         lastModelUpdateRef.current = '';
       }
-    }, [uniqueIcons, selectedArchitecture?.data_id, loadedArchitectureId]);
+    }, [
+      uniqueIcons,
+      selectedArchitecture?.data_id,
+      loadedArchitectureId,
+      invalidatePendingModelWrite,
+    ]);
 
     const architectureDraftResourceId = toCanvasDraftResourceId(
       selectedArchitecture?.data_id,
@@ -210,6 +272,7 @@ const Architecture = forwardRef<ArchitectureRef, ArchitectureProps>(
     );
     const applyArchitectureDraftPayload = useCallback(
       (payload: CanvasDraftPayload) => {
+        invalidatePendingModelWrite();
         const viewSets = (payload.view_sets || {}) as {
           items?: DiagramData['items'];
           views?: DiagramData['views'];
@@ -235,7 +298,7 @@ const Architecture = forwardRef<ArchitectureRef, ArchitectureProps>(
           isUpdatingRef.current = false;
         }, 0);
       },
-      [diagramName, uniqueIcons],
+      [diagramName, uniqueIcons, invalidatePendingModelWrite],
     );
     const architectureDraft = useCanvasDraft({
       resourceType: 'architecture',
@@ -252,6 +315,7 @@ const Architecture = forwardRef<ArchitectureRef, ArchitectureProps>(
 
     const toggleEditMode = () => {
       const newEditMode = !isEditMode;
+      setSelection(null);
       setIsEditMode(newEditMode);
       if (newEditMode) {
         officialSnapshotRef.current = lastModelUpdateRef.current;
@@ -260,6 +324,7 @@ const Architecture = forwardRef<ArchitectureRef, ArchitectureProps>(
     };
 
     const handleCancelEdit = () => {
+      invalidatePendingModelWrite();
       if (officialSnapshotRef.current) {
         try {
           const parsed = JSON.parse(officialSnapshotRef.current) as {
@@ -287,6 +352,7 @@ const Architecture = forwardRef<ArchitectureRef, ArchitectureProps>(
         }
       }
       setHasUnsaved(false);
+      setSelection(null);
       setIsEditMode(false);
     };
 
@@ -368,7 +434,10 @@ const Architecture = forwardRef<ArchitectureRef, ArchitectureProps>(
             clearTimeout(debounceTimeoutRef.current);
           }
 
+          const epoch = modelWriteEpochRef.current;
           debounceTimeoutRef.current = setTimeout(() => {
+            if (epoch !== modelWriteEpochRef.current) return;
+
             try {
               const newModelData = {
                 items: JSON.parse(JSON.stringify(model.items)) || [],
@@ -397,6 +466,417 @@ const Architecture = forwardRef<ArchitectureRef, ArchitectureProps>(
       },
       [selectedArchitecture?.data_id, isEditMode]
     );
+
+    const selectedBinding = useMemo(
+      () => findSelectionBinding(currentModel?.views, selection),
+      [currentModel?.views, selection],
+    );
+    const showBindingPanel = Boolean(
+      isEditMode && !shareMode && selectedBinding,
+    );
+
+    useEffect(() => {
+      if (shareMode) return undefined;
+      let cancelled = false;
+      getModelList()
+        .then((data) => {
+          if (!cancelled) setModelOptions(flattenModelOptions(data));
+        })
+        .catch(() => {
+          if (!cancelled) setModelOptions([]);
+        });
+      return () => {
+        cancelled = true;
+      };
+    }, [getModelList, shareMode]);
+
+    const diagramViews = currentModel?.views ?? diagramData.views;
+    const boundUuids = useMemo(() => collectBoundUuids(diagramViews), [diagramViews]);
+    const requestMode = architectureStatusRequestMode({
+      shareMode,
+      editMode: isEditMode,
+    });
+    const modelNames = useMemo(
+      () => Object.fromEntries(modelOptions.map((model) => [model.model_id, model.model_name])),
+      [modelOptions],
+    );
+    const iconNames = useMemo(() => {
+      const source = currentModel?.items ?? diagramData.items;
+      const names: Record<string, string> = {};
+      if (!Array.isArray(source)) return names;
+      for (const item of source) {
+        if (!item || typeof item !== 'object') continue;
+        const id = (item as { id?: unknown }).id;
+        const name = (item as { name?: unknown }).name;
+        if (typeof id === 'string') names[id] = typeof name === 'string' ? name : '';
+      }
+      return names;
+    }, [currentModel?.items, diagramData.items]);
+    const viewStatus = useArchitectureNodeStatus({
+      enabled: requestMode === 'poll',
+      uuids: boundUuids,
+      intervalMs: ARCHITECTURE_STATUS_POLL_MS,
+    });
+    const editStatus = useArchitectureNodeStatus({
+      enabled: requestMode === 'once',
+      uuids: boundUuids,
+      intervalMs: 0,
+    });
+    const statusByUuid = requestMode === 'poll' ? viewStatus.byUuid : editStatus.byUuid;
+    const selectedStatus = selectedBinding?.binding
+      ? editStatus.byUuid[selectedBinding.binding.inst_uuid] ?? null
+      : null;
+
+    useEffect(() => {
+      setDetail(null);
+      setHighlightId(undefined);
+      setHighlightUnbound(false);
+    }, [loadedArchitectureId, isEditMode, shareMode]);
+
+    const searchResources = useCallback(
+      async (keyword: string, modelId: string) => {
+        const mode = bindingSearchMode(keyword, modelId);
+        if (mode === 'idle') {
+          return capBindingSearchHits([], BINDING_SEARCH_LIMIT, 0);
+        }
+        if (mode === 'by-type') {
+          const raw = await searchInstancesRef.current({
+            model_id: modelId.trim(),
+            query_list: [],
+            page: 1,
+            page_size: BINDING_SEARCH_LIMIT,
+            case_sensitive: false,
+          });
+          const page = normalizeInstanceSearchPage(raw);
+          return capBindingSearchHits(page.hits, BINDING_SEARCH_LIMIT, page.total);
+        }
+        if (mode === 'by-model-text') {
+          const raw = await fulltextByModelRef.current({
+            search: keyword.trim(),
+            model_id: modelId.trim(),
+            page: 1,
+            page_size: BINDING_SEARCH_LIMIT,
+            case_sensitive: false,
+          });
+          const page = normalizeFulltextModelPage(raw, BINDING_SEARCH_LIMIT);
+          return capBindingSearchHits(page.hits, page.limit, page.total);
+        }
+        const raw = await fulltextSearchRef.current({
+          search: keyword.trim(),
+          case_sensitive: false,
+        });
+        const hits = normalizeBindingSearchHits(raw);
+        return capBindingSearchHits(hits, BINDING_SEARCH_LIMIT, hits.length);
+      },
+      [],
+    );
+
+    const patchSelection = useCallback(
+      (updates: { bkBinding?: ArchitectureBinding; bkFollowAlert?: boolean }) => {
+        if (!selection || !sceneApiRef.current) return;
+        if (selection.type === 'ITEM') {
+          sceneApiRef.current.updateViewItem(selection.id, updates);
+          return;
+        }
+        if (selection.type === 'RECTANGLE' && typeof updates.bkFollowAlert === 'boolean') {
+          sceneApiRef.current.updateRectangle(selection.id, { bkFollowAlert: updates.bkFollowAlert });
+        }
+      },
+      [selection],
+    );
+
+    const handleItemSelect = useCallback((item: DiagramItemHit | null) => {
+      if (!item || (item.type !== 'ITEM' && item.type !== 'RECTANGLE')) {
+        setSelection(null);
+        return;
+      }
+      setSelection(item);
+    }, []);
+
+    const alertLevelLabel = useCallback((level: string) => {
+      const key: Record<string, string> = {
+        fatal: 'opsAnalysis.architecture.levelFatal',
+        severity: 'opsAnalysis.architecture.levelSeverity',
+        critical: 'opsAnalysis.architecture.levelCritical',
+        error: 'opsAnalysis.architecture.levelError',
+        warning: 'opsAnalysis.architecture.levelWarning',
+        remain: 'opsAnalysis.architecture.levelRemain',
+      };
+      const messageKey = key[level.trim().toLowerCase()];
+      return messageKey ? t(messageKey) : level;
+    }, [t]);
+
+    const statusHintText = useCallback((hint: 'unmonitored' | 'unknown' | 'forbidden' | 'invalid') => {
+      if (hint === 'unmonitored') return t('opsAnalysis.architecture.hintUnmonitored');
+      if (hint === 'forbidden') return t('opsAnalysis.architecture.hintForbidden');
+      if (hint === 'invalid') return t('opsAnalysis.architecture.hintInvalid');
+      return t('opsAnalysis.architecture.hintUnknown');
+    }, [t]);
+
+    const overlayText = useCallback((label: OverlayLabel | undefined) => {
+      if (!label || label.type === 'pending' || label.type === 'empty') return undefined;
+      if (label.type === 'text') return label.value;
+      if (label.type === 'invalid') return t('opsAnalysis.architecture.bindingInvalid');
+      if (label.type === 'forbidden') return t('opsAnalysis.architecture.bindingForbidden');
+      return t('opsAnalysis.architecture.bindingUnknown');
+    }, [t]);
+
+    const nodeStatus = useMemo(() => {
+      if (requestMode === 'off') return undefined;
+      if (requestMode === 'once') {
+        const source = Object.keys(editStatus.byUuid).length
+          ? editStatus.byUuid
+          : viewStatus.byUuid;
+        if (!Object.keys(source).length) return undefined;
+        const plates = buildIconPlates(diagramViews, source, modelNames, iconNames, {
+          nameAndType: true,
+        });
+        const next: Record<string, {
+          plateTitle?: string;
+          plateSubtitle?: string;
+          hoverName?: string;
+          hoverModel?: string;
+        }> = {};
+        for (const [id, plate] of Object.entries(plates)) {
+          const entry: {
+            plateTitle?: string;
+            plateSubtitle?: string;
+            hoverName?: string;
+            hoverModel?: string;
+          } = {};
+          if (plate.title) entry.plateTitle = plate.title;
+          if (plate.line === 'forbidden') entry.plateSubtitle = t('opsAnalysis.architecture.bindingForbidden');
+          else if (plate.line === 'invalid') entry.plateSubtitle = t('opsAnalysis.architecture.plateInvalid');
+          else if (plate.subtitle) entry.plateSubtitle = plate.subtitle;
+          if (plate.hoverName) entry.hoverName = plate.hoverName;
+          if (plate.hoverModel) entry.hoverModel = plate.hoverModel;
+          if (entry.plateTitle || entry.plateSubtitle || entry.hoverName) next[id] = entry;
+        }
+        return Object.keys(next).length ? next : undefined;
+      }
+      if (viewStatus.phase === 'idle' && Object.keys(viewStatus.byUuid).length === 0) {
+        return undefined;
+      }
+      const overlays = buildNodeStatus(diagramViews, viewStatus.byUuid);
+      const plates = buildIconPlates(diagramViews, viewStatus.byUuid, modelNames, iconNames);
+      const next: Record<string, {
+        level: 'normal' | 'warning' | 'critical' | 'unmonitored' | 'unknown' | 'invalid' | 'forbidden';
+        count?: number;
+        hint?: string;
+        badgeHint?: string;
+        plateMark?: string;
+        plateTitle?: string;
+        plateSubtitle?: string;
+        hoverName?: string;
+        hoverModel?: string;
+        hoverModelLabel?: string;
+        hoverStatusLabel?: string;
+        hoverAlert?: string;
+      }> = {};
+      for (const [id, overlay] of Object.entries(overlays)) {
+        const entry: {
+          level: typeof overlay.level;
+          count?: number;
+          hint?: string;
+          badgeHint?: string;
+          plateMark?: string;
+          plateTitle?: string;
+          plateSubtitle?: string;
+          hoverName?: string;
+          hoverModel?: string;
+          hoverModelLabel?: string;
+          hoverStatusLabel?: string;
+          hoverAlert?: string;
+        } = {
+          level: overlay.level,
+        };
+        if (typeof overlay.count === 'number') entry.count = overlay.count;
+        if (overlay.hint) entry.hint = statusHintText(overlay.hint);
+        if (overlay.level === 'normal') {
+          entry.hint = t('opsAnalysis.architecture.statusNormal');
+          entry.hoverStatusLabel = t('opsAnalysis.architecture.alertLabel');
+        }
+        if (overlay.badgeName && typeof overlay.count === 'number') {
+          entry.badgeHint = t('opsAnalysis.architecture.alertBadgeHint', undefined, {
+            name: overlay.badgeName,
+            count: overlay.count,
+            level: alertLevelLabel(overlay.badgeLevel || overlay.level),
+          });
+          entry.plateMark = String(overlay.count);
+          entry.hoverAlert = t('opsAnalysis.architecture.hoverAlert', undefined, {
+            count: overlay.count,
+            level: alertLevelLabel(overlay.badgeLevel || overlay.level),
+          });
+          entry.hoverStatusLabel = t('opsAnalysis.architecture.alertLabel');
+        } else if (overlay.level === 'unmonitored') {
+          entry.plateMark = t('opsAnalysis.architecture.statusUnmonitored');
+        } else if (overlay.level === 'unknown') {
+          entry.plateMark = t('opsAnalysis.architecture.statusUnknown');
+        } else if (overlay.level === 'forbidden') {
+          entry.plateMark = t('opsAnalysis.architecture.bindingForbidden');
+        } else if (overlay.level === 'invalid') {
+          entry.plateMark = t('opsAnalysis.architecture.bindingInvalid');
+        }
+        const plate = plates[id];
+        if (plate?.title) entry.plateTitle = plate.title;
+        if (plate?.subtitle) entry.plateSubtitle = plate.subtitle;
+        if (plate) {
+          if (plate.hoverName) entry.hoverName = plate.hoverName;
+          if (plate.hoverModel) {
+            entry.hoverModel = plate.hoverModel;
+            entry.hoverModelLabel = t('opsAnalysis.architecture.modelLabel');
+          }
+        }
+        next[id] = entry;
+      }
+      return Object.keys(next).length ? next : undefined;
+    }, [
+      alertLevelLabel,
+      diagramViews,
+      editStatus.byUuid,
+      iconNames,
+      modelNames,
+      requestMode,
+      statusHintText,
+      t,
+      viewStatus.byUuid,
+      viewStatus.phase,
+    ]);
+
+    const rectangleStatus = useMemo(() => {
+      if (requestMode === 'off') return undefined;
+      const viewing = requestMode === 'poll';
+      const source = viewing ? viewStatus.byUuid : editStatus.byUuid;
+      if (viewing && viewStatus.phase === 'idle' && Object.keys(source).length === 0) {
+        return undefined;
+      }
+      const overlays = buildRectangleOverlays(diagramViews, source, {
+        followBorders: viewing,
+        markFollow: !viewing,
+      });
+      const next: Record<string, {
+        label?: string;
+        borderLevel?: 'warning' | 'critical' | 'unknown';
+        badgeParts?: { level: 'critical' | 'warning'; text: string }[];
+        badgeText?: string;
+        badgeHint?: string;
+      }> = {};
+      for (const [id, overlay] of Object.entries(overlays)) {
+        const label = overlayText(overlay.label);
+        const entry: {
+          label?: string;
+          borderLevel?: 'warning' | 'critical' | 'unknown';
+          badgeParts?: { level: 'critical' | 'warning'; text: string }[];
+          badgeText?: string;
+          badgeHint?: string;
+        } = {};
+        if (label) entry.label = label;
+        if (overlay.borderLevel) entry.borderLevel = overlay.borderLevel;
+        const parts = regionAlertBadgeParts(overlay, {
+          critical: t('opsAnalysis.architecture.levelCritical'),
+          warning: t('opsAnalysis.architecture.levelWarning'),
+        });
+        if (viewing && parts.length) {
+          entry.badgeParts = parts;
+          entry.badgeText = parts.map((part) => part.text).join(' ');
+          entry.badgeHint = t('opsAnalysis.architecture.resourceAlertHint', undefined, {
+            n: overlay.resourceCount ?? 0,
+            m: overlay.alertTotal ?? 0,
+          });
+        } else if (!viewing && overlay.follow) {
+          entry.badgeText = t('opsAnalysis.architecture.followAlertSwitch');
+        }
+        if (entry.label || entry.borderLevel || entry.badgeText) next[id] = entry;
+      }
+      return Object.keys(next).length ? next : undefined;
+    }, [
+      diagramViews,
+      editStatus.byUuid,
+      overlayText,
+      requestMode,
+      t,
+      viewStatus.byUuid,
+      viewStatus.phase,
+    ]);
+
+    const bindingStats = useMemo(() => iconBindingStats(diagramViews), [diagramViews]);
+    const regionCounts = useMemo(() => {
+      if (selection?.type !== 'RECTANGLE') return { total: 0, bound: 0 };
+      return rectangleIconCounts(diagramViews, selection.id);
+    }, [diagramViews, selection]);
+    const nodeBinding = useMemo(() => {
+      if (requestMode !== 'once' || !highlightUnbound) return undefined;
+      const marks: Record<string, { unbound: true }> = {};
+      for (const id of bindingStats.unboundIds) marks[id] = { unbound: true };
+      return Object.keys(marks).length ? marks : undefined;
+    }, [bindingStats, highlightUnbound, requestMode]);
+
+    const closeDetail = useCallback(() => {
+      setDetail(null);
+      setHighlightId(undefined);
+    }, []);
+
+    const handleItemClick = useCallback((item: DiagramItemHit | null) => {
+      const action = decideDiagramClick({
+        hit: item,
+        views: diagramViews,
+        statusByUuid: viewStatus.byUuid,
+      });
+      if (action.type === 'toast') {
+        const key = action.reason === 'unbound'
+          ? 'opsAnalysis.architecture.unboundNode'
+          : action.reason === 'forbidden'
+            ? 'opsAnalysis.architecture.bindingForbidden'
+            : 'opsAnalysis.architecture.bindingInvalid';
+        message.warning(t(key));
+        closeDetail();
+        return;
+      }
+      if (action.type === 'close') {
+        closeDetail();
+        return;
+      }
+      if (action.type === 'resource') {
+        setHighlightId(action.highlightId);
+        setDetail({
+          kind: 'resource',
+          instUuid: action.instUuid,
+          modelId: action.modelId,
+          highlightId: action.highlightId,
+        });
+        return;
+      }
+      setHighlightId(undefined);
+      if (action.type === 'region') {
+        setDetail({ kind: 'region', rectangleId: action.rectangleId });
+        return;
+      }
+      setDetail({ kind: 'connector', connectorId: action.connectorId });
+    }, [closeDetail, diagramViews, t, viewStatus.byUuid]);
+
+    const openResource = useCallback((target: {
+      instUuid: string;
+      modelId: string;
+      highlightId?: string;
+    }) => {
+      const blocked = blockResourceOpen(statusByUuid[target.instUuid]);
+      if (blocked) return;
+      setHighlightId(target.highlightId);
+      setDetail((current) => ({
+        kind: 'resource',
+        instUuid: target.instUuid,
+        modelId: target.modelId,
+        highlightId: target.highlightId,
+        returnTo: current && current.kind !== 'resource' ? current : undefined,
+      }));
+    }, [statusByUuid]);
+
+    const backDetail = useCallback(() => {
+      setHighlightId(undefined);
+      setDetail((current) => (
+        current && current.kind === 'resource' ? current.returnTo ?? null : null
+      ));
+    }, []);
 
     const hasUnsavedChanges = () => {
       return isEditMode && hasUnsaved;
@@ -447,6 +927,13 @@ const Architecture = forwardRef<ArchitectureRef, ArchitectureProps>(
             onSave={saveDiagram}
             editExtra={bindCanvasDraftControls(architectureDraft)}
             onFullscreenToggle={handleFullscreenToggle}
+            bindingMeter={isEditMode ? {
+              bound: bindingStats.bound,
+              total: bindingStats.total,
+              unbound: bindingStats.unboundIds.length,
+              highlightUnbound,
+              onToggleHighlight: () => setHighlightUnbound((current) => !current),
+            } : undefined}
           />
         )}
 
@@ -470,7 +957,63 @@ const Architecture = forwardRef<ArchitectureRef, ArchitectureProps>(
             initialData={diagramData}
             onModelUpdated={handleModelUpdated}
             editorMode={shareMode || !isEditMode ? 'EXPLORABLE_READONLY' : 'EDITABLE'}
+            sceneApiRef={sceneApiRef}
+            onItemSelect={isEditMode && !shareMode ? handleItemSelect : undefined}
+            onItemClick={requestMode === 'poll' ? handleItemClick : undefined}
+            highlightedItemId={requestMode === 'poll' ? highlightId : undefined}
+            nodeStatus={nodeStatus}
+            nodeBinding={nodeBinding}
+            rectangleStatus={rectangleStatus}
           />
+          {shareMode ? (
+            <div
+              data-testid="architecture-share-hint"
+              className="pointer-events-none absolute right-3 top-3 z-20 rounded bg-[var(--color-fill-2)] px-2 py-1 text-xs text-[var(--color-text-3)]"
+            >
+              {t('opsAnalysis.architecture.shareStatusHint')}
+            </div>
+          ) : null}
+          {showBindingPanel && selectedBinding ? (
+            <ResourceBindingPanel
+              showFollow={selection?.type === 'RECTANGLE'}
+              followAlert={selectedBinding.followAlert}
+              bound={Boolean(selectedBinding.binding)}
+              binding={selectedBinding.binding}
+              iconTotal={regionCounts.total}
+              iconBound={regionCounts.bound}
+              statusLoading={Boolean(selectedBinding.binding && !selectedStatus)}
+              status={selectedStatus}
+              modelName={
+                modelOptions.find((model) => model.model_id === selectedStatus?.model_id)?.model_name
+                || selectedStatus?.model_id
+                || ''
+              }
+              models={modelOptions}
+              onSearch={searchResources}
+              onBind={(hit) => {
+                patchSelection({
+                  bkBinding: { inst_uuid: hit.inst_uuid, model_id: hit.model_id },
+                });
+                message.success(t('opsAnalysis.architecture.bindingBound', undefined, {
+                  name: hit.inst_name || hit.inst_uuid,
+                }));
+              }}
+              onUnbind={() => patchSelection({ bkBinding: undefined })}
+              onFollowAlert={(enabled) => patchSelection({ bkFollowAlert: enabled })}
+            />
+          ) : null}
+          {requestMode === 'poll' && detail ? (
+            <ResourceDetailDrawer
+              detail={detail}
+              views={diagramViews}
+              items={currentModel?.items ?? diagramData.items}
+              statusByUuid={viewStatus.byUuid}
+              modelNames={modelNames}
+              onClose={closeDetail}
+              onBack={backDetail}
+              onOpenResource={openResource}
+            />
+          ) : null}
         </div>
       </div>
     );

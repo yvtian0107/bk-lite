@@ -25,6 +25,7 @@ import { useCommon } from '@/app/monitor/context/common';
 import { useLevelList, useStateMap } from '@/app/monitor/hooks';
 import { LEVEL_MAP } from '@/app/monitor/constants';
 import { INIT_VIEW_MODAL_FORM } from '@/app/monitor/constants/view';
+import { resolveAlertOccurredAtField } from './alertOccurredAt';
 
 const Alert: React.FC<ViewModalProps> = ({
   monitorObject,
@@ -33,6 +34,7 @@ const Alert: React.FC<ViewModalProps> = ({
   form = INIT_VIEW_MODAL_FORM,
   readOnly = false,
   fillContainer = false,
+  occurredAtField,
 }) => {
   const { isLoading } = useApiClient();
   const { getMonitorAlert, patchMonitorAlert } = useMonitorApi();
@@ -66,6 +68,7 @@ const Alert: React.FC<ViewModalProps> = ({
   const [frequence, setFrequence] = useState<number>(0);
   const [confirmLoading, setConfirmLoading] = useState(false);
 
+  const occurredAtKey = resolveAlertOccurredAtField(occurredAtField);
   const columns: ColumnItem[] = [
     {
       title: t('monitor.events.level'),
@@ -80,13 +83,14 @@ const Alert: React.FC<ViewModalProps> = ({
     },
     {
       title: t('common.time'),
-      dataIndex: 'updated_at',
-      key: 'updated_at',
+      dataIndex: occurredAtKey,
+      key: occurredAtKey,
       width: 160,
       sorter: (a: any, b: any) => a.id - b.id,
-      render: (_, { updated_at }) => (
-        <>{updated_at ? convertToLocalizedTime(updated_at) : '--'}</>
-      )
+      render: (_, record) => {
+        const occurredAt = record?.[occurredAtKey];
+        return <>{occurredAt ? convertToLocalizedTime(occurredAt) : '--'}</>;
+      }
     },
     {
       title: t('monitor.events.alertName'),

@@ -29,6 +29,8 @@ export interface ViewModalProps {
   readOnly?: boolean;
   // 嵌入宿主时按容器实测高度铺满，替代主场的 100vh 偏移量。
   fillContainer?: boolean;
+  /** 告警发生时间列。缺省保持公共表的 updated_at。 */
+  occurredAtField?: 'updated_at' | 'start_event_time';
 }
 
 export interface ViewListProps {

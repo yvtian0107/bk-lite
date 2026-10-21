@@ -10,12 +10,14 @@ import { resolveMonitorPublicContext } from './resolveMonitorPublicContext';
 import type { MonitorPublicContext } from './resolveMonitorPublicContext';
 import type { MetricItem } from '@/app/monitor/types';
 import { publicWidgetErrorMessage } from './publicWidgetError';
+import type { AlertOccurredAtField } from '@/app/monitor/(pages)/view/alertOccurredAt';
 
 export interface AlertListWidgetProps {
   monitorId: string;
+  occurredAtField?: AlertOccurredAtField;
 }
 
-const AlertListWidget = ({ monitorId }: AlertListWidgetProps) => {
+const AlertListWidget = ({ monitorId, occurredAtField }: AlertListWidgetProps) => {
   const { t } = useTranslation();
   const {
     lookupInstance,
@@ -104,6 +106,7 @@ const AlertListWidget = ({ monitorId }: AlertListWidgetProps) => {
         objects={context.objects}
         readOnly
         fillContainer
+        occurredAtField={occurredAtField}
       />
     </div>
   );

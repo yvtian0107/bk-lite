@@ -1,0 +1,35 @@
+import { describe, expect, it } from 'vitest';
+import { buildAlarmHref, buildCmdbDetailHref, buildMonitorDetailHref } from '../links';
+
+describe('architecture detail links', () => {
+  it('builds cmdb, alarm and monitor links', () => {
+    const cmdb = new URL(buildCmdbDetailHref({
+      modelId: 'host',
+      instUuid: 'uuid-web',
+      instName: 'web-01',
+    }), 'http://local');
+    expect(cmdb.pathname).toBe('/cmdb/assetData/detail/baseInfo');
+    expect(cmdb.searchParams.get('model_id')).toBe('host');
+    expect(cmdb.searchParams.get('inst_uuid')).toBe('uuid-web');
+    expect(cmdb.searchParams.get('inst_name')).toBe('web-01');
+
+    const alarm = new URL(buildAlarmHref('mon-web'), 'http://local');
+    expect(alarm.pathname).toBe('/alarm/alarms');
+    expect(alarm.searchParams.get('resource_id')).toBe('mon-web');
+
+    const monitor = new URL(buildMonitorDetailHref({
+      monitorObjectId: '11',
+      name: 'zz-unlisted-object',
+      displayName: 'zz-unlisted-object',
+      instanceId: 'mon-web',
+      instanceName: 'web-01',
+      instanceIdValues: ['web-01'],
+      instanceIdKeys: ['instance_id'],
+    }), 'http://local');
+    expect(monitor.pathname).toBe('/monitor/view/detail');
+    expect(monitor.searchParams.get('monitorObjId')).toBe('11');
+    expect(monitor.searchParams.get('instance_id')).toBe('mon-web');
+    expect(monitor.searchParams.get('instance_name')).toBe('web-01');
+    expect(monitor.searchParams.get('return_object_id')).toBe('11');
+  });
+});
