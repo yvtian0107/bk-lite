@@ -66,8 +66,6 @@ interface Room3DProps {
 
 interface PointerState {
   rack: Room3DRack;
-  device?: Room3DRenderableDevice;
-  rackTooltip?: boolean;
   x: number;
   y: number;
 }
@@ -373,9 +371,7 @@ const Room3D: React.FC<Room3DProps> = ({
   const selectedConflictRacks = selectedRack?.is_conflict
     ? (selectedRack.conflict_racks ?? [])
     : [];
-  const hoverPopupVisible = Boolean(
-    hoverState && !selectedDevice && hoverState.rackTooltip !== false,
-  );
+  const hoverPopupVisible = Boolean(hoverState && !selectedDevice);
   const shouldShowRackPanel = Boolean(
     selectedRack?.is_conflict && !selectedDevice,
   );

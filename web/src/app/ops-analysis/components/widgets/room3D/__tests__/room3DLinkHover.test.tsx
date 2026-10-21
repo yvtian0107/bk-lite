@@ -14,8 +14,6 @@ const sceneCallbacks = vi.hoisted(() => ({
   current: null as {
     onHover?: (state: {
       rack: { rack_id: string; rack_name: string; row: number; col: number };
-      device?: { device_id: string; device_name: string };
-      rackTooltip?: boolean;
       x: number;
       y: number;
     } | null) => void;
@@ -128,21 +126,6 @@ describe('room3D device hover', () => {
     act(() => {
       sceneCallbacks.current?.onHover?.({
         rack,
-        device,
-        rackTooltip: false,
-        x: 20,
-        y: 20,
-      });
-    });
-    expect(screen.queryByText('Rack 1')).toBeNull();
-    expect(screen.queryByText('srv-1')).toBeNull();
-    expect(document.body.textContent).not.toContain('右键打开链接');
-
-    act(() => {
-      sceneCallbacks.current?.onHover?.({
-        rack,
-        device,
-        rackTooltip: true,
         x: 40,
         y: 30,
       });
