@@ -1,12 +1,12 @@
 'use client';
 
-import React, { useEffect, useLayoutEffect, useRef, useState } from 'react';
+import React, { useEffect } from 'react';
 import { createPortal } from 'react-dom';
+import { Dropdown } from 'antd';
+import { LinkOutlined } from '@ant-design/icons';
 import { useInteractionSurface } from '@/app/ops-analysis/context/interactionSurface';
 import { shouldNavigateInteraction } from '@/app/ops-analysis/utils/interactionLink';
 import { useTranslation } from '@/utils/i18n';
-
-const VIEWPORT_MARGIN = 8;
 
 interface InteractionDataMenuProps {
   open: boolean;
@@ -15,22 +15,14 @@ interface InteractionDataMenuProps {
   label: string;
   onSelect: () => void;
   onClose: () => void;
-  /** scene：3D 场景标签式文字样式 */
-  variant?: 'default' | 'scene';
-  /** 用于计算大屏缩放比例的组件容器 */
-  anchorRef?: React.RefObject<HTMLElement | null>;
 }
 
-const MIN_SCALE = 0.6;
-const MAX_SCALE = 2;
-
-const getEffectiveScale = (el?: HTMLElement | null) => {
-  if (!el || !el.offsetWidth) return 1;
-  const scale = el.getBoundingClientRect().width / el.offsetWidth;
-  if (!Number.isFinite(scale) || scale <= 0) return 1;
-  return Math.max(MIN_SCALE, Math.min(MAX_SCALE, scale));
-};
-
+/**
+ * 数据链接的右键菜单。锚点 portal 到 body，按视口 clientX/Y 定位，
+ * 避免大屏 CSS transform 把 fixed 算进缩放层。
+ * 菜单不跟随 fitScale：上下文菜单保持组件库字号，再缩放会让点击区域跟着漂移。
+ * 弹出层带上当前 ConfigProvider 的 cssVar 类，大屏暗色主题不必留在主题容器内部。
+ */
 const InteractionDataMenu: React.FC<InteractionDataMenuProps> = ({
   open,
   x,
@@ -38,95 +30,66 @@ const InteractionDataMenu: React.FC<InteractionDataMenuProps> = ({
   label,
   onSelect,
   onClose,
-  variant = 'default',
-  anchorRef,
 }) => {
   const { t } = useTranslation();
   const surface = useInteractionSurface();
-  const [scale, setScale] = useState(1);
-  const isScene = variant === 'scene';
-  const menuRef = useRef<HTMLDivElement>(null);
-  const [position, setPosition] = useState({ left: x, top: y });
-
-  useLayoutEffect(() => {
-    if (open) setScale(getEffectiveScale(anchorRef?.current));
-  }, [anchorRef, open, x, y]);
-
-  useLayoutEffect(() => {
-    if (!open || !menuRef.current) return;
-    const { width, height } = menuRef.current.getBoundingClientRect();
-    const maxLeft = window.innerWidth - width - VIEWPORT_MARGIN;
-    const maxTop = window.innerHeight - height - VIEWPORT_MARGIN;
-    const left = x > maxLeft ? x - width : x;
-    const top = y > maxTop ? y - height : y;
-    setPosition({
-      left: Math.max(VIEWPORT_MARGIN, Math.min(left, maxLeft)),
-      top: Math.max(VIEWPORT_MARGIN, Math.min(top, maxTop)),
-    });
-  }, [open, x, y, scale]);
+  const canNavigate = shouldNavigateInteraction(surface);
+  const disabledHint = t('dashboard.interactionViewModeOnly', '查看模式下可跳转');
 
   useEffect(() => {
     if (!open) return undefined;
-    const close = () => onClose();
-    const closeOnOutside = (event: PointerEvent) => {
-      if (menuRef.current?.contains(event.target as Node)) return;
+    const onPointerDown = (event: PointerEvent) => {
+      const target = event.target;
+      if (target instanceof Element && target.closest('.ant-dropdown')) return;
       onClose();
     };
-    window.addEventListener('pointerdown', closeOnOutside);
-    window.addEventListener('scroll', close, true);
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') onClose();
+    };
+    const onScroll = () => onClose();
+    document.addEventListener('pointerdown', onPointerDown);
+    window.addEventListener('keydown', onKeyDown);
+    window.addEventListener('scroll', onScroll, true);
     return () => {
-      window.removeEventListener('pointerdown', closeOnOutside);
-      window.removeEventListener('scroll', close, true);
+      document.removeEventListener('pointerdown', onPointerDown);
+      window.removeEventListener('keydown', onKeyDown);
+      window.removeEventListener('scroll', onScroll, true);
     };
   }, [onClose, open]);
 
   if (!open || typeof document === 'undefined') return null;
 
   return createPortal(
-    <div
-      ref={menuRef}
-      role="menu"
-      className={
-        isScene
-          ? 'fixed z-[1100] flex flex-col'
-          : 'fixed z-[80] min-w-36 rounded-md border border-(--color-border-1) bg-(--color-bg-1) py-1 shadow-md'
-      }
-      style={{
-        left: position.left,
-        top: position.top,
-        ...(isScene ? { fontSize: 12 * scale } : {}),
-      }}
-    >
-      <button
-        type="button"
-        role="menuitem"
-        title={shouldNavigateInteraction(surface) ? undefined : t('dashboard.interactionViewModeOnly', '查看模式下可跳转')}
-        className={
-          isScene
-            ? 'block w-fit cursor-pointer border-0 bg-transparent p-0 text-left text-[#7fd4ff] [text-shadow:0_1px_3px_rgba(0,0,0,0.8)] [border-bottom:1px_solid_rgba(127,212,255,0.45)] hover:text-[#b5e8ff] hover:[border-bottom-color:#7fd4ff] focus-visible:outline focus-visible:outline-1 focus-visible:outline-offset-2 focus-visible:outline-[#7fd4ff]'
-            : 'block w-full cursor-pointer px-3 py-1.5 text-left text-xs text-(--color-text-1) hover:bg-(--color-fill-1)'
-        }
-        style={
-          isScene
-            ? { fontSize: 'inherit', lineHeight: 1.4 }
-            : undefined
-        }
-        onClick={() => {
+    <Dropdown
+      open
+      autoAdjustOverflow
+      getPopupContainer={() => document.body}
+      overlayStyle={{ zIndex: 1100 }}
+      menu={{
+        items: [
+          {
+            key: 'open-link',
+            disabled: !canNavigate,
+            // 图标只作装饰。antd 默认把图标名写成 aria-label，会把菜单项读成 “link 链接名”。
+            icon: <LinkOutlined aria-hidden aria-label="" />,
+            label,
+            title: canNavigate ? undefined : disabledHint,
+          },
+        ],
+        onClick: () => {
+          if (!canNavigate) return;
           onSelect();
           onClose();
-        }}
-      >
-        {isScene ? (
-          <>
-            {label}
-            <span aria-hidden="true"> ↗</span>
-          </>
-        ) : (
-          label
-        )}
-      </button>
-    </div>,
-    document.body
+        },
+      }}
+    >
+      <div
+        data-interaction-menu-anchor=""
+        className="pointer-events-none fixed h-px w-px"
+        style={{ left: x, top: y }}
+      />
+    </Dropdown>,
+    document.body,
   );
 };
 
