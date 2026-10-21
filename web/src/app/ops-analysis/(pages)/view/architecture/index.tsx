@@ -595,12 +595,9 @@ const Architecture = forwardRef<ArchitectureRef, ArchitectureProps>(
 
     const alertLevelLabel = useCallback((level: string) => {
       const key: Record<string, string> = {
-        fatal: 'opsAnalysis.architecture.levelFatal',
-        severity: 'opsAnalysis.architecture.levelSeverity',
         critical: 'opsAnalysis.architecture.levelCritical',
         error: 'opsAnalysis.architecture.levelError',
         warning: 'opsAnalysis.architecture.levelWarning',
-        remain: 'opsAnalysis.architecture.levelRemain',
       };
       const messageKey = key[level.trim().toLowerCase()];
       return messageKey ? t(messageKey) : level;

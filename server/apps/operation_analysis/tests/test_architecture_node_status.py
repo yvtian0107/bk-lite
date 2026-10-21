@@ -101,6 +101,8 @@ def test_missing_uuid_is_invalid_without_name(monkeypatch):
             "status": "invalid",
             "alert_count": 0,
             "max_level": None,
+            "level_counts": {"critical": 0, "error": 0, "warning": 0},
+            "alerts": [],
             "monitor_id": "",
             "model_id": "",
             "inst_name": "",
@@ -201,6 +203,216 @@ def test_alert_level_maps_with_count(monkeypatch, level, status):
     assert items[0]["status"] == status
     assert items[0]["alert_count"] == 3
     assert items[0]["max_level"] == level
+
+
+def test_level_counts_split_severe_and_warning_and_keep_icon_total(monkeypatch):
+    inst_uuid = _uuid(12)
+    captured = {}
+
+    def monitor(**kwargs):
+        captured["query_data"] = kwargs["query_data"]
+        return {
+            "result": True,
+            "data": {
+                "instance_summaries": [
+                    {
+                        "instance_id": "mon-12",
+                        "count": 5,
+                        "max_level": "error",
+                        "level_counts": {"critical": 1, "error": 1, "warning": 3},
+                        "alerts": [
+                            {"id": "a-critical", "level": "critical"},
+                            {"id": "a-error", "level": "error"},
+                            {"id": "a-warn", "level": "warning"},
+                            {"id": "a-warn", "level": "warning"},
+                            {"id": "a-warn-2", "level": "warning"},
+                            {"id": "a-warn-3", "level": "warning"},
+                            {"id": "info-skip", "level": "info"},
+                        ],
+                    }
+                ]
+            },
+        }
+
+    items = _query(
+        monkeypatch,
+        [inst_uuid],
+        lambda **kwargs: _mapping(inst_uuid, monitor_id="mon-12", inst_name="mixed"),
+        monitor,
+    )
+    row = items[0]
+    assert captured["query_data"]["include_alert_refs"] is True
+    assert "level" not in captured["query_data"]
+    assert row["status"] == "critical"
+    assert row["alert_count"] == 6
+    assert row["max_level"] == "critical"
+    assert row["inst_name"] == "mixed"
+    assert row["level_counts"] == {"critical": 1, "error": 1, "warning": 4}
+    assert row["alerts"] == [
+        {"id": "a-critical", "level": "critical"},
+        {"id": "a-error", "level": "error"},
+        {"id": "a-warn", "level": "warning"},
+        {"id": "a-warn-2", "level": "warning"},
+        {"id": "a-warn-3", "level": "warning"},
+        {"id": "info-skip", "level": "warning"},
+    ]
+
+
+def test_alert_ref_rows_group_levels_without_changing_plain_summaries():
+    from apps.monitor.nats.monitor import _summarize_alert_rows
+
+    plain = _summarize_alert_rows(
+        [
+            {"monitor_instance_id": "mon", "level": "error"},
+            {"monitor_instance_id": "mon", "level": "warning"},
+        ],
+        ["mon"],
+        False,
+    )
+    assert plain == [{"instance_id": "mon", "count": 2, "max_level": "error"}]
+    detailed = _summarize_alert_rows(
+        [
+            {"id": 1, "monitor_instance_id": "mon", "level": "error"},
+            {"id": 2, "monitor_instance_id": "mon", "level": "warning"},
+            {"id": 2, "monitor_instance_id": "mon", "level": "warning"},
+            {"id": 3, "monitor_instance_id": "mon", "level": "info"},
+        ],
+        ["mon"],
+        True,
+    )
+    assert detailed[0]["count"] == 4
+    assert detailed[0]["level_counts"] == {"critical": 0, "error": 1, "warning": 1}
+    assert detailed[0]["alerts"] == [
+        {"id": "1", "level": "error"},
+        {"id": "2", "level": "warning"},
+    ]
+    assert detailed[0]["other_alerts"] == [{"id": "3", "level": "info"}]
+    assert "other_alerts" not in plain[0]
+
+
+def test_info_only_alert_is_warning(monkeypatch):
+    inst_uuid = _uuid(13)
+    items = _query(
+        monkeypatch,
+        [inst_uuid],
+        lambda **kwargs: _mapping(inst_uuid, monitor_id="mon-13", inst_name="info-host"),
+        lambda **kwargs: {
+            "result": True,
+            "data": {
+                "instance_summaries": [
+                    {
+                        "instance_id": "mon-13",
+                        "count": 1,
+                        "max_level": "info",
+                        "level_counts": {"critical": 0, "error": 0, "warning": 0},
+                        "alerts": [],
+                        "other_alerts": [{"id": "info-1", "level": "info"}],
+                    }
+                ]
+            },
+        },
+    )
+    row = items[0]
+    assert row["status"] == "warning"
+    assert row["max_level"] == "warning"
+    assert row["alert_count"] == 1
+    assert row["level_counts"] == {"critical": 0, "error": 0, "warning": 1}
+    assert row["alerts"] == [{"id": "info-1", "level": "warning"}]
+    assert row["inst_name"] == "info-host"
+
+
+def test_warning_plus_info_stays_warning(monkeypatch):
+    inst_uuid = _uuid(14)
+    items = _query(
+        monkeypatch,
+        [inst_uuid],
+        lambda **kwargs: _mapping(inst_uuid, monitor_id="mon-14", inst_name="mixed-warn"),
+        lambda **kwargs: {
+            "result": True,
+            "data": {
+                "instance_summaries": [
+                    {
+                        "instance_id": "mon-14",
+                        "count": 2,
+                        "max_level": "info",
+                        "level_counts": {"critical": 0, "error": 0, "warning": 1},
+                        "alerts": [{"id": "warn-1", "level": "warning"}],
+                        "other_alerts": [{"id": "info-1", "level": "info"}],
+                    }
+                ]
+            },
+        },
+    )
+    row = items[0]
+    assert row["status"] == "warning"
+    assert row["max_level"] == "warning"
+    assert row["alert_count"] == 2
+    assert row["level_counts"] == {"critical": 0, "error": 0, "warning": 2}
+
+
+def test_critical_plus_info_stays_critical(monkeypatch):
+    inst_uuid = _uuid(15)
+    items = _query(
+        monkeypatch,
+        [inst_uuid],
+        lambda **kwargs: _mapping(inst_uuid, monitor_id="mon-15", inst_name="mixed-critical"),
+        lambda **kwargs: {
+            "result": True,
+            "data": {
+                "instance_summaries": [
+                    {
+                        "instance_id": "mon-15",
+                        "count": 2,
+                        "max_level": "critical",
+                        "alerts": [{"id": "crit-1", "level": "critical"}],
+                        "other_alerts": [{"id": "info-1", "level": "info"}],
+                    }
+                ]
+            },
+        },
+    )
+    row = items[0]
+    assert row["status"] == "critical"
+    assert row["max_level"] == "critical"
+    assert row["alert_count"] == 2
+    assert row["level_counts"] == {"critical": 1, "error": 0, "warning": 1}
+
+
+def test_info_alert_id_counts_once_as_warning(monkeypatch):
+    inst_uuid = _uuid(16)
+    items = _query(
+        monkeypatch,
+        [inst_uuid],
+        lambda **kwargs: _mapping(inst_uuid, monitor_id="mon-16", inst_name="deduped"),
+        lambda **kwargs: {
+            "result": True,
+            "data": {
+                "instance_summaries": [
+                    {
+                        "instance_id": "mon-16",
+                        "count": 4,
+                        "max_level": "info",
+                        "alerts": [{"id": "warn-1", "level": "warning"}],
+                        "other_alerts": [
+                            {"id": "info-shared", "level": "info"},
+                            {"id": "info-shared", "level": "info"},
+                            {"id": "notice-1", "level": "notice"},
+                        ],
+                    }
+                ]
+            },
+        },
+    )
+    row = items[0]
+    assert row["status"] == "warning"
+    assert row["max_level"] == "warning"
+    assert row["alert_count"] == 3
+    assert row["level_counts"] == {"critical": 0, "error": 0, "warning": 3}
+    assert row["alerts"] == [
+        {"id": "warn-1", "level": "warning"},
+        {"id": "info-shared", "level": "warning"},
+        {"id": "notice-1", "level": "warning"},
+    ]
 
 
 def test_blank_count_stays_unknown(monkeypatch):

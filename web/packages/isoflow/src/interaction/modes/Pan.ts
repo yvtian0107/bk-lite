@@ -3,6 +3,7 @@ import { CoordsUtils, getItemAtTile, setWindowCursor } from 'src/utils';
 import { ModeActions, State } from 'src/types';
 import {
   findDrawnIconId,
+  findRectangleBadgeId,
   regionIdForTextClick,
   resolveViewClick,
   viewHoverCursor
@@ -49,13 +50,18 @@ const updateViewCursor = (state: State, element: HTMLElement) => {
     return;
   }
 
-  const iconId = findDrawnIconId(state.uiState.rendererEl, {
+  const point = {
     x: state.pointer.event.clientX,
     y: state.pointer.event.clientY
-  });
+  };
+  const badgeId = findRectangleBadgeId(state.uiState.rendererEl, point);
+  const iconId = findDrawnIconId(state.uiState.rendererEl, point);
   const { tileHit, textRegionId } = textRegionIdFor(state);
 
-  setWindowCursor(viewHoverCursor({ iconId, tileHit, textRegionId }), element);
+  setWindowCursor(
+    viewHoverCursor({ badgeId, iconId, tileHit, textRegionId }),
+    element
+  );
 };
 
 export const Pan: ModeActions = {
@@ -122,16 +128,20 @@ export const Pan: ModeActions = {
 
     if (!onItemClick) return;
 
-    const iconId = findDrawnIconId(uiState.rendererEl, {
+    const point = {
       x: pointer.event.clientX,
       y: pointer.event.clientY
-    });
+    };
+    const badgeId = findRectangleBadgeId(uiState.rendererEl, point);
+    const iconId = badgeId ? null : findDrawnIconId(uiState.rendererEl, point);
     const { tileHit, textRegionId } = textRegionIdFor(state);
-    const decision = resolveViewClick({
-      iconId,
-      tileHit,
-      textRegionId
-    });
+    const decision = badgeId
+      ? { kind: 'click' as const, item: { type: 'RECTANGLE' as const, id: badgeId } }
+      : resolveViewClick({
+          iconId,
+          tileHit,
+          textRegionId
+        });
 
     if (decision.kind === 'click') {
       onItemClick(decision.item, pointer.event);

@@ -6,6 +6,5 @@ export const rectangleSchema = z.object({
   color: id.optional(),
   from: coords,
   to: coords,
-  bkBinding: z.unknown().optional(),
   bkFollowAlert: z.boolean().optional()
 });

@@ -145,6 +145,9 @@ export const Node = ({ node, order }: Props) => {
       <Box
         data-plate-subtitle={showSubtitle ? subtitle : ''}
         data-plate-expanded={showFullName || quietLines.length > 0 || Boolean(modelDetail) || Boolean(statusLine) ? 'true' : 'false'}
+        data-icon-hit={viewing ? node.id : undefined}
+        // order is -(x + y). Negating it keeps the front plate above the icon and any plate behind it.
+        data-icon-order={viewing ? 1_000_000 - order : undefined}
         onMouseEnter={() => setHovered(true)}
         onMouseLeave={() => setHovered(false)}
         sx={{ position: 'absolute', pointerEvents: 'auto', zIndex: revealed ? 2 : 0 }}

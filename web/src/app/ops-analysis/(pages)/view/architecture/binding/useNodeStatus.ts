@@ -4,10 +4,10 @@ import { useEffect, useRef, useState } from 'react';
 import { useArchitectureApi } from '@/app/ops-analysis/api/architecture';
 import type { ArchitectureNodeStatusItem } from './model';
 import {
+  chunkBoundUuids,
+  combineStatusBatches,
   keptStatusForRequest,
-  mergeStatusResponse,
   shouldPauseArchitectureStatusRefresh,
-  unknownStatusMap,
 } from './status';
 
 export function useArchitectureNodeStatus(options: {
@@ -55,14 +55,22 @@ export function useArchitectureNodeStatus(options: {
         return;
       }
       const current = ++seq;
-      queryRef.current(requested)
-        .then((data) => {
-          const items = Array.isArray(data?.items) ? data.items : [];
-          apply(mergeStatusResponse(requested, items), 'ready', current);
-        })
-        .catch(() => {
-          apply(unknownStatusMap(requested), 'failed', current);
-        });
+      const batches = chunkBoundUuids(requested);
+      Promise.all(batches.map(async (uuids) => {
+        try {
+          const data = await queryRef.current(uuids);
+          return {
+            uuids,
+            ok: true,
+            items: Array.isArray(data?.items) ? data.items : [],
+          };
+        } catch {
+          return { uuids, ok: false };
+        }
+      })).then((settled) => {
+        const combined = combineStatusBatches(settled, cacheRef.current);
+        apply(combined.byUuid, combined.failed ? 'failed' : 'ready', current);
+      });
     };
 
     run();

@@ -14,7 +14,9 @@ const withBinding = produce(modelFixture, (draft) => {
     inst_uuid: 'uuid-1',
     model_id: 'host'
   };
-  const rectangle = draft.views[0].rectangles?.[0];
+  const rectangle = draft.views[0].rectangles?.[0] as
+    | { bkBinding?: unknown; bkFollowAlert?: boolean }
+    | undefined;
 
   if (!rectangle) throw new Error('missing rectangle');
 
@@ -28,10 +30,11 @@ assert.deepEqual(parsed.views[0].items[0].bkBinding, {
   inst_uuid: 'uuid-1',
   model_id: 'host'
 });
-assert.deepEqual(parsed.views[0].rectangles?.[0].bkBinding, {
-  inst_uuid: 'uuid-r',
-  model_id: 'switch'
-});
+assert.equal(
+  (parsed.views[0].rectangles?.[0] as { bkBinding?: unknown }).bkBinding,
+  undefined
+);
+assert.equal('bkBinding' in (parsed.views[0].rectangles?.[0] ?? {}), false);
 assert.equal(parsed.views[0].rectangles?.[0].bkFollowAlert, true);
 
 const updatedRectangle = updateRectangle(
@@ -42,10 +45,10 @@ const updatedRectangle = updateRectangle(
   { viewId: parsed.views[0].id, state: { model: parsed, scene: INITIAL_SCENE_STATE } }
 );
 
-assert.deepEqual(updatedRectangle.model.views[0].rectangles?.[0].bkBinding, {
-  inst_uuid: 'uuid-r',
-  model_id: 'switch'
-});
+assert.equal(
+  (updatedRectangle.model.views[0].rectangles?.[0] as { bkBinding?: unknown }).bkBinding,
+  undefined
+);
 assert.equal(
   updatedRectangle.model.views[0].rectangles?.[0].bkFollowAlert,
   true
@@ -71,13 +74,24 @@ assert.equal(exported.views[0].rectangles[0].bkFollowAlert, true);
 assert.equal(exported.views[0].connectors[0].color, 'color1');
 
 const legacyRectangle = produce(modelFixture, (draft) => {
-  const rectangle = draft.views[0].rectangles?.[0];
+  const rectangle = draft.views[0].rectangles?.[0] as
+    | { bkBinding?: unknown; bkFollowAlert?: boolean }
+    | undefined;
 
   if (!rectangle) throw new Error('missing rectangle');
 
   rectangle.bkBinding = 'legacy-region-binding';
+  rectangle.bkFollowAlert = false;
 });
 
-assert.equal(modelSchema.safeParse(legacyRectangle).success, true);
+const legacy = modelSchema.safeParse(legacyRectangle);
+
+assert.equal(legacy.success, true);
+if (!legacy.success) throw new Error('legacy rectangle should open');
+assert.equal(
+  (legacy.data.views[0].rectangles?.[0] as { bkBinding?: unknown }).bkBinding,
+  undefined
+);
+assert.equal(legacy.data.views[0].rectangles?.[0].bkFollowAlert, false);
 
 console.log('bkBinding ok');

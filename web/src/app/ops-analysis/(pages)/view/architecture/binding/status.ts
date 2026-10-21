@@ -5,6 +5,9 @@ import {
 
 export const ARCHITECTURE_STATUS_POLL_MS = 60_000;
 
+/** Matches ArchitectureNodeStatusService.MAX_INST_UUIDS. One request stays inside that cap. */
+export const ARCHITECTURE_STATUS_BATCH_SIZE = 500;
+
 export type OverlayLabel =
   | { type: 'text'; value: string }
   | { type: 'invalid' }
@@ -20,11 +23,11 @@ export interface RectangleOverlay {
   borderLevel?: RectangleBorderLevel;
   /** Unique bound resource uuids inside the area. */
   resourceCount?: number;
-  /** Sum of alert_count for unique critical uuids inside the area. */
+  /** Unique critical and error alerts inside the area. */
   criticalCount?: number;
-  /** Sum of alert_count for unique warning uuids inside the area. */
+  /** Unique warning alerts inside the area. */
   warningCount?: number;
-  /** Sum of alert_count for unique warning/critical uuids inside the area. */
+  /** Unique warning, error and critical alerts inside the area. */
   alertTotal?: number;
   /** Edit mode: the area summarizes icon alerts, with no runtime counts. */
   follow?: boolean;
@@ -80,15 +83,7 @@ export interface IconBindingStats {
   unboundIds: string[];
 }
 
-export interface RegionListSummary {
-  total: number;
-  alert: number;
-  normal: number;
-  other: number;
-}
-
 export interface RegionList {
-  summary: RegionListSummary;
   icons: ResourceLine[];
 }
 
@@ -156,12 +151,47 @@ export function unknownStatusItem(instUuid: string): ArchitectureNodeStatusItem 
     monitor_id: '',
     model_id: '',
     inst_name: '',
+    level_counts: { critical: 0, error: 0, warning: 0 },
+    alerts: [],
   };
 }
 
 export function unknownStatusMap(uuids: string[]): Record<string, ArchitectureNodeStatusItem> {
   return Object.fromEntries(uuids.map((uuid) => [uuid, unknownStatusItem(uuid)]));
 }
+
+const finiteCount = (value: unknown): number => {
+  if (typeof value !== 'number' || !Number.isFinite(value) || value < 0) return 0;
+  return Math.floor(value);
+};
+
+const coerceLevelCounts = (
+  raw: unknown,
+): ArchitectureNodeStatusItem['level_counts'] | undefined => {
+  if (!isRecord(raw)) return undefined;
+  return {
+    critical: finiteCount(raw.critical),
+    error: finiteCount(raw.error),
+    warning: finiteCount(raw.warning),
+  };
+};
+
+const coerceAlerts = (
+  raw: unknown,
+): ArchitectureNodeStatusItem['alerts'] | undefined => {
+  if (!Array.isArray(raw)) return undefined;
+  const alerts: NonNullable<ArchitectureNodeStatusItem['alerts']> = [];
+  const seen = new Set<string>();
+  for (const item of raw) {
+    if (!isRecord(item)) continue;
+    const id = typeof item.id === 'string' ? item.id.trim() : '';
+    const level = typeof item.level === 'string' ? item.level.trim().toLowerCase() : '';
+    if (!id || !level || seen.has(id)) continue;
+    seen.add(id);
+    alerts.push({ id, level });
+  }
+  return alerts;
+};
 
 const coerceStatusItem = (raw: unknown): ArchitectureNodeStatusItem | null => {
   if (!isRecord(raw) || typeof raw.inst_uuid !== 'string' || !raw.inst_uuid.trim()) {
@@ -173,7 +203,7 @@ const coerceStatusItem = (raw: unknown): ArchitectureNodeStatusItem | null => {
   const alertCount = typeof raw.alert_count === 'number' && Number.isFinite(raw.alert_count)
     ? raw.alert_count
     : 0;
-  return {
+  const item: ArchitectureNodeStatusItem = {
     inst_uuid: raw.inst_uuid.trim(),
     status,
     alert_count: alertCount,
@@ -182,7 +212,46 @@ const coerceStatusItem = (raw: unknown): ArchitectureNodeStatusItem | null => {
     model_id: typeof raw.model_id === 'string' ? raw.model_id : '',
     inst_name: typeof raw.inst_name === 'string' ? raw.inst_name : '',
   };
+  const levelCounts = coerceLevelCounts(raw.level_counts);
+  const alerts = coerceAlerts(raw.alerts);
+  if (levelCounts) item.level_counts = levelCounts;
+  if (alerts) item.alerts = alerts;
+  return item;
 };
+
+export function chunkBoundUuids(
+  uuids: string[],
+  size = ARCHITECTURE_STATUS_BATCH_SIZE,
+): string[][] {
+  if (!uuids.length) return [];
+  const step = Number.isFinite(size) && size > 0 ? Math.floor(size) : uuids.length;
+  const batches: string[][] = [];
+  for (let index = 0; index < uuids.length; index += step) {
+    batches.push(uuids.slice(index, index + step));
+  }
+  return batches;
+}
+
+export function combineStatusBatches(
+  batches: Array<{ uuids: string[]; ok: boolean; items?: unknown }>,
+  previous: Record<string, ArchitectureNodeStatusItem>,
+): { byUuid: Record<string, ArchitectureNodeStatusItem>; failed: boolean } {
+  const byUuid: Record<string, ArchitectureNodeStatusItem> = {};
+  let failed = false;
+  for (const batch of batches) {
+    if (batch.ok) {
+      Object.assign(byUuid, mergeStatusResponse(batch.uuids, batch.items));
+      continue;
+    }
+    failed = true;
+    const kept = keptStatusForRequest(previous, batch.uuids);
+    Object.assign(byUuid, kept);
+    for (const uuid of batch.uuids) {
+      if (!byUuid[uuid]) byUuid[uuid] = unknownStatusItem(uuid);
+    }
+  }
+  return { byUuid, failed };
+}
 
 export function mergeStatusResponse(
   uuids: string[],
@@ -469,15 +538,16 @@ export function buildRectangleOverlays(
         let alertTotal = 0;
         let criticalCount = 0;
         let warningCount = 0;
+        const seenAlerts = new Set<string>();
         for (const status of resources.values()) {
           const contribution = borderContribution(status.status);
           if (contribution && (!border || BORDER_RANK[contribution] > BORDER_RANK[border])) {
             border = contribution;
           }
-          const count = Number.isFinite(status.alert_count) ? status.alert_count : 0;
-          if (status.status === 'critical') criticalCount += count;
-          if (status.status === 'warning') warningCount += count;
-          if (status.status === 'warning' || status.status === 'critical') alertTotal += count;
+          const counted = countResourceAlerts(status, seenAlerts);
+          criticalCount += counted.critical;
+          warningCount += counted.warning;
+          alertTotal += counted.critical + counted.warning;
         }
         if (border) overlay.borderLevel = border;
         overlay.resourceCount = resources.size;
@@ -533,6 +603,55 @@ const lineFromBinding = (
   };
 };
 
+const rememberAlert = (seen: Set<string>, id: string): boolean => {
+  if (!id || seen.has(id)) return false;
+  seen.add(id);
+  return true;
+};
+
+/** Severe = critical + error. Warning = warning, info, and any other non-empty level. The same alert id counts once. */
+const countResourceAlerts = (
+  status: ArchitectureNodeStatusItem,
+  seen: Set<string>,
+): { critical: number; warning: number } => {
+  const counts = { critical: 0, warning: 0 };
+  const alerts = status.alerts;
+  if (Array.isArray(alerts) && alerts.length) {
+    for (const alert of alerts) {
+      if (!rememberAlert(seen, alert.id)) continue;
+      if (alert.level === 'critical' || alert.level === 'error') counts.critical += 1;
+      else counts.warning += 1;
+    }
+    return counts;
+  }
+  const levels = status.level_counts;
+  const levelTotal = levels ? levels.critical + levels.error + levels.warning : 0;
+  if (levels && levelTotal > 0) {
+    const add = (level: 'critical' | 'error' | 'warning', amount: number) => {
+      for (let index = 0; index < amount; index += 1) {
+        if (!rememberAlert(seen, `${status.inst_uuid}:${level}:${index}`)) continue;
+        if (level === 'warning') counts.warning += 1;
+        else counts.critical += 1;
+      }
+    };
+    add('critical', levels.critical);
+    add('error', levels.error);
+    add('warning', levels.warning);
+    return counts;
+  }
+  const amount = Number.isFinite(status.alert_count) ? status.alert_count : 0;
+  if ((status.status !== 'critical' && status.status !== 'warning') || amount <= 0) {
+    return counts;
+  }
+  const severe = status.status === 'critical';
+  for (let index = 0; index < amount; index += 1) {
+    if (!rememberAlert(seen, `${status.inst_uuid}:total:${index}`)) continue;
+    if (severe) counts.critical += 1;
+    else counts.warning += 1;
+  }
+  return counts;
+};
+
 const emptyLine = (key: string): ResourceLine => ({
   key,
   instUuid: '',
@@ -543,28 +662,18 @@ const emptyLine = (key: string): ResourceLine => ({
   alertCount: null,
 });
 
-const emptyRegionSummary = (): RegionListSummary => ({
-  total: 0,
-  alert: 0,
-  normal: 0,
-  other: 0,
-});
-
 const regionBucket = (
   level: ArchitectureNodeStatusItem['status'] | null,
-): keyof Omit<RegionListSummary, 'total'> => {
+): 'alert' | 'normal' | 'other' => {
   if (level === 'warning' || level === 'critical') return 'alert';
   if (level === 'normal') return 'normal';
   return 'other';
 };
 
 const ALERT_SEVERITY_RANK: Record<string, number> = {
-  fatal: 60,
-  severity: 50,
   critical: 40,
   error: 30,
   warning: 20,
-  remain: 10,
 };
 
 const alertSeverityRank = (
@@ -609,10 +718,10 @@ export function buildRegionList(
   items?: unknown,
 ): RegionList {
   const found = findEntry(views, 'rectangles', rectangleId);
-  if (!found) return { summary: emptyRegionSummary(), icons: [] };
+  if (!found) return { icons: [] };
   const from = readCoord(found.entry.from);
   const to = readCoord(found.entry.to);
-  if (!from || !to) return { summary: emptyRegionSummary(), icons: [] };
+  if (!from || !to) return { icons: [] };
   const icons = boundIcons(found.view)
     .filter((icon) => tileInside(icon.tile, from, to))
     .sort((left, right) => {
@@ -631,10 +740,7 @@ export function buildRegionList(
     inst_uuid: icon.instUuid,
     model_id: icon.modelId,
   }, statusByUuid, modelNames, icon.id, modelItemName(items, icon.id)));
-  const summary = emptyRegionSummary();
-  summary.total = lines.length;
-  for (const line of lines) summary[regionBucket(line.level)] += 1;
-  return { summary, icons: lines };
+  return { icons: lines };
 }
 
 interface ResolvedAnchor {

@@ -55,3 +55,40 @@ export function buildMonitorDetailHref(input: MonitorDetailLinkInput): string {
   });
   return professional || `/monitor/view/detail?${withReturn.toString()}`;
 }
+
+export interface MonitorLinkContext {
+  monitorObject?: unknown;
+  monitorName: string;
+  objects?: Array<{ display_name?: string; icon?: string }>;
+  form?: {
+    instance_id?: string;
+    instance_name?: string;
+    instance_id_values?: string[];
+    instance_id_keys?: string[];
+  };
+  linkPlugins?: Array<{ collect_type?: string; name?: string }>;
+}
+
+/** Empty when the monitor instance was not resolved, so the tab hides the button. */
+export function buildMonitorHrefFromContext(context: MonitorLinkContext | null): string {
+  const instanceId = context?.form?.instance_id?.trim() || '';
+  const rawObject = context?.monitorObject;
+  const monitorObjectId = typeof rawObject === 'string' || typeof rawObject === 'number' || typeof rawObject === 'bigint'
+    ? String(rawObject).trim()
+    : '';
+  if (!context || !instanceId || !monitorObjectId) return '';
+  const object = context.objects?.[0];
+  const values = context.form?.instance_id_values?.filter((value) => value.trim()) ?? [];
+  const keys = context.form?.instance_id_keys?.filter((value) => value.trim()) ?? [];
+  return buildMonitorDetailHref({
+    monitorObjectId,
+    name: context.monitorName,
+    displayName: object?.display_name || context.monitorName,
+    icon: object?.icon,
+    instanceId,
+    instanceName: context.form?.instance_name?.trim() || instanceId,
+    instanceIdValues: values.length ? values : [instanceId],
+    instanceIdKeys: keys.length ? keys : ['instance_id'],
+    plugins: context.linkPlugins,
+  });
+}

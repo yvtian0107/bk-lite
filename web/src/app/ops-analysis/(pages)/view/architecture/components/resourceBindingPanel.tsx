@@ -242,7 +242,7 @@ const ResourceBindingPanel = ({
       ) : (
         <>
           <div className="flex shrink-0 items-center gap-1.5 text-sm font-medium text-[var(--color-text-1)]">
-            <LinkOutlined className="text-[#0891b2]" />
+            <LinkOutlined className="text-[var(--color-primary)]" />
             <span>{t('opsAnalysis.architecture.bindingTitle')}</span>
           </div>
           {boundCard}

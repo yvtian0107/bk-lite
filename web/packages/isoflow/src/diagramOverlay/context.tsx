@@ -28,7 +28,6 @@ export interface DiagramVisual {
   rectangleStatus?: Record<string, RectangleStatus>;
   highlightedItemId?: string;
   editorMode: keyof typeof EditorModeEnum;
-  viewLegend?: React.ReactNode;
   hoveredRectangleId: string | null;
   setHoveredRectangleId: (id: string | null) => void;
 }
@@ -57,7 +56,6 @@ interface ProviderProps {
   rectangleStatus?: Record<string, RectangleStatus>;
   highlightedItemId?: string;
   editorMode?: keyof typeof EditorModeEnum;
-  viewLegend?: React.ReactNode;
 }
 
 export const DiagramOverlayProvider = ({
@@ -68,8 +66,7 @@ export const DiagramOverlayProvider = ({
   nodeBinding,
   rectangleStatus,
   highlightedItemId,
-  editorMode = 'EDITABLE',
-  viewLegend
+  editorMode = 'EDITABLE'
 }: ProviderProps) => {
   const [hoveredRectangleId, setHoveredRectangleId] = useState<string | null>(null);
   const setHovered = useCallback((id: string | null) => {
@@ -114,7 +111,6 @@ export const DiagramOverlayProvider = ({
       rectangleStatus,
       highlightedItemId,
       editorMode,
-      viewLegend,
       hoveredRectangleId,
       setHoveredRectangleId: setHovered
     };
@@ -125,8 +121,7 @@ export const DiagramOverlayProvider = ({
     nodeBinding,
     nodeStatus,
     rectangleStatus,
-    setHovered,
-    viewLegend
+    setHovered
   ]);
 
   return (

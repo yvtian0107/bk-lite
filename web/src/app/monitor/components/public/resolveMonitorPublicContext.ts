@@ -10,6 +10,7 @@ export interface MonitorPublicContext {
   plugins: ViewPluginOption[];
   form: ChartProps;
   objects: ObjectItem[];
+  linkPlugins?: Array<{ collect_type?: string; name?: string }>;
 }
 
 interface MonitorInstanceRow {
@@ -38,7 +39,7 @@ interface MonitorPublicApis {
   getEffectivePlugins: (
     objectId?: Key,
     params?: { instance_id?: string },
-  ) => Promise<Array<{ id?: Key; name?: string; display_name?: string }>>;
+  ) => Promise<Array<{ id?: Key; name?: string; display_name?: string; collect_type?: string }>>;
 }
 
 export function objectsFromMonitorLookup(
@@ -147,6 +148,10 @@ async function resolveMonitorPublicContextOnce(
       objectDisplayName: object.display_name || object.name || '',
     }),
     objects: objectsFromMonitorLookup(object),
+    linkPlugins: (plugins || []).map((plugin) => ({
+      name: plugin.name ? String(plugin.name) : undefined,
+      collect_type: plugin.collect_type ? String(plugin.collect_type) : undefined,
+    })),
     form: {
       instance_id: id,
       instance_name: instanceName,

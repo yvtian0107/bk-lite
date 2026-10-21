@@ -9,6 +9,8 @@ import {
   regionAlertBadgeParts,
   buildRegionList,
   collectBoundUuids,
+  chunkBoundUuids,
+  combineStatusBatches,
   keptStatusForRequest,
   regionCaption,
   connectorEndpointNames,
@@ -232,6 +234,115 @@ describe('architecture view status', () => {
     });
   });
 
+  it('splits severe and warning alerts and counts one shared alert once', () => {
+    const diagram = [{
+      items: [
+        { id: 'a', tile: { x: 1, y: 1 }, bkBinding: { inst_uuid: 'same', model_id: 'host' } },
+        { id: 'a-copy', tile: { x: 1, y: 2 }, bkBinding: { inst_uuid: 'same', model_id: 'host' } },
+        { id: 'b', tile: { x: 2, y: 1 }, bkBinding: { inst_uuid: 'other', model_id: 'host' } },
+        { id: 'outside', tile: { x: 9, y: 9 }, bkBinding: { inst_uuid: 'far', model_id: 'host' } },
+      ],
+      rectangles: [
+        { id: 'zone', from: { x: 0, y: 0 }, to: { x: 3, y: 3 }, bkFollowAlert: true },
+        { id: 'overlap', from: { x: 1, y: 1 }, to: { x: 1, y: 2 }, bkFollowAlert: true },
+      ],
+    }];
+    const shared = status('same', 'critical', {
+      alert_count: 5,
+      max_level: 'error',
+      level_counts: { critical: 1, error: 1, warning: 3 },
+      alerts: [
+        { id: 'alert-critical', level: 'critical' },
+        { id: 'alert-error', level: 'error' },
+        { id: 'alert-shared', level: 'warning' },
+        { id: 'alert-warn-2', level: 'warning' },
+        { id: 'alert-warn-3', level: 'warning' },
+      ],
+    });
+    const byUuid = {
+      same: shared,
+      other: status('other', 'warning', {
+        alert_count: 2,
+        max_level: 'warning',
+        level_counts: { critical: 0, error: 0, warning: 2 },
+        alerts: [
+          { id: 'alert-shared', level: 'warning' },
+          { id: 'alert-other', level: 'warning' },
+        ],
+      }),
+      far: status('far', 'critical', {
+        alert_count: 1,
+        max_level: 'critical',
+        alerts: [{ id: 'alert-far', level: 'critical' }],
+      }),
+    };
+    expect(buildNodeStatus(diagram, byUuid).a).toEqual({
+      level: 'critical',
+      count: 5,
+      badgeName: 'same',
+      badgeLevel: 'error',
+    });
+    expect(buildRectangleOverlays(diagram, byUuid, { followBorders: true }).zone).toMatchObject({
+      borderLevel: 'critical',
+      resourceCount: 2,
+      criticalCount: 2,
+      warningCount: 4,
+      alertTotal: 6,
+    });
+    expect(buildRectangleOverlays(diagram, byUuid, { followBorders: true }).overlap).toMatchObject({
+      criticalCount: 2,
+      warningCount: 3,
+      alertTotal: 5,
+    });
+    expect(regionAlertBadgeParts(
+      buildRectangleOverlays(diagram, byUuid, { followBorders: true }).zone ?? {},
+      { critical: '严重', warning: '警告' },
+    )).toEqual([
+      { level: 'critical', text: '严重 2' },
+      { level: 'warning', text: '警告 4' },
+    ]);
+  });
+
+  it('counts info and any other alert level as warning, once per alert id', () => {
+    const diagram = [{
+      items: [
+        { id: 'a', tile: { x: 1, y: 1 }, bkBinding: { inst_uuid: 'same', model_id: 'host' } },
+        { id: 'b', tile: { x: 2, y: 1 }, bkBinding: { inst_uuid: 'other', model_id: 'host' } },
+      ],
+      rectangles: [{ id: 'zone', from: { x: 0, y: 0 }, to: { x: 3, y: 3 }, bkFollowAlert: true }],
+    }];
+    const byUuid = {
+      same: status('same', 'warning', {
+        alert_count: 2,
+        max_level: 'warning',
+        alerts: [
+          { id: 'info-shared', level: 'info' },
+          { id: 'notice-1', level: 'notice' },
+        ],
+      }),
+      other: status('other', 'warning', {
+        alert_count: 1,
+        max_level: 'warning',
+        alerts: [{ id: 'info-shared', level: 'info' }],
+      }),
+    };
+    expect(buildNodeStatus(diagram, byUuid).a).toMatchObject({
+      level: 'warning',
+      count: 2,
+      badgeLevel: 'warning',
+    });
+    expect(buildRectangleOverlays(diagram, byUuid, { followBorders: true }).zone).toMatchObject({
+      borderLevel: 'warning',
+      criticalCount: 0,
+      warningCount: 2,
+      alertTotal: 2,
+    });
+    expect(regionAlertBadgeParts(
+      buildRectangleOverlays(diagram, byUuid, { followBorders: true }).zone ?? {},
+      { critical: '严重', warning: '警告' },
+    )).toEqual([{ level: 'warning', text: '警告 2' }]);
+  });
+
   it('ignores normal, unmonitored and unbound icons when coloring a border', () => {
     const byUuid = {
       'uuid-web': status('uuid-web', 'normal'),
@@ -314,6 +425,37 @@ describe('architecture view status', () => {
       hoverName: '',
       hoverModel: '主机',
     });
+  });
+
+  it('keeps the last success when a status batch fails and marks only unseen rows unknown', () => {
+    const previous = {
+      'uuid-web': status('uuid-web', 'warning', { inst_name: 'web-01', alert_count: 2 }),
+    };
+    const failed = combineStatusBatches(
+      [{ uuids: ['uuid-web', 'uuid-new'], ok: false }],
+      previous,
+    );
+    expect(failed.failed).toBe(true);
+    expect(failed.byUuid['uuid-web']).toMatchObject({ status: 'warning', inst_name: 'web-01' });
+    expect(failed.byUuid['uuid-new']).toMatchObject({ status: 'unknown', inst_name: '' });
+
+    const uuids = Array.from({ length: 501 }, (_, index) => `uuid-${index}`);
+    expect(chunkBoundUuids(uuids).map((batch) => batch.length)).toEqual([500, 1]);
+    const partial = combineStatusBatches([
+      {
+        uuids: uuids.slice(0, 500),
+        ok: true,
+        items: [status(uuids[0], 'normal', { inst_name: 'kept' })],
+      },
+      { uuids: uuids.slice(500), ok: false },
+    ], {
+      [uuids[500]]: status(uuids[500], 'critical', { inst_name: 'still-here', alert_count: 1 }),
+    });
+    expect(partial.failed).toBe(true);
+    expect(partial.byUuid[uuids[0]]).toMatchObject({ status: 'normal', inst_name: 'kept' });
+    expect(partial.byUuid[uuids[1]]).toMatchObject({ status: 'unknown', inst_name: '' });
+    expect(partial.byUuid[uuids[500]]).toMatchObject({ status: 'critical', inst_name: 'still-here' });
+    expect(Object.keys(partial.byUuid)).toHaveLength(501);
   });
 
   it('keeps status rows for uuids that are still on the diagram', () => {
@@ -441,7 +583,7 @@ describe('architecture view status', () => {
       'u-zone': status('u-zone', 'normal', { inst_name: 'zone', model_id: 'room' }),
     };
     const list = buildRegionList(diagram, 'zone', byUuid, names);
-    expect(list.summary).toEqual({ total: 6, alert: 3, normal: 1, other: 2 });
+    expect(list).not.toHaveProperty('summary');
     expect(list).not.toHaveProperty('self');
     expect(list.icons.map((line) => line.key)).toEqual([
       'critical-icon',

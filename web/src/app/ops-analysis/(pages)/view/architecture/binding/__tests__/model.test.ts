@@ -5,7 +5,6 @@ import {
   bindingModelLabel,
   bindingSearchMode,
   capBindingSearchHits,
-  filterBindingSearchHits,
   findSelectionBinding,
   flattenModelOptions,
   normalizeBindingSearchHits,
@@ -48,16 +47,15 @@ describe('architecture binding model', () => {
     expect(findSelectionBinding(views, { type: 'CONNECTOR', id: 'line-1' })).toBeNull();
   });
 
-  it('filters search hits by resource type after normalizing name and ip', () => {
-    const hits = normalizeBindingSearchHits([
+  it('normalizes search hits and keeps name and ip', () => {
+    expect(normalizeBindingSearchHits([
       { inst_uuid: 'u1', model_id: 'host', inst_name: 'web-01', ip_addr: '10.0.0.1' },
       { inst_uuid: 'u2', model_id: 'switch', inst_name: 'sw-01', ip_addr: '10.0.0.2' },
       { inst_name: 'missing-id' },
-    ]);
-    expect(filterBindingSearchHits(hits, 'host')).toEqual([
+    ])).toEqual([
       { inst_uuid: 'u1', model_id: 'host', inst_name: 'web-01', ip_addr: '10.0.0.1' },
+      { inst_uuid: 'u2', model_id: 'switch', inst_name: 'sw-01', ip_addr: '10.0.0.2' },
     ]);
-    expect(filterBindingSearchHits(hits, '').map((hit) => hit.inst_uuid)).toEqual(['u1', 'u2']);
   });
 
   it('hides stale names for invalid and forbidden resources', () => {

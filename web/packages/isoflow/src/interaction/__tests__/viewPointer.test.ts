@@ -5,6 +5,7 @@ import { CoordsUtils } from 'src/utils/CoordsUtils';
 import {
   findDrawnIconId,
   findIconHit,
+  findRectangleBadgeId,
   readIconHitRects,
   regionIdForTextClick,
   resolveViewClick,
@@ -191,6 +192,47 @@ assert.equal(
   'pointer'
 );
 assert.equal(viewHoverCursor({ iconId: null, tileHit: null }), 'grab');
+assert.equal(
+  viewHoverCursor({ badgeId: 'zone', iconId: null, tileHit: null }),
+  'pointer'
+);
+
+const plateRect: IconHitRect = {
+  id: 'node-a',
+  order: 1_000_000,
+  index: 2,
+  left: anchor.x - 40,
+  top: imageRect.top - 36,
+  right: anchor.x + 40,
+  bottom: imageRect.top - 4
+};
+const platePoint = { x: anchor.x, y: plateRect.top + 6 };
+
+assert.equal(findIconHit(platePoint, [imageRect]), null);
+assert.equal(findIconHit(platePoint, [imageRect, plateRect]), 'node-a');
+assert.deepEqual(
+  resolveViewClick({
+    iconId: findIconHit(platePoint, [imageRect, plateRect]),
+    tileHit: { type: 'RECTANGLE', id: 'zone-under-plate' }
+  }),
+  { kind: 'click', item: { type: 'ITEM', id: 'node-a' } }
+);
+
+const badgeRoot: IconHitRoot = {
+  querySelectorAll(selector: string) {
+    if (selector !== '[data-rectangle-badge-hit]') return [];
+
+    return [
+      {
+        getAttribute: () => 'zone',
+        getBoundingClientRect: () => ({ left: 10, top: 10, right: 80, bottom: 32 })
+      }
+    ];
+  }
+};
+
+assert.equal(findRectangleBadgeId(badgeRoot, { x: 20, y: 20 }), 'zone');
+assert.equal(findRectangleBadgeId(badgeRoot, { x: 1, y: 1 }), null);
 
 const zone = { id: 'zone', from: { x: 0, y: 0 }, to: { x: 3, y: 3 } };
 const overlap = { id: 'overlap', from: { x: 2, y: 2 }, to: { x: 5, y: 5 } };

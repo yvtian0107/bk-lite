@@ -1,7 +1,7 @@
 import React from 'react';
 import { Box } from '@mui/material';
 import { useScene } from 'src/hooks/useScene';
-import { useDiagramCallbacksRef, useDiagramVisual } from 'src/diagramOverlay/context';
+import { useDiagramVisual } from 'src/diagramOverlay/context';
 import { CRITICAL_RED, RECTANGLE_BORDER_COLOR } from 'src/diagramOverlay/colors';
 import { getRectangleLeftVertex } from 'src/diagramOverlay/rectangleAnchor';
 import type { RectangleStatusBadgePart } from 'src/types';
@@ -17,7 +17,6 @@ const PLATE_LIFT = 28;
 export const RectangleStatusLayer = () => {
   const { rectangles } = useScene();
   const { rectangleStatus, setHoveredRectangleId } = useDiagramVisual();
-  const callbacksRef = useDiagramCallbacksRef();
 
   if (!rectangleStatus) return null;
 
@@ -61,15 +60,9 @@ export const RectangleStatusLayer = () => {
           >
             <Box
               title={badgeHint}
+              data-rectangle-badge-hit={rectangle.id}
               onMouseEnter={() => setHoveredRectangleId(rectangle.id)}
               onMouseLeave={() => setHoveredRectangleId(null)}
-              onClick={(event) => {
-                event.stopPropagation();
-                callbacksRef.current.onItemClick?.(
-                  { type: 'RECTANGLE', id: rectangle.id },
-                  { clientX: event.clientX, clientY: event.clientY }
-                );
-              }}
               sx={{
                 display: 'flex',
                 alignItems: 'center',

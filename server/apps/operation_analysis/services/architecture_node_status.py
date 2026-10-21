@@ -15,6 +15,9 @@ from apps.rpc.monitor import Monitor
 MAX_INST_UUIDS = 500
 _CHUNK_SIZE = NETWORK_STATUS_TOPOLOGY_MAX_NODES
 _CRITICAL_LEVELS = {"critical", "error"}
+_ALERT_LEVELS = ("critical", "error", "warning")
+_ZERO_LEVEL_COUNTS = {"critical": 0, "error": 0, "warning": 0}
+_BUCKET_RANK = {"warning": 1, "error": 2, "critical": 3}
 
 
 class ArchitectureNodeStatusService:
@@ -116,7 +119,11 @@ class ArchitectureNodeStatusService:
             try:
                 result = Monitor().ingest_client.run(
                     "query_latest_active_alerts",
-                    query_data={"instance_ids": chunk, "limit": 1},
+                    query_data={
+                        "instance_ids": chunk,
+                        "limit": 1,
+                        "include_alert_refs": True,
+                    },
                     user_info=user_info,
                 )
             except Exception as exc:
@@ -199,15 +206,93 @@ def _text(value: Any) -> str:
     return str(value)
 
 
+def _empty_level_counts() -> dict[str, int]:
+    return dict(_ZERO_LEVEL_COUNTS)
+
+
 def _empty_item(inst_uuid: str, status: str) -> dict:
     return {
         "inst_uuid": inst_uuid,
         "status": status,
         "alert_count": 0,
         "max_level": None,
+        "level_counts": _empty_level_counts(),
+        "alerts": [],
         "monitor_id": "",
         "model_id": "",
         "inst_name": "",
+    }
+
+
+def _coerce_level_counts(raw: Any) -> dict[str, int]:
+    counts = _empty_level_counts()
+    if not isinstance(raw, dict):
+        return counts
+    for level in _ALERT_LEVELS:
+        value = _coerce_alert_count(raw.get(level))
+        counts[level] = value or 0
+    return counts
+
+
+def _counts_from_alerts(alerts: list[dict]) -> dict[str, int]:
+    counts = _empty_level_counts()
+    for alert in alerts:
+        level = alert.get("level")
+        if level in counts:
+            counts[level] += 1
+    return counts
+
+
+def _bucket_level(level: str) -> str | None:
+    """critical and error stay. info and any other non-empty level count as warning."""
+    normalized = level.strip().lower()
+    if not normalized:
+        return None
+    if normalized in _BUCKET_RANK:
+        return normalized
+    return "warning"
+
+
+def _merge_alert_refs(*raw_lists: Any) -> list[dict]:
+    ordered: list[str] = []
+    best: dict[str, str] = {}
+    for raw in raw_lists:
+        if not isinstance(raw, list):
+            continue
+        for item in raw:
+            if not isinstance(item, dict):
+                continue
+            alert_id = _text(item.get("id")).strip()
+            bucket = _bucket_level(_text(item.get("level")))
+            if not alert_id or bucket is None:
+                continue
+            current = best.get(alert_id)
+            if current is None:
+                best[alert_id] = bucket
+                ordered.append(alert_id)
+                continue
+            if _BUCKET_RANK[bucket] > _BUCKET_RANK[current]:
+                best[alert_id] = bucket
+    return [{"id": alert_id, "level": best[alert_id]} for alert_id in ordered]
+
+
+def _status_from_level_counts(base: dict, counts: dict[str, int], alerts: list[dict]) -> dict:
+    total = counts["critical"] + counts["error"] + counts["warning"]
+    if counts["critical"] > 0:
+        status, max_level = "critical", "critical"
+    elif counts["error"] > 0:
+        status, max_level = "critical", "error"
+    elif counts["warning"] > 0:
+        status, max_level = "warning", "warning"
+    else:
+        status, max_level, total = "normal", None, 0
+    return {
+        **base,
+        "status": status,
+        "alert_count": total,
+        "max_level": max_level,
+        "level_counts": counts,
+        "alerts": alerts,
     }
 
 
@@ -233,6 +318,8 @@ def _status_from_mapping(item: dict, summaries: dict[str, dict], failed_monitors
         "inst_name": _text(item.get("inst_name")),
         "alert_count": 0,
         "max_level": None,
+        "level_counts": _empty_level_counts(),
+        "alerts": [],
     }
     if not monitor_id:
         return {**base, "status": "unmonitored"}
@@ -241,14 +328,35 @@ def _status_from_mapping(item: dict, summaries: dict[str, dict], failed_monitors
     summary = summaries.get(monitor_id)
     if summary is None:
         return {**base, "status": "unknown"}
+    has_refs = isinstance(summary.get("alerts"), list) or isinstance(summary.get("other_alerts"), list)
+    if has_refs:
+        alerts = _merge_alert_refs(summary.get("alerts"), summary.get("other_alerts"))
+        if alerts:
+            return _status_from_level_counts(base, _counts_from_alerts(alerts), alerts)
+    raw_counts = summary.get("level_counts")
+    if isinstance(raw_counts, dict):
+        counts = _coerce_level_counts(raw_counts)
+        total = _coerce_alert_count(summary.get("count"))
+        ranked = counts["critical"] + counts["error"] + counts["warning"]
+        if not has_refs and total is not None and total > ranked:
+            counts["warning"] += total - ranked
+        return _status_from_level_counts(base, counts, [])
     count = _coerce_alert_count(summary.get("count"))
     if count is None:
         return {**base, "status": "unknown"}
     if count == 0:
         return {**base, "status": "normal"}
-    level = _text(summary.get("max_level"))
+    level = _text(summary.get("max_level")).strip().lower()
     if level in _CRITICAL_LEVELS:
         return {**base, "status": "critical", "alert_count": count, "max_level": level}
-    if level == "warning":
-        return {**base, "status": "warning", "alert_count": count, "max_level": level}
+    if level:
+        counts = _empty_level_counts()
+        counts["warning"] = count
+        return {
+            **base,
+            "status": "warning",
+            "alert_count": count,
+            "max_level": "warning",
+            "level_counts": counts,
+        }
     return {**base, "status": "unknown"}

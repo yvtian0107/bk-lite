@@ -1,4 +1,5 @@
 export const ICON_HIT_SELECTOR = '[data-icon-hit]';
+export const RECTANGLE_BADGE_HIT_SELECTOR = '[data-rectangle-badge-hit]';
 
 export interface IconHitRect {
   id: string;
@@ -97,6 +98,38 @@ export const findDrawnIconId = (
   if (!root) return null;
 
   return findIconHit(point, readIconHitRects(root));
+};
+
+export const findRectangleBadgeId = (
+  root: IconHitRoot | null | undefined,
+  point: { x: number; y: number }
+): string | null => {
+  if (!root) return null;
+
+  const nodes = Array.from(root.querySelectorAll(RECTANGLE_BADGE_HIT_SELECTOR));
+  let best: { id: string; index: number } | null = null;
+
+  for (let index = 0; index < nodes.length; index += 1) {
+    const node = nodes[index];
+    const id = node.getAttribute('data-rectangle-badge-hit')?.trim() ?? '';
+
+    if (!id) continue;
+
+    const box = node.getBoundingClientRect();
+
+    if (
+      point.x < box.left ||
+      point.x > box.right ||
+      point.y < box.top ||
+      point.y > box.bottom
+    ) {
+      continue;
+    }
+
+    if (!best || index >= best.index) best = { id, index };
+  }
+
+  return best ? best.id : null;
 };
 
 export type ViewClickItem = {
@@ -227,10 +260,12 @@ export const resolveViewClick = (input: {
 };
 
 export const viewHoverCursor = (input: {
+  badgeId?: string | null;
   iconId: string | null;
   tileHit: { type: string; id: string } | null;
   textRegionId?: string | null;
 }): 'pointer' | 'grab' => {
+  if (input.badgeId) return 'pointer';
   if (input.iconId) return 'pointer';
 
   const hit = input.tileHit;

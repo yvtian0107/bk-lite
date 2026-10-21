@@ -18,6 +18,10 @@ export interface ArchitectureNodeStatusItem {
   monitor_id: string;
   model_id: string;
   inst_name: string;
+  /** Present when the status API split critical / error / warning. */
+  level_counts?: { critical: number; error: number; warning: number };
+  /** Alert id plus level, used to dedupe a region badge. info and other levels count as warning. */
+  alerts?: Array<{ id: string; level: string }>;
 }
 
 export interface BindingSearchHit {
@@ -151,15 +155,6 @@ export function normalizeFulltextModelPage(
 export function bindingModelLabel(models: ModelOption[], modelId: string): string {
   const name = models.find((model) => model.model_id === modelId)?.model_name.trim();
   return name || modelId;
-}
-
-export function filterBindingSearchHits(
-  hits: BindingSearchHit[],
-  modelId: string,
-): BindingSearchHit[] {
-  const selected = modelId.trim();
-  if (!selected) return hits;
-  return hits.filter((hit) => hit.model_id === selected);
 }
 
 export function flattenModelOptions(raw: unknown): ModelOption[] {

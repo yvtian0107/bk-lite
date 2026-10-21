@@ -126,7 +126,6 @@ export const Isoflow = (props: IsoflowProps) => {
               rectangleStatus={props.rectangleStatus}
               highlightedItemId={props.highlightedItemId}
               editorMode={props.editorMode}
-              viewLegend={props.viewLegend}
             >
               <App {...props} />
             </DiagramOverlayProvider>

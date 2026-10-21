@@ -1,4 +1,3 @@
-import type { ReactNode } from 'react';
 import type { EditorModeEnum, MainMenuOptions } from './common';
 import type { Model, Rectangle, ViewItem } from './model';
 import type { RendererProps } from './rendererProps';
@@ -134,11 +133,6 @@ export interface IsoflowProps {
   nodeBinding?: Record<string, NodeBindingMark>;
   /** Keyed by rectangle id. Labels, borders and badges are draw-only. */
   rectangleStatus?: Record<string, RectangleStatus>;
-  /**
-   * View mode. Rendered after the zoom row (`- 100% +` and fit-to-screen).
-   * The host owns the copy and the open state.
-   */
-  viewLegend?: ReactNode;
   /**
    * Edit mode. Calls the existing single-item updaters so a binding change
    * goes through onModelUpdated without replacing initialData.

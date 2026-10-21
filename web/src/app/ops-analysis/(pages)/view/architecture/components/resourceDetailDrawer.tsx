@@ -1,11 +1,13 @@
 'use client';
 
-import { useEffect, useState, type ComponentType, type ReactNode } from 'react';
+import { useCallback, useEffect, useState, type ComponentType, type ReactNode } from 'react';
 import { Button, Spin, Tabs, Tag } from 'antd';
 import CompactEmptyState from '@/components/compact-empty-state';
 import OperateDrawer from '@/components/operate-drawer';
+import type { MonitorPublicContext } from '@/app/monitor/components/public/resolveMonitorPublicContext';
 import { useAppWidget, useLazyAppWidget } from '@/context/appCapabilities';
 import { useTranslation } from '@/utils/i18n';
+import { buildAlarmHref, buildMonitorHrefFromContext } from '../binding/links';
 import type { ArchitectureNodeStatusItem } from '../binding/model';
 import {
   buildRegionList,
@@ -319,6 +321,10 @@ const ResourceBody = ({
   const { t } = useTranslation();
   const [tab, setTab] = useState<DetailTab>('cmdb');
   const [headerAction, setHeaderAction] = useState<ReactNode>(null);
+  const [linkContext, setLinkContext] = useState<MonitorPublicContext | null>(null);
+  const publishLinkContext = useCallback((next: MonitorPublicContext | null) => {
+    setLinkContext(next);
+  }, []);
   const baseInfo = useAppWidget('cmdb.baseInfo');
   const monitorView = useAppWidget('monitor.monitorView');
   const alertList = useAppWidget('monitor.alertList');
@@ -347,8 +353,23 @@ const ResourceBody = ({
     instUuid: string;
     onHeaderAction?: (action: ReactNode) => void;
   }> | null;
-  const MonitorView = monitorWidget.Widget as ComponentType<{ monitorId: string }> | null;
-  const AlertList = alertWidget.Widget as ComponentType<{ monitorId: string }> | null;
+  const MonitorView = monitorWidget.Widget as ComponentType<{
+    monitorId: string;
+    onResolvedContext?: (context: MonitorPublicContext | null) => void;
+  }> | null;
+  const AlertList = alertWidget.Widget as ComponentType<{
+    monitorId: string;
+    occurredAtField?: 'start_event_time';
+    onResolvedContext?: (context: MonitorPublicContext | null) => void;
+  }> | null;
+  const monitorHref = activeTab === 'monitor' ? buildMonitorHrefFromContext(linkContext) : '';
+  const alarmHref = activeTab === 'alerts' && linkContext && monitorId
+    ? buildAlarmHref(monitorId)
+    : '';
+  const openHref = monitorHref || alarmHref;
+  const openLabel = monitorHref
+    ? t('opsAnalysis.architecture.linkOpenMonitor')
+    : t('opsAnalysis.architecture.linkOpenAlarm');
 
   useEffect(() => {
     setHeaderAction(null);
@@ -383,7 +404,9 @@ const ResourceBody = ({
               setHeaderAction(null);
               setTab(value as DetailTab);
             }}
-            tabBarExtraContent={activeTab === 'cmdb' ? headerAction : null}
+            tabBarExtraContent={activeTab === 'cmdb' ? headerAction : (
+              openHref ? <Button type="link" href={openHref}>{openLabel}</Button> : null
+            )}
           />
           <div className="min-h-0 flex-1 overflow-auto px-4 pt-3 pb-4">
             {activeTab === 'cmdb' ? (
@@ -413,10 +436,14 @@ const ResourceBody = ({
                   failed={activeTab === 'monitor' ? monitorWidget.loadFailed : alertWidget.loadFailed}
                 >
                   {activeTab === 'monitor' && MonitorView ? (
-                    <MonitorView monitorId={monitorId} />
+                    <MonitorView monitorId={monitorId} onResolvedContext={publishLinkContext} />
                   ) : null}
                   {activeTab === 'alerts' && AlertList ? (
-                    <AlertList monitorId={monitorId} />
+                    <AlertList
+                      monitorId={monitorId}
+                      occurredAtField="start_event_time"
+                      onResolvedContext={publishLinkContext}
+                    />
                   ) : null}
                 </WidgetSlot>
               ) : (

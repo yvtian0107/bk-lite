@@ -70,7 +70,7 @@ export const TEXTBOX_FONT_WEIGHT = 'bold';
 export const TEXTBOX_MAX_WIDTH_TILES = 4;
 
 export const RECTANGLE_DEFAULTS: Required<
-  Omit<Rectangle, 'id' | 'from' | 'to' | 'color' | 'bkBinding' | 'bkFollowAlert'>
+  Omit<Rectangle, 'id' | 'from' | 'to' | 'color' | 'bkFollowAlert'>
 > = {};
 
 export const ZOOM_INCREMENT = 0.2;

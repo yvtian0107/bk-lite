@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { buildAlarmHref, buildCmdbDetailHref, buildMonitorDetailHref } from '../links';
+import { buildAlarmHref, buildCmdbDetailHref, buildMonitorDetailHref, buildMonitorHrefFromContext } from '../links';
 
 describe('architecture detail links', () => {
   it('builds cmdb, alarm and monitor links', () => {
@@ -31,5 +31,33 @@ describe('architecture detail links', () => {
     expect(monitor.searchParams.get('instance_id')).toBe('mon-web');
     expect(monitor.searchParams.get('instance_name')).toBe('web-01');
     expect(monitor.searchParams.get('return_object_id')).toBe('11');
+
+    expect(buildMonitorHrefFromContext(null)).toBe('');
+    expect(buildMonitorHrefFromContext({
+      monitorObject: '',
+      monitorName: 'Host',
+      form: { instance_id: 'mon-web' },
+    })).toBe('');
+    const fromContext = new URL(buildMonitorHrefFromContext({
+      monitorObject: 11,
+      monitorName: 'zz-unlisted-object',
+      objects: [{ display_name: '未登记对象' }],
+      form: {
+        instance_id: 'mon-web',
+        instance_name: 'web-01',
+        instance_id_values: ['web-01'],
+        instance_id_keys: ['instance_id'],
+      },
+    }), 'http://local');
+    expect(fromContext.pathname).toBe('/monitor/view/detail');
+    expect(fromContext.searchParams.get('instance_id')).toBe('mon-web');
+    expect(fromContext.searchParams.get('monitorObjDisplayName')).toBe('未登记对象');
+    const professional = new URL(buildMonitorHrefFromContext({
+      monitorObject: 11,
+      monitorName: 'Host',
+      objects: [{ display_name: '主机' }],
+      form: { instance_id: 'mon-web', instance_name: 'web-01' },
+    }), 'http://local');
+    expect(professional.pathname).toBe('/monitor/view/dashboard/host');
   });
 });
