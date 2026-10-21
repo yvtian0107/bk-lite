@@ -56,6 +56,26 @@ export function buildMonitorDetailHref(input: MonitorDetailLinkInput): string {
   return professional || `/monitor/view/detail?${withReturn.toString()}`;
 }
 
+/** collect_type is read from the monitor effective_plugins payload on the architecture side. */
+export interface ArchitectureEffectivePlugin {
+  collect_type?: string;
+  name?: string;
+}
+
+export function readArchitectureEffectivePlugins(raw: unknown): ArchitectureEffectivePlugin[] {
+  if (!Array.isArray(raw)) return [];
+  const plugins: ArchitectureEffectivePlugin[] = [];
+  for (const item of raw) {
+    if (!item || typeof item !== 'object') continue;
+    const record = item as Record<string, unknown>;
+    const plugin: ArchitectureEffectivePlugin = {};
+    if (typeof record.collect_type === 'string') plugin.collect_type = record.collect_type;
+    if (typeof record.name === 'string') plugin.name = record.name;
+    plugins.push(plugin);
+  }
+  return plugins;
+}
+
 export interface MonitorLinkContext {
   monitorObject?: unknown;
   monitorName: string;

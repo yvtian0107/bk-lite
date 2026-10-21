@@ -23,11 +23,11 @@ export interface RectangleOverlay {
   borderLevel?: RectangleBorderLevel;
   /** Unique bound resource uuids inside the area. */
   resourceCount?: number;
-  /** Unique critical and error alerts inside the area. */
+  /** Severe alerts inside the area, counted once per monitor instance. */
   criticalCount?: number;
-  /** Unique warning alerts inside the area. */
+  /** Warning alerts inside the area, including info, counted once per monitor instance. */
   warningCount?: number;
-  /** Unique warning, error and critical alerts inside the area. */
+  /** Severe plus warning alerts inside the area, counted once per monitor instance. */
   alertTotal?: number;
   /** Edit mode: the area summarizes icon alerts, with no runtime counts. */
   follow?: boolean;
@@ -152,7 +152,6 @@ export function unknownStatusItem(instUuid: string): ArchitectureNodeStatusItem 
     model_id: '',
     inst_name: '',
     level_counts: { critical: 0, error: 0, warning: 0 },
-    alerts: [],
   };
 }
 
@@ -176,23 +175,6 @@ const coerceLevelCounts = (
   };
 };
 
-const coerceAlerts = (
-  raw: unknown,
-): ArchitectureNodeStatusItem['alerts'] | undefined => {
-  if (!Array.isArray(raw)) return undefined;
-  const alerts: NonNullable<ArchitectureNodeStatusItem['alerts']> = [];
-  const seen = new Set<string>();
-  for (const item of raw) {
-    if (!isRecord(item)) continue;
-    const id = typeof item.id === 'string' ? item.id.trim() : '';
-    const level = typeof item.level === 'string' ? item.level.trim().toLowerCase() : '';
-    if (!id || !level || seen.has(id)) continue;
-    seen.add(id);
-    alerts.push({ id, level });
-  }
-  return alerts;
-};
-
 const coerceStatusItem = (raw: unknown): ArchitectureNodeStatusItem | null => {
   if (!isRecord(raw) || typeof raw.inst_uuid !== 'string' || !raw.inst_uuid.trim()) {
     return null;
@@ -213,9 +195,7 @@ const coerceStatusItem = (raw: unknown): ArchitectureNodeStatusItem | null => {
     inst_name: typeof raw.inst_name === 'string' ? raw.inst_name : '',
   };
   const levelCounts = coerceLevelCounts(raw.level_counts);
-  const alerts = coerceAlerts(raw.alerts);
   if (levelCounts) item.level_counts = levelCounts;
-  if (alerts) item.alerts = alerts;
   return item;
 };
 
@@ -538,13 +518,13 @@ export function buildRectangleOverlays(
         let alertTotal = 0;
         let criticalCount = 0;
         let warningCount = 0;
-        const seenAlerts = new Set<string>();
+        const seenMonitors = new Set<string>();
         for (const status of resources.values()) {
           const contribution = borderContribution(status.status);
           if (contribution && (!border || BORDER_RANK[contribution] > BORDER_RANK[border])) {
             border = contribution;
           }
-          const counted = countResourceAlerts(status, seenAlerts);
+          const counted = countResourceAlerts(status, seenMonitors);
           criticalCount += counted.critical;
           warningCount += counted.warning;
           alertTotal += counted.critical + counted.warning;
@@ -603,53 +583,27 @@ const lineFromBinding = (
   };
 };
 
-const rememberAlert = (seen: Set<string>, id: string): boolean => {
-  if (!id || seen.has(id)) return false;
-  seen.add(id);
-  return true;
-};
-
-/** Severe = critical + error. Warning = warning, info, and any other non-empty level. The same alert id counts once. */
+/** Severe = critical + error. Warning = warning plus info and any other non-severe level. One monitor instance counts once. */
 const countResourceAlerts = (
   status: ArchitectureNodeStatusItem,
-  seen: Set<string>,
+  seenMonitors: Set<string>,
 ): { critical: number; warning: number } => {
-  const counts = { critical: 0, warning: 0 };
-  const alerts = status.alerts;
-  if (Array.isArray(alerts) && alerts.length) {
-    for (const alert of alerts) {
-      if (!rememberAlert(seen, alert.id)) continue;
-      if (alert.level === 'critical' || alert.level === 'error') counts.critical += 1;
-      else counts.warning += 1;
-    }
-    return counts;
+  const monitorId = status.monitor_id.trim();
+  if (monitorId) {
+    if (seenMonitors.has(monitorId)) return { critical: 0, warning: 0 };
+    seenMonitors.add(monitorId);
   }
   const levels = status.level_counts;
-  const levelTotal = levels ? levels.critical + levels.error + levels.warning : 0;
-  if (levels && levelTotal > 0) {
-    const add = (level: 'critical' | 'error' | 'warning', amount: number) => {
-      for (let index = 0; index < amount; index += 1) {
-        if (!rememberAlert(seen, `${status.inst_uuid}:${level}:${index}`)) continue;
-        if (level === 'warning') counts.warning += 1;
-        else counts.critical += 1;
-      }
+  if (levels) {
+    return {
+      critical: levels.critical + levels.error,
+      warning: levels.warning,
     };
-    add('critical', levels.critical);
-    add('error', levels.error);
-    add('warning', levels.warning);
-    return counts;
   }
   const amount = Number.isFinite(status.alert_count) ? status.alert_count : 0;
-  if ((status.status !== 'critical' && status.status !== 'warning') || amount <= 0) {
-    return counts;
-  }
-  const severe = status.status === 'critical';
-  for (let index = 0; index < amount; index += 1) {
-    if (!rememberAlert(seen, `${status.inst_uuid}:total:${index}`)) continue;
-    if (severe) counts.critical += 1;
-    else counts.warning += 1;
-  }
-  return counts;
+  if (status.status === 'critical' && amount > 0) return { critical: amount, warning: 0 };
+  if (status.status === 'warning' && amount > 0) return { critical: 0, warning: amount };
+  return { critical: 0, warning: 0 };
 };
 
 const emptyLine = (key: string): ResourceLine => ({

@@ -18,10 +18,11 @@ export interface ArchitectureNodeStatusItem {
   monitor_id: string;
   model_id: string;
   inst_name: string;
-  /** Present when the status API split critical / error / warning. */
+  /**
+   * critical + error is the severe total (the status API stores that total on critical).
+   * warning includes warning, info, and any other non-severe level.
+   */
   level_counts?: { critical: number; error: number; warning: number };
-  /** Alert id plus level, used to dedupe a region badge. info and other levels count as warning. */
-  alerts?: Array<{ id: string; level: string }>;
 }
 
 export interface BindingSearchHit {

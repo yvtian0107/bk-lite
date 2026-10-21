@@ -17,7 +17,8 @@ from apps.cmdb.services.monitored_host import normalize_zombie_whitelist
 from apps.core.exceptions.base_app_exception import BaseAppException
 from apps.core.logger import monitor_logger as monitor_logger
 from apps.core.logger import nats_logger as logger
-from apps.core.logger import safe_exception_info, safe_log_value
+from apps.core.logger import safe_exception_info
+from apps.core.logger import safe_log_value
 from apps.core.utils.current_team_scope import _normalize_organization_ids
 from apps.core.utils.loader import LanguageLoader
 from apps.core.utils.permission_utils import (
@@ -826,9 +827,13 @@ def _license_monitor_instance_labels(data, kwargs):
     try:
         lan = LanguageLoader(app=LanguageConstants.APP, default_lang=language)
         stored_names = {
-            name: display_name for name, display_name in MonitorObject.objects.filter(name__in=list(data)).values_list("name", "display_name")
+            name: display_name
+            for name, display_name in MonitorObject.objects.filter(name__in=list(data)).values_list("name", "display_name")
         }
-        return {name: lan.get(f"{LanguageConstants.MONITOR_OBJECT}.{name}") or stored_names.get(name) or name for name in data}
+        return {
+            name: lan.get(f"{LanguageConstants.MONITOR_OBJECT}.{name}") or stored_names.get(name) or name
+            for name in data
+        }
     except Exception as exc:
         monitor_logger.warning(
             "event=license_monitor_labels_skipped failed_stage=%s error_type=%s",
@@ -1569,70 +1574,21 @@ def _build_latest_active_alert_items(queryset, authorized_instances, limit):
     return items
 
 
-def _summarize_alert_rows(rows, filtered_instance_ids, include_alert_refs=False):
-    """Group alert rows into per-instance summaries.
-
-    ``include_alert_refs`` adds ``level_counts`` for critical/error/warning and
-    the alert id of each of those rows. Other non-empty levels, including info,
-    are listed separately as ``other_alerts`` and are not folded into
-    ``level_counts``. Callers that omit the flag keep count and max_level.
-    """
-    grouped = {}
-    for row in rows:
-        if not isinstance(row, dict):
-            continue
-        instance_id = row.get("monitor_instance_id")
-        if instance_id in (None, ""):
-            continue
-        bucket = grouped.setdefault(
-            str(instance_id),
-            {"levels": [], "alerts": [], "other_alerts": []},
-        )
-        level = str(row.get("level") or "").strip().lower()
-        bucket["levels"].append(row.get("level"))
-        if not include_alert_refs:
-            continue
-        alert_id = row.get("id")
-        if alert_id in (None, "") or not level:
-            continue
-        target = "alerts" if level in _MONITOR_ALERT_LEVEL_RANK else "other_alerts"
-        bucket[target].append({"id": str(alert_id), "level": level})
-    summaries = []
-    for instance_id in filtered_instance_ids:
-        bucket = grouped.get(str(instance_id), {"levels": [], "alerts": [], "other_alerts": []})
-        summary = {
-            "instance_id": instance_id,
-            "count": len(bucket["levels"]),
-            "max_level": _max_monitor_alert_level(bucket["levels"]),
-        }
-        if include_alert_refs:
-            counts = {level: 0 for level in ("critical", "error", "warning")}
-            alerts = []
-            seen = set()
-            for alert in bucket["alerts"]:
-                if alert["id"] in seen:
-                    continue
-                seen.add(alert["id"])
-                alerts.append(alert)
-                counts[alert["level"]] += 1
-            other_alerts = []
-            for alert in bucket.get("other_alerts", []):
-                if alert["id"] in seen:
-                    continue
-                seen.add(alert["id"])
-                other_alerts.append(alert)
-            summary["level_counts"] = counts
-            summary["alerts"] = alerts
-            summary["other_alerts"] = other_alerts
-        summaries.append(summary)
-    return summaries
-
-
-def _build_active_alert_instance_summaries(queryset, filtered_instance_ids, include_alert_refs=False):
+def _build_active_alert_instance_summaries(queryset, filtered_instance_ids):
     if not filtered_instance_ids:
         return []
-    fields = ["id", "monitor_instance_id", "level"] if include_alert_refs else ["monitor_instance_id", "level"]
-    return _summarize_alert_rows(queryset.values(*fields), filtered_instance_ids, include_alert_refs)
+    levels_by_instance = {}
+    for row in queryset.values("monitor_instance_id", "level"):
+        instance_id = str(row["monitor_instance_id"])
+        levels_by_instance.setdefault(instance_id, []).append(row["level"])
+    return [
+        {
+            "instance_id": instance_id,
+            "count": len(levels_by_instance.get(instance_id, [])),
+            "max_level": _max_monitor_alert_level(levels_by_instance.get(instance_id, [])),
+        }
+        for instance_id in filtered_instance_ids
+    ]
 
 
 @nats_client.register
@@ -1685,18 +1641,13 @@ def query_latest_active_alerts(query_data: Optional[dict] = None, *args, **kwarg
         queryset = queryset.filter(alert_type__in=alert_type_values)
 
     total_count = queryset.count()
-    include_alert_refs = query_data.get("include_alert_refs") is True
     return {
         "result": True,
         "data": {
             "count": total_count,
             "max_level": _max_monitor_alert_level(queryset.values_list("level", flat=True)) if total_count else None,
             "items": _build_latest_active_alert_items(queryset, authorized_instances, limit),
-            "instance_summaries": _build_active_alert_instance_summaries(
-                queryset,
-                filtered_instance_ids,
-                include_alert_refs=include_alert_refs,
-            ),
+            "instance_summaries": _build_active_alert_instance_summaries(queryset, filtered_instance_ids),
         },
         "message": "",
     }

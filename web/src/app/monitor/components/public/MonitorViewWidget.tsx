@@ -13,10 +13,9 @@ import { publicWidgetErrorMessage } from './publicWidgetError';
 export interface MonitorViewWidgetProps {
   monitorId: string;
   metricKey?: string;
-  onResolvedContext?: (context: MonitorPublicContext | null) => void;
 }
 
-const MonitorViewWidget = ({ monitorId, metricKey, onResolvedContext }: MonitorViewWidgetProps) => {
+const MonitorViewWidget = ({ monitorId, metricKey }: MonitorViewWidgetProps) => {
   const { t } = useTranslation();
   const { lookupInstance, getEffectivePlugins } = useMonitorApi();
   const apisRef = useRef({
@@ -61,13 +60,6 @@ const MonitorViewWidget = ({ monitorId, metricKey, onResolvedContext }: MonitorV
       cancelled = true;
     };
   }, [monitorId, reloadKey]);
-
-  const linkReady = !loading && !error && Boolean(context?.form.instance_id);
-  useEffect(() => {
-    if (!onResolvedContext) return undefined;
-    onResolvedContext(linkReady && context ? context : null);
-    return () => onResolvedContext(null);
-  }, [context, linkReady, onResolvedContext]);
 
   if (loading) {
     return (

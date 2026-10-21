@@ -234,113 +234,123 @@ describe('architecture view status', () => {
     });
   });
 
-  it('splits severe and warning alerts and counts one shared alert once', () => {
+  it('counts one monitor instance once when two icons share its monitor id', () => {
     const diagram = [{
       items: [
         { id: 'a', tile: { x: 1, y: 1 }, bkBinding: { inst_uuid: 'same', model_id: 'host' } },
         { id: 'a-copy', tile: { x: 1, y: 2 }, bkBinding: { inst_uuid: 'same', model_id: 'host' } },
-        { id: 'b', tile: { x: 2, y: 1 }, bkBinding: { inst_uuid: 'other', model_id: 'host' } },
+        { id: 'b', tile: { x: 2, y: 1 }, bkBinding: { inst_uuid: 'copy', model_id: 'host' } },
+        { id: 'c', tile: { x: 2, y: 2 }, bkBinding: { inst_uuid: 'other', model_id: 'host' } },
         { id: 'outside', tile: { x: 9, y: 9 }, bkBinding: { inst_uuid: 'far', model_id: 'host' } },
       ],
       rectangles: [
         { id: 'zone', from: { x: 0, y: 0 }, to: { x: 3, y: 3 }, bkFollowAlert: true },
-        { id: 'overlap', from: { x: 1, y: 1 }, to: { x: 1, y: 2 }, bkFollowAlert: true },
+        { id: 'overlap', from: { x: 1, y: 1 }, to: { x: 2, y: 1 }, bkFollowAlert: true },
       ],
     }];
-    const shared = status('same', 'critical', {
-      alert_count: 5,
-      max_level: 'error',
-      level_counts: { critical: 1, error: 1, warning: 3 },
-      alerts: [
-        { id: 'alert-critical', level: 'critical' },
-        { id: 'alert-error', level: 'error' },
-        { id: 'alert-shared', level: 'warning' },
-        { id: 'alert-warn-2', level: 'warning' },
-        { id: 'alert-warn-3', level: 'warning' },
-      ],
-    });
+    const sharedCounts = {
+      monitor_id: 'mon-shared',
+      alert_count: 2,
+      max_level: 'critical',
+      level_counts: { critical: 1, error: 0, warning: 1 },
+    };
     const byUuid = {
-      same: shared,
+      same: status('same', 'critical', sharedCounts),
+      copy: status('copy', 'critical', { ...sharedCounts, inst_name: 'copy' }),
       other: status('other', 'warning', {
-        alert_count: 2,
+        monitor_id: 'mon-other',
+        alert_count: 3,
         max_level: 'warning',
-        level_counts: { critical: 0, error: 0, warning: 2 },
-        alerts: [
-          { id: 'alert-shared', level: 'warning' },
-          { id: 'alert-other', level: 'warning' },
-        ],
+        level_counts: { critical: 0, error: 0, warning: 3 },
       }),
       far: status('far', 'critical', {
+        monitor_id: 'mon-far',
         alert_count: 1,
         max_level: 'critical',
-        alerts: [{ id: 'alert-far', level: 'critical' }],
+        level_counts: { critical: 1, error: 0, warning: 0 },
       }),
     };
     expect(buildNodeStatus(diagram, byUuid).a).toEqual({
       level: 'critical',
-      count: 5,
+      count: 2,
       badgeName: 'same',
-      badgeLevel: 'error',
+      badgeLevel: 'critical',
+    });
+    expect(buildNodeStatus(diagram, byUuid).b).toEqual({
+      level: 'critical',
+      count: 2,
+      badgeName: 'copy',
+      badgeLevel: 'critical',
     });
     expect(buildRectangleOverlays(diagram, byUuid, { followBorders: true }).zone).toMatchObject({
       borderLevel: 'critical',
-      resourceCount: 2,
-      criticalCount: 2,
+      resourceCount: 3,
+      criticalCount: 1,
       warningCount: 4,
-      alertTotal: 6,
+      alertTotal: 5,
     });
     expect(buildRectangleOverlays(diagram, byUuid, { followBorders: true }).overlap).toMatchObject({
-      criticalCount: 2,
-      warningCount: 3,
+      criticalCount: 1,
+      warningCount: 1,
+      alertTotal: 2,
+    });
+    expect(regionAlertBadgeParts(
+      buildRectangleOverlays(diagram, byUuid, { followBorders: true }).zone ?? {},
+      { critical: '严重', warning: '警告' },
+    )).toEqual([
+      { level: 'critical', text: '严重 1' },
+      { level: 'warning', text: '警告 4' },
+    ]);
+  });
+
+  it('keeps info folded into warning and still counts a shared monitor once', () => {
+    const diagram = [{
+      items: [
+        { id: 'a', tile: { x: 1, y: 1 }, bkBinding: { inst_uuid: 'info-host', model_id: 'host' } },
+        { id: 'b', tile: { x: 2, y: 1 }, bkBinding: { inst_uuid: 'info-copy', model_id: 'host' } },
+        { id: 'c', tile: { x: 2, y: 2 }, bkBinding: { inst_uuid: 'critical-host', model_id: 'host' } },
+      ],
+      rectangles: [{ id: 'zone', from: { x: 0, y: 0 }, to: { x: 3, y: 3 }, bkFollowAlert: true }],
+    }];
+    const byUuid = {
+      'info-host': status('info-host', 'warning', {
+        monitor_id: 'mon-info',
+        alert_count: 3,
+        max_level: 'warning',
+        level_counts: { critical: 0, error: 0, warning: 3 },
+      }),
+      'info-copy': status('info-copy', 'warning', {
+        monitor_id: 'mon-info',
+        alert_count: 3,
+        max_level: 'warning',
+        level_counts: { critical: 0, error: 0, warning: 3 },
+      }),
+      'critical-host': status('critical-host', 'critical', {
+        monitor_id: 'mon-critical',
+        alert_count: 2,
+        max_level: 'critical',
+        level_counts: { critical: 1, error: 0, warning: 1 },
+      }),
+    };
+    expect(buildNodeStatus(diagram, byUuid).a).toMatchObject({
+      level: 'warning',
+      count: 3,
+      badgeLevel: 'warning',
+    });
+    expect(buildRectangleOverlays(diagram, byUuid, { followBorders: true }).zone).toMatchObject({
+      borderLevel: 'critical',
+      resourceCount: 3,
+      criticalCount: 1,
+      warningCount: 4,
       alertTotal: 5,
     });
     expect(regionAlertBadgeParts(
       buildRectangleOverlays(diagram, byUuid, { followBorders: true }).zone ?? {},
       { critical: '严重', warning: '警告' },
     )).toEqual([
-      { level: 'critical', text: '严重 2' },
+      { level: 'critical', text: '严重 1' },
       { level: 'warning', text: '警告 4' },
     ]);
-  });
-
-  it('counts info and any other alert level as warning, once per alert id', () => {
-    const diagram = [{
-      items: [
-        { id: 'a', tile: { x: 1, y: 1 }, bkBinding: { inst_uuid: 'same', model_id: 'host' } },
-        { id: 'b', tile: { x: 2, y: 1 }, bkBinding: { inst_uuid: 'other', model_id: 'host' } },
-      ],
-      rectangles: [{ id: 'zone', from: { x: 0, y: 0 }, to: { x: 3, y: 3 }, bkFollowAlert: true }],
-    }];
-    const byUuid = {
-      same: status('same', 'warning', {
-        alert_count: 2,
-        max_level: 'warning',
-        alerts: [
-          { id: 'info-shared', level: 'info' },
-          { id: 'notice-1', level: 'notice' },
-        ],
-      }),
-      other: status('other', 'warning', {
-        alert_count: 1,
-        max_level: 'warning',
-        alerts: [{ id: 'info-shared', level: 'info' }],
-      }),
-    };
-    expect(buildNodeStatus(diagram, byUuid).a).toMatchObject({
-      level: 'warning',
-      count: 2,
-      badgeLevel: 'warning',
-    });
-    expect(buildRectangleOverlays(diagram, byUuid, { followBorders: true }).zone).toMatchObject({
-      borderLevel: 'warning',
-      criticalCount: 0,
-      warningCount: 2,
-      alertTotal: 2,
-    });
-    expect(regionAlertBadgeParts(
-      buildRectangleOverlays(diagram, byUuid, { followBorders: true }).zone ?? {},
-      { critical: '严重', warning: '警告' },
-    )).toEqual([{ level: 'warning', text: '警告 2' }]);
   });
 
   it('ignores normal, unmonitored and unbound icons when coloring a border', () => {

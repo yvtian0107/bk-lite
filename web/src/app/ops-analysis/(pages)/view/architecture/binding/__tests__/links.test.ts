@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import { buildAlarmHref, buildCmdbDetailHref, buildMonitorDetailHref, buildMonitorHrefFromContext } from '../links';
+import {
+  buildAlarmHref,
+  buildCmdbDetailHref,
+  buildMonitorDetailHref,
+  buildMonitorHrefFromContext,
+  readArchitectureEffectivePlugins,
+} from '../links';
 
 describe('architecture detail links', () => {
   it('builds cmdb, alarm and monitor links', () => {
@@ -59,5 +65,20 @@ describe('architecture detail links', () => {
       form: { instance_id: 'mon-web', instance_name: 'web-01' },
     }), 'http://local');
     expect(professional.pathname).toBe('/monitor/view/dashboard/host');
+
+    const plugins = readArchitectureEffectivePlugins([
+      { id: 7, name: 'Host', display_name: '主机', collect_type: 'netflow' },
+      'skip',
+    ]);
+    expect(plugins).toEqual([{ collect_type: 'netflow', name: 'Host' }]);
+    const flow = new URL(buildMonitorHrefFromContext({
+      monitorObject: 11,
+      monitorName: 'Host',
+      objects: [{ display_name: '主机' }],
+      form: { instance_id: 'mon-web', instance_name: 'web-01' },
+      linkPlugins: plugins,
+    }), 'http://local');
+    expect(flow.pathname).toBe('/monitor/view/dashboard/netflow');
+    expect(readArchitectureEffectivePlugins({ items: [] })).toEqual([]);
   });
 });

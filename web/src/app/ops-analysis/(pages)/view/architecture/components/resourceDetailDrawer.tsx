@@ -1,13 +1,13 @@
 'use client';
 
-import { useCallback, useEffect, useState, type ComponentType, type ReactNode } from 'react';
+import { useEffect, useState, type ComponentType, type ReactNode } from 'react';
 import { Button, Spin, Tabs, Tag } from 'antd';
 import CompactEmptyState from '@/components/compact-empty-state';
 import OperateDrawer from '@/components/operate-drawer';
-import type { MonitorPublicContext } from '@/app/monitor/components/public/resolveMonitorPublicContext';
 import { useAppWidget, useLazyAppWidget } from '@/context/appCapabilities';
 import { useTranslation } from '@/utils/i18n';
 import { buildAlarmHref, buildMonitorHrefFromContext } from '../binding/links';
+import { useArchitectureMonitorLink } from '../binding/useMonitorLink';
 import type { ArchitectureNodeStatusItem } from '../binding/model';
 import {
   buildRegionList,
@@ -321,10 +321,7 @@ const ResourceBody = ({
   const { t } = useTranslation();
   const [tab, setTab] = useState<DetailTab>('cmdb');
   const [headerAction, setHeaderAction] = useState<ReactNode>(null);
-  const [linkContext, setLinkContext] = useState<MonitorPublicContext | null>(null);
-  const publishLinkContext = useCallback((next: MonitorPublicContext | null) => {
-    setLinkContext(next);
-  }, []);
+  const linkContext = useArchitectureMonitorLink(monitorId);
   const baseInfo = useAppWidget('cmdb.baseInfo');
   const monitorView = useAppWidget('monitor.monitorView');
   const alertList = useAppWidget('monitor.alertList');
@@ -355,12 +352,10 @@ const ResourceBody = ({
   }> | null;
   const MonitorView = monitorWidget.Widget as ComponentType<{
     monitorId: string;
-    onResolvedContext?: (context: MonitorPublicContext | null) => void;
   }> | null;
   const AlertList = alertWidget.Widget as ComponentType<{
     monitorId: string;
     occurredAtField?: 'start_event_time';
-    onResolvedContext?: (context: MonitorPublicContext | null) => void;
   }> | null;
   const monitorHref = activeTab === 'monitor' ? buildMonitorHrefFromContext(linkContext) : '';
   const alarmHref = activeTab === 'alerts' && linkContext && monitorId
@@ -436,13 +431,12 @@ const ResourceBody = ({
                   failed={activeTab === 'monitor' ? monitorWidget.loadFailed : alertWidget.loadFailed}
                 >
                   {activeTab === 'monitor' && MonitorView ? (
-                    <MonitorView monitorId={monitorId} onResolvedContext={publishLinkContext} />
+                    <MonitorView monitorId={monitorId} />
                   ) : null}
                   {activeTab === 'alerts' && AlertList ? (
                     <AlertList
                       monitorId={monitorId}
                       occurredAtField="start_event_time"
-                      onResolvedContext={publishLinkContext}
                     />
                   ) : null}
                 </WidgetSlot>
