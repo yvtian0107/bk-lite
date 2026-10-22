@@ -94,9 +94,6 @@ export const useGraphInitializer = ({
               grid: {
                 visible: false,
               },
-              background: {
-                color: 'var(--color-fill-1)',
-              },
               interacting: false,
             },
           }),

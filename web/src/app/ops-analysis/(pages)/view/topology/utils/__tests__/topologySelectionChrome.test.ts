@@ -316,4 +316,26 @@ describe('topologySelectionChrome', () => {
       '.ops-topology-chart-node:hover:not(.ops-topology-chart-node--selected)',
     );
   });
+
+  it('paints the X6 minimap with theme surfaces instead of the plugin white shell', () => {
+    const source = readFileSync(
+      path.join(__dirname, '../../index.module.scss'),
+      'utf8',
+    );
+    const networkSource = readFileSync(
+      path.join(
+        __dirname,
+        '../../../../../components/widgets/networkStatusTopology/networkStatusTopology.module.scss',
+      ),
+      'utf8',
+    );
+
+    for (const stylesheet of [source, networkSource]) {
+      expect(stylesheet).toContain('background-color: var(--color-bg-1) !important');
+      expect(stylesheet).toContain('.x6-widget-minimap-viewport-zoom');
+      expect(stylesheet).not.toContain('#fff');
+      expect(stylesheet).not.toContain('#eee');
+      expect(stylesheet).not.toContain('rgba(241, 245, 249');
+    }
+  });
 });

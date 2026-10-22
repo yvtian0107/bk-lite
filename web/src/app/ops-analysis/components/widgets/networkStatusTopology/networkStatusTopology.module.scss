@@ -9,6 +9,29 @@
     radial-gradient(circle at 18% 14%, color-mix(in srgb, var(--color-primary) 14%, transparent), transparent 30%),
     radial-gradient(circle at 78% 20%, color-mix(in srgb, var(--color-primary) 8%, transparent), transparent 28%),
     var(--color-bg-1);
+
+  // XFlow Minimap 内层仍是插件默认浅色底和浅色投影，外层 style 盖不住。
+  :global(.x6-widget-minimap) {
+    background-color: var(--color-bg-1) !important;
+
+    :global(.x6-graph) {
+      background: var(--color-bg-1) !important;
+      box-shadow: 0 0 0 1px var(--color-border-1) !important;
+    }
+
+    :global(.x6-graph-svg) {
+      background: var(--color-bg-1) !important;
+    }
+  }
+
+  :global(.x6-widget-minimap-viewport) {
+    border-color: var(--color-primary) !important;
+  }
+
+  :global(.x6-widget-minimap-viewport-zoom) {
+    background-color: var(--color-bg-1) !important;
+    border-color: var(--color-primary) !important;
+  }
 }
 
 .screenCanvas {
