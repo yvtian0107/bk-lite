@@ -21,6 +21,11 @@ const OpsHomepageDashboard: React.FC<OpsHomepageDashboardProps> = ({ dashboardId
   const { loading } = useUserInfoContext();
   const { getAccess } = useHomepageApi();
   const [access, setAccess] = useState<HomepageAccess | null>(null);
+  const [accessId, setAccessId] = useState<string | null>(null);
+  if (accessId !== dashboardId) {
+    setAccessId(dashboardId);
+    setAccess(null);
+  }
 
   useEffect(() => {
     if (loading) {

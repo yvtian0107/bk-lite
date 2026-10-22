@@ -4,10 +4,7 @@ import React, { createContext, useCallback, useContext, useEffect, useMemo, useR
 import { useSession } from 'next-auth/react';
 import { useUserInfoContext } from '@/context/userInfo';
 import { useHomepageApi } from '@/app/ops-analysis/api/homepage';
-
-export interface EffectiveHomepageEntry {
-  dashboardId: number;
-}
+import type { EffectiveHomepageEntry } from '@/app/ops-analysis/utils/homepageLanding';
 
 interface EffectiveHomepageValue {
   entry: EffectiveHomepageEntry | null;

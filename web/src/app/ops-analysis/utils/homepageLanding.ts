@@ -17,6 +17,17 @@ export const effectiveHomepageHref = (entry: EffectiveHomepageEntry | null | und
   return PORTAL_HOME_PATH;
 };
 
+/** 首次登录提交组织成功后：能进的仪表盘进首页，否则由调用方保持原刷新。 */
+export const hrefAfterOrgInit = (
+  resolution: HomepageLandingResolution | null | undefined,
+): string | null => {
+  const dashboardId = resolution?.dashboard_id;
+  if (dashboardId !== undefined && dashboardId !== null && String(dashboardId).trim()) {
+    return `${PORTAL_HOME_PATH}?dashboard_id=${encodeURIComponent(String(dashboardId))}`;
+  }
+  return null;
+};
+
 const FALLBACK_QUERY = 'homepage_fallback';
 
 const normalizePathname = (pathname: string) => {

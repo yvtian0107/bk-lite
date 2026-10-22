@@ -14,7 +14,7 @@ class HomepageViewSet(ViewSet):
 
     @action(detail=False, methods=["get"])
     def landing(self, request):
-        return Response(build_landing(request.user))
+        return Response(build_landing(request))
 
     @action(detail=False, methods=["get"])
     def access(self, request):

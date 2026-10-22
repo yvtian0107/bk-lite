@@ -8,6 +8,7 @@ from rest_framework.test import APIRequestFactory, force_authenticate
 
 from apps.operation_analysis.models.homepage import HomepagePreference
 from apps.operation_analysis.models.models import Dashboard, Directory
+from apps.operation_analysis.services.directory_service import DictDirectoryService
 from apps.operation_analysis.views.homepage_view import HomepageViewSet
 from apps.system_mgmt.models import OperationLog
 
@@ -339,3 +340,102 @@ def test_shortcut_follows_landing_and_hides_when_inaccessible(authenticated_user
     user.group_list = [{"id": 9, "name": "OpsPilotGuest"}]
     first_login = _render(HomepageViewSet.as_view({"get": "shortcut"})(_request("get", "/homepage/shortcut/", user)))["data"]
     assert first_login == {"dashboard_id": None}
+
+
+def _tree_dashboard_ids(user):
+    found = []
+
+    def walk(nodes):
+        for node in nodes:
+            if node.get("type") == "dashboard":
+                found.append(node.get("data_id"))
+            walk(node.get("children") or [])
+
+    walk(DictDirectoryService.get_dict_trees(_request("get", "/directory/trees/", user)))
+    return found
+
+
+def _point_global(dashboard_id):
+    HomepagePreference.objects.update_or_create(
+        scope=HomepagePreference.SCOPE_GLOBAL,
+        username="",
+        domain="",
+        defaults={"mode": HomepagePreference.MODE_DASHBOARD, "dashboard_id": dashboard_id},
+    )
+
+
+@pytest.mark.django_db
+def test_homepage_follows_directory_tree_not_dashboard_groups(authenticated_user):
+    user = _viewer(authenticated_user, roles=["admin"])
+    inactive = _dashboard("停用目录盘", groups=[1])
+    inactive.directory.is_active = False
+    inactive.directory.save(update_fields=["is_active"])
+
+    other_org_directory = _dashboard("目录在别的组织", groups=[1])
+    other_org_directory.directory.groups = [2]
+    other_org_directory.directory.save(update_fields=["groups"])
+
+    visible = _dashboard("树上可见", groups=[1])
+    tree_ids = _tree_dashboard_ids(user)
+    assert inactive.id not in tree_ids
+    assert other_org_directory.id not in tree_ids
+    assert visible.id in tree_ids
+
+    for hidden in (inactive, other_org_directory):
+        access = _render(HomepageViewSet.as_view({"get": "access"})(_request("get", f"/homepage/access/?dashboard_id={hidden.id}", user)))["data"]
+        assert access["status"] == "org"
+
+        personal = HomepageViewSet.as_view({"post": "personal"})(
+            _request("post", "/homepage/personal/", user, data={"action": "set", "dashboard_id": hidden.id})
+        )
+        assert personal.status_code == status.HTTP_403_FORBIDDEN
+
+        global_denied = HomepageViewSet.as_view({"post": "global_setting"})(
+            _request("post", "/homepage/global/", user, data={"action": "set", "dashboard_id": hidden.id})
+        )
+        assert global_denied.status_code == status.HTTP_403_FORBIDDEN
+
+        _point_global(hidden.id)
+        landing = _render(HomepageViewSet.as_view({"get": "landing"})(_request("get", "/homepage/landing/", user)))["data"]
+        assert landing == {"dashboard_id": None, "fallback": "org"}
+        shortcut = _render(HomepageViewSet.as_view({"get": "shortcut"})(_request("get", "/homepage/shortcut/", user)))["data"]
+        assert shortcut == {"dashboard_id": None}
+        assert HomepagePreference.objects.filter(
+            scope=HomepagePreference.SCOPE_GLOBAL,
+            dashboard_id=hidden.id,
+        ).exists()
+
+    _point_global(visible.id)
+    opened = _render(HomepageViewSet.as_view({"get": "access"})(_request("get", f"/homepage/access/?dashboard_id={visible.id}", user)))["data"]
+    assert opened["status"] == "ok"
+    assert opened["name"] == "树上可见"
+    landing = _render(HomepageViewSet.as_view({"get": "landing"})(_request("get", "/homepage/landing/", user)))["data"]
+    assert landing["dashboard_id"] == visible.id
+    personal_ok = HomepageViewSet.as_view({"post": "personal"})(
+        _request("post", "/homepage/personal/", user, data={"action": "set", "dashboard_id": visible.id})
+    )
+    assert personal_ok.status_code == status.HTTP_200_OK
+
+
+@pytest.mark.django_db
+def test_access_localizes_builtin_dashboard_name_and_desc(authenticated_user):
+    user = _viewer(authenticated_user)
+    user.locale = "en"
+    dashboard = _dashboard(
+        "CMDB仪表盘_内置",
+        groups=[1],
+        desc="原始描述",
+        is_build_in=True,
+        build_in_key="dashboard::CMDB仪表盘_内置",
+    )
+
+    english = _render(HomepageViewSet.as_view({"get": "access"})(_request("get", f"/homepage/access/?dashboard_id={dashboard.id}", user)))["data"]
+    assert english["status"] == "ok"
+    assert english["is_build_in"] is True
+    assert english["name"] == "CMDB Dashboard"
+    assert english["desc"].startswith("Shows CMDB models")
+
+    user.locale = "zh-Hans"
+    chinese = _render(HomepageViewSet.as_view({"get": "access"})(_request("get", f"/homepage/access/?dashboard_id={dashboard.id}", user)))["data"]
+    assert chinese["name"] == "CMDB仪表盘"
+    assert chinese["desc"].startswith("集中展示 CMDB")

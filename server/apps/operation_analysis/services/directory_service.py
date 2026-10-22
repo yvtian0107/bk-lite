@@ -15,10 +15,74 @@ from apps.operation_analysis.services.node_tree import TreeNodeBuilder
 from apps.operation_analysis.services.user_messages import oa_message
 
 
+def _apply_tree_group_filter(queryset, current_team, group_ids):
+    """与目录树相同的组织归属。支持 JSON contains 的库走原查询，其余库按同一规则在结果里比对。"""
+
+    from django.db import connection
+
+    if connection.features.supports_json_field_contains:
+        return GroupPermissionMixin.apply_group_filter(queryset, current_team, group_ids=group_ids)
+
+    if current_team is None:
+        return queryset
+    if group_ids and len(group_ids) > 1:
+        allowed = {int(item) for item in group_ids}
+    else:
+        allowed = {int(current_team)}
+    matched_ids = []
+    for row in queryset.iterator():
+        for value in getattr(row, "groups", None) or []:
+            try:
+                if int(value) in allowed:
+                    matched_ids.append(row.pk)
+                    break
+            except (TypeError, ValueError):
+                continue
+    return queryset.filter(pk__in=matched_ids)
+
+
 def _get_visible_canvas_queryset(meta, directories, current_team, group_ids):
     """画布可见性与目录一致：仅按组织归属过滤。"""
     base = meta.model.objects.filter(directory__in=directories)
-    return GroupPermissionMixin.apply_group_filter(base, current_team, group_ids=group_ids).order_by("id")
+    return _apply_tree_group_filter(base, current_team, group_ids).order_by("id")
+
+
+def directory_tree_scope(request):
+    """当前组织范围。include_children=1 时与目录树一样改用子组织列表。"""
+
+    try:
+        current_team = int(get_current_team(request))
+    except (TypeError, ValueError):
+        raise ValidationError({"detail": oa_message("messages.current_team_cookie_invalid", "current_team cookie 缺失或格式错误，请重新登录或刷新页面")})
+    group_ids = [current_team]
+    if request.COOKIES.get("include_children", "0") == "1":
+        from apps.core.utils.viewset_utils import GenericViewSetFun
+
+        group_tree = getattr(request.user, "group_tree", [])
+        child_ids = GenericViewSetFun.extract_child_group_ids(group_tree, current_team)
+        if child_ids:
+            group_ids = child_ids
+    return current_team, group_ids
+
+
+def visible_directory_queryset(request):
+    """目录树里会出现的启用目录。"""
+
+    current_team, group_ids = directory_tree_scope(request)
+    directories = _apply_tree_group_filter(
+        Directory.objects.filter(is_active=True),
+        current_team,
+        group_ids,
+    ).order_by("id")
+    return directories, current_team, group_ids
+
+
+def visible_canvas_queryset(request, object_type):
+    """目录树里会出现的画布。父目录必须启用，并且目录和画布都在当前组织范围内。"""
+
+    directories, current_team, group_ids = visible_directory_queryset(request)
+    meta = CANVAS_TYPE_REGISTRY[object_type]
+    return _get_visible_canvas_queryset(meta, directories, current_team, group_ids)
 
 
 class DictDirectoryService:
@@ -29,23 +93,7 @@ class DictDirectoryService:
         """
         获取目录树形结构,目录和仪表盘统一作为树节点
         """
-        # 验证用户组织权限，构建组织ID列表（支持 include_children）
-        try:
-            current_team = int(get_current_team(request))
-        except (TypeError, ValueError):
-            raise ValidationError({"detail": oa_message("messages.current_team_cookie_invalid", "current_team cookie 缺失或格式错误，请重新登录或刷新页面")})
-        group_ids = [current_team]
-        if request.COOKIES.get("include_children", "0") == "1":
-            from apps.core.utils.viewset_utils import GenericViewSetFun
-
-            group_tree = getattr(request.user, "group_tree", [])
-            child_ids = GenericViewSetFun.extract_child_group_ids(group_tree, current_team)
-            if child_ids:
-                group_ids = child_ids
-
-        # 构建基础查询集并应用组织过滤
-        base_queryset = Directory.objects.filter(is_active=True)
-        directories = GroupPermissionMixin.apply_group_filter(base_queryset, current_team, group_ids=group_ids).order_by("id")
+        directories, current_team, group_ids = visible_directory_queryset(request)
 
         # 构建各类画布的查询集（与目录相同，仅组织过滤）
         canvas_queryset_map = {

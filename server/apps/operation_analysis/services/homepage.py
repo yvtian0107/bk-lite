@@ -4,9 +4,9 @@ from __future__ import annotations
 
 from django.db import transaction
 
-from apps.core.utils.team_utils import get_current_team
 from apps.operation_analysis.models.homepage import HomepagePreference
 from apps.operation_analysis.models.models import Dashboard
+from apps.operation_analysis.services.builtin_i18n import apply_canvas_representation
 from apps.operation_analysis.services.user_messages import oa_message
 from apps.system_mgmt.utils.operation_log_utils import log_operation
 
@@ -141,9 +141,30 @@ def build_state(user) -> dict:
     }
 
 
-def build_landing(user) -> dict:
-    """登录落地用。不检查组织：组织要等 current_team cookie 写好后由 access 判断。"""
+class _TeamUnresolved(Exception):
+    """current_team 缺失或非法，目录树无法判定。"""
 
+
+def dashboard_in_directory_tree(request, dashboard_id: int) -> Dashboard | None:
+    """这张盘现在是否出现在当前组织的目录树里。"""
+
+    from rest_framework.exceptions import ValidationError
+
+    from apps.operation_analysis.services.directory_service import visible_canvas_queryset
+
+    try:
+        return visible_canvas_queryset(request, "dashboard").filter(pk=dashboard_id).first()
+    except ValidationError as exc:
+        raise _TeamUnresolved from exc
+
+
+def build_landing(request) -> dict:
+    """登录落地。目录树能判定时，不在树上的盘按当前组织回工作台。
+
+    current_team 还没写上时无法对照目录树，先返回目标，由 access 在 cookie 就绪后再判定。
+    """
+
+    user = request.user
     empty = {"dashboard_id": None, "fallback": None}
     if is_pending_org_init(user):
         return empty
@@ -154,62 +175,30 @@ def build_landing(user) -> dict:
         return empty
     if not Dashboard.objects.filter(pk=target_id).exists():
         return {"dashboard_id": None, "fallback": FALLBACK_MISSING}
+    try:
+        visible = dashboard_in_directory_tree(request, target_id)
+    except _TeamUnresolved:
+        return {"dashboard_id": target_id, "fallback": None}
+    if visible is None:
+        return {"dashboard_id": None, "fallback": FALLBACK_ORG}
     return {"dashboard_id": target_id, "fallback": None}
 
 
 def build_shortcut(request) -> dict:
-    """顶栏 Logo 的有效首页。解析顺序与 landing 相同，并要求当前组织可见。"""
+    """顶栏 Logo 的有效首页。解析顺序与 landing 相同，并要求当前组织目录树可见。"""
 
     empty = {"dashboard_id": None}
-    landing = build_landing(request.user)
+    landing = build_landing(request)
     target_id = landing.get("dashboard_id")
     if not target_id:
         return empty
-    dashboard = Dashboard.objects.filter(pk=target_id).first()
-    if dashboard is None:
+    try:
+        visible = dashboard_in_directory_tree(request, int(target_id))
+    except _TeamUnresolved:
         return empty
-    group_ids = directory_visible_group_ids(request)
-    if not group_ids or not dashboard_visible_to_groups(dashboard, group_ids):
+    if visible is None:
         return empty
     return {"dashboard_id": int(target_id)}
-
-
-def directory_visible_group_ids(request) -> list[int] | None:
-    """与目录树相同：当前组织，include_children=1 时含其子组织。"""
-
-    try:
-        current_team = int(get_current_team(request))
-    except (TypeError, ValueError):
-        return None
-
-    group_ids = [current_team]
-    if request.COOKIES.get("include_children", "0") == "1":
-        from apps.core.utils.viewset_utils import GenericViewSetFun
-
-        child_ids = GenericViewSetFun.extract_child_group_ids(
-            getattr(request.user, "group_tree", None) or [],
-            current_team,
-        )
-        normalized = []
-        for item in child_ids:
-            try:
-                normalized.append(int(item))
-            except (TypeError, ValueError):
-                continue
-        if normalized:
-            group_ids = normalized
-    return group_ids
-
-
-def dashboard_visible_to_groups(dashboard: Dashboard, group_ids: list[int]) -> bool:
-    allowed = set(group_ids)
-    for value in dashboard.groups or []:
-        try:
-            if int(value) in allowed:
-                return True
-        except (TypeError, ValueError):
-            continue
-    return False
 
 
 def build_access(request) -> dict:
@@ -228,15 +217,23 @@ def build_access(request) -> dict:
     if dashboard is None:
         return {"status": FALLBACK_MISSING, "name": "", "desc": "", "is_build_in": False}
 
-    group_ids = directory_visible_group_ids(request)
-    if not group_ids or not dashboard_visible_to_groups(dashboard, group_ids):
+    try:
+        visible = dashboard_in_directory_tree(request, dashboard.id)
+    except _TeamUnresolved:
+        visible = None
+    if visible is None:
         return {"status": FALLBACK_ORG, "name": "", "desc": "", "is_build_in": False}
 
+    represented = apply_canvas_representation(
+        {"name": visible.name, "desc": visible.desc or ""},
+        visible,
+        {"request": request},
+    )
     return {
         "status": ACCESS_OK,
-        "name": dashboard.name,
-        "desc": dashboard.desc or "",
-        "is_build_in": bool(dashboard.is_build_in),
+        "name": represented.get("name") or "",
+        "desc": represented.get("desc") or "",
+        "is_build_in": bool(visible.is_build_in),
     }
 
 
@@ -246,12 +243,13 @@ def _require_org_visible_dashboard(request, dashboard_id: int) -> Dashboard:
     dashboard = Dashboard.objects.filter(pk=dashboard_id).first()
     if dashboard is None:
         raise NotFound(oa_message("messages.homepage_not_found", "仪表盘不存在"))
-    group_ids = directory_visible_group_ids(request)
-    if group_ids is None:
+    try:
+        visible = dashboard_in_directory_tree(request, dashboard.id)
+    except _TeamUnresolved:
         raise ValidationError({"detail": oa_message("messages.homepage_team_missing", "current_team cookie 缺失或格式错误")})
-    if not dashboard_visible_to_groups(dashboard, group_ids):
+    if visible is None:
         raise PermissionDenied(oa_message("messages.homepage_org_denied", "当前组织无法查看该仪表盘"))
-    return dashboard
+    return visible
 
 
 def _require_visible_dashboard(request, dashboard_id: int) -> Dashboard:

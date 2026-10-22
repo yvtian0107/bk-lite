@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from 'vitest';
 import {
   effectiveHomepageHref,
   homepageLandingHref,
+  hrefAfterOrgInit,
   isBarePortalHomeTarget,
   isDashboardHomepagePath,
   resolvePostLoginHref,
@@ -15,6 +16,15 @@ describe('effective homepage entry', () => {
     expect(effectiveHomepageHref({ dashboardId: 8 })).toBe('/ops-console/home?dashboard_id=8');
     expect(effectiveHomepageHref(null)).toBe('/ops-console/home');
     expect(effectiveHomepageHref({ dashboardId: null })).toBe('/ops-console/home');
+  });
+});
+
+describe('first login org submit', () => {
+  it('opens the saved dashboard once and otherwise leaves the reload to the caller', () => {
+    expect(hrefAfterOrgInit({ dashboard_id: 8 })).toBe('/ops-console/home?dashboard_id=8');
+    expect(hrefAfterOrgInit({ dashboard_id: null, fallback: 'org' })).toBeNull();
+    expect(hrefAfterOrgInit({ dashboard_id: null, fallback: null })).toBeNull();
+    expect(hrefAfterOrgInit(null)).toBeNull();
   });
 });
 
