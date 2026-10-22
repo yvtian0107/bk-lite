@@ -15,6 +15,9 @@ import { useUserInfoContext } from '@/context/userInfo';
 import { usePortalBranding } from '@/hooks/usePortalBranding';
 import { resolveAppDescription, resolveAppDisplayName, resolveAppTag } from '@/utils/appDisplayName';
 import styles from './index.module.scss';
+import { useSearchParams } from 'next/navigation';
+import OpsHomepageDashboard from '@/app/ops-analysis/components/opsHomepageDashboard';
+import HomepageFallbackNotice from '@/app/ops-analysis/components/homepageFallbackNotice';
 
 const ControlPage = () => {
   const { t } = useTranslation();
@@ -457,4 +460,18 @@ const ControlPage = () => {
   );
 };
 
-export default ControlPage;
+const OpsConsoleHomePage = () => {
+  const searchParams = useSearchParams();
+  const dashboardId = searchParams.get('dashboard_id')?.trim();
+  if (dashboardId) {
+    return <OpsHomepageDashboard dashboardId={dashboardId} />;
+  }
+  return (
+    <>
+      <HomepageFallbackNotice />
+      <ControlPage />
+    </>
+  );
+};
+
+export default OpsConsoleHomePage;
