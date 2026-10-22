@@ -13,6 +13,19 @@ import { useAppWidget, useLazyAppWidget } from '@/context/appCapabilities';
 import { useOptionalThemeTokens } from '@/theme';
 import { useTranslation } from '@/utils/i18n';
 import type { ApplicationTopologyBandNode } from './bandModel';
+import styles from './detailPanel.module.scss';
+
+/** 大屏抽屉门户到 body，用实色，避免半透明表面透出系统页。 */
+const SCREEN_DRAWER_SURFACE = {
+  'screen-dark': '#14243a',
+  'screen-light': '#ffffff',
+} as const;
+
+const applicationTopologyDrawerSurface = (mode?: OpsChartThemeMode) => (
+  mode === 'screen-dark' || mode === 'screen-light'
+    ? SCREEN_DRAWER_SURFACE[mode]
+    : 'var(--color-modal-header-color)'
+);
 
 export type ApplicationTopologyDetailTabKey = 'cmdb' | 'monitor' | 'alerts';
 
@@ -59,6 +72,7 @@ const ApplicationTopologyDetailPanel = ({
     return { ...theme, inherit: false as const };
   }, [chartThemeMode, systemTokens]);
   const contentTokenStyle = buildScreenContentTokenStyle(chartThemeMode);
+  const drawerSurface = applicationTopologyDrawerSurface(chartThemeMode);
   const [tab, setTab] = useState<ApplicationTopologyDetailTabKey>('cmdb');
   const [headerAction, setHeaderAction] = useState<React.ReactNode>(null);
   const baseInfo = useAppWidget('cmdb.baseInfo');
@@ -109,10 +123,12 @@ const ApplicationTopologyDetailPanel = ({
       subTitle={`${node.modelId} · ${statusLabel}`}
       destroyOnHidden
       onClose={onClose}
+      rootClassName={styles.shell}
+      style={{ '--ops-topology-drawer-surface': drawerSurface } as React.CSSProperties}
       classNames={{ body: 'flex min-h-0 flex-col overflow-hidden' }}
       styles={{
         header: { boxShadow: 'none' },
-        body: { overflow: 'hidden', padding: 0 },
+        body: { overflow: 'hidden', padding: 0, background: 'transparent' },
       }}
       footer={(
         <div>
