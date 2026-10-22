@@ -95,7 +95,7 @@ export const useGraphInitializer = ({
                 visible: false,
               },
               background: {
-                color: 'rgba(248, 249, 250, 0.8)',
+                color: 'var(--color-fill-1)',
               },
               interacting: false,
             },

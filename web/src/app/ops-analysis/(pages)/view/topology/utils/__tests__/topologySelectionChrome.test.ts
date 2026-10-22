@@ -289,8 +289,8 @@ describe('topologySelectionChrome', () => {
       source.indexOf(".topologyContainer[data-topology-mode='edit']"),
       source.indexOf(".topologyContainer[data-topology-mode='view']"),
     );
-    expect(editBlock).toContain('#8dbcf2');
-    expect(editBlock).not.toContain('var(--color-border-2)');
+    expect(editBlock).toContain('color-mix(in srgb, var(--color-primary) 55%, var(--color-border-1))');
+    expect(editBlock).not.toContain('#8dbcf2');
 
     const viewStart = source.indexOf(
       ".topologyContainer[data-topology-mode='view']",
