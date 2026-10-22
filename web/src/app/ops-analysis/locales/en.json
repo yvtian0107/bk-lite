@@ -1948,5 +1948,22 @@
       "testFailed": "Option source unavailable",
       "incomplete": "Select a data source, value field, and label field"
     }
+  },
+  "opsHomepage": {
+    "setPersonal": "Set as my homepage",
+    "clearPersonal": "Clear my homepage and follow the global default",
+    "setGlobal": "Set as the global default homepage",
+    "restoreGlobal": "Restore the global default to the workbench",
+    "pinWorkbench": "Pin my homepage to the workbench",
+    "openInAnalysis": "Open in Operations Analysis",
+    "moreActions": "More actions",
+    "setPersonalSuccess": "Set as your homepage",
+    "clearPersonalSuccess": "Your homepage now follows the global default. If that default is still this dashboard, the next login opens it again.",
+    "setGlobalSuccess": "Set as the global default homepage",
+    "restoreGlobalSuccess": "The global default homepage is the workbench again",
+    "pinWorkbenchSuccess": "Your homepage is pinned to the workbench",
+    "fallbackMissing": "This dashboard is missing or deleted. Returned to the workbench.",
+    "fallbackOrg": "This organization cannot view the dashboard. Returned to the workbench.",
+    "backToHomepage": "Back to my homepage"
   }
 }
