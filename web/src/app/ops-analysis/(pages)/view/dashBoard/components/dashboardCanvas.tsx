@@ -75,6 +75,10 @@ const DASHBOARD_GRID_MARGIN: [number, number] = [4, 4];
 const DASHBOARD_GRID_CONTAINER_PADDING: [number, number] = [6, 2];
 const DASHBOARD_WIDGET_RESIZE_HANDLES = 'se,sw,ne,nw,n,e,s,w';
 const DASHBOARD_WIDGET_RESIZE_HANDLE_SIZE = 14;
+// 角点 SVG 是 6px 的 L，臂宽 6-4.2。边中点改成与边平行的短线，长度略长于这条臂。
+const DASHBOARD_EDGE_HANDLE_LINE_LENGTH = 14;
+const DASHBOARD_EDGE_HANDLE_LINE_THICKNESS = 1.8;
+const DASHBOARD_EDGE_HANDLE_LINE_INSET = 1;
 
 const acceptOnlyWidgetNodes = (element: Element) =>
   element instanceof HTMLElement && element.dataset.nodeKind === 'widget';
@@ -1406,11 +1410,22 @@ const DashboardCanvas: React.FC<DashboardCanvasProps> = ({
         }
 
         .grid-stack-item > .ui-resizable-n,
+        .grid-stack-item > .ui-resizable-e,
+        .grid-stack-item > .ui-resizable-s,
+        .grid-stack-item > .ui-resizable-w {
+          background-image: none !important;
+          transform: none !important;
+        }
+
+        .grid-stack-item > .ui-resizable-n,
         .grid-stack-item > .ui-resizable-s {
           width: ${DASHBOARD_WIDGET_RESIZE_HANDLE_SIZE}px !important;
           height: ${DASHBOARD_WIDGET_RESIZE_HANDLE_SIZE}px !important;
           left: 50% !important;
           right: auto !important;
+          margin-top: 0 !important;
+          margin-right: 0 !important;
+          margin-bottom: 0 !important;
           margin-left: calc(${DASHBOARD_WIDGET_RESIZE_HANDLE_SIZE}px / -2) !important;
           cursor: ns-resize !important;
         }
@@ -1418,13 +1433,11 @@ const DashboardCanvas: React.FC<DashboardCanvasProps> = ({
         .grid-stack-item > .ui-resizable-n {
           top: var(--gs-item-margin-top) !important;
           bottom: auto !important;
-          transform: rotate(180deg);
         }
 
         .grid-stack-item > .ui-resizable-s {
           top: auto !important;
           bottom: var(--gs-item-margin-bottom) !important;
-          transform: rotate(0deg);
         }
 
         .grid-stack-item > .ui-resizable-e,
@@ -1433,6 +1446,9 @@ const DashboardCanvas: React.FC<DashboardCanvasProps> = ({
           height: ${DASHBOARD_WIDGET_RESIZE_HANDLE_SIZE}px !important;
           top: 50% !important;
           bottom: auto !important;
+          margin-left: 0 !important;
+          margin-right: 0 !important;
+          margin-bottom: 0 !important;
           margin-top: calc(${DASHBOARD_WIDGET_RESIZE_HANDLE_SIZE}px / -2) !important;
           cursor: ew-resize !important;
         }
@@ -1440,13 +1456,53 @@ const DashboardCanvas: React.FC<DashboardCanvasProps> = ({
         .grid-stack-item > .ui-resizable-e {
           right: calc(var(--gs-item-margin-right) + 2px) !important;
           left: auto !important;
-          transform: rotate(270deg);
         }
 
         .grid-stack-item > .ui-resizable-w {
           left: calc(var(--gs-item-margin-left) + 2px) !important;
           right: auto !important;
-          transform: rotate(90deg);
+        }
+
+        .grid-stack-item > .ui-resizable-n::after,
+        .grid-stack-item > .ui-resizable-s::after,
+        .grid-stack-item > .ui-resizable-e::after,
+        .grid-stack-item > .ui-resizable-w::after {
+          content: '';
+          position: absolute;
+          background: rgba(0, 0, 0, 0.302);
+          pointer-events: none;
+        }
+
+        .grid-stack-item > .ui-resizable-n::after,
+        .grid-stack-item > .ui-resizable-s::after {
+          left: 50%;
+          width: ${DASHBOARD_EDGE_HANDLE_LINE_LENGTH}px;
+          height: ${DASHBOARD_EDGE_HANDLE_LINE_THICKNESS}px;
+          margin-left: calc(${DASHBOARD_EDGE_HANDLE_LINE_LENGTH}px / -2);
+        }
+
+        .grid-stack-item > .ui-resizable-n::after {
+          top: ${DASHBOARD_EDGE_HANDLE_LINE_INSET}px;
+        }
+
+        .grid-stack-item > .ui-resizable-s::after {
+          bottom: ${DASHBOARD_EDGE_HANDLE_LINE_INSET}px;
+        }
+
+        .grid-stack-item > .ui-resizable-e::after,
+        .grid-stack-item > .ui-resizable-w::after {
+          top: 50%;
+          width: ${DASHBOARD_EDGE_HANDLE_LINE_THICKNESS}px;
+          height: ${DASHBOARD_EDGE_HANDLE_LINE_LENGTH}px;
+          margin-top: calc(${DASHBOARD_EDGE_HANDLE_LINE_LENGTH}px / -2);
+        }
+
+        .grid-stack-item > .ui-resizable-e::after {
+          right: ${DASHBOARD_EDGE_HANDLE_LINE_INSET}px;
+        }
+
+        .grid-stack-item > .ui-resizable-w::after {
+          left: ${DASHBOARD_EDGE_HANDLE_LINE_INSET}px;
         }
 
         .grid-stack-item.${DASHBOARD_HIDE_NS_EDGE_CLASS} > .ui-resizable-n,

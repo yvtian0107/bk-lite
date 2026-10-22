@@ -29,6 +29,32 @@ test('dashboard widgets expose eight resize handles', () => {
   assert.match(dashboardCanvasSource, /\.grid-stack-item > \.ui-resizable-w \{/);
   assert.match(dashboardCanvasSource, /cursor: ns-resize !important;/);
   assert.match(dashboardCanvasSource, /cursor: ew-resize !important;/);
+  assert.match(
+    dashboardCanvasSource,
+    /DASHBOARD_EDGE_HANDLE_LINE_LENGTH = 14/,
+    '边中点线段长度取 14px，略长于角点 6px 的一条臂',
+  );
+  assert.match(
+    dashboardCanvasSource,
+    /DASHBOARD_EDGE_HANDLE_LINE_THICKNESS = 1\.8/,
+    '边中点线宽与角点 SVG 臂宽一致',
+  );
+  assert.match(
+    dashboardCanvasSource,
+    /\.grid-stack-item > \.ui-resizable-n,\s*\.grid-stack-item > \.ui-resizable-e,\s*\.grid-stack-item > \.ui-resizable-s,\s*\.grid-stack-item > \.ui-resizable-w \{\s*background-image: none !important;\s*transform: none !important;/,
+    '边中点不能再套用角点的 L 形背景和旋转',
+  );
+  assert.match(dashboardCanvasSource, /background: rgba\(0, 0, 0, 0\.302\);/);
+  assert.match(
+    dashboardCanvasSource,
+    /\.grid-stack-item > \.ui-resizable-n::after,\s*\.grid-stack-item > \.ui-resizable-s::after \{\s*left: 50%;\s*width: \$\{DASHBOARD_EDGE_HANDLE_LINE_LENGTH\}px;\s*height: \$\{DASHBOARD_EDGE_HANDLE_LINE_THICKNESS\}px;\s*margin-left: calc\(\$\{DASHBOARD_EDGE_HANDLE_LINE_LENGTH\}px \/ -2\);/,
+    '上下边是水平短线，几何中心对齐边中点',
+  );
+  assert.match(
+    dashboardCanvasSource,
+    /\.grid-stack-item > \.ui-resizable-e::after,\s*\.grid-stack-item > \.ui-resizable-w::after \{\s*top: 50%;\s*width: \$\{DASHBOARD_EDGE_HANDLE_LINE_THICKNESS\}px;\s*height: \$\{DASHBOARD_EDGE_HANDLE_LINE_LENGTH\}px;\s*margin-top: calc\(\$\{DASHBOARD_EDGE_HANDLE_LINE_LENGTH\}px \/ -2\);/,
+    '左右边是垂直短线，几何中心对齐边中点',
+  );
   assert.match(dashboardCanvasSource, /DASHBOARD_HIDE_NS_EDGE_CLASS/);
   assert.match(dashboardCanvasSource, /DASHBOARD_HIDE_EW_EDGE_CLASS/);
   assert.match(dashboardCanvasSource, /syncDashboardEdgeHandleVisibility/);
