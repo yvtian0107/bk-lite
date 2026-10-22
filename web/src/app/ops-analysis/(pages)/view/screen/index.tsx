@@ -89,6 +89,10 @@ import {
   updateScreenItemConfig,
 } from "./utils/layoutUtils";
 import {
+  screenWidgetInspectorTabs,
+  type ScreenWidgetInspectorTab,
+} from "./utils/inspectorTabs";
+import {
   createScreenChromeFromDrag,
   createScreenClockItem,
   createScreenDecorationItem,
@@ -186,8 +190,8 @@ const ScreenDataConfig = memo(
     builtinNamespaceId?: number;
     filterDefinitions?: UnifiedFilterDefinition[];
     unifiedFilterValues?: Record<string, FilterValue>;
-    configSection?: "data" | "interaction";
-    onConfigSectionChange?: (section: "data" | "interaction") => void;
+    configSection?: "data" | "interaction" | "singleStyle";
+    onConfigSectionChange?: (section: "data" | "interaction" | "singleStyle") => void;
     screenFrame?: "panel" | "bare";
     onDirtyChange?: (dirty: boolean) => void;
     onConfirm?: (values: WidgetConfig) => void;
@@ -265,7 +269,7 @@ const Screen = forwardRef<ScreenRef, ScreenProps>(({ selectedScreen, shareMode =
     x: number;
     y: number;
   } | null>(null);
-  const [inspectorTab, setInspectorTab] = useState<"style" | "data" | "interaction">("style");
+  const [inspectorTab, setInspectorTab] = useState<ScreenWidgetInspectorTab>("style");
   const [dataFormDirty, setDataFormDirty] = useState(false);
   const [pendingConfigItem, setPendingConfigItem] =
     useState<ComponentSelectorConfigItem | null>(null);
@@ -1254,6 +1258,9 @@ const Screen = forwardRef<ScreenRef, ScreenProps>(({ selectedScreen, shareMode =
         { itemId: currentConfigItem.id },
       );
       setDataFormDirty(false);
+      if (nextChartType !== "single") {
+        setInspectorTab((current) => (current === "singleStyle" ? "data" : current));
+      }
       message.success(t("opsAnalysis.screen.dataApplied"));
     },
     [commitDocument, projectDocument, t],
@@ -1374,6 +1381,24 @@ const Screen = forwardRef<ScreenRef, ScreenProps>(({ selectedScreen, shareMode =
     />
   ) : null;
   const dataConfigItem = pendingViewConfigItem || currentViewConfigItem;
+  const inspectorTabKeys = screenWidgetInspectorTabs(
+    dataConfigItem?.valueConfig?.chartType,
+    Boolean(pendingConfigItem),
+  );
+  const inspectorTabItems = inspectorTabKeys.map((key) => ({
+    key,
+    label:
+      key === "style"
+        ? t("opsAnalysis.screen.styleTab")
+        : key === "data"
+          ? t("opsAnalysis.screen.dataTab")
+          : key === "singleStyle"
+            ? t("opsAnalysis.screen.singleValueStyleTab")
+            : t("opsAnalysis.screen.interactionTab"),
+  }));
+  const activeInspectorTab = inspectorTabKeys.includes(inspectorTab)
+    ? inspectorTab
+    : (inspectorTabKeys[0] ?? "data");
   const interactionScreenFrame = pendingConfigItem
     ? getDefaultScreenWidgetAppearance(pendingConfigItem.chartType).frame
     : currentConfigItem
@@ -1390,7 +1415,11 @@ const Screen = forwardRef<ScreenRef, ScreenProps>(({ selectedScreen, shareMode =
       builtinNamespaceId={queryState.namespaceDraftId}
       filterDefinitions={queryState.definitions}
       unifiedFilterValues={queryState.filterValues}
-      configSection={inspectorTab === "interaction" ? "interaction" : "data"}
+      configSection={
+        activeInspectorTab === "interaction" || activeInspectorTab === "singleStyle"
+          ? activeInspectorTab
+          : "data"
+      }
       onConfigSectionChange={setInspectorTab}
       screenFrame={interactionScreenFrame}
       onDirtyChange={setDataFormDirty}
@@ -1539,12 +1568,9 @@ const Screen = forwardRef<ScreenRef, ScreenProps>(({ selectedScreen, shareMode =
                   <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
                     <Tabs
                       className="shrink-0 [&_.ant-tabs-content-holder]:hidden [&_.ant-tabs-nav]:mb-0 [&_.ant-tabs-nav-wrap]:px-3"
-                      activeKey={inspectorTab === "interaction" ? "interaction" : "data"}
-                      onChange={(key) => setInspectorTab(key as "data" | "interaction")}
-                      items={[
-                        { key: "data", label: t("opsAnalysis.screen.dataTab") },
-                        { key: "interaction", label: t("opsAnalysis.screen.interactionTab") },
-                      ]}
+                      activeKey={activeInspectorTab}
+                      onChange={(key) => setInspectorTab(key as ScreenWidgetInspectorTab)}
+                      items={inspectorTabItems}
                     />
                     <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
                       {dataConfigPanel}
@@ -1554,15 +1580,11 @@ const Screen = forwardRef<ScreenRef, ScreenProps>(({ selectedScreen, shareMode =
                   <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
                     <Tabs
                       className="shrink-0 [&_.ant-tabs-content-holder]:hidden [&_.ant-tabs-nav]:mb-0 [&_.ant-tabs-nav-wrap]:px-3"
-                      activeKey={inspectorTab}
-                      onChange={(key) => setInspectorTab(key as "style" | "data" | "interaction")}
-                      items={[
-                        { key: "style", label: t("opsAnalysis.screen.styleTab") },
-                        { key: "data", label: t("opsAnalysis.screen.dataTab") },
-                        { key: "interaction", label: t("opsAnalysis.screen.interactionTab") },
-                      ]}
+                      activeKey={activeInspectorTab}
+                      onChange={(key) => setInspectorTab(key as ScreenWidgetInspectorTab)}
+                      items={inspectorTabItems}
                     />
-                    <div className={inspectorTab === "style" ? "flex min-h-0 flex-1 flex-col overflow-hidden" : "hidden"}>
+                    <div className={activeInspectorTab === "style" ? "flex min-h-0 flex-1 flex-col overflow-hidden" : "hidden"}>
                       {selectedItem ? (
                         <ScreenStyleInspector
                           item={selectedItem}
@@ -1572,7 +1594,7 @@ const Screen = forwardRef<ScreenRef, ScreenProps>(({ selectedScreen, shareMode =
                         />
                       ) : null}
                     </div>
-                    <div className={inspectorTab === "style" ? "hidden" : "flex min-h-0 flex-1 flex-col overflow-hidden"}>
+                    <div className={activeInspectorTab === "style" ? "hidden" : "flex min-h-0 flex-1 flex-col overflow-hidden"}>
                       {dataConfigPanel}
                     </div>
                   </div>

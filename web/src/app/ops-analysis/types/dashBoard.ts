@@ -24,6 +24,7 @@ import type {
 import type { Application3DWallConfig } from '@/app/ops-analysis/utils/application3DWallConfig';
 import type { OpsAnalysisWidgetSurface } from '@/app/ops-analysis/utils/chartTypeSurface';
 import type { DateRangeValue } from './dateRange';
+import type { SingleValueStyleConfig } from '@/app/ops-analysis/utils/singleValueStyle';
 
 export type FilterType = 'selector' | 'fixed';
 
@@ -176,6 +177,8 @@ export interface ValueConfig {
   actions?: DashboardActionConfig[];
   interaction?: WidgetInteractionLink;
   appearance?: ScreenWidgetAppearance;
+  /** 单值样式。缺省字段保持旧外观，不需要迁移。 */
+  singleStyle?: SingleValueStyleConfig;
 }
 
 export type ScreenWidgetFrame = 'panel' | 'bare';
@@ -275,11 +278,13 @@ export interface ViewConfigProps {
   surface?: OpsAnalysisWidgetSurface;
   /** 拓扑不插入统一筛选变量，名称和描述保持普通输入框。 */
   filterTemplateTokens?: boolean;
+  /** 拓扑图表节点不提供单值样式。仪表盘和大屏默认开启。 */
+  showSingleValueStyle?: boolean;
   variant?: 'drawer' | 'panel';
-  /** 大屏检查器切换数据/交互时复用同一份表单。 */
-  configSection?: 'data' | 'interaction';
+  /** 大屏检查器切换数据/样式/交互时复用同一份表单。 */
+  configSection?: 'data' | 'interaction' | 'singleStyle';
   /** 面板模式的页签在外部，交互校验失败时切回交互页。 */
-  onConfigSectionChange?: (section: 'data' | 'interaction') => void;
+  onConfigSectionChange?: (section: 'data' | 'interaction' | 'singleStyle') => void;
   /** 大屏当前容器样式。样式页切换时单独传入，避免整表重开。 */
   screenFrame?: ScreenWidgetFrame;
   onDirtyChange?: (dirty: boolean) => void;

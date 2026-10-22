@@ -45,6 +45,13 @@ import {
   scaleScreenMetric,
   scaleScreenMetricFloat,
 } from './shared/screenMetrics';
+import { getModelIconUrl } from '@/app/cmdb/utils/modelIcon';
+import {
+  readSingleValueStyle,
+  resolveSingleValueIconBox,
+  resolveSingleValueIconSrc,
+  type SingleValueContentAlign,
+} from '@/app/ops-analysis/utils/singleValueStyle';
 
 const MAX_SPARKLINE_POINTS = 24;
 const UNIT_FONT_SCALE = 0.48;
@@ -180,7 +187,11 @@ const ComSingle: React.FC<ComSingleProps> = ({
   const chartTheme = getOpsChartThemeByMode(config?.chartThemeMode);
   const usesScreenTheme = isScreenChartThemeMode(config?.chartThemeMode);
   const contentAreaRef = useRef<HTMLDivElement>(null);
+  const iconRowRef = useRef<HTMLDivElement>(null);
+  const textMeasureRef = useRef<HTMLSpanElement>(null);
   const [contentAreaHeight, setContentAreaHeight] = useState(0);
+  const [iconRowWidth, setIconRowWidth] = useState(0);
+  const [valueTextWidth, setValueTextWidth] = useState(0);
 
   const selectedField = config?.selectedFields?.[0];
   const { active: dataLinkActive, openPoint, hoverHint } = useWidgetDataLink(config);
@@ -323,6 +334,7 @@ const ComSingle: React.FC<ComSingleProps> = ({
       spacing: metaSpacing,
     },
     mainSlotHeight,
+    targetMainFontSize,
   } = resolveSingleValueMetaLayout({
     contentAreaHeight,
     sparklineHeight,
@@ -368,6 +380,73 @@ const ComSingle: React.FC<ComSingleProps> = ({
     }),
     [sparklineTrendColor],
   );
+  const singleStyle = readSingleValueStyle(config?.singleStyle);
+  const iconSrc = resolveSingleValueIconSrc(singleStyle, (iconKey) =>
+    getModelIconUrl({ icn: iconKey, model_id: '' }),
+  );
+  const iconBox = resolveSingleValueIconBox({
+    rowWidth: iconRowWidth,
+    fontSize: targetMainFontSize,
+    textWidth: valueTextWidth,
+    size: singleStyle.iconSize,
+  });
+  const iconVisible = Boolean(iconSrc) && iconBox.visible;
+  const valueAlign: SingleValueContentAlign =
+    singleStyle.align ?? (usesScreenTheme ? 'center' : 'left');
+  const metaAlign: SingleValueContentAlign = singleStyle.align ?? 'left';
+  const valueJustifyClass =
+    valueAlign === 'center'
+      ? 'justify-center'
+      : valueAlign === 'right'
+        ? 'justify-end'
+        : 'justify-start';
+  const metaJustifyClass =
+    metaAlign === 'center'
+      ? 'justify-center'
+      : metaAlign === 'right'
+        ? 'justify-end'
+        : '';
+  const metaTextAlign =
+    metaAlign === 'center' ? 'center' : metaAlign === 'right' ? 'right' : undefined;
+  const metricJustifyClass = iconVisible
+    ? 'justify-start'
+    : valueAlign === 'center'
+      ? 'justify-center'
+      : valueAlign === 'right'
+        ? 'justify-end'
+        : '';
+  const valueSlotWidth =
+    iconVisible && iconRowWidth > 0 && valueTextWidth > 0
+      ? Math.min(
+        valueTextWidth,
+        Math.max(0, iconRowWidth - iconBox.size - iconBox.gap),
+      )
+      : undefined;
+
+  useLayoutEffect(() => {
+    const row = iconRowRef.current;
+    if (!row) return undefined;
+
+    let frameId = 0;
+    const updateIconBox = () => {
+      const nextRow = row.clientWidth;
+      const nextText = textMeasureRef.current?.offsetWidth ?? 0;
+      setIconRowWidth((prev) => (prev === nextRow ? prev : nextRow));
+      setValueTextWidth((prev) => (prev === nextText ? prev : nextText));
+    };
+
+    updateIconBox();
+    const observer = new ResizeObserver(() => {
+      cancelAnimationFrame(frameId);
+      frameId = requestAnimationFrame(updateIconBox);
+    });
+    observer.observe(row);
+    return () => {
+      cancelAnimationFrame(frameId);
+      observer.disconnect();
+    };
+  }, [isDataReady, loading, shownMainValue, targetMainFontSize, unitLabel]);
+
   const sparklineOption = useMemo(
     () => ({
       animation: false,
@@ -429,6 +508,12 @@ const ComSingle: React.FC<ComSingleProps> = ({
         ref={contentAreaRef}
         className="flex min-h-0 flex-1 flex-col"
       >
+        <div
+          data-testid="single-value-body"
+          data-value-align={valueAlign}
+          data-meta-align={metaAlign}
+          className="flex min-h-0 flex-1 flex-col"
+        >
         <div className="flex min-h-0 flex-1 flex-col justify-center">
           <div
             className={
@@ -440,28 +525,86 @@ const ComSingle: React.FC<ComSingleProps> = ({
               mainSlotHeight == null ? undefined : { height: mainSlotHeight }
             }
           >
-            <OpsAnalysisMetricValue
-              main={shownMainValue}
-              unit={unitLabel || undefined}
-              color={metricColor}
-              unitColor={toAlphaColor(metricColor, 0.78)}
-              className={
-                usesScreenTheme
-                  ? 'items-center justify-center'
-                  : 'items-center'
-              }
-              valueClassName="font-semibold"
-              unitClassName="font-medium"
-              fontVariantNumeric="tabular-nums"
-              textShadow={chartTheme.singleValueGlow}
-              unitScale={UNIT_FONT_SCALE}
-              unitTransform="translateY(-0.02em)"
-              heightFillRatio={
-                hasDescription
-                  ? SINGLE_META_TYPOGRAPHY.groupedMetricHeightFillRatio
-                  : undefined
-              }
-            />
+            <div
+              ref={iconRowRef}
+              className={`relative flex h-full w-full items-center ${valueJustifyClass}`}
+            >
+              <span
+                ref={textMeasureRef}
+                aria-hidden
+                className="pointer-events-none absolute whitespace-nowrap font-semibold opacity-0"
+                style={{
+                  fontSize: targetMainFontSize,
+                  fontVariantNumeric: 'tabular-nums',
+                }}
+              >
+                {shownMainValue}
+                {unitLabel ? (
+                  <span
+                    style={{
+                      fontSize: `${UNIT_FONT_SCALE}em`,
+                      marginLeft: '0.14em',
+                    }}
+                  >
+                    {unitLabel}
+                  </span>
+                ) : null}
+              </span>
+              <div
+                className={`flex h-full min-w-0 items-center ${
+                  iconVisible && valueSlotWidth != null ? 'max-w-full' : 'w-full'
+                }`}
+                style={{ gap: iconVisible ? iconBox.gap : 0 }}
+              >
+                {iconVisible && singleStyle.iconPosition === 'left' && iconSrc ? (
+                  <img
+                    src={iconSrc}
+                    alt=""
+                    data-testid="single-value-icon"
+                    draggable={false}
+                    className="shrink-0 object-contain"
+                    style={{ width: iconBox.size, height: iconBox.size }}
+                  />
+                ) : null}
+                <div
+                  className="h-full min-w-0"
+                  style={
+                    valueSlotWidth == null
+                      ? { flex: '1 1 auto', maxWidth: '100%' }
+                      : { width: valueSlotWidth, flex: '0 0 auto', maxWidth: '100%' }
+                  }
+                >
+                  <OpsAnalysisMetricValue
+                    main={shownMainValue}
+                    unit={unitLabel || undefined}
+                    color={metricColor}
+                    unitColor={toAlphaColor(metricColor, 0.78)}
+                    className={`items-center ${metricJustifyClass}`}
+                    valueClassName="font-semibold"
+                    unitClassName="font-medium"
+                    fontVariantNumeric="tabular-nums"
+                    textShadow={chartTheme.singleValueGlow}
+                    unitScale={UNIT_FONT_SCALE}
+                    unitTransform="translateY(-0.02em)"
+                    heightFillRatio={
+                      hasDescription
+                        ? SINGLE_META_TYPOGRAPHY.groupedMetricHeightFillRatio
+                        : undefined
+                    }
+                  />
+                </div>
+                {iconVisible && singleStyle.iconPosition === 'right' && iconSrc ? (
+                  <img
+                    src={iconSrc}
+                    alt=""
+                    data-testid="single-value-icon"
+                    draggable={false}
+                    className="shrink-0 object-contain"
+                    style={{ width: iconBox.size, height: iconBox.size }}
+                  />
+                ) : null}
+              </div>
+            </div>
           </div>
 
           {descriptionText ? (
@@ -473,6 +616,7 @@ const ComSingle: React.FC<ComSingleProps> = ({
                 color: chartTheme.singleValueMetaColor,
                 fontSize: descriptionFontSize,
                 lineHeight: SINGLE_META_TYPOGRAPHY.descriptionLineHeight,
+                textAlign: metaTextAlign,
               }}
             >
               <div className="line-clamp-2 break-words" title={descriptionText}>
@@ -485,7 +629,7 @@ const ComSingle: React.FC<ComSingleProps> = ({
         {config?.compare && (
           <div
             data-testid="single-compare"
-            className="flex w-full min-w-0 shrink-0 flex-nowrap items-center gap-1 overflow-hidden"
+            className={`flex w-full min-w-0 shrink-0 flex-nowrap items-center gap-1 overflow-hidden ${metaJustifyClass}`}
             style={{
               marginTop: metaSpacing,
               color: chartTheme.singleValueMetaColor,
@@ -513,6 +657,7 @@ const ComSingle: React.FC<ComSingleProps> = ({
             </span>
           </div>
         )}
+        </div>
 
         {showSparkline ? (
           <div

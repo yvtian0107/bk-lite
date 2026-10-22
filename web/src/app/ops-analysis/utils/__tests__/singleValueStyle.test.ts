@@ -1,0 +1,160 @@
+import assert from 'node:assert/strict';
+import test from 'node:test';
+import {
+  SINGLE_VALUE_ICON_FONT_RATIO,
+  isSingleValueIconDataUrl,
+  persistSingleValueStyle,
+  readSingleValueStyle,
+  resolveSingleValueIconBox,
+  resolveSingleValueIconSrc,
+  validateSingleValueIconFile,
+} from '../singleValueStyle';
+
+test('missing style keeps the legacy defaults', () => {
+  const style = readSingleValueStyle(undefined);
+  assert.equal(style.showIcon, false);
+  assert.equal(style.iconPosition, 'left');
+  assert.equal(style.iconSize, 'medium');
+  assert.equal(style.align, undefined);
+  assert.equal(persistSingleValueStyle(undefined), undefined);
+  assert.equal(
+    persistSingleValueStyle({ showIcon: false, align: 'left', iconPosition: 'left' }),
+    undefined,
+  );
+});
+
+test('persist keeps an enabled icon and drops invalid images', () => {
+  const stored = persistSingleValueStyle({
+    showIcon: true,
+    iconSource: 'upload',
+    iconImage: 'data:image/png;base64,abc',
+    iconPosition: 'right',
+    iconSize: 'large',
+    align: 'center',
+  });
+  assert.deepEqual(stored, {
+    showIcon: true,
+    iconSource: 'upload',
+    iconImage: 'data:image/png;base64,abc',
+    iconPosition: 'right',
+    iconSize: 'large',
+    align: 'center',
+  });
+  assert.equal(
+    persistSingleValueStyle({
+      showIcon: true,
+      iconSource: 'upload',
+      iconImage: 'https://example.com/a.png',
+    })?.iconImage,
+    undefined,
+  );
+});
+
+test('untouched left alignment is not written unless it was already explicit', () => {
+  assert.equal(
+    persistSingleValueStyle({ align: 'left' }, { alignTouched: false })?.align,
+    undefined,
+  );
+  assert.equal(
+    persistSingleValueStyle({ align: 'left' }, { alignTouched: true })?.align,
+    'left',
+  );
+  assert.equal(
+    persistSingleValueStyle(
+      { align: 'left' },
+      { previousAlign: 'left' },
+    )?.align,
+    'left',
+  );
+});
+
+test('icon file accepts png jpg webp svg within 100KB', () => {
+  assert.equal(validateSingleValueIconFile({ name: 'a.png', type: 'image/png', size: 100 }), null);
+  assert.equal(validateSingleValueIconFile({ name: 'a.jpg', type: 'image/jpeg', size: 100 }), null);
+  assert.equal(validateSingleValueIconFile({ name: 'a.webp', type: '', size: 100 }), null);
+  assert.equal(validateSingleValueIconFile({ name: 'a.svg', type: 'image/svg+xml', size: 100 }), null);
+  assert.equal(validateSingleValueIconFile({ name: 'a.gif', type: 'image/gif', size: 100 }), 'type');
+  assert.equal(
+    validateSingleValueIconFile({ name: 'a.png', type: 'image/png', size: 100 * 1024 + 1 }),
+    'size',
+  );
+  assert.equal(isSingleValueIconDataUrl('data:image/webp;base64,xx'), true);
+  assert.equal(isSingleValueIconDataUrl('data:text/plain,xx'), false);
+});
+
+test('builtin icon needs a key and upload icon needs a data url', () => {
+  const resolveBuiltin = (iconKey: string) => `/assets/${iconKey}.svg`;
+  assert.equal(
+    resolveSingleValueIconSrc(readSingleValueStyle({ showIcon: true }), resolveBuiltin),
+    null,
+  );
+  assert.equal(
+    resolveSingleValueIconSrc(
+      readSingleValueStyle({ showIcon: true, iconKey: 'cc-host' }),
+      resolveBuiltin,
+    ),
+    '/assets/cc-host.svg',
+  );
+  assert.equal(
+    resolveSingleValueIconSrc(
+      readSingleValueStyle({
+        showIcon: true,
+        iconSource: 'upload',
+        iconImage: 'data:image/svg+xml;base64,abc',
+      }),
+      resolveBuiltin,
+    ),
+    'data:image/svg+xml;base64,abc',
+  );
+  assert.equal(
+    resolveSingleValueIconSrc(
+      readSingleValueStyle({ showIcon: false, iconKey: 'cc-host' }),
+      resolveBuiltin,
+    ),
+    null,
+  );
+});
+
+test('icon tracks the value font, then shrinks and hides when the row is narrow', () => {
+  const fontSize = 40;
+  const textWidth = 120;
+  const medium = SINGLE_VALUE_ICON_FONT_RATIO.medium * fontSize;
+  assert.deepEqual(
+    resolveSingleValueIconBox({ rowWidth: 0, fontSize, textWidth, size: 'medium' }).visible,
+    true,
+  );
+  const wide = resolveSingleValueIconBox({
+    rowWidth: 400,
+    fontSize,
+    textWidth,
+    size: 'medium',
+  });
+  assert.equal(wide.visible, true);
+  assert.equal(wide.size, medium);
+
+  const large = resolveSingleValueIconBox({
+    rowWidth: 400,
+    fontSize: 80,
+    textWidth,
+    size: 'large',
+  });
+  assert.ok(large.size > medium);
+
+  const tight = resolveSingleValueIconBox({
+    rowWidth: textWidth + 25 + fontSize * 0.18,
+    fontSize,
+    textWidth,
+    size: 'medium',
+  });
+  assert.equal(tight.visible, true);
+  assert.ok(tight.size < medium);
+
+  const hidden = resolveSingleValueIconBox({
+    rowWidth: textWidth + 4,
+    fontSize,
+    textWidth,
+    size: 'small',
+  });
+  assert.equal(hidden.visible, false);
+  assert.equal(hidden.size, 0);
+});
