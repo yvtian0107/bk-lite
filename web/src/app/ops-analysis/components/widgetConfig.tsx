@@ -63,6 +63,7 @@ import {
   ConfigSectionTitle,
   DataSectionTabIcon,
   InteractionSectionTabIcon,
+  StyleSectionTabIcon,
 } from './widgetConfig/configTitles';
 import { useTableConfig } from './widgetConfig/hooks/useTableConfig';
 import { TableSettingsSection } from './widgetConfig/sections/tableSettingsSection';
@@ -71,6 +72,7 @@ import { NodeGraphSettingsSection } from './widgetConfig/sections/nodeGraphSetti
 import { GaugeSettingsSection } from './widgetConfig/sections/gaugeSettingsSection';
 import { RadarSettingsSection } from './widgetConfig/sections/radarSettingsSection';
 import { CardListSettingsSection } from './widgetConfig/sections/cardListSettingsSection';
+import { SingleValueStyleSection } from './widgetConfig/sections/singleValueStyleSection';
 import { WidgetConfigBasicFields } from './widgetConfig/sections/widgetConfigBasicFields';
 import { WidgetDatasourceChartTypeFields } from './widgetConfig/sections/widgetDatasourceChartTypeFields';
 import { NetworkStatusTopologyDataFields } from './widgetConfig/sections/networkStatusTopologyDataFields';
@@ -174,6 +176,7 @@ const ViewConfig: React.FC<ViewConfigPropsWithManager> = ({
   showChartThemeMode = false,
   surface = 'dashboard',
   filterTemplateTokens = true,
+  showSingleValueStyle = true,
   variant = 'drawer',
   configSection,
   onConfigSectionChange,
@@ -186,7 +189,7 @@ const ViewConfig: React.FC<ViewConfigPropsWithManager> = ({
   const [form] = Form.useForm();
   const handleClose = () => guardClose(form.isFieldsTouched(), onClose);
   const [chartType, setChartType] = useState<string>('');
-  const [drawerSection, setDrawerSection] = useState<'data' | 'interaction'>('data');
+  const [drawerSection, setDrawerSection] = useState<'data' | 'interaction' | 'singleStyle'>('data');
   const activeSection = variant === 'panel' ? (configSection ?? 'data') : drawerSection;
   const [filterBindings, setFilterBindings] = useState<FilterBindings>({});
   const [dataSourceSelectorVisible, setDataSourceSelectorVisible] = useState(false);
@@ -732,6 +735,13 @@ const ViewConfig: React.FC<ViewConfigPropsWithManager> = ({
     if (newChartType === 'nodeGraph' && !form.getFieldValue('nodeGraphIdentityMode')) {
       form.setFieldValue('nodeGraphIdentityMode', 'ip');
     }
+    if (newChartType !== 'single' && activeSection === 'singleStyle') {
+      if (variant === 'panel') {
+        onConfigSectionChange?.('data');
+      } else {
+        setDrawerSection('data');
+      }
+    }
     if (surface === 'screen') {
       form.setFieldValue(
         'appearance',
@@ -1205,6 +1215,7 @@ const ViewConfig: React.FC<ViewConfigPropsWithManager> = ({
       filterBindings,
       displayColumns: tableConfig.displayColumns,
       filterFields: tableConfig.filterFields,
+      includeSingleStyle: showSingleValueStyle,
     });
   }, [
     chartType,
@@ -1212,6 +1223,7 @@ const ViewConfig: React.FC<ViewConfigPropsWithManager> = ({
     form,
     hydrateWidgetFormValues,
     showChartThemeMode,
+    showSingleValueStyle,
     showTableFilterFields,
     singleValueConfig.selectedFields,
     singleValueConfig.thresholdColors,
@@ -1316,6 +1328,7 @@ const ViewConfig: React.FC<ViewConfigPropsWithManager> = ({
         filterBindings,
         displayColumns: tableConfig.displayColumns,
         filterFields: tableConfig.filterFields,
+        includeSingleStyle: showSingleValueStyle,
       });
 
       if (submitResult.error) {
@@ -1451,7 +1464,7 @@ const ViewConfig: React.FC<ViewConfigPropsWithManager> = ({
           <Tabs
             className="-mt-3 [&_.ant-tabs-content-holder]:hidden [&_.ant-tabs-nav]:mb-4 [&_.ant-tabs-nav::before]:border-(--color-border-1) [&_.ant-tabs-tab-btn]:text-sm [&_.ant-tabs-tab-active_.ant-tabs-tab-btn]:text-(--color-primary) [&_.ant-tabs-ink-bar]:h-0.5 [&_.ant-tabs-ink-bar]:bg-(--color-primary)"
             activeKey={activeSection}
-            onChange={(key) => setDrawerSection(key as 'data' | 'interaction')}
+            onChange={(key) => setDrawerSection(key as 'data' | 'interaction' | 'singleStyle')}
             items={[
               {
                 key: 'data',
@@ -1461,6 +1474,16 @@ const ViewConfig: React.FC<ViewConfigPropsWithManager> = ({
                   </ConfigSectionTabLabel>
                 ),
               },
+              ...(chartType === 'single' && showSingleValueStyle
+                ? [{
+                  key: 'singleStyle',
+                  label: (
+                    <ConfigSectionTabLabel icon={<StyleSectionTabIcon />}>
+                      {t('dashboard.singleStyleTab', '样式')}
+                    </ConfigSectionTabLabel>
+                  ),
+                }]
+                : []),
               {
                 key: 'interaction',
                 label: (
@@ -1734,6 +1757,12 @@ const ViewConfig: React.FC<ViewConfigPropsWithManager> = ({
           </WidgetDatasourceChartTypeFields>
         )}
         </div>
+
+        {chartType === 'single' && showSingleValueStyle ? (
+          <div className={activeSection === 'singleStyle' ? undefined : 'hidden'}>
+            <SingleValueStyleSection t={t} />
+          </div>
+        ) : null}
 
         <div className={activeSection === 'interaction' ? undefined : 'hidden'}>
           <InteractionLinkSection
