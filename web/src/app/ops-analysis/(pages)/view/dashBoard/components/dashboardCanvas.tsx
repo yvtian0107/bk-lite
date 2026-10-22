@@ -63,12 +63,17 @@ import type { DashboardRuntimeScheduler, RuntimeRequestPriority } from '@/app/op
 
 import 'gridstack/dist/gridstack.min.css';
 import type { DashboardWidgetRenderResult } from '@/app/ops-analysis/renderContract';
+import {
+  DASHBOARD_HIDE_EW_EDGE_CLASS,
+  DASHBOARD_HIDE_NS_EDGE_CLASS,
+  syncDashboardEdgeHandleVisibility,
+} from './dashboardEdgeHandles';
 
 const DASHBOARD_GRID_COLS = 12;
 const DASHBOARD_GRID_ROW_HEIGHT = 60;
 const DASHBOARD_GRID_MARGIN: [number, number] = [4, 4];
 const DASHBOARD_GRID_CONTAINER_PADDING: [number, number] = [6, 2];
-const DASHBOARD_WIDGET_RESIZE_HANDLES = 'se,sw,ne,nw';
+const DASHBOARD_WIDGET_RESIZE_HANDLES = 'se,sw,ne,nw,n,e,s,w';
 const DASHBOARD_WIDGET_RESIZE_HANDLE_SIZE = 14;
 
 const acceptOnlyWidgetNodes = (element: Element) =>
@@ -894,6 +899,27 @@ const DashboardCanvas: React.FC<DashboardCanvasProps> = ({
     }
 
     let cancelled = false;
+    let edgeResizeObserver: ResizeObserver | null = null;
+    let edgeGridObserver: MutationObserver | null = null;
+
+    const syncEdgeHandles = () => {
+      const root = gridRootRef.current;
+      if (!root) return;
+      syncDashboardEdgeHandleVisibility(root);
+    };
+
+    const observeEdgeHandleItems = () => {
+      const root = gridRootRef.current;
+      if (!root || !edgeResizeObserver) return;
+      root.querySelectorAll<HTMLElement>('.grid-stack').forEach((grid) => {
+        grid
+          .querySelectorAll<HTMLElement>(':scope > .grid-stack-item')
+          .forEach((item) => {
+            edgeResizeObserver?.observe(item);
+          });
+      });
+      syncEdgeHandles();
+    };
 
     const destroyGrids = () => {
       subGridRefs.current.forEach((grid) => grid.destroy(false));
@@ -1001,6 +1027,9 @@ const DashboardCanvas: React.FC<DashboardCanvasProps> = ({
             emitLayoutChangeRef.current();
           }
         });
+        grid.on('resize', () => {
+          syncEdgeHandles();
+        });
         grid.on(
           'resizestop',
           (_event: Event, element: GridItemHTMLElement) => {
@@ -1093,6 +1122,21 @@ const DashboardCanvas: React.FC<DashboardCanvasProps> = ({
 
       setPortalVersion((previous) => previous + 1);
 
+      if (typeof ResizeObserver !== 'undefined' && gridRootRef.current) {
+        edgeResizeObserver = new ResizeObserver(() => {
+          syncEdgeHandles();
+        });
+        edgeGridObserver = new MutationObserver(() => {
+          observeEdgeHandleItems();
+        });
+        gridRootRef.current
+          .querySelectorAll<HTMLElement>('.grid-stack')
+          .forEach((grid) => {
+            edgeGridObserver?.observe(grid, { childList: true });
+          });
+        observeEdgeHandleItems();
+      }
+
       scheduleScrollRestore(() => cancelled);
     };
 
@@ -1101,6 +1145,8 @@ const DashboardCanvas: React.FC<DashboardCanvasProps> = ({
     return () => {
       cancelled = true;
       syncingRef.current = true;
+      edgeResizeObserver?.disconnect();
+      edgeGridObserver?.disconnect();
       if (commitFrameRef.current !== null) {
         window.cancelAnimationFrame(commitFrameRef.current);
         commitFrameRef.current = null;
@@ -1359,6 +1405,57 @@ const DashboardCanvas: React.FC<DashboardCanvasProps> = ({
           transform: rotate(270deg);
         }
 
+        .grid-stack-item > .ui-resizable-n,
+        .grid-stack-item > .ui-resizable-s {
+          width: ${DASHBOARD_WIDGET_RESIZE_HANDLE_SIZE}px !important;
+          height: ${DASHBOARD_WIDGET_RESIZE_HANDLE_SIZE}px !important;
+          left: 50% !important;
+          right: auto !important;
+          margin-left: calc(${DASHBOARD_WIDGET_RESIZE_HANDLE_SIZE}px / -2) !important;
+          cursor: ns-resize !important;
+        }
+
+        .grid-stack-item > .ui-resizable-n {
+          top: var(--gs-item-margin-top) !important;
+          bottom: auto !important;
+          transform: rotate(180deg);
+        }
+
+        .grid-stack-item > .ui-resizable-s {
+          top: auto !important;
+          bottom: var(--gs-item-margin-bottom) !important;
+          transform: rotate(0deg);
+        }
+
+        .grid-stack-item > .ui-resizable-e,
+        .grid-stack-item > .ui-resizable-w {
+          width: ${DASHBOARD_WIDGET_RESIZE_HANDLE_SIZE}px !important;
+          height: ${DASHBOARD_WIDGET_RESIZE_HANDLE_SIZE}px !important;
+          top: 50% !important;
+          bottom: auto !important;
+          margin-top: calc(${DASHBOARD_WIDGET_RESIZE_HANDLE_SIZE}px / -2) !important;
+          cursor: ew-resize !important;
+        }
+
+        .grid-stack-item > .ui-resizable-e {
+          right: calc(var(--gs-item-margin-right) + 2px) !important;
+          left: auto !important;
+          transform: rotate(270deg);
+        }
+
+        .grid-stack-item > .ui-resizable-w {
+          left: calc(var(--gs-item-margin-left) + 2px) !important;
+          right: auto !important;
+          transform: rotate(90deg);
+        }
+
+        .grid-stack-item.${DASHBOARD_HIDE_NS_EDGE_CLASS} > .ui-resizable-n,
+        .grid-stack-item.${DASHBOARD_HIDE_NS_EDGE_CLASS} > .ui-resizable-s,
+        .grid-stack-item.${DASHBOARD_HIDE_EW_EDGE_CLASS} > .ui-resizable-e,
+        .grid-stack-item.${DASHBOARD_HIDE_EW_EDGE_CLASS} > .ui-resizable-w {
+          display: none !important;
+        }
+
         .grid-stack-item[data-node-kind='group'] > .ui-resizable-handle {
           display: none !important;
         }
@@ -1366,13 +1463,6 @@ const DashboardCanvas: React.FC<DashboardCanvasProps> = ({
         .dark .grid-stack-item > .ui-resizable-handle,
         [data-theme='dark'] .grid-stack-item > .ui-resizable-handle {
           filter: invert(1) opacity(0.65);
-        }
-
-        .grid-stack-item > .ui-resizable-n,
-        .grid-stack-item > .ui-resizable-e,
-        .grid-stack-item > .ui-resizable-s,
-        .grid-stack-item > .ui-resizable-w {
-          display: none !important;
         }
       `}</style>
       <div ref={gridRootRef} className="grid-stack relative z-10 w-full" />
