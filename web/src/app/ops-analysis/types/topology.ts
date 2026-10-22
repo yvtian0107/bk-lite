@@ -359,6 +359,7 @@ export interface ViewConfigFormValues {
   valueMappings?: import('@/app/ops-analysis/utils/valueMapping').ValueMapping[];
   tableConfig?: TableConfig;
   interaction?: import('@/app/ops-analysis/types/dashBoard').ValueConfig['interaction'];
+  singleStyle?: ValueConfig['singleStyle'];
 }
 
 // 节点配置表单值类型

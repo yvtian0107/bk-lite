@@ -42,7 +42,7 @@ export interface ScreenEditDocument {
 
 export interface ScreenEditInspector {
   selectedItemId: string | null;
-  inspectorTab: 'style' | 'data' | 'interaction';
+  inspectorTab: 'style' | 'data' | 'singleStyle' | 'interaction';
   dataConfigOpen: boolean;
 }
 

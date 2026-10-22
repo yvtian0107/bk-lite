@@ -245,6 +245,9 @@ export const buildValueConfig = (
     valueConfig.compareMode = values.compareMode || 'percent';
     valueConfig.selectedFields = values.selectedFields;
     valueConfig.thresholdColors = values.thresholdColors;
+    if (values.singleStyle) {
+      valueConfig.singleStyle = values.singleStyle;
+    }
   }
   if (values.chartType === 'gauge') {
     valueConfig.selectedFields = values.selectedFields;

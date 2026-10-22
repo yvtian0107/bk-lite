@@ -39,6 +39,11 @@ import {
   resolveApplication3DWallConfig,
   type Application3DWallConfig,
 } from '@/app/ops-analysis/utils/application3DWallConfig';
+import {
+  persistSingleValueStyle,
+  type SingleValueContentAlign,
+  type SingleValueStyleConfig,
+} from '@/app/ops-analysis/utils/singleValueStyle';
 
 export interface WidgetConfigFormValues {
   name: string;
@@ -95,6 +100,7 @@ export interface WidgetConfigFormValues {
     layout?: 'list' | 'grid';
   };
   actions?: DashboardActionConfig[];
+  singleStyle?: SingleValueStyleConfig;
   interaction?: {
     kind: 'none' | 'title' | 'data';
     name: string;
@@ -145,6 +151,9 @@ export interface BuildWidgetSubmitConfigInput {
   actions?: DashboardActionConfig[];
   /** 预览组装：映射与提交相同，但不因未填必填项拦截。 */
   forPreview?: boolean;
+  /** 用户改过单值对齐。未改时不把表单默认「左」写进配置。 */
+  singleStyleAlignTouched?: boolean;
+  previousSingleStyleAlign?: SingleValueContentAlign;
 }
 
 export interface BuildWidgetSubmitConfigResult {
@@ -364,6 +373,10 @@ const applySingleValueConfig = (
   values: WidgetConfigFormValues,
   selectedFields: string[],
   thresholdColors: ThresholdColorConfig[],
+  styleOptions?: {
+    alignTouched?: boolean;
+    previousAlign?: SingleValueContentAlign;
+  },
 ) => {
   result.selectedFields = selectedFields;
   result.thresholdColors = thresholdColors;
@@ -375,6 +388,12 @@ const applySingleValueConfig = (
   }
   applyValueFormatFields(result, values);
   result.valueMappings = values.valueMappings || undefined;
+  // 显式写入，包含 undefined。大屏保存是旧配置展开后再盖上本次提交，
+  // 缺省字段必须占位，才能把已保存的图标或对齐清掉。
+  result.singleStyle = persistSingleValueStyle(values.singleStyle, {
+    alignTouched: styleOptions?.alignTouched,
+    previousAlign: styleOptions?.previousAlign,
+  });
 };
 
 const trimOptionalField = (value?: string) => {
@@ -463,6 +482,16 @@ export const omitForeignChartTypeFields = <T extends object>(
     delete next.cardList;
   }
   delete next.actions;
+  if (chartType !== 'single') {
+    delete next.singleStyle;
+  } else if (
+    !next.singleStyle
+    || typeof next.singleStyle !== 'object'
+    || Array.isArray(next.singleStyle)
+    || Object.keys(next.singleStyle).length === 0
+  ) {
+    delete next.singleStyle;
+  }
   if (chartType === 'multiValue') {
     if (!Array.isArray(next.thresholdColors) || next.thresholdColors.length === 0) {
       delete next.thresholdColors;
@@ -593,6 +622,8 @@ export const buildWidgetSubmitConfig = ({
   displayColumns,
   filterFields,
   forPreview = false,
+  singleStyleAlignTouched = false,
+  previousSingleStyleAlign,
 }: BuildWidgetSubmitConfigInput): BuildWidgetSubmitConfigResult => {
   if (values.sceneWidgetType) {
     if (values.sceneWidgetType === 'relatedTopology' && !forPreview) {
@@ -640,7 +671,10 @@ export const buildWidgetSubmitConfig = ({
   applyInteractionLink(result, values, chartType);
 
   if (chartType === 'single') {
-    applySingleValueConfig(result, values, selectedFields, thresholdColors);
+    applySingleValueConfig(result, values, selectedFields, thresholdColors, {
+      alignTouched: singleStyleAlignTouched,
+      previousAlign: previousSingleStyleAlign,
+    });
   }
 
   if (chartType === 'gauge') {
