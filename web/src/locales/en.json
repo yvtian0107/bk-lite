@@ -178,6 +178,7 @@
     "homepagePinWorkbench": "Pin to the console",
     "homepagePinWorkbenchHint": "Always open the app console after sign-in",
     "homepageDashboardSettings": "Go to dashboard settings",
+    "homepageDashboardSettingsHint": "Choose or change your personal dashboard homepage",
     "homepagePersonalDashboardFallback": "Personal dashboard homepage is set",
     "notFound": "We can't seem to find the page you're looking for.",
     "backToHome": "Back to Home",

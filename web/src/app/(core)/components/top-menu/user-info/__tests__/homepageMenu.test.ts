@@ -30,6 +30,7 @@ describe('homepage menu copy', () => {
     'homepagePinWorkbench',
     'homepagePinWorkbenchHint',
     'homepageDashboardSettings',
+    'homepageDashboardSettingsHint',
     'homepagePersonalDashboardFallback',
   ] as const;
 
@@ -45,6 +46,7 @@ describe('homepage menu copy', () => {
     expect(zh.common.homepagePinWorkbench).toBe('固定为控制台');
     expect(zh.common.homepagePinWorkbenchHint).toBe('登录后始终进入应用控制台');
     expect(zh.common.homepageDashboardSettings).toBe('前往仪表盘设置');
+    expect(zh.common.homepageDashboardSettingsHint).toBe('选择或更换个人仪表盘首页');
     expect(zh.common.homepagePersonalDashboardFallback).toBe('已设个人仪表盘首页');
   });
 });

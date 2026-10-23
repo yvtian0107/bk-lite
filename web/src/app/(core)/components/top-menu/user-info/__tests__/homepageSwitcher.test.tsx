@@ -155,9 +155,13 @@ describe('HomepageSwitcher', () => {
         onOpenSettings={vi.fn()}
       />,
     );
+    expect(screen.getByTestId('homepage-panel-title').textContent).toBe('common.homepage');
+    expect(screen.getByTestId('homepage-option-icon-follow')).toBeTruthy();
+    expect(screen.getByTestId('homepage-option-icon-workbench')).toBeTruthy();
     const radios = screen.getAllByRole('radio');
     expect(radios).toHaveLength(2);
     expect(radios.every((radio) => radio.getAttribute('aria-checked') === 'false')).toBe(true);
+    expect(screen.getByTestId('homepage-dashboard-settings').getAttribute('role')).toBeNull();
     expect(screen.getByTestId('homepage-personal-dashboard-caption').textContent).toBe('业务大盘');
     expect(screen.getByRole('radio', { name: 'common.homepageFollowGlobal' }).textContent)
       .toContain('common.homepageFollowGlobalCurrent:运维总览');
@@ -180,6 +184,8 @@ describe('HomepageSwitcher', () => {
       </div>,
     );
     expect(screen.getByRole('radio', { name: 'common.homepageFollowGlobal' }).getAttribute('aria-checked')).toBe('true');
+    expect(screen.getByRole('radio', { name: 'common.homepageFollowGlobal' }).getAttribute('data-selected')).toBe('true');
+    expect(screen.getByRole('radio', { name: 'common.homepageFollowGlobal' }).className).toContain('bg-[var(--color-primary-bg-active)]');
     expect(screen.getByRole('radio', { name: 'common.homepagePinWorkbench' }).getAttribute('aria-checked')).toBe('false');
     expect(screen.queryByTestId('homepage-dashboard-settings')).toBeNull();
     expect(screen.getAllByRole('radio')).toHaveLength(2);

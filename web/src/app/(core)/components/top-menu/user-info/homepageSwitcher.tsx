@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { ExportOutlined, RightOutlined } from '@ant-design/icons';
+import { AppstoreOutlined, ExportOutlined, RightOutlined, SyncOutlined } from '@ant-design/icons';
 import { useRouter } from 'next/navigation';
 import { useHomepageApi } from '@/app/ops-analysis/api/homepage';
 import type { HomepagePreferenceState } from '@/app/ops-analysis/utils/homepageDirectoryActions';
@@ -235,12 +235,24 @@ export const HomepageSwitcherRow = ({ mode, onToggle }: HomepageSwitcherRowProps
 
 const RadioMark = ({ checked }: { checked: boolean }) => (
   <span
-    className={`mt-0.5 flex h-3.5 w-3.5 shrink-0 items-center justify-center rounded-full border ${
-      checked ? 'border-[var(--color-primary)]' : 'border-[var(--color-border-2)]'
+    className={`flex h-4 w-4 shrink-0 items-center justify-center rounded-full border ${
+      checked
+        ? 'border-[var(--color-primary)] bg-[var(--color-bg-1)]'
+        : 'border-[var(--color-border-3)] bg-[var(--color-bg-1)]'
     }`}
     aria-hidden
   >
     {checked ? <span className="h-2 w-2 rounded-full bg-[var(--color-primary)]" /> : null}
+  </span>
+);
+
+const OptionGlyph = ({ variant }: { variant: 'follow' | 'workbench' }) => (
+  <span
+    data-testid={variant === 'follow' ? 'homepage-option-icon-follow' : 'homepage-option-icon-workbench'}
+    className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-[var(--color-primary-bg)] text-[13px] text-[var(--color-primary)] ring-1 ring-[color-mix(in_srgb,var(--color-primary)_18%,transparent)]"
+    aria-hidden
+  >
+    {variant === 'follow' ? <SyncOutlined /> : <AppstoreOutlined />}
   </span>
 );
 
@@ -286,13 +298,23 @@ export const HomepageSwitcherPanel = ({
     },
   ];
 
+  const settingsHint = personalMode === 'dashboard'
+    ? dashboardCaption
+    : t('common.homepageDashboardSettingsHint');
+
   return (
     <div
       data-testid="homepage-switcher-panel"
-      className="w-72 py-1"
+      className="w-80"
       onClick={(event) => event.stopPropagation()}
     >
-      <div role="radiogroup" aria-label={t('common.homepage')}>
+      <div
+        data-testid="homepage-panel-title"
+        className="px-3 pb-1 pt-2.5 text-sm font-medium text-[var(--color-text-1)]"
+      >
+        {t('common.homepage')}
+      </div>
+      <div role="radiogroup" aria-label={t('common.homepage')} className="flex flex-col gap-0.5 px-1.5 pb-1.5">
         {options.map((option) => {
           const checked = homepageRadioChecked(personalMode, option.key);
           return (
@@ -302,14 +324,26 @@ export const HomepageSwitcherPanel = ({
               role="radio"
               aria-checked={checked}
               aria-label={option.title}
+              data-selected={checked ? 'true' : 'false'}
               disabled={applying}
-              className="flex w-full gap-2 px-3 py-2 text-left hover:bg-[var(--color-fill-1)] disabled:cursor-wait"
+              className={`flex w-full items-center gap-2 rounded-md px-1.5 py-1.5 text-left focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-[var(--color-primary)] disabled:cursor-wait ${
+                checked
+                  ? 'bg-[var(--color-primary-bg-active)]'
+                  : 'hover:bg-[var(--color-fill-1)]'
+              }`}
               onClick={option.onSelect}
             >
               <RadioMark checked={checked} />
-              <span className="min-w-0">
-                <span className="block text-sm text-[var(--color-text-1)]">{option.title}</span>
-                <span className="mt-0.5 block text-xs leading-snug text-[var(--color-text-3)]">
+              <OptionGlyph variant={option.key} />
+              <span className="min-w-0 flex-1">
+                <span
+                  className={`block truncate text-sm font-medium ${
+                    checked ? 'text-[var(--color-primary)]' : 'text-[var(--color-text-1)]'
+                  }`}
+                >
+                  {option.title}
+                </span>
+                <span className="mt-0.5 block text-[11px] leading-4 text-[var(--color-text-3)]">
                   {option.hint}
                 </span>
               </span>
@@ -322,23 +356,23 @@ export const HomepageSwitcherPanel = ({
           type="button"
           data-testid="homepage-dashboard-settings"
           disabled={applying}
-          className="flex w-full items-start justify-between gap-2 border-t border-[var(--color-border-2)] px-3 py-2 text-left hover:bg-[var(--color-fill-1)] disabled:cursor-wait"
+          className="flex w-full flex-col gap-0.5 border-t border-[var(--color-border-2)] px-3 py-2 text-left hover:bg-[var(--color-fill-1)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-[var(--color-primary)] disabled:cursor-wait"
           onClick={onOpenSettings}
         >
-          <span className="min-w-0">
-            <span className="block text-sm text-[var(--color-text-1)]">
+          <span className="flex items-center justify-between gap-2">
+            <span className="min-w-0 truncate text-sm text-[var(--color-text-1)]">
               {t('common.homepageDashboardSettings')}
             </span>
-            {dashboardCaption ? (
-              <span
-                data-testid="homepage-personal-dashboard-caption"
-                className="mt-0.5 block truncate text-xs leading-snug text-[var(--color-text-3)]"
-              >
-                {dashboardCaption}
-              </span>
-            ) : null}
+            <ExportOutlined className="shrink-0 text-xs text-[var(--color-text-3)]" />
           </span>
-          <ExportOutlined className="mt-1 text-xs text-[var(--color-text-3)]" />
+          {settingsHint ? (
+            <span
+              data-testid="homepage-personal-dashboard-caption"
+              className="block truncate text-[11px] leading-4 text-[var(--color-text-3)]"
+            >
+              {settingsHint}
+            </span>
+          ) : null}
         </button>
       ) : null}
     </div>

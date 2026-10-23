@@ -497,7 +497,7 @@ const UserInfo: React.FC = () => {
           />
           <div
             ref={homepagePanelRef}
-            className="fixed z-[1080] rounded-lg border border-[var(--color-border-1)] bg-[var(--color-bg-1)] shadow-lg"
+            className="fixed z-[1080] overflow-hidden rounded-xl border border-[var(--color-border-1)] bg-[var(--color-bg-1)] shadow-[0_8px_24px_color-mix(in_srgb,var(--color-text-1)_10%,transparent)]"
             style={{
               top: homepagePanelPos.top,
               right: homepagePanelPos.right,
