@@ -41,3 +41,20 @@ test('log top rows keep names and convert string hits', () => {
   assert.equal(resolveTopNMaxValue(items), 208036);
   assert.equal(resolveTopNBarPercent(items[1].value, 208036), 0);
 });
+
+test('ranking rows sort by value descending and keep ties in input order', () => {
+  const items = buildTopNItems(
+    [
+      { classification_name: '中间件', value: 2 },
+      { classification_name: '主机', value: 9 },
+      { classification_name: '数据库', value: 9 },
+      { classification_name: '空分类', value: null },
+      { classification_name: '网络', value: 4 },
+    ],
+    'classification_name',
+    'value',
+  );
+
+  assert.deepEqual(items.map((item) => item.name), ['主机', '数据库', '网络', '中间件', '空分类']);
+  assert.deepEqual(items.map((item) => item.value), [9, 9, 4, 2, null]);
+});

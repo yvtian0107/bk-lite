@@ -1608,6 +1608,58 @@ def _filter_requested_alert_instances(authorized_instances, instance_ids):
     return set(authorized_instances.keys()), [], None
 
 
+def resolve_alert_metric_name(query_condition, metrics_by_id) -> str:
+    """策略上的指标展示名。公式和组合取 result_name，单指标取展示名或名称。"""
+    condition = query_condition if isinstance(query_condition, dict) else {}
+    query_type = condition.get("type")
+    if query_type in {"formula", "multi"}:
+        return str(condition.get("result_name") or "").strip()
+    if query_type != "metric":
+        return ""
+    try:
+        metric_id = int(condition.get("metric_id"))
+    except (TypeError, ValueError):
+        return ""
+    metric = metrics_by_id.get(metric_id)
+    if metric is None:
+        return ""
+    return str(getattr(metric, "display_name", None) or getattr(metric, "name", None) or "").strip()
+
+
+def _coerce_policy_id(value):
+    try:
+        policy_id = int(value)
+    except (TypeError, ValueError):
+        return None
+    return policy_id or None
+
+
+def _attach_active_alert_metric_names(items):
+    if not items:
+        return
+    policy_ids = {policy_id for policy_id in (_coerce_policy_id(item.get("policy_id")) for item in items) if policy_id is not None}
+    policies = {}
+    if policy_ids:
+        policies = {
+            policy.id: policy.query_condition if isinstance(policy.query_condition, dict) else {}
+            for policy in MonitorPolicy.objects.filter(id__in=policy_ids).only("id", "query_condition")
+        }
+    metric_ids = set()
+    for condition in policies.values():
+        if condition.get("type") != "metric":
+            continue
+        try:
+            metric_ids.add(int(condition.get("metric_id")))
+        except (TypeError, ValueError):
+            continue
+    metrics_by_id = {}
+    if metric_ids:
+        metrics_by_id = {metric.id: metric for metric in Metric.objects.filter(id__in=metric_ids).only("id", "display_name", "name")}
+    for item in items:
+        policy_id = _coerce_policy_id(item.get("policy_id"))
+        item["metric_name"] = resolve_alert_metric_name(policies.get(policy_id) or {}, metrics_by_id)
+
+
 def _build_latest_active_alert_items(queryset, authorized_instances, limit):
     items = []
     for alert in queryset.order_by("-start_event_time", "-created_at")[:limit]:
@@ -1619,6 +1671,7 @@ def _build_latest_active_alert_items(queryset, authorized_instances, limit):
         )
         item["end_event_time"] = None
         items.append(item)
+    _attach_active_alert_metric_names(items)
     return items
 
 

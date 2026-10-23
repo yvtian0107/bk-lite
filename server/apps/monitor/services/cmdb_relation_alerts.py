@@ -84,6 +84,24 @@ def _entity_rows(
     return rows
 
 
+def _percent_text(rate: float) -> str:
+    return f"{rate:.1f}%"
+
+
+def instance_share_pair(part: int, total: int) -> tuple[str, str]:
+    """占比与补集都保留一位小数，两者相加为 100.0%；没有分母时都是 0.0%。"""
+    if total <= 0:
+        return "0.0%", "0.0%"
+    rate = round((part / total) * 100, 1)
+    return _percent_text(rate), _percent_text(round(100 - rate, 1))
+
+
+def alert_share_text(count: int, total: int) -> str:
+    if total <= 0:
+        return "0.0%"
+    return _percent_text(round((count / total) * 100, 1))
+
+
 def empty_relation_alert_payload(
     view: str,
     *,
@@ -97,7 +115,14 @@ def empty_relation_alert_payload(
         ]
     if view == "top":
         return []
-    return {"total_count": 0, "with_alert_count": 0, "without_alert_count": 0}
+    with_share, without_share = instance_share_pair(0, 0)
+    return {
+        "total_count": 0,
+        "with_alert_count": 0,
+        "without_alert_count": 0,
+        "with_alert_share": with_share,
+        "without_alert_share": without_share,
+    }
 
 
 def normalize_relation_alert_limit(value: Any, *, default: int = DEFAULT_TOP_LIMIT) -> int:
@@ -147,6 +172,7 @@ def build_relation_alert_view(
         ]
     if view == "top":
         ranked = sorted(with_alert, key=lambda item: (-item["alert_count"], item["name"], item["inst_uuid"]))
+        alert_total = sum(int(item["alert_count"]) for item in rows)
         return [
             {
                 "name": item["name"],
@@ -154,11 +180,17 @@ def build_relation_alert_view(
                 "inst_uuid": item["inst_uuid"],
                 "host_count": item["host_count"],
                 "alert_count": item["alert_count"],
+                "share": alert_share_text(int(item["alert_count"]), alert_total),
             }
             for item in ranked[:limit]
         ]
+    total_count = len(rows)
+    with_alert_count = len(with_alert)
+    with_share, without_share = instance_share_pair(with_alert_count, total_count)
     return {
-        "total_count": len(rows),
-        "with_alert_count": len(with_alert),
-        "without_alert_count": len(rows) - len(with_alert),
+        "total_count": total_count,
+        "with_alert_count": with_alert_count,
+        "without_alert_count": total_count - with_alert_count,
+        "with_alert_share": with_share,
+        "without_alert_share": without_share,
     }

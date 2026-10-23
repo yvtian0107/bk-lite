@@ -41,7 +41,13 @@ def test_relation_alert_view_counts_hosts_without_edges_as_clear():
         peer_model_id="host",
         view="summary",
     )
-    assert summary == {"total_count": 3, "with_alert_count": 1, "without_alert_count": 2}
+    assert summary == {
+        "total_count": 3,
+        "with_alert_count": 1,
+        "without_alert_count": 2,
+        "with_alert_share": "33.3%",
+        "without_alert_share": "66.7%",
+    }
 
     distribution = build_relation_alert_view(
         entities=entities,
@@ -66,7 +72,14 @@ def test_relation_alert_view_counts_hosts_without_edges_as_clear():
         limit=1,
     )
     assert top == [
-        {"name": "订单系统", "value": 5, "inst_uuid": "app-1", "host_count": 2, "alert_count": 5},
+        {
+            "name": "订单系统",
+            "value": 5,
+            "inst_uuid": "app-1",
+            "host_count": 2,
+            "alert_count": 5,
+            "share": "100.0%",
+        },
     ]
 
 
@@ -137,7 +150,13 @@ def test_relation_alert_handler_uses_authorized_host_cmdb_ids(monkeypatch):
     )
 
     assert result["result"] is True
-    assert result["data"] == {"total_count": 2, "with_alert_count": 1, "without_alert_count": 1}
+    assert result["data"] == {
+        "total_count": 2,
+        "with_alert_count": 1,
+        "without_alert_count": 1,
+        "with_alert_share": "50.0%",
+        "without_alert_share": "50.0%",
+    }
 
 
 def test_relation_alert_handler_empty_permission_skips_queries(monkeypatch):

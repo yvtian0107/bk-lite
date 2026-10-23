@@ -31,6 +31,8 @@ def test_get_cmdb_statistics_keeps_complete_zero_schema_without_permission(model
             "collected_instance_count": 0,
             "uncollected_instance_count": 0,
             "collect_coverage_rate": 0,
+            "collected_instance_share": "0.0%",
+            "uncollected_instance_share": "0.0%",
         },
         "message": "",
     }
@@ -41,6 +43,15 @@ def test_get_cmdb_statistics_keeps_complete_zero_schema_without_permission(model
 # --------------------------------------------------------------------------
 # _normalize_to_list
 # --------------------------------------------------------------------------
+
+
+def test_cmdb_statistics_share_text_uses_one_decimal_and_complement():
+    assert N._percent_share_text(3, 4) == "75.0%"
+    assert N._complement_share_text(3, 4) == "25.0%"
+    assert N._percent_share_text(1, 3) == "33.3%"
+    assert N._complement_share_text(1, 3) == "66.7%"
+    assert N._percent_share_text(0, 0) == "0.0%"
+    assert N._complement_share_text(0, 0) == "0.0%"
 
 
 def test_normalize_to_list_variants():

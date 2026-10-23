@@ -468,6 +468,18 @@
             "description": "告警描述内容"
         },
         {
+            "key": "value",
+            "title": "当前值",
+            "value_type": "number",
+            "description": "触发时记录的最高告警值"
+        },
+        {
+            "key": "metric_name",
+            "title": "监控项",
+            "value_type": "string",
+            "description": "策略关联指标的展示名；公式或组合策略使用结果名"
+        },
+        {
             "key": "start_event_time",
             "title": "开始时间",
             "value_type": "string",
@@ -1642,7 +1654,9 @@
     "field_schema": [
         {"key": "total_count", "title": "源实例总数", "value_type": "number", "description": "当前可见的源模型实例数"},
         {"key": "with_alert_count", "title": "有关联告警", "value_type": "number", "description": "至少一台授权对端主机存在活跃监控告警的源实例数"},
-        {"key": "without_alert_count", "title": "无关联告警", "value_type": "number", "description": "没有授权对端主机或对端没有活跃监控告警的源实例数"}
+        {"key": "without_alert_count", "title": "无关联告警", "value_type": "number", "description": "没有授权对端主机或对端没有活跃监控告警的源实例数"},
+        {"key": "with_alert_share", "title": "有关联告警占比", "value_type": "string", "description": "有关联告警的源实例占源实例总数的百分比，形如 21.1%"},
+        {"key": "without_alert_share", "title": "无关联告警占比", "value_type": "string", "description": "与有关联告警占比互补；没有源实例时为 0.0%"}
     ]
 },
 {
@@ -1687,7 +1701,8 @@
         {"key": "value", "title": "告警数", "value_type": "number", "description": "授权对端主机上的活跃监控告警数"},
         {"key": "inst_uuid", "title": "实例标识", "value_type": "string", "description": "源实例 UUID"},
         {"key": "host_count", "title": "关联主机数", "value_type": "number", "description": "通过该关联展开的对端主机数"},
-        {"key": "alert_count", "title": "告警数", "value_type": "number", "description": "与 value 相同，供表格列使用"}
+        {"key": "alert_count", "title": "告警数", "value_type": "number", "description": "与 value 相同，供表格列使用"},
+        {"key": "share", "title": "占比", "value_type": "string", "description": "该实例告警数占全部源实例告警数的百分比，形如 21.1%"}
     ]
 }
 ]

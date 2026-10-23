@@ -651,10 +651,18 @@ dashboards:
         name: 资源概览
       ops-resource-types:
         name: 资源类型分布
-      ops-collect-ring:
+      ops-resource-total:
         name: 资源总数
+      ops-collect-configured:
+        name: 已配置采集
+      ops-collect-missing:
+        name: 未配置采集
       ops-app-total:
         name: 应用总数
+      ops-app-with-alert:
+        name: 存在关联告警
+      ops-app-without-alert:
+        name: 无关联告警
       ops-app-top:
         name: 应用告警 TOP5
       group-monitor:
@@ -662,11 +670,11 @@ dashboards:
       ops-monitor-ring:
         name: 监控接入概况
       ops-gauge-cpu:
-        name: CPU 使用率
+        name: 主机 CPU 使用率
       ops-gauge-memory:
-        name: 内存使用率
+        name: 主机内存使用率
       ops-gauge-disk:
-        name: 磁盘使用率
+        name: 主机磁盘使用率
       ops-monitor-alerts:
         name: 监控异常 TOP5
       group-alert:

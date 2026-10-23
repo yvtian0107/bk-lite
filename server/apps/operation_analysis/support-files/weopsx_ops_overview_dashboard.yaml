@@ -38,6 +38,10 @@ dashboards:
         itemType: widget
         valueConfig:
           chartType: single
+          singleStyle:
+            showIcon: true
+            iconSource: builtin
+            iconKey: cc-default
           dataSource: 模型/实例/分类总数统计::cmdb/get_cmdb_statistics
           interaction:
             kind: title
@@ -72,6 +76,10 @@ dashboards:
         itemType: widget
         valueConfig:
           chartType: single
+          singleStyle:
+            showIcon: true
+            iconSource: builtin
+            iconKey: mm-monitor
           dataSource: 监控中心总览统计::monitor/get_monitor_statistics
           interaction:
             kind: title
@@ -106,6 +114,10 @@ dashboards:
         itemType: widget
         valueConfig:
           chartType: single
+          singleStyle:
+            showIcon: true
+            iconSource: builtin
+            iconKey: cc-security-equipment
           dataSource: 告警快照统计::alert/get_alert_snapshot_statistics
           interaction:
             kind: title
@@ -140,6 +152,10 @@ dashboards:
         itemType: widget
         valueConfig:
           chartType: single
+          singleStyle:
+            showIcon: true
+            iconSource: builtin
+            iconKey: icons/cc-security-equipment_安全设备
           dataSource: 告警快照统计::alert/get_alert_snapshot_statistics
           interaction:
             kind: title
@@ -213,23 +229,20 @@ dashboards:
               control: organization
             alias_name: 组织
             filterType: filter
-      - h: 7
+      - h: 3
         w: 3
         x: 3
         y: 0
-        id: ops-collect-ring
+        id: ops-resource-total
         name: 资源总数
         itemType: widget
         valueConfig:
-          chartType: pie
+          chartType: single
           dataSource: 模型/实例/分类总数统计::cmdb/get_cmdb_statistics
-          pieScalarFields:
-          - field: collected_instance_count
-            label: 已配置采集
-          - field: uncollected_instance_count
-            label: 未配置采集
           filterBindings:
             organization__string: true
+          selectedFields:
+          - instance_count
           dataSourceParams:
           - name: organization
             type: string
@@ -238,7 +251,53 @@ dashboards:
               control: organization
             alias_name: 组织
             filterType: filter
-      - h: 7
+      - h: 2
+        w: 3
+        x: 3
+        y: 3
+        id: ops-collect-configured
+        name: 已配置采集
+        itemType: widget
+        valueConfig:
+          chartType: single
+          dataSource: 模型/实例/分类总数统计::cmdb/get_cmdb_statistics
+          descriptionField: collected_instance_share
+          filterBindings:
+            organization__string: true
+          selectedFields:
+          - collected_instance_count
+          dataSourceParams:
+          - name: organization
+            type: string
+            value: ''
+            inputConfig:
+              control: organization
+            alias_name: 组织
+            filterType: filter
+      - h: 2
+        w: 3
+        x: 3
+        y: 5
+        id: ops-collect-missing
+        name: 未配置采集
+        itemType: widget
+        valueConfig:
+          chartType: single
+          dataSource: 模型/实例/分类总数统计::cmdb/get_cmdb_statistics
+          descriptionField: uncollected_instance_share
+          filterBindings:
+            organization__string: true
+          selectedFields:
+          - uncollected_instance_count
+          dataSourceParams:
+          - name: organization
+            type: string
+            value: ''
+            inputConfig:
+              control: organization
+            alias_name: 组织
+            filterType: filter
+      - h: 3
         w: 3
         x: 6
         y: 0
@@ -246,10 +305,88 @@ dashboards:
         name: 应用总数
         itemType: widget
         valueConfig:
-          chartType: pie
-          dataSource: 关联告警分布::monitor/get_cmdb_relation_alert_aggregation
+          chartType: single
+          dataSource: 关联告警汇总::monitor/get_cmdb_relation_alert_aggregation
           filterBindings:
             organization__string: true
+          selectedFields:
+          - total_count
+          dataSourceParams:
+          - name: model_id
+            type: string
+            value: application
+            alias_name: 源模型
+            filterType: params
+          - name: model_asst_id
+            type: string
+            value: application_run_host
+            alias_name: 模型关联
+            filterType: params
+          - name: peer_model_id
+            type: string
+            value: host
+            alias_name: 对端模型
+            filterType: params
+          - name: organization
+            type: string
+            value: ''
+            inputConfig:
+              control: organization
+            alias_name: 组织
+            filterType: filter
+      - h: 2
+        w: 3
+        x: 6
+        y: 3
+        id: ops-app-with-alert
+        name: 存在关联告警
+        itemType: widget
+        valueConfig:
+          chartType: single
+          dataSource: 关联告警汇总::monitor/get_cmdb_relation_alert_aggregation
+          descriptionField: with_alert_share
+          filterBindings:
+            organization__string: true
+          selectedFields:
+          - with_alert_count
+          dataSourceParams:
+          - name: model_id
+            type: string
+            value: application
+            alias_name: 源模型
+            filterType: params
+          - name: model_asst_id
+            type: string
+            value: application_run_host
+            alias_name: 模型关联
+            filterType: params
+          - name: peer_model_id
+            type: string
+            value: host
+            alias_name: 对端模型
+            filterType: params
+          - name: organization
+            type: string
+            value: ''
+            inputConfig:
+              control: organization
+            alias_name: 组织
+            filterType: filter
+      - h: 2
+        w: 3
+        x: 6
+        y: 5
+        id: ops-app-without-alert
+        name: 无关联告警
+        itemType: widget
+        valueConfig:
+          chartType: single
+          dataSource: 关联告警汇总::monitor/get_cmdb_relation_alert_aggregation
+          descriptionField: without_alert_share
+          filterBindings:
+            organization__string: true
+          selectedFields:
+          - without_alert_count
           dataSourceParams:
           - name: model_id
             type: string
@@ -281,15 +418,27 @@ dashboards:
         name: 应用告警 TOP5
         itemType: widget
         valueConfig:
-          chartType: topN
+          chartType: table
           dataSource: 关联告警 TOP::monitor/get_cmdb_relation_alert_aggregation
           interaction:
             kind: title
             name: 查看全部
             url: /cmdb/views/application
             openMode: newTab
-          topNLabelField: name
-          topNValueField: value
+          tableConfig:
+            columns:
+            - key: name
+              order: 0
+              title: 应用名称
+              visible: true
+            - key: alert_count
+              order: 1
+              title: 关联告警数
+              visible: true
+            - key: share
+              order: 2
+              title: 占比
+              visible: true
           filterBindings:
             organization__string: true
           dataSourceParams:
@@ -366,7 +515,7 @@ dashboards:
         x: 3
         y: 0
         id: ops-gauge-cpu
-        name: CPU 使用率
+        name: 主机 CPU 使用率
         itemType: widget
         valueConfig:
           chartType: gauge
@@ -405,7 +554,7 @@ dashboards:
         x: 5
         y: 0
         id: ops-gauge-memory
-        name: 内存使用率
+        name: 主机内存使用率
         itemType: widget
         valueConfig:
           chartType: gauge
@@ -444,7 +593,7 @@ dashboards:
         x: 7
         y: 0
         id: ops-gauge-disk
-        name: 磁盘使用率
+        name: 主机磁盘使用率
         itemType: widget
         valueConfig:
           chartType: gauge
@@ -499,18 +648,105 @@ dashboards:
               order: 0
               title: 监控对象
               visible: true
-            - key: content
+            - key: metric_name
               order: 1
-              title: 告警内容
+              title: 监控项
+              visible: true
+            - key: value
+              order: 2
+              title: 当前值
               visible: true
             - key: level
-              order: 2
-              title: 级别
-              visible: true
-            - key: start_event_time
               order: 3
-              title: 开始时间
+              title: 状态
               visible: true
+              cellType: colorBackground
+              valueMappings:
+              - type: value
+                value: critical
+                result:
+                  text: 严重
+                  color: '#F43B2C'
+              - type: value
+                value: Critical
+                result:
+                  text: 严重
+                  color: '#F43B2C'
+              - type: value
+                value: 严重
+                result:
+                  text: 严重
+                  color: '#F43B2C'
+              - type: value
+                value: 致命
+                result:
+                  text: 致命
+                  color: '#F43B2C'
+              - type: value
+                value: error
+                result:
+                  text: 错误
+                  color: '#D97007'
+              - type: value
+                value: Error
+                result:
+                  text: 错误
+                  color: '#D97007'
+              - type: value
+                value: 错误
+                result:
+                  text: 错误
+                  color: '#D97007'
+              - type: value
+                value: 重要
+                result:
+                  text: 重要
+                  color: '#D97007'
+              - type: value
+                value: warning
+                result:
+                  text: 警告
+                  color: '#FFAD42'
+              - type: value
+                value: Warning
+                result:
+                  text: 警告
+                  color: '#FFAD42'
+              - type: value
+                value: 警告
+                result:
+                  text: 警告
+                  color: '#FFAD42'
+              - type: value
+                value: 预警
+                result:
+                  text: 预警
+                  color: '#FFAD42'
+              - type: value
+                value: info
+                result:
+                  text: 提醒
+                  color: '#FBBF24'
+              - type: value
+                value: Info
+                result:
+                  text: 提醒
+                  color: '#FBBF24'
+              - type: value
+                value: 提醒
+                result:
+                  text: 提醒
+                  color: '#FBBF24'
+              - type: value
+                value: no_data
+                result:
+                  text: 无数据
+                  color: '#8C8C8C'
+              - type: value
+                value: 无数据
+                result:
+                  text: 无数据
+                  color: '#8C8C8C'
           filterBindings:
             organization__string: true
           dataSourceParams:
@@ -617,6 +853,63 @@ dashboards:
               order: 2
               title: 等级
               visible: true
+              cellType: colorBackground
+              valueMappings:
+              - type: value
+                value: 严重
+                result:
+                  text: 严重
+                  color: '#F43B2C'
+              - type: value
+                value: Critical
+                result:
+                  text: 严重
+                  color: '#F43B2C'
+              - type: value
+                value: 致命
+                result:
+                  text: 致命
+                  color: '#F43B2C'
+              - type: value
+                value: 错误
+                result:
+                  text: 错误
+                  color: '#D97007'
+              - type: value
+                value: Error
+                result:
+                  text: 错误
+                  color: '#D97007'
+              - type: value
+                value: 重要
+                result:
+                  text: 重要
+                  color: '#D97007'
+              - type: value
+                value: 警告
+                result:
+                  text: 警告
+                  color: '#FFAD42'
+              - type: value
+                value: Warning
+                result:
+                  text: 警告
+                  color: '#FFAD42'
+              - type: value
+                value: 预警
+                result:
+                  text: 预警
+                  color: '#FFAD42'
+              - type: value
+                value: 提醒
+                result:
+                  text: 提醒
+                  color: '#FBBF24'
+              - type: value
+                value: Info
+                result:
+                  text: 提醒
+                  color: '#FBBF24'
             - key: created_at
               order: 3
               title: 触发时间
@@ -641,7 +934,7 @@ dashboards:
     datasource_keys:
     - 主机资源快照::monitor/get_host_resource_snapshot
     - 关联告警 TOP::monitor/get_cmdb_relation_alert_aggregation
-    - 关联告警分布::monitor/get_cmdb_relation_alert_aggregation
+    - 关联告警汇总::monitor/get_cmdb_relation_alert_aggregation
     - 分类实例合计::cmdb/get_classification_instance_counts
     - 告警快照统计::alert/get_alert_snapshot_statistics
     - 告警趋势::alert/get_alert_trend_data

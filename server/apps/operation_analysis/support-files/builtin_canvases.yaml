@@ -3906,6 +3906,14 @@ datasources:
     title: 采集覆盖率
     value_type: number
     description: 有权可见且已挂采集任务的实例数在实例总数中的占比，单位为 %
+  - key: collected_instance_share
+    title: 已采集占比
+    value_type: string
+    description: 已挂采集任务实例数占实例总数的百分比，形如 94.5%
+  - key: uncollected_instance_share
+    title: 未采集占比
+    value_type: string
+    description: 与已采集占比互补；没有实例时为 0.0%
   namespace_keys:
   - 默认命名空间
 - key: 模型实例统计::get_model_inst_statistics

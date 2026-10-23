@@ -651,10 +651,18 @@ dashboards:
         name: Resources
       ops-resource-types:
         name: Resource Types
-      ops-collect-ring:
+      ops-resource-total:
         name: Resources
+      ops-collect-configured:
+        name: Collected
+      ops-collect-missing:
+        name: Not Collected
       ops-app-total:
         name: Applications
+      ops-app-with-alert:
+        name: With Related Alerts
+      ops-app-without-alert:
+        name: Without Related Alerts
       ops-app-top:
         name: Application Alert TOP 5
       group-monitor:
@@ -662,11 +670,11 @@ dashboards:
       ops-monitor-ring:
         name: Monitor Access
       ops-gauge-cpu:
-        name: CPU Usage
+        name: Host CPU Usage
       ops-gauge-memory:
-        name: Memory Usage
+        name: Host Memory Usage
       ops-gauge-disk:
-        name: Disk Usage
+        name: Host Disk Usage
       ops-monitor-alerts:
         name: Monitor Anomalies TOP 5
       group-alert:

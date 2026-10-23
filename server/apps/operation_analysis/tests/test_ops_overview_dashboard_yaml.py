@@ -56,14 +56,20 @@ def test_ops_overview_yaml_binds_organization_time_and_reusable_widgets():
     assert filters["time"]["defaultValue"]["selectValue"] == 10080
 
     widgets = list(_iter_widgets(dashboard.view_sets))
-    assert {widget["id"] for widget in widgets} >= TIME_BOUND_WIDGET_IDS | {
+    widget_ids = {widget["id"] for widget in widgets}
+    assert widget_ids >= TIME_BOUND_WIDGET_IDS | {
         "ops-kpi-resources",
         "ops-kpi-severe",
-        "ops-collect-ring",
+        "ops-resource-total",
+        "ops-collect-configured",
+        "ops-collect-missing",
         "ops-app-total",
+        "ops-app-with-alert",
+        "ops-app-without-alert",
         "ops-monitor-ring",
     }
-    assert "ops-app-ring" not in {widget["id"] for widget in widgets}
+    assert "ops-app-ring" not in widget_ids
+    assert "ops-collect-ring" not in widget_ids
     for widget in widgets:
         value_config = widget["valueConfig"]
         assert value_config["filterBindings"]["organization__string"] is True
@@ -78,14 +84,28 @@ def test_ops_overview_yaml_binds_organization_time_and_reusable_widgets():
 
     by_id = {widget["id"]: widget for widget in widgets}
     assert by_id["ops-kpi-severe"]["valueConfig"]["selectedFields"] == ["severe_active_count"]
-    assert by_id["ops-app-total"]["valueConfig"]["chartType"] == "pie"
-    assert by_id["ops-app-total"]["valueConfig"]["dataSource"] == "关联告警分布::monitor/get_cmdb_relation_alert_aggregation"
-    assert by_id["ops-app-total"]["h"] == by_id["ops-collect-ring"]["h"]
-    assert by_id["ops-app-total"]["w"] == by_id["ops-collect-ring"]["w"]
-    assert by_id["ops-collect-ring"]["valueConfig"]["pieScalarFields"] == [
-        {"field": "collected_instance_count", "label": "已配置采集"},
-        {"field": "uncollected_instance_count", "label": "未配置采集"},
-    ]
+    assert by_id["ops-kpi-resources"]["valueConfig"]["singleStyle"] == {
+        "showIcon": True,
+        "iconSource": "builtin",
+        "iconKey": "cc-default",
+    }
+    assert by_id["ops-kpi-monitor"]["valueConfig"]["singleStyle"]["iconKey"] == "mm-monitor"
+    assert by_id["ops-kpi-open-alerts"]["valueConfig"]["singleStyle"]["iconKey"] == "cc-security-equipment"
+    assert by_id["ops-kpi-severe"]["valueConfig"]["singleStyle"]["iconKey"] == "icons/cc-security-equipment_安全设备"
+    assert by_id["ops-resource-total"]["valueConfig"]["chartType"] == "single"
+    assert by_id["ops-resource-total"]["valueConfig"]["selectedFields"] == ["instance_count"]
+    assert by_id["ops-collect-configured"]["valueConfig"]["descriptionField"] == "collected_instance_share"
+    assert by_id["ops-collect-missing"]["valueConfig"]["descriptionField"] == "uncollected_instance_share"
+    assert by_id["ops-app-total"]["valueConfig"]["chartType"] == "single"
+    assert by_id["ops-app-total"]["valueConfig"]["dataSource"] == "关联告警汇总::monitor/get_cmdb_relation_alert_aggregation"
+    assert by_id["ops-app-total"]["valueConfig"]["selectedFields"] == ["total_count"]
+    assert by_id["ops-app-with-alert"]["valueConfig"]["descriptionField"] == "with_alert_share"
+    assert by_id["ops-app-without-alert"]["valueConfig"]["descriptionField"] == "without_alert_share"
+    assert by_id["ops-resource-total"]["h"] == 3
+    assert by_id["ops-collect-configured"]["h"] == 2
+    assert by_id["ops-collect-configured"]["y"] == by_id["ops-resource-total"]["h"]
+    assert by_id["ops-app-total"]["x"] == 6
+    assert by_id["ops-app-with-alert"]["x"] == by_id["ops-app-total"]["x"]
     assert by_id["ops-monitor-ring"]["valueConfig"]["pieScalarFields"][0]["field"] == "monitor_instance_active"
     assert by_id["ops-gauge-cpu"]["valueConfig"]["compare"] is True
     assert by_id["ops-gauge-cpu"]["valueConfig"]["selectedFields"] == ["avg_cpu"]
@@ -105,19 +125,34 @@ def test_ops_overview_yaml_binds_organization_time_and_reusable_widgets():
     assert by_id["ops-resource-types"]["valueConfig"]["topNValueField"] == "value"
     assert by_id["ops-resource-types"]["valueConfig"]["interaction"]["name"] == "查看全部"
     assert by_id["ops-monitor-ring"]["name"] == "监控接入概况"
-    assert by_id["ops-gauge-cpu"]["name"] == "CPU 使用率"
-    assert [column["key"] for column in by_id["ops-monitor-alerts"]["valueConfig"]["tableConfig"]["columns"]] == [
-        "monitor_instance_name",
-        "content",
-        "level",
-        "start_event_time",
+    assert by_id["ops-gauge-cpu"]["name"] == "主机 CPU 使用率"
+    assert by_id["ops-gauge-memory"]["name"] == "主机内存使用率"
+    assert by_id["ops-gauge-disk"]["name"] == "主机磁盘使用率"
+    assert by_id["ops-app-top"]["valueConfig"]["chartType"] == "table"
+    assert [column["key"] for column in by_id["ops-app-top"]["valueConfig"]["tableConfig"]["columns"]] == [
+        "name",
+        "alert_count",
+        "share",
     ]
-    assert [column["key"] for column in by_id["ops-alert-top"]["valueConfig"]["tableConfig"]["columns"]] == [
+    monitor_columns = by_id["ops-monitor-alerts"]["valueConfig"]["tableConfig"]["columns"]
+    assert [column["key"] for column in monitor_columns] == [
+        "monitor_instance_name",
+        "metric_name",
+        "value",
+        "level",
+    ]
+    assert monitor_columns[3]["title"] == "状态"
+    assert monitor_columns[3]["cellType"] == "colorBackground"
+    assert any(item["value"] == "critical" and item["result"]["text"] == "严重" for item in monitor_columns[3]["valueMappings"])
+    alert_columns = by_id["ops-alert-top"]["valueConfig"]["tableConfig"]["columns"]
+    assert [column["key"] for column in alert_columns] == [
         "resource_name",
         "title",
         "level",
         "created_at",
     ]
+    assert alert_columns[2]["cellType"] == "colorBackground"
+    assert any(item["value"] == "严重" and item["result"]["color"] == "#F43B2C" for item in alert_columns[2]["valueMappings"])
     assert by_id["ops-kpi-resources"]["valueConfig"]["interaction"]["url"] == "/cmdb/assetOverview"
     assert by_id["ops-app-top"]["valueConfig"]["interaction"]["name"] == "查看全部"
     assert {widget["valueConfig"]["dataSource"] for widget in widgets} <= set(dashboard.refs.datasource_keys)
@@ -144,3 +179,12 @@ def test_ops_overview_survives_builtin_merge():
         "关联告警分布::monitor/get_cmdb_relation_alert_aggregation",
         "关联告警 TOP::monitor/get_cmdb_relation_alert_aggregation",
     }
+    by_key = {item.key: item for item in document.datasources}
+
+    def field_keys(datasource_key):
+        return {field["key"] for field in by_key[datasource_key].field_schema}
+
+    assert {"with_alert_share", "without_alert_share"} <= field_keys("关联告警汇总::monitor/get_cmdb_relation_alert_aggregation")
+    assert "share" in field_keys("关联告警 TOP::monitor/get_cmdb_relation_alert_aggregation")
+    assert {"collected_instance_share", "uncollected_instance_share"} <= field_keys("模型/实例/分类总数统计::cmdb/get_cmdb_statistics")
+    assert {"value", "metric_name"} <= field_keys("监控活跃告警::monitor/query_latest_active_alerts")
