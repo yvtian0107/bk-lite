@@ -2638,7 +2638,6 @@ def get_model_association_options(model_id=None, user_info=None, **kwargs):
     return {"result": True, "data": list_model_association_options(language, model_id), "message": ""}
 
 
-@nats_client.register
 def _classification_all_visible(value):
     if value is True:
         return True
@@ -2649,6 +2648,7 @@ def _classification_all_visible(value):
     return str(value).strip().lower() in {"1", "true", "yes", "on"}
 
 
+@nats_client.register
 def get_classification_instance_counts(classification_ids=None, user_info=None, all_visible=None, **kwargs):
     """按传入顺序返回所选分类的可见实例总数，包含 0。
 

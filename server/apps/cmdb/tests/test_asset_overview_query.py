@@ -341,3 +341,12 @@ def test_resource_counts_without_permission_are_empty(model_perm):
         "data": [],
         "message": "",
     }
+
+
+@pytest.mark.unit
+def test_classification_instance_counts_is_registered_and_helper_is_not():
+    from nats_client.registry import default_registry
+
+    names = {item["name"] for item in default_registry.registry.values()}
+    assert "get_classification_instance_counts" in names
+    assert "_classification_all_visible" not in names
