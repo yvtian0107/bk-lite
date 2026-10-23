@@ -134,6 +134,8 @@ export interface ValueConfig {
   topNValueField?: string;
   dimensionField?: string;
   valueField?: string;
+  /** 从标量对象取两个及以上字段合成饼图；已有数组饼图不受影响。 */
+  pieScalarFields?: Array<{ field: string; label?: string }>;
   multiValueLabelField?: string;
   multiValueValueField?: string;
   nodeGraphIdentityMode?: 'ip' | 'service';

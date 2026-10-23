@@ -1,0 +1,685 @@
+meta:
+  schema_version: 1.2.0
+  exported_at: '2026-10-23T12:00:00+08:00'
+  source:
+    organization_id: 0
+  object_counts:
+    dashboards: 1
+    topologies: 0
+    screens: 0
+    reports: 0
+    architectures: 0
+    datasources: 0
+    namespaces: 0
+dashboards:
+- key: dashboard::运维总览_内置
+  name: 运维总览
+  desc: 按所选组织查看资源、监控和告警的当前规模。主机性能和新增关闭趋势跟随所选时间。
+  other:
+    timeSelector:
+      selectValue: 10080
+  view_sets:
+  - h: 4
+    w: 12
+    x: 0
+    y: 0
+    id: group-kpi
+    name: 总览
+    headerH: 1
+    itemType: group
+    subGridOpts:
+      children:
+      - h: 3
+        w: 3
+        x: 0
+        y: 0
+        id: ops-kpi-resources
+        name: 资源总数
+        itemType: widget
+        valueConfig:
+          chartType: single
+          dataSource: 模型/实例/分类总数统计::cmdb/get_cmdb_statistics
+          interaction:
+            kind: title
+            name: 资源概览
+            url: /cmdb/assetOverview
+            openMode: newTab
+          filterBindings:
+            organization__string: true
+          selectedFields:
+          - instance_count
+          thresholdColors:
+          - color: '#366ce4'
+            value: '70'
+          - color: '#366ce4'
+            value: '30'
+          - color: '#366ce4'
+            value: '0'
+          dataSourceParams:
+          - name: organization
+            type: string
+            value: ''
+            inputConfig:
+              control: organization
+            alias_name: 组织
+            filterType: filter
+      - h: 3
+        w: 3
+        x: 3
+        y: 0
+        id: ops-kpi-monitor
+        name: 监控实例
+        itemType: widget
+        valueConfig:
+          chartType: single
+          dataSource: 监控中心总览统计::monitor/get_monitor_statistics
+          interaction:
+            kind: title
+            name: 监控接入
+            url: /monitor/integration/asset
+            openMode: newTab
+          filterBindings:
+            organization__string: true
+          selectedFields:
+          - monitor_instance_total
+          thresholdColors:
+          - color: '#366ce4'
+            value: '70'
+          - color: '#366ce4'
+            value: '30'
+          - color: '#366ce4'
+            value: '0'
+          dataSourceParams:
+          - name: organization
+            type: string
+            value: ''
+            inputConfig:
+              control: organization
+            alias_name: 组织
+            filterType: filter
+      - h: 3
+        w: 3
+        x: 6
+        y: 0
+        id: ops-kpi-open-alerts
+        name: 未关闭告警
+        itemType: widget
+        valueConfig:
+          chartType: single
+          dataSource: 告警快照统计::alert/get_alert_snapshot_statistics
+          interaction:
+            kind: title
+            name: 告警
+            url: /alarm/alarms
+            openMode: newTab
+          filterBindings:
+            organization__string: true
+          selectedFields:
+          - active_count
+          thresholdColors:
+          - color: '#fd666d'
+            value: '70'
+          - color: '#EAB839'
+            value: '30'
+          - color: '#366ce4'
+            value: '0'
+          dataSourceParams:
+          - name: organization
+            type: string
+            value: ''
+            inputConfig:
+              control: organization
+            alias_name: 组织
+            filterType: filter
+      - h: 3
+        w: 3
+        x: 9
+        y: 0
+        id: ops-kpi-severe
+        name: 严重告警
+        itemType: widget
+        valueConfig:
+          chartType: single
+          dataSource: 告警快照统计::alert/get_alert_snapshot_statistics
+          interaction:
+            kind: title
+            name: 告警
+            url: /alarm/alarms
+            openMode: newTab
+          filterBindings:
+            organization__string: true
+          selectedFields:
+          - severe_active_count
+          thresholdColors:
+          - color: '#fd666d'
+            value: '70'
+          - color: '#EAB839'
+            value: '30'
+          - color: '#366ce4'
+            value: '0'
+          dataSourceParams:
+          - name: organization
+            type: string
+            value: ''
+            inputConfig:
+              control: organization
+            alias_name: 组织
+            filterType: filter
+    sizeToContent: true
+  - h: 8
+    w: 12
+    x: 0
+    y: 4
+    id: group-resource
+    name: 资源概览
+    headerH: 1
+    itemType: group
+    subGridOpts:
+      children:
+      - h: 7
+        w: 3
+        x: 0
+        y: 0
+        id: ops-resource-types
+        name: 资源类型分布
+        itemType: widget
+        valueConfig:
+          chartType: bar
+          dataSource: 分类实例合计::cmdb/get_classification_instance_counts
+          interaction:
+            kind: title
+            name: 查看全部
+            url: /cmdb/assetOverview
+            openMode: newTab
+          dimensionField: classification_name
+          valueField: value
+          filterBindings:
+            organization__string: true
+          dataSourceParams:
+          - name: classification_ids
+            type: string
+            value: []
+            alias_name: 模型分类
+            filterType: params
+          - name: all_visible
+            type: string
+            value: 'true'
+            alias_name: 全部可见分类
+            filterType: params
+          - name: organization
+            type: string
+            value: ''
+            inputConfig:
+              control: organization
+            alias_name: 组织
+            filterType: filter
+      - h: 7
+        w: 3
+        x: 3
+        y: 0
+        id: ops-collect-ring
+        name: 资源总数
+        itemType: widget
+        valueConfig:
+          chartType: pie
+          dataSource: 模型/实例/分类总数统计::cmdb/get_cmdb_statistics
+          pieScalarFields:
+          - field: collected_instance_count
+            label: 已配置采集
+          - field: uncollected_instance_count
+            label: 未配置采集
+          filterBindings:
+            organization__string: true
+          dataSourceParams:
+          - name: organization
+            type: string
+            value: ''
+            inputConfig:
+              control: organization
+            alias_name: 组织
+            filterType: filter
+      - h: 3
+        w: 3
+        x: 6
+        y: 0
+        id: ops-app-total
+        name: 应用总数
+        itemType: widget
+        valueConfig:
+          chartType: single
+          dataSource: 关联告警汇总::monitor/get_cmdb_relation_alert_aggregation
+          filterBindings:
+            organization__string: true
+          selectedFields:
+          - total_count
+          thresholdColors:
+          - color: '#366ce4'
+            value: '70'
+          - color: '#366ce4'
+            value: '30'
+          - color: '#366ce4'
+            value: '0'
+          dataSourceParams:
+          - name: model_id
+            type: string
+            value: application
+            alias_name: 源模型
+            filterType: params
+          - name: model_asst_id
+            type: string
+            value: application_run_host
+            alias_name: 模型关联
+            filterType: params
+          - name: peer_model_id
+            type: string
+            value: host
+            alias_name: 对端模型
+            filterType: params
+          - name: organization
+            type: string
+            value: ''
+            inputConfig:
+              control: organization
+            alias_name: 组织
+            filterType: filter
+      - h: 4
+        w: 3
+        x: 6
+        y: 3
+        id: ops-app-ring
+        name: 应用告警分布
+        itemType: widget
+        valueConfig:
+          chartType: pie
+          dataSource: 关联告警分布::monitor/get_cmdb_relation_alert_aggregation
+          filterBindings:
+            organization__string: true
+          dataSourceParams:
+          - name: model_id
+            type: string
+            value: application
+            alias_name: 源模型
+            filterType: params
+          - name: model_asst_id
+            type: string
+            value: application_run_host
+            alias_name: 模型关联
+            filterType: params
+          - name: peer_model_id
+            type: string
+            value: host
+            alias_name: 对端模型
+            filterType: params
+          - name: organization
+            type: string
+            value: ''
+            inputConfig:
+              control: organization
+            alias_name: 组织
+            filterType: filter
+      - h: 7
+        w: 3
+        x: 9
+        y: 0
+        id: ops-app-top
+        name: 应用告警 TOP5
+        itemType: widget
+        valueConfig:
+          chartType: topN
+          dataSource: 关联告警 TOP::monitor/get_cmdb_relation_alert_aggregation
+          interaction:
+            kind: title
+            name: 查看全部
+            url: /cmdb/views/application
+            openMode: newTab
+          topNLabelField: name
+          topNValueField: value
+          filterBindings:
+            organization__string: true
+          dataSourceParams:
+          - name: model_id
+            type: string
+            value: application
+            alias_name: 源模型
+            filterType: params
+          - name: model_asst_id
+            type: string
+            value: application_run_host
+            alias_name: 模型关联
+            filterType: params
+          - name: peer_model_id
+            type: string
+            value: host
+            alias_name: 对端模型
+            filterType: params
+          - name: limit
+            type: number
+            value: 5
+            alias_name: 返回条数
+            filterType: params
+          - name: organization
+            type: string
+            value: ''
+            inputConfig:
+              control: organization
+            alias_name: 组织
+            filterType: filter
+    sizeToContent: true
+  - h: 8
+    w: 12
+    x: 0
+    y: 12
+    id: group-monitor
+    name: 监控中心
+    headerH: 1
+    itemType: group
+    subGridOpts:
+      children:
+      - h: 7
+        w: 3
+        x: 0
+        y: 0
+        id: ops-monitor-ring
+        name: 监控接入概览
+        itemType: widget
+        valueConfig:
+          chartType: pie
+          dataSource: 监控中心总览统计::monitor/get_monitor_statistics
+          interaction:
+            kind: title
+            name: 查看全部
+            url: /monitor/integration/asset
+            openMode: newTab
+          pieScalarFields:
+          - field: monitor_instance_active
+            label: 已启用
+          - field: monitor_instance_inactive
+            label: 已停用
+          filterBindings:
+            organization__string: true
+          dataSourceParams:
+          - name: organization
+            type: string
+            value: ''
+            inputConfig:
+              control: organization
+            alias_name: 组织
+            filterType: filter
+      - h: 7
+        w: 2
+        x: 3
+        y: 0
+        id: ops-gauge-cpu
+        name: CPU 使用率（$time$）
+        itemType: widget
+        valueConfig:
+          chartType: gauge
+          dataSource: 主机资源快照::monitor/get_host_resource_snapshot
+          compare: true
+          compareMode: percent
+          unitId: percent
+          decimalPlaces: 1
+          gaugeMin: 0
+          gaugeMax: 100
+          filterBindings:
+            organization__string: true
+            time__timeRange: true
+          selectedFields:
+          - avg_cpu
+          dataSourceParams:
+          - name: scope
+            type: string
+            value: all_authorized
+            alias_name: 范围
+            filterType: params
+          - name: time
+            type: timeRange
+            value: 10080
+            alias_name: 时间范围
+            filterType: filter
+          - name: organization
+            type: string
+            value: ''
+            inputConfig:
+              control: organization
+            alias_name: 组织
+            filterType: filter
+      - h: 7
+        w: 2
+        x: 5
+        y: 0
+        id: ops-gauge-memory
+        name: 内存使用率（$time$）
+        itemType: widget
+        valueConfig:
+          chartType: gauge
+          dataSource: 主机资源快照::monitor/get_host_resource_snapshot
+          compare: true
+          compareMode: percent
+          unitId: percent
+          decimalPlaces: 1
+          gaugeMin: 0
+          gaugeMax: 100
+          filterBindings:
+            organization__string: true
+            time__timeRange: true
+          selectedFields:
+          - avg_memory
+          dataSourceParams:
+          - name: scope
+            type: string
+            value: all_authorized
+            alias_name: 范围
+            filterType: params
+          - name: time
+            type: timeRange
+            value: 10080
+            alias_name: 时间范围
+            filterType: filter
+          - name: organization
+            type: string
+            value: ''
+            inputConfig:
+              control: organization
+            alias_name: 组织
+            filterType: filter
+      - h: 7
+        w: 2
+        x: 7
+        y: 0
+        id: ops-gauge-disk
+        name: 磁盘使用率（$time$）
+        itemType: widget
+        valueConfig:
+          chartType: gauge
+          dataSource: 主机资源快照::monitor/get_host_resource_snapshot
+          compare: true
+          compareMode: percent
+          unitId: percent
+          decimalPlaces: 1
+          gaugeMin: 0
+          gaugeMax: 100
+          filterBindings:
+            organization__string: true
+            time__timeRange: true
+          selectedFields:
+          - avg_disk
+          dataSourceParams:
+          - name: scope
+            type: string
+            value: all_authorized
+            alias_name: 范围
+            filterType: params
+          - name: time
+            type: timeRange
+            value: 10080
+            alias_name: 时间范围
+            filterType: filter
+          - name: organization
+            type: string
+            value: ''
+            inputConfig:
+              control: organization
+            alias_name: 组织
+            filterType: filter
+      - h: 7
+        w: 3
+        x: 9
+        y: 0
+        id: ops-monitor-alerts
+        name: 监控异常 TOP5
+        itemType: widget
+        valueConfig:
+          chartType: table
+          dataSource: 监控活跃告警::monitor/query_latest_active_alerts
+          interaction:
+            kind: title
+            name: 查看全部
+            url: /monitor/event/alert
+            openMode: newTab
+          filterBindings:
+            organization__string: true
+          dataSourceParams:
+          - name: organization
+            type: string
+            value: ''
+            inputConfig:
+              control: organization
+            alias_name: 组织
+            filterType: filter
+    sizeToContent: true
+  - h: 8
+    w: 12
+    x: 0
+    y: 20
+    id: group-alert
+    name: 告警中心
+    headerH: 1
+    itemType: group
+    subGridOpts:
+      children:
+      - h: 7
+        w: 5
+        x: 0
+        y: 0
+        id: ops-alert-trend
+        name: 近 7 日新增与关闭告警（$time$）
+        itemType: widget
+        valueConfig:
+          chartType: line
+          dataSource: 告警趋势::alert/get_alert_trend_data
+          filterBindings:
+            organization__string: true
+            time__timeRange: true
+          dataSourceParams:
+          - name: time
+            type: timeRange
+            value: 10080
+            alias_name: 时间范围
+            filterType: filter
+          - name: bucket
+            type: string
+            value: day
+            alias_name: 时间桶
+            filterType: params
+          - name: series
+            type: string
+            value: open_close
+            alias_name: 序列
+            filterType: params
+          - name: organization
+            type: string
+            value: ''
+            inputConfig:
+              control: organization
+            alias_name: 组织
+            filterType: filter
+      - h: 7
+        w: 3
+        x: 5
+        y: 0
+        id: ops-alert-level
+        name: 当前告警等级分布
+        itemType: widget
+        valueConfig:
+          chartType: pie
+          dataSource: 告警等级分布::get_alert_level_distribution
+          filterBindings:
+            organization__string: true
+          dataSourceParams:
+          - name: organization
+            type: string
+            value: ''
+            inputConfig:
+              control: organization
+            alias_name: 组织
+            filterType: filter
+      - h: 7
+        w: 4
+        x: 8
+        y: 0
+        id: ops-alert-top
+        name: 待处理告警 TOP5
+        itemType: widget
+        valueConfig:
+          chartType: table
+          dataSource: 活跃告警 TOP N::get_active_alert_top
+          interaction:
+            kind: title
+            name: 查看全部
+            url: /alarm/alarms
+            openMode: newTab
+          filterBindings:
+            organization__string: true
+          dataSourceParams:
+          - name: limit
+            type: number
+            value: 5
+            alias_name: 返回条数
+            filterType: params
+          - name: organization
+            type: string
+            value: ''
+            inputConfig:
+              control: organization
+            alias_name: 组织
+            filterType: filter
+    sizeToContent: true
+  refs:
+    datasource_keys:
+    - 主机资源快照::monitor/get_host_resource_snapshot
+    - 关联告警 TOP::monitor/get_cmdb_relation_alert_aggregation
+    - 关联告警分布::monitor/get_cmdb_relation_alert_aggregation
+    - 关联告警汇总::monitor/get_cmdb_relation_alert_aggregation
+    - 分类实例合计::cmdb/get_classification_instance_counts
+    - 告警快照统计::alert/get_alert_snapshot_statistics
+    - 告警趋势::alert/get_alert_trend_data
+    - 告警等级分布::get_alert_level_distribution
+    - 模型/实例/分类总数统计::cmdb/get_cmdb_statistics
+    - 活跃告警 TOP N::get_active_alert_top
+    - 监控中心总览统计::monitor/get_monitor_statistics
+    - 监控活跃告警::monitor/query_latest_active_alerts
+    namespace_keys: []
+  filters:
+  - id: organization__string
+    key: organization
+    name: 组织
+    type: string
+    order: 0
+    enabled: true
+    inputConfig:
+      control: organization
+  - id: time__timeRange
+    key: time
+    name: 时间范围
+    type: timeRange
+    order: 1
+    enabled: true
+    defaultValue:
+      selectValue: 10080
+topologies: []
+architectures: []
+screens: []
+reports: []
+datasources: []
+namespaces: []

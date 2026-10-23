@@ -1347,6 +1347,7 @@ def get_cmdb_statistics(user_info=None, **kwargs):
                 "empty_model_count": 0,
                 "model_coverage_rate": 0,
                 "collected_instance_count": 0,
+                "uncollected_instance_count": 0,
                 "collect_coverage_rate": 0,
             },
             "message": "",
@@ -1363,6 +1364,7 @@ def get_cmdb_statistics(user_info=None, **kwargs):
     model_coverage_rate = round((model_with_instance_count / model_count) * 100, 1) if model_count else 0
     task_keys = _collect_task_instance_keys(user_info)
     collected_instance_count = len(_authorized_collect_instance_keys(task_keys, instance_permissions_map))
+    uncollected_instance_count = max(instance_count - collected_instance_count, 0)
     collect_coverage_rate = round((collected_instance_count / instance_count) * 100, 1) if instance_count else 0
 
     return {
@@ -1375,6 +1377,7 @@ def get_cmdb_statistics(user_info=None, **kwargs):
             "empty_model_count": empty_model_count,
             "model_coverage_rate": model_coverage_rate,
             "collected_instance_count": collected_instance_count,
+            "uncollected_instance_count": uncollected_instance_count,
             "collect_coverage_rate": collect_coverage_rate,
         },
         "message": "",
@@ -2636,11 +2639,26 @@ def get_model_association_options(model_id=None, user_info=None, **kwargs):
 
 
 @nats_client.register
-def get_classification_instance_counts(classification_ids=None, user_info=None, **kwargs):
-    """按传入顺序返回所选分类的可见实例总数，包含 0。"""
+def _classification_all_visible(value):
+    if value is True:
+        return True
+    if value is False or value is None:
+        return False
+    if isinstance(value, (int, float)) and value == 1:
+        return True
+    return str(value).strip().lower() in {"1", "true", "yes", "on"}
+
+
+def get_classification_instance_counts(classification_ids=None, user_info=None, all_visible=None, **kwargs):
+    """按传入顺序返回所选分类的可见实例总数，包含 0。
+
+    classification_ids 为空时，只有显式 all_visible 才返回当前可见的全部分类。
+    显式传入的分类仍然优先，不会被 all_visible 扩成全量。
+    """
     del kwargs
     selected = normalize_text_list(classification_ids)
-    if not selected:
+    expand_visible = _classification_all_visible(all_visible)
+    if not selected and not expand_visible:
         raise AssetOverviewQueryError("分类不能为空")
 
     language = _resolve_nats_cmdb_language(user_info)
@@ -2656,6 +2674,8 @@ def get_classification_instance_counts(classification_ids=None, user_info=None, 
     model_classification_ids = {model.get("classification_id") for model in models if model.get("classification_id")}
     visible_classifications = [item for item in classifications if item.get("classification_id") in model_classification_ids]
     known = {item.get("classification_id") for item in visible_classifications}
+    if not selected:
+        selected = [item.get("classification_id") for item in visible_classifications if item.get("classification_id")]
     missing = [item for item in selected if item not in known]
     if missing:
         raise AssetOverviewQueryError(f"分类不存在或不可见: {', '.join(missing)}")

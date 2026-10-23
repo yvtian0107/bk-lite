@@ -67,6 +67,7 @@ export interface WidgetConfigFormValues {
   topNValueField?: string;
   dimensionField?: string;
   valueField?: string;
+  pieScalarFields?: Array<{ field?: string; label?: string }>;
   multiValueLabelField?: string;
   multiValueValueField?: string;
   nodeGraphIdentityMode?: 'ip' | 'service';
@@ -643,6 +644,8 @@ const applyGaugeConfig = (
   if (values.gaugeMin !== undefined) result.gaugeMin = values.gaugeMin;
   if (values.gaugeMax !== undefined) result.gaugeMax = values.gaugeMax;
   if (values.gaugeShape !== undefined) result.gaugeShape = values.gaugeShape;
+  result.compare = !!values.compare;
+  result.compareMode = values.compareMode || 'percent';
 };
 
 export const buildWidgetSubmitConfig = ({
@@ -732,6 +735,21 @@ export const buildWidgetSubmitConfig = ({
     }
     if (valueField) {
       result.valueField = valueField;
+    }
+    const scalarFields: Array<{ field: string; label?: string }> = [];
+    (values.pieScalarFields || []).forEach((item) => {
+      const field = trimOptionalField(item?.field);
+      if (!field) {
+        return;
+      }
+      const label = trimOptionalField(item?.label);
+      scalarFields.push(label ? { field, label } : { field });
+    });
+    if (scalarFields.length === 1 && !forPreview) {
+      return { error: 'chartRoleFieldPairRequired' };
+    }
+    if (scalarFields.length >= 2) {
+      result.pieScalarFields = scalarFields;
     }
   }
 

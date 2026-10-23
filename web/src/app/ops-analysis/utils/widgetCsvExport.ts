@@ -256,6 +256,7 @@ export const buildPieCsvTable = (
   const slices = ChartDataTransformer.transformToPieData(rawData, {
     dimensionField: config?.dimensionField,
     valueField: config?.valueField,
+    pieScalarFields: config?.pieScalarFields,
   });
   return {
     headers: [

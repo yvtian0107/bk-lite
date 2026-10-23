@@ -350,6 +350,9 @@ export function applyOpenedValueConfigToFormValues(
   if (valueConfig?.valueField !== undefined) {
     formValues.valueField = valueConfig.valueField;
   }
+  formValues.pieScalarFields = valueConfig?.pieScalarFields?.length
+    ? valueConfig.pieScalarFields
+    : [];
   if (valueConfig?.multiValueLabelField !== undefined) {
     formValues.multiValueLabelField = valueConfig.multiValueLabelField;
   }

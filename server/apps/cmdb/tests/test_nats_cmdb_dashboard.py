@@ -204,6 +204,7 @@ def test_cmdb_statistics_collect_coverage_counts_unique_task_instances(monkeypat
     assert result["result"] is True
     assert result["data"]["instance_count"] == 4
     assert result["data"]["collected_instance_count"] == 3
+    assert result["data"]["uncollected_instance_count"] == 1
     assert result["data"]["collect_coverage_rate"] == 75.0
 
 

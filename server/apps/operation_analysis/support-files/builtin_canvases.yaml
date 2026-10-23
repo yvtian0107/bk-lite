@@ -3868,6 +3868,7 @@ datasources:
   chart_type:
   - single
   - gauge
+  - pie
   field_schema:
   - key: classification_count
     title: 分类总数
@@ -3897,6 +3898,10 @@ datasources:
     title: 已挂采集任务实例数
     value_type: number
     description: 至少关联 1 条采集任务、且当前有权可见的实例数
+  - key: uncollected_instance_count
+    title: 未挂采集任务实例数
+    value_type: number
+    description: 实例总数减去已挂采集任务的实例数，不小于 0
   - key: collect_coverage_rate
     title: 采集覆盖率
     value_type: number
@@ -4022,6 +4027,13 @@ datasources:
     value: active
     alias_name: 告警状态范围
     filterType: fixed
+  - name: organization
+    type: string
+    value: ''
+    alias_name: 组织
+    filterType: filter
+    inputConfig:
+      control: organization
   tags:
   - 告警
   chart_type:
@@ -4167,7 +4179,7 @@ datasources:
 - key: 告警快照统计::alert/get_alert_snapshot_statistics
   name: 活跃告警状态快照
   rest_api: alert/get_alert_snapshot_statistics
-  desc: 查询时刻的活跃告警状态，不受时间范围影响；含活动总数、未分派、待响应、处理中与自动恢复
+  desc: 查询时刻的活跃告警状态，不受时间范围影响；含活动总数、未分派、待响应、处理中、自动恢复与严重活跃数
   is_active: true
   params:
   - name: organization
@@ -4206,6 +4218,10 @@ datasources:
     title: 自动恢复状态告警占比
     value_type: number
     description: 百分比值范围 0 到 100
+  - key: severe_active_count
+    title: 严重活跃告警数
+    value_type: number
+    description: 活跃告警中级别名称 Critical 对应 level_id 的数量，不按显示名匹配
   namespace_keys:
   - 默认命名空间
 - key: 按渠道通知成功率::alert/get_notification_channel_stats
@@ -4311,6 +4327,13 @@ datasources:
     value: 10
     alias_name: 返回条数
     filterType: params
+  - name: organization
+    type: string
+    value: ''
+    alias_name: 组织
+    filterType: filter
+    inputConfig:
+      control: organization
   tags:
   - 告警
   chart_type:
@@ -4402,6 +4425,7 @@ datasources:
   - 监控
   chart_type:
   - single
+  - pie
   field_schema:
   - {key: monitor_object_total, title: 监控对象总数, value_type: number, description: 监控对象定义总数}
   - {key: monitor_object_visible, title: 可见监控对象数, value_type: number, description: 可见的监控对象数}

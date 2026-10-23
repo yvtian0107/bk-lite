@@ -103,6 +103,79 @@ def test_host_resource_snapshot_empty_selection_skips_query(monkeypatch):
     assert "healthy" not in out["data"]
 
 
+def test_host_resource_snapshot_unknown_scope_still_skips_empty_selection(monkeypatch):
+    class FailVM:
+        def __init__(self):
+            raise AssertionError("unknown scope must keep the empty snapshot")
+
+    monkeypatch.setattr(nm, "VictoriaMetricsAPI", FailVM)
+    out = nm.get_host_resource_snapshot(scope="fleet", instance_ids=[], user_info={"user": "u", "team": 1})
+    assert out["result"] is True
+    assert out["data"]["host_count"] == 0
+
+
+def test_host_resource_snapshot_all_authorized_requires_time(monkeypatch):
+    class FailVM:
+        def __init__(self):
+            raise AssertionError("missing time must not query")
+
+    monkeypatch.setattr(nm, "VictoriaMetricsAPI", FailVM)
+    out = nm.get_host_resource_snapshot(
+        scope="all_authorized",
+        instance_ids=["host-1"],
+        user_info={"user": "u", "team": 1},
+    )
+    assert out["result"] is False
+    assert "time" in out["message"]
+
+
+def test_host_resource_snapshot_all_authorized_uses_windowed_hosts(monkeypatch):
+    host = SimpleNamespace(id="host-1", name="web-1", ip="10.0.0.1", cmdb_id="cmdb-1")
+
+    class FakeManager:
+        def filter(self, **kwargs):
+            assert kwargs == {"name": "Host"}
+            return self
+
+        def first(self):
+            return SimpleNamespace(id=7)
+
+    captured = {}
+
+    def fake_build(*, vm_api, instances, time_range, step="5m"):
+        del vm_api, step
+        captured["ids"] = [item.id for item in instances]
+        captured["time"] = time_range
+        return {
+            "host_count": 1,
+            "avg_cpu": 12.5,
+            "avg_memory": 30.0,
+            "avg_disk": 40.0,
+            "max_cpu": None,
+            "max_cpu_host": None,
+            "max_memory": None,
+            "max_memory_host": None,
+        }
+
+    monkeypatch.setattr(nm, "MonitorObject", SimpleNamespace(objects=FakeManager()))
+    _patch_scope(monkeypatch, {"host-1": host})
+    monkeypatch.setattr(nm, "VictoriaMetricsAPI", lambda: object())
+    monkeypatch.setattr(nm, "build_windowed_host_averages", fake_build)
+
+    out = nm.get_host_resource_snapshot(
+        scope="all_authorized",
+        instance_ids=["ignored"],
+        time=["2026-08-01T00:00:00Z", "2026-08-08T00:00:00Z"],
+        user_info={"user": "u", "team": 1},
+    )
+
+    assert out["result"] is True
+    assert out["data"]["avg_cpu"] == 12.5
+    assert out["data"]["max_cpu"] is None
+    assert captured["ids"] == ["host-1"]
+    assert captured["time"][0].startswith("2026-08-01")
+
+
 def test_host_resource_snapshot_returns_avg_max_without_health(monkeypatch):
     allowed = SimpleNamespace(id="host-1", name="web-1", ip="10.0.0.1", interval=300)
     _patch_scope(monkeypatch, {"host-1": allowed})

@@ -29,6 +29,7 @@ def test_get_cmdb_statistics_keeps_complete_zero_schema_without_permission(model
             "empty_model_count": 0,
             "model_coverage_rate": 0,
             "collected_instance_count": 0,
+            "uncollected_instance_count": 0,
             "collect_coverage_rate": 0,
         },
         "message": "",

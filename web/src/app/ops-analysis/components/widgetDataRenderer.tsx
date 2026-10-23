@@ -724,6 +724,7 @@ const WidgetWrapper: React.FC<WidgetWrapperProps> = ({
           return ChartDataTransformer.validatePieData(data, errorMessage, {
             dimensionField: config?.dimensionField,
             valueField: config?.valueField,
+            pieScalarFields: config?.pieScalarFields,
           });
         case "line":
         case "bar":
