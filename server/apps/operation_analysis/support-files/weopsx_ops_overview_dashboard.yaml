@@ -184,15 +184,15 @@ dashboards:
         name: 资源类型分布
         itemType: widget
         valueConfig:
-          chartType: bar
+          chartType: topN
           dataSource: 分类实例合计::cmdb/get_classification_instance_counts
           interaction:
             kind: title
             name: 查看全部
             url: /cmdb/assetOverview
             openMode: newTab
-          dimensionField: classification_name
-          valueField: value
+          topNLabelField: classification_name
+          topNValueField: value
           filterBindings:
             organization__string: true
           dataSourceParams:
@@ -238,56 +238,12 @@ dashboards:
               control: organization
             alias_name: 组织
             filterType: filter
-      - h: 3
+      - h: 7
         w: 3
         x: 6
         y: 0
         id: ops-app-total
         name: 应用总数
-        itemType: widget
-        valueConfig:
-          chartType: single
-          dataSource: 关联告警汇总::monitor/get_cmdb_relation_alert_aggregation
-          filterBindings:
-            organization__string: true
-          selectedFields:
-          - total_count
-          thresholdColors:
-          - color: '#366ce4'
-            value: '70'
-          - color: '#366ce4'
-            value: '30'
-          - color: '#366ce4'
-            value: '0'
-          dataSourceParams:
-          - name: model_id
-            type: string
-            value: application
-            alias_name: 源模型
-            filterType: params
-          - name: model_asst_id
-            type: string
-            value: application_run_host
-            alias_name: 模型关联
-            filterType: params
-          - name: peer_model_id
-            type: string
-            value: host
-            alias_name: 对端模型
-            filterType: params
-          - name: organization
-            type: string
-            value: ''
-            inputConfig:
-              control: organization
-            alias_name: 组织
-            filterType: filter
-      - h: 4
-        w: 3
-        x: 6
-        y: 3
-        id: ops-app-ring
-        name: 应用告警分布
         itemType: widget
         valueConfig:
           chartType: pie
@@ -380,7 +336,7 @@ dashboards:
         x: 0
         y: 0
         id: ops-monitor-ring
-        name: 监控接入概览
+        name: 监控接入概况
         itemType: widget
         valueConfig:
           chartType: pie
@@ -410,7 +366,7 @@ dashboards:
         x: 3
         y: 0
         id: ops-gauge-cpu
-        name: CPU 使用率（$time$）
+        name: CPU 使用率
         itemType: widget
         valueConfig:
           chartType: gauge
@@ -449,7 +405,7 @@ dashboards:
         x: 5
         y: 0
         id: ops-gauge-memory
-        name: 内存使用率（$time$）
+        name: 内存使用率
         itemType: widget
         valueConfig:
           chartType: gauge
@@ -488,7 +444,7 @@ dashboards:
         x: 7
         y: 0
         id: ops-gauge-disk
-        name: 磁盘使用率（$time$）
+        name: 磁盘使用率
         itemType: widget
         valueConfig:
           chartType: gauge
@@ -537,6 +493,24 @@ dashboards:
             name: 查看全部
             url: /monitor/event/alert
             openMode: newTab
+          tableConfig:
+            columns:
+            - key: monitor_instance_name
+              order: 0
+              title: 监控对象
+              visible: true
+            - key: content
+              order: 1
+              title: 告警内容
+              visible: true
+            - key: level
+              order: 2
+              title: 级别
+              visible: true
+            - key: start_event_time
+              order: 3
+              title: 开始时间
+              visible: true
           filterBindings:
             organization__string: true
           dataSourceParams:
@@ -629,6 +603,24 @@ dashboards:
             name: 查看全部
             url: /alarm/alarms
             openMode: newTab
+          tableConfig:
+            columns:
+            - key: resource_name
+              order: 0
+              title: 告警对象
+              visible: true
+            - key: title
+              order: 1
+              title: 告警内容
+              visible: true
+            - key: level
+              order: 2
+              title: 等级
+              visible: true
+            - key: created_at
+              order: 3
+              title: 触发时间
+              visible: true
           filterBindings:
             organization__string: true
           dataSourceParams:
@@ -650,7 +642,6 @@ dashboards:
     - 主机资源快照::monitor/get_host_resource_snapshot
     - 关联告警 TOP::monitor/get_cmdb_relation_alert_aggregation
     - 关联告警分布::monitor/get_cmdb_relation_alert_aggregation
-    - 关联告警汇总::monitor/get_cmdb_relation_alert_aggregation
     - 分类实例合计::cmdb/get_classification_instance_counts
     - 告警快照统计::alert/get_alert_snapshot_statistics
     - 告警趋势::alert/get_alert_trend_data

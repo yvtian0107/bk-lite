@@ -655,20 +655,18 @@ dashboards:
         name: Resources
       ops-app-total:
         name: Applications
-      ops-app-ring:
-        name: Application Alerts
       ops-app-top:
         name: Application Alert TOP 5
       group-monitor:
         name: Monitoring
       ops-monitor-ring:
-        name: Monitor Coverage
+        name: Monitor Access
       ops-gauge-cpu:
-        name: CPU Usage（$time$）
+        name: CPU Usage
       ops-gauge-memory:
-        name: Memory Usage（$time$）
+        name: Memory Usage
       ops-gauge-disk:
-        name: Disk Usage（$time$）
+        name: Disk Usage
       ops-monitor-alerts:
         name: Monitor Anomalies TOP 5
       group-alert:

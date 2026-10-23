@@ -1513,7 +1513,7 @@
     "desc": "按所选模型分类返回可见实例总数，顺序与选择一致，数量为 0 也返回",
     "rest_api": "cmdb/get_classification_instance_counts",
     "tag": ["cmdb"],
-    "chart_type": ["single", "multiValue", "bar"],
+    "chart_type": ["single", "multiValue", "bar", "topN"],
     "params": [
         {
             "name": "classification_ids",

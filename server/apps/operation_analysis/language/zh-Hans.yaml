@@ -655,20 +655,18 @@ dashboards:
         name: 资源总数
       ops-app-total:
         name: 应用总数
-      ops-app-ring:
-        name: 应用告警分布
       ops-app-top:
         name: 应用告警 TOP5
       group-monitor:
         name: 监控中心
       ops-monitor-ring:
-        name: 监控接入概览
+        name: 监控接入概况
       ops-gauge-cpu:
-        name: CPU 使用率（$time$）
+        name: CPU 使用率
       ops-gauge-memory:
-        name: 内存使用率（$time$）
+        name: 内存使用率
       ops-gauge-disk:
-        name: 磁盘使用率（$time$）
+        name: 磁盘使用率
       ops-monitor-alerts:
         name: 监控异常 TOP5
       group-alert:

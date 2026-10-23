@@ -20,6 +20,7 @@ TIME_BOUND_WIDGET_IDS = {
     "ops-gauge-disk",
     "ops-alert-trend",
 }
+TIME_SUFFIX_WIDGET_IDS = {"ops-alert-trend"}
 
 
 def _load_sample():
@@ -60,22 +61,27 @@ def test_ops_overview_yaml_binds_organization_time_and_reusable_widgets():
         "ops-kpi-severe",
         "ops-collect-ring",
         "ops-app-total",
-        "ops-app-ring",
         "ops-monitor-ring",
     }
+    assert "ops-app-ring" not in {widget["id"] for widget in widgets}
     for widget in widgets:
         value_config = widget["valueConfig"]
         assert value_config["filterBindings"]["organization__string"] is True
         bound_time = value_config["filterBindings"].get("time__timeRange") is True
         assert bound_time == (widget["id"] in TIME_BOUND_WIDGET_IDS)
-        if bound_time:
+        if widget["id"] in TIME_SUFFIX_WIDGET_IDS:
             assert widget["name"].endswith("（$time$）")
+        else:
+            assert not str(widget["name"]).endswith("（$time$）")
         org_param = next(param for param in value_config["dataSourceParams"] if param["name"] == "organization")
         assert (org_param.get("inputConfig") or {}).get("control") == "organization"
 
     by_id = {widget["id"]: widget for widget in widgets}
     assert by_id["ops-kpi-severe"]["valueConfig"]["selectedFields"] == ["severe_active_count"]
-    assert by_id["ops-app-total"]["valueConfig"]["selectedFields"] == ["total_count"]
+    assert by_id["ops-app-total"]["valueConfig"]["chartType"] == "pie"
+    assert by_id["ops-app-total"]["valueConfig"]["dataSource"] == "关联告警分布::monitor/get_cmdb_relation_alert_aggregation"
+    assert by_id["ops-app-total"]["h"] == by_id["ops-collect-ring"]["h"]
+    assert by_id["ops-app-total"]["w"] == by_id["ops-collect-ring"]["w"]
     assert by_id["ops-collect-ring"]["valueConfig"]["pieScalarFields"] == [
         {"field": "collected_instance_count", "label": "已配置采集"},
         {"field": "uncollected_instance_count", "label": "未配置采集"},
@@ -94,7 +100,24 @@ def test_ops_overview_yaml_binds_organization_time_and_reusable_widgets():
     trend_params = {param["name"]: param["value"] for param in by_id["ops-alert-trend"]["valueConfig"]["dataSourceParams"]}
     assert trend_params["bucket"] == "day"
     assert trend_params["series"] == "open_close"
-    assert by_id["ops-resource-types"]["valueConfig"]["chartType"] == "bar"
+    assert by_id["ops-resource-types"]["valueConfig"]["chartType"] == "topN"
+    assert by_id["ops-resource-types"]["valueConfig"]["topNLabelField"] == "classification_name"
+    assert by_id["ops-resource-types"]["valueConfig"]["topNValueField"] == "value"
+    assert by_id["ops-resource-types"]["valueConfig"]["interaction"]["name"] == "查看全部"
+    assert by_id["ops-monitor-ring"]["name"] == "监控接入概况"
+    assert by_id["ops-gauge-cpu"]["name"] == "CPU 使用率"
+    assert [column["key"] for column in by_id["ops-monitor-alerts"]["valueConfig"]["tableConfig"]["columns"]] == [
+        "monitor_instance_name",
+        "content",
+        "level",
+        "start_event_time",
+    ]
+    assert [column["key"] for column in by_id["ops-alert-top"]["valueConfig"]["tableConfig"]["columns"]] == [
+        "resource_name",
+        "title",
+        "level",
+        "created_at",
+    ]
     assert by_id["ops-kpi-resources"]["valueConfig"]["interaction"]["url"] == "/cmdb/assetOverview"
     assert by_id["ops-app-top"]["valueConfig"]["interaction"]["name"] == "查看全部"
     assert {widget["valueConfig"]["dataSource"] for widget in widgets} <= set(dashboard.refs.datasource_keys)
