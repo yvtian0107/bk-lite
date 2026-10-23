@@ -1,12 +1,10 @@
 import type { Graph, Node } from '@antv/x6';
-import type { DatasourceItem, ParamItem } from '@/app/ops-analysis/types/dataSource';
+import type { DatasourceItem } from '@/app/ops-analysis/types/dataSource';
 import type { DateRangeValue } from '@/app/ops-analysis/types/dateRange';
 import type { LayoutItem, UnifiedFilterDefinition, FilterValue } from '@/app/ops-analysis/types/dashBoard';
 import type { ViewConfigFormValues } from '@/app/ops-analysis/types/topology';
 import {
-  type BindableParamType,
-  getFilterDefinitionId,
-  getBindableFilterParams,
+  discoverFollowedFilterParams,
 } from '@/app/ops-analysis/utils/widgetDataTransform';
 import { validateDateRangeValue } from '@/app/ops-analysis/utils/dateRange';
 import {
@@ -119,34 +117,29 @@ export const buildFiltersFromNodes = (
 ): UnifiedFilterDefinition[] => {
   if (!graphInstance) return previousDefinitions;
 
-  const discoveredParams = new Map<
-    string,
-    ParamItem & { type: BindableParamType }
-  >();
-
   const nodes = graphInstance.getNodes();
-  nodes.forEach((node: Node) => {
-    const nodeData = node.getData();
-    const nodeType = nodeData?.type;
+  const discoveredParams = discoverFollowedFilterParams(
+    nodes.flatMap((node: Node) => {
+      const nodeData = node.getData();
+      const nodeType = nodeData?.type;
 
-    if (nodeType !== 'chart' && nodeType !== 'single-value' && nodeType !== 'table') {
-      return;
-    }
-
-    const dataSourceId = nodeData?.valueConfig?.dataSource;
-    const normalizedId = typeof dataSourceId === 'string' ? parseInt(dataSourceId, 10) : dataSourceId;
-    const dataSource = dataSources.find((source) => source.id === normalizedId);
-    const params = nodeData?.valueConfig?.dataSourceParams?.length
-      ? nodeData.valueConfig.dataSourceParams
-      : dataSource?.params;
-
-    getBindableFilterParams(params).forEach((param) => {
-      const id = getFilterDefinitionId(param.name, param.type);
-      if (!discoveredParams.has(id)) {
-        discoveredParams.set(id, param);
+      if (nodeType !== 'chart' && nodeType !== 'single-value' && nodeType !== 'table') {
+        return [];
       }
-    });
-  });
+
+      const dataSourceId = nodeData?.valueConfig?.dataSource;
+      const normalizedId = typeof dataSourceId === 'string' ? parseInt(dataSourceId, 10) : dataSourceId;
+      const dataSource = dataSources.find((source) => source.id === normalizedId);
+      const params = nodeData?.valueConfig?.dataSourceParams?.length
+        ? nodeData.valueConfig.dataSourceParams
+        : dataSource?.params;
+
+      return [{
+        params,
+        filterBindings: nodeData?.valueConfig?.filterBindings,
+      }];
+    }),
+  );
 
   const existingDefinitions = new Map(
     previousDefinitions.map((definition) => [definition.id, definition]),

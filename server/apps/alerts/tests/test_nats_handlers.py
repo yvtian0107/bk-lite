@@ -630,6 +630,7 @@ def test_get_alert_snapshot_statistics_keeps_old_active_alerts_and_ignores_time(
         "processing_count": 1,
         "auto_recovery_count": 1,
         "auto_recovery_rate": 25.0,
+        "severe_active_count": 0,
     }
 
 
@@ -1074,6 +1075,84 @@ def test_get_alert_trend_data_seven_day_window_uses_hour(user_info):
     assert "告警数" in result["data"]
     # 7 天按 hour，约 168 点，不应再是日粒度的 ~7 点
     assert len(result["data"]["告警数"]) >= 160
+    assert "关闭告警数" not in result["data"]
+    assert set(result["data"]) == {"告警数", "告警关联事件数", "已恢复告警数"}
+
+
+@pytest.mark.django_db
+def test_get_alert_trend_data_day_bucket_and_closed_series_are_opt_in(user_info):
+    start = timezone.now().replace(microsecond=0) - datetime.timedelta(days=2)
+    end = timezone.now().replace(microsecond=0) + datetime.timedelta(minutes=1)
+    opened = Alert.objects.create(
+        alert_id="OPEN-1",
+        level="0",
+        title="opened",
+        content="c",
+        fingerprint="open-fp",
+        team=[1],
+        status=AlertStatus.PENDING,
+    )
+    closed_in_window = Alert.objects.create(
+        alert_id="CLOSED-1",
+        level="0",
+        title="closed",
+        content="c",
+        fingerprint="closed-fp",
+        team=[1],
+        status=AlertStatus.CLOSED,
+    )
+    Alert.objects.filter(pk=opened.pk).update(created_at=start + datetime.timedelta(hours=1))
+    Alert.objects.filter(pk=closed_in_window.pk).update(
+        created_at=start - datetime.timedelta(days=10),
+        updated_at=start + datetime.timedelta(hours=2),
+    )
+    window = [start.isoformat(), end.isoformat()]
+
+    default = N.get_alert_trend_data(user_info=user_info, time=window, group_by="day")
+    assert default["result"] is True
+    assert "关闭告警数" not in default["data"]
+    assert len(default["data"]["告警数"]) >= 48
+
+    daily = N.get_alert_trend_data(user_info=user_info, time=window, bucket="day", include_closed="true")
+    assert daily["result"] is True
+    assert len(daily["data"]["告警数"]) < 20
+    assert sum(point[1] for point in daily["data"]["告警数"]) == 1
+    assert sum(point[1] for point in daily["data"]["关闭告警数"]) == 1
+    assert "告警关联事件数" in daily["data"]
+
+    paired = N.get_alert_trend_data(user_info=user_info, time=window, bucket="day", series="open_close")
+    assert paired["result"] is True
+    assert set(paired["data"]) == {"告警数", "关闭告警数"}
+    assert sum(point[1] for point in paired["data"]["关闭告警数"]) == 1
+
+
+@pytest.mark.django_db
+def test_get_alert_snapshot_statistics_counts_critical_level_id_not_display_name(user_info):
+    Level.objects.create(level_id=0, level_name="Critical", level_display_name="严重", level_type=LevelType.ALERT, built_in=True)
+    Level.objects.create(level_id=2, level_name="Warning", level_display_name="严重", level_type=LevelType.ALERT, built_in=True)
+    Level.objects.create(level_id=0, level_name="Critical", level_display_name="严重", level_type=LevelType.EVENT, built_in=True)
+    for index, (level, status) in enumerate(
+        (
+            ("0", AlertStatus.PENDING),
+            ("0", AlertStatus.CLOSED),
+            ("2", AlertStatus.PROCESSING),
+        )
+    ):
+        Alert.objects.create(
+            alert_id=f"SEV-{index}",
+            level=level,
+            title="sev",
+            content="c",
+            fingerprint=f"sev-{index}",
+            team=[1],
+            status=status,
+        )
+
+    result = N.get_alert_snapshot_statistics(user_info=user_info)
+
+    assert result["result"] is True
+    assert result["data"]["severe_active_count"] == 1
+    assert result["data"]["active_count"] == 2
 
 
 @pytest.mark.django_db

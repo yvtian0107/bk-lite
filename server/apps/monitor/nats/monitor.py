@@ -15,6 +15,9 @@ from django.utils import timezone
 from rest_framework import serializers
 
 import nats_client
+from apps.cmdb.services.application_system import query_association_edges
+from apps.cmdb.services.asset_overview_query import list_model_association_options
+from apps.cmdb.services.instance import InstanceManage
 from apps.cmdb.services.monitored_host import normalize_zombie_whitelist
 from apps.core.exceptions.base_app_exception import BaseAppException
 from apps.core.logger import monitor_logger as monitor_logger
@@ -54,12 +57,19 @@ from apps.monitor.serializers.monitor_policy import MonitorPolicySerializer
 from apps.monitor.serializers.plugin import MonitorPluginSerializer
 from apps.monitor.services.alert_access import filter_alerts_by_organizations, orphaned_monitor_policy_q
 from apps.monitor.services.authorized_metric_query import AuthorizedMetricQueryError, AuthorizedMetricQueryService
+from apps.monitor.services.cmdb_relation_alerts import (
+    RELATION_ALERT_VIEWS,
+    build_relation_alert_view,
+    empty_relation_alert_payload,
+    normalize_relation_alert_limit,
+)
 from apps.monitor.services.host_dashboard import (
     HOST_OBJECT_NAME,
     HostMetricRangeService,
     HostResourceSnapshotService,
     HostResourceTopByTimeService,
     build_host_instance_rows,
+    build_windowed_host_averages,
     empty_host_snapshot,
     looks_like_cmdb_instance_locator,
     resolve_instance_storage_ids,
@@ -1598,6 +1608,58 @@ def _filter_requested_alert_instances(authorized_instances, instance_ids):
     return set(authorized_instances.keys()), [], None
 
 
+def resolve_alert_metric_name(query_condition, metrics_by_id) -> str:
+    """策略上的指标展示名。公式和组合取 result_name，单指标取展示名或名称。"""
+    condition = query_condition if isinstance(query_condition, dict) else {}
+    query_type = condition.get("type")
+    if query_type in {"formula", "multi"}:
+        return str(condition.get("result_name") or "").strip()
+    if query_type != "metric":
+        return ""
+    try:
+        metric_id = int(condition.get("metric_id"))
+    except (TypeError, ValueError):
+        return ""
+    metric = metrics_by_id.get(metric_id)
+    if metric is None:
+        return ""
+    return str(getattr(metric, "display_name", None) or getattr(metric, "name", None) or "").strip()
+
+
+def _coerce_policy_id(value):
+    try:
+        policy_id = int(value)
+    except (TypeError, ValueError):
+        return None
+    return policy_id or None
+
+
+def _attach_active_alert_metric_names(items):
+    if not items:
+        return
+    policy_ids = {policy_id for policy_id in (_coerce_policy_id(item.get("policy_id")) for item in items) if policy_id is not None}
+    policies = {}
+    if policy_ids:
+        policies = {
+            policy.id: policy.query_condition if isinstance(policy.query_condition, dict) else {}
+            for policy in MonitorPolicy.objects.filter(id__in=policy_ids).only("id", "query_condition")
+        }
+    metric_ids = set()
+    for condition in policies.values():
+        if condition.get("type") != "metric":
+            continue
+        try:
+            metric_ids.add(int(condition.get("metric_id")))
+        except (TypeError, ValueError):
+            continue
+    metrics_by_id = {}
+    if metric_ids:
+        metrics_by_id = {metric.id: metric for metric in Metric.objects.filter(id__in=metric_ids).only("id", "display_name", "name")}
+    for item in items:
+        policy_id = _coerce_policy_id(item.get("policy_id"))
+        item["metric_name"] = resolve_alert_metric_name(policies.get(policy_id) or {}, metrics_by_id)
+
+
 def _build_latest_active_alert_items(queryset, authorized_instances, limit):
     items = []
     for alert in queryset.order_by("-start_event_time", "-created_at")[:limit]:
@@ -1609,6 +1671,7 @@ def _build_latest_active_alert_items(queryset, authorized_instances, limit):
         )
         item["end_event_time"] = None
         items.append(item)
+    _attach_active_alert_metric_names(items)
     return items
 
 
@@ -1988,9 +2051,57 @@ def get_host_metric_range(*args, **kwargs):
     return {"result": True, "data": data, "message": ""}
 
 
+_HOST_FLEET_SCOPE = "all_authorized"
+_RELATION_ALERT_PAGE_SIZE = 5000
+
+
+def _host_resource_snapshot_all_authorized(kwargs):
+    """显式全量授权主机的窗口均值。缺时间窗时失败且不查询。"""
+    time_range = kwargs.get("time")
+    if time_range in (None, "", []):
+        return {"result": False, "data": empty_host_snapshot(), "message": "all_authorized 需要 time 时间窗"}
+
+    user_info = kwargs.get("user_info") or {}
+    _, _, _, scope_ids, _, error = _get_nats_actor_scope(user_info)
+    if error:
+        return error
+    host_obj = MonitorObject.objects.filter(name=HOST_OBJECT_NAME).first()
+    if host_obj is None:
+        return {"result": True, "data": empty_host_snapshot(), "message": ""}
+    authorized_instances, error = _get_authorized_monitor_instances(
+        user_info,
+        scope_ids,
+        monitor_obj_id=host_obj.id,
+    )
+    if error:
+        return error
+    instances = list(authorized_instances.values())
+    if not instances:
+        return {"result": True, "data": empty_host_snapshot(), "message": ""}
+    try:
+        snapshot = build_windowed_host_averages(
+            vm_api=VictoriaMetricsAPI(),
+            instances=instances,
+            time_range=time_range,
+        )
+    except ValueError as exc:
+        return {"result": False, "data": empty_host_snapshot(), "message": str(exc)}
+    except Exception:
+        logger.exception("host resource snapshot window query failed")
+        return {"result": False, "data": empty_host_snapshot(), "message": "主机资源快照查询失败"}
+    return {"result": True, "data": snapshot, "message": ""}
+
+
 @nats_client.register
 def get_host_resource_snapshot(*args, **kwargs):
-    """Return avg/max resource snapshot for selected authorized hosts."""
+    """Return avg/max resource snapshot for selected authorized hosts.
+
+    scope=all_authorized 且提供 time 时，改为授权主机窗口均值，并忽略 instance_ids。
+    未传 scope 且 instance_ids 为空时仍返回空快照，不查询指标。
+    """
+    scope = str(kwargs.get("scope") or "").strip().lower()
+    if scope == _HOST_FLEET_SCOPE:
+        return _host_resource_snapshot_all_authorized(kwargs)
     try:
         instance_ids = _normalize_filter_values(kwargs.get("instance_ids"), "instance_ids")
     except ValueError as exc:
@@ -2023,6 +2134,159 @@ def get_host_resource_snapshot(*args, **kwargs):
         logger.exception("host resource snapshot query failed")
         return {"result": False, "data": empty_host_snapshot(), "message": "主机资源快照查询失败"}
     return {"result": True, "data": snapshot, "message": ""}
+
+
+def _relation_alert_failure(failed_stage: str, exc: BaseException, view: str):
+    monitor_logger.error(
+        "event=cmdb_relation_alert_aggregation_failed failed_stage=%s error_type=%s view=%s",
+        failed_stage,
+        type(exc).__name__,
+        view,
+        exc_info=safe_exception_info(exc),
+    )
+    return {"result": False, "data": empty_relation_alert_payload(view), "message": "关联告警汇总失败"}
+
+
+def _count_new_monitor_alerts(instance_ids: list[str]) -> dict[str, int]:
+    if not instance_ids:
+        return {}
+    rows = MonitorAlert.objects.filter(status="new", monitor_instance_id__in=instance_ids).values("monitor_instance_id").annotate(count=Count("id"))
+    return {str(row["monitor_instance_id"]): int(row["count"]) for row in rows}
+
+
+def _alert_counts_by_cmdb_id(authorized_instances: dict) -> dict[str, int]:
+    by_instance = _count_new_monitor_alerts([str(instance.id) for instance in authorized_instances.values() if getattr(instance, "id", None)])
+    by_cmdb: dict[str, int] = {}
+    for instance in authorized_instances.values():
+        cmdb_id = str(getattr(instance, "cmdb_id", "") or "").strip()
+        if not cmdb_id:
+            continue
+        by_cmdb[cmdb_id] = by_cmdb.get(cmdb_id, 0) + by_instance.get(str(instance.id), 0)
+    return by_cmdb
+
+
+def _matching_relation(language: str, model_id: str, model_asst_id: str, peer_model_id: str):
+    options = list_model_association_options(language, model_id)
+    match = next((item for item in options if str(item.get("model_asst_id") or "") == model_asst_id), None)
+    if match is None:
+        return None, "模型关联不存在，或没有连接到该模型"
+    src_model_id = str(match.get("src_model_id") or "")
+    dst_model_id = str(match.get("dst_model_id") or "")
+    peer = dst_model_id if src_model_id == model_id else src_model_id
+    if peer != peer_model_id:
+        return None, "模型关联的对端不是指定模型"
+    return match, ""
+
+
+@nats_client.register
+def get_cmdb_relation_alert_aggregation(
+    model_id=None,
+    model_asst_id=None,
+    peer_model_id="host",
+    view="summary",
+    limit=5,
+    with_alert_label=None,
+    without_alert_label=None,
+    user_info=None,
+    organization=None,
+    **kwargs,
+):
+    """按 CMDB 关联把授权对端上的活跃监控告警汇总到源模型实例。
+
+    view=summary 返回总数 / 有告警 / 无告警；distribution 返回两片分布；top 返回有告警的前 N 个源实例。
+    """
+    del organization, kwargs
+    view_name = str(view or "").strip().lower() or "summary"
+    if view_name not in RELATION_ALERT_VIEWS:
+        return {"result": False, "data": {}, "message": "view 必须是 summary、distribution 或 top"}
+    source_model_id = str(model_id or "").strip()
+    association_id = str(model_asst_id or "").strip()
+    peer_model = str(peer_model_id or "").strip() or "host"
+    with_label = str(with_alert_label or "").strip()
+    without_label = str(without_alert_label or "").strip()
+    if not source_model_id:
+        return {"result": False, "data": empty_relation_alert_payload(view_name), "message": "模型不能为空"}
+    if not association_id:
+        return {"result": False, "data": empty_relation_alert_payload(view_name), "message": "模型关联不能为空"}
+    try:
+        top_limit = normalize_relation_alert_limit(limit)
+    except ValueError as exc:
+        return {"result": False, "data": empty_relation_alert_payload(view_name), "message": str(exc)}
+
+    from apps.cmdb.nats.nats import _build_nats_permission_map, _resolve_nats_cmdb_language
+
+    permission_map = _build_nats_permission_map(user_info, model_id=source_model_id)
+    if permission_map is None:
+        return {
+            "result": True,
+            "data": empty_relation_alert_payload(view_name, with_alert_label=with_label, without_alert_label=without_label),
+            "message": "",
+        }
+
+    actor_user_info = user_info or {}
+    _, _, _, scope_ids, _, scope_error = _get_nats_actor_scope(actor_user_info)
+    if scope_error:
+        return scope_error
+
+    try:
+        _match, association_error = _matching_relation(
+            _resolve_nats_cmdb_language(actor_user_info),
+            source_model_id,
+            association_id,
+            peer_model,
+        )
+    except Exception as exc:
+        return _relation_alert_failure("association", exc, view_name)
+    if association_error:
+        return {"result": False, "data": empty_relation_alert_payload(view_name), "message": association_error}
+
+    authorized_instances = {}
+    if peer_model == "host":
+        host_obj = MonitorObject.objects.filter(name=HOST_OBJECT_NAME).first()
+        if host_obj is not None:
+            authorized_instances, error = _get_authorized_monitor_instances(
+                actor_user_info,
+                scope_ids,
+                monitor_obj_id=host_obj.id,
+            )
+            if error:
+                return error
+    else:
+        authorized_instances, error = _get_authorized_monitor_instances(actor_user_info, scope_ids)
+        if error:
+            return error
+
+    try:
+        instances, _count = InstanceManage.instance_list(
+            model_id=source_model_id,
+            params=[],
+            page=1,
+            page_size=_RELATION_ALERT_PAGE_SIZE,
+            order="inst_name",
+            permission_map=permission_map,
+        )
+        source_uuids = [str(item.get("inst_uuid") or "").strip() for item in instances or [] if isinstance(item, dict)]
+        edges = query_association_edges(association_id, [item for item in source_uuids if item])
+    except Exception as exc:
+        return _relation_alert_failure("instances", exc, view_name)
+
+    try:
+        alert_counts = _alert_counts_by_cmdb_id(authorized_instances)
+    except Exception as exc:
+        return _relation_alert_failure("alerts", exc, view_name)
+
+    data = build_relation_alert_view(
+        entities=instances or [],
+        edges=edges,
+        alert_count_by_peer=alert_counts,
+        source_model_id=source_model_id,
+        peer_model_id=peer_model,
+        view=view_name,
+        limit=top_limit,
+        with_alert_label=with_label,
+        without_alert_label=without_label,
+    )
+    return {"result": True, "data": data, "message": ""}
 
 
 def _zombie_page_data(items, page, page_size):

@@ -67,6 +67,7 @@ export const buildInteractionPoints = (
     ValueConfig,
     | 'dimensionField'
     | 'valueField'
+    | 'pieScalarFields'
     | 'selectedFields'
     | 'topNLabelField'
     | 'topNValueField'
@@ -97,6 +98,7 @@ export const buildInteractionPoints = (
     return ChartDataTransformer.transformToPieData(rawData, {
       dimensionField: config?.dimensionField,
       valueField: config?.valueField,
+      pieScalarFields: config?.pieScalarFields,
     }).flatMap((item) => (item.__link ? [item.__link] : []));
   }
 

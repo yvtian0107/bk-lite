@@ -69,20 +69,44 @@ export const buildTopNItems = (
     return [];
   }
 
-  return rows
-    .map((row) => {
+  const items = rows
+    .map((row, index) => {
       const name = toTopNName(getValueByPath(row, labelField));
       if (!name) {
         return null;
       }
 
       return {
-        name,
-        value: coerceTopNNumericValue(getValueByPath(row, valueField)),
-        ...(isTopNRecord(row) ? { source: row } : {}),
+        index,
+        item: {
+          name,
+          value: coerceTopNNumericValue(getValueByPath(row, valueField)),
+          ...(isTopNRecord(row) ? { source: row } : {}),
+        },
       };
     })
-    .filter((item): item is TopNItem => item !== null);
+    .filter((entry): entry is { index: number; item: TopNItem } => entry !== null);
+
+  // 排名图按数值从大到小。空值靠后，相同数值保持原顺序。
+  items.sort((left, right) => {
+    const leftValue = left.item.value;
+    const rightValue = right.item.value;
+    const leftMissing = leftValue === null;
+    const rightMissing = rightValue === null;
+    if (leftMissing !== rightMissing) {
+      return leftMissing ? 1 : -1;
+    }
+    if (
+      leftValue !== null
+      && rightValue !== null
+      && leftValue !== rightValue
+    ) {
+      return rightValue - leftValue;
+    }
+    return left.index - right.index;
+  });
+
+  return items.map((entry) => entry.item);
 };
 
 export const resolveTopNMaxValue = (items: TopNItem[]): number => {

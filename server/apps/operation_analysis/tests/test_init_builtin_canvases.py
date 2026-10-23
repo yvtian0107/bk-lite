@@ -417,6 +417,7 @@ def test_builtin_alert_cmdb_datasource_contracts_are_complete():
             "processing_count",
             "auto_recovery_count",
             "auto_recovery_rate",
+            "severe_active_count",
         },
     }
     for rest_api, expected_fields in numeric_fields.items():

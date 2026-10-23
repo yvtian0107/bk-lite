@@ -283,6 +283,17 @@ def _generate_time_periods(group_by, start_dt, end_dt):
     return all_periods
 
 
+def _is_opt_in_flag(value):
+    """空值与未知值都不开启，避免可选参数的默认空串改变既有序列。"""
+    if value is True:
+        return True
+    if value is False or value is None:
+        return False
+    if isinstance(value, (int, float)) and value == 1:
+        return True
+    return str(value).strip().lower() in {"1", "true", "yes", "on"}
+
+
 def _get_trend_span_error(group_by, aware_start, aware_end, handler_name):
     """校验趋势查询跨度，避免在数据库查询前生成超大时间序列。"""
     span_seconds = (aware_end - aware_start).total_seconds()
@@ -361,6 +372,10 @@ def get_alert_trend_data(*args, **kwargs) -> Dict[str, Any]:
 
     time_values = kwargs.pop("time", [])
     kwargs.pop("group_by", None)
+    bucket = str(kwargs.pop("bucket", "") or "").strip().lower()
+    include_closed = _is_opt_in_flag(kwargs.pop("include_closed", None))
+    series_mode = str(kwargs.pop("series", "") or "").strip().lower()
+    kwargs.pop("organization", None)
     aware_start, aware_end, group_by, validation_error = _resolve_alert_trend_group_by(time_values, target_tz, "get_alert_trend_data")
     if validation_error:
         return {
@@ -368,6 +383,11 @@ def get_alert_trend_data(*args, **kwargs) -> Dict[str, Any]:
             "data": [],
             "message": validation_error,
         }
+    if bucket == "day":
+        group_by = "day"
+        span_error = _get_trend_span_error(group_by, aware_start, aware_end, "get_alert_trend_data")
+        if span_error:
+            return {"result": False, "data": [], "message": span_error}
 
     start_dt = aware_start.astimezone(target_tz)
     end_dt = aware_end.astimezone(target_tz)
@@ -388,12 +408,10 @@ def get_alert_trend_data(*args, **kwargs) -> Dict[str, Any]:
     # 固定返回三条系列：告警数、事件数、已恢复告警数
     alert_qs = queryset.filter(alert_filter) if alert_filter else queryset
 
-    data = {
-        "告警数": _build_period_series(alert_qs, "created_at", trunc_func, target_tz, aware_start, aware_end, all_periods),
-        "告警关联事件数": _build_period_series(
-            Event.objects.filter(alert__in=queryset).distinct(), "received_at", trunc_func, target_tz, aware_start, aware_end, all_periods
-        ),
-        "已恢复告警数": _build_period_series(
+    opened = _build_period_series(alert_qs, "created_at", trunc_func, target_tz, aware_start, aware_end, all_periods)
+
+    def _closed_series():
+        return _build_period_series(
             alert_qs,
             "updated_at",
             trunc_func,
@@ -401,9 +419,30 @@ def get_alert_trend_data(*args, **kwargs) -> Dict[str, Any]:
             aware_start,
             aware_end,
             all_periods,
-            extra_filter=Q(status=AlertStatus.AUTO_RECOVERY),
-        ),
-    }
+            extra_filter=Q(status__in=AlertStatus.CLOSED_STATUS),
+        )
+
+    if series_mode == "open_close":
+        data = {"告警数": opened, "关闭告警数": _closed_series()}
+    else:
+        data = {
+            "告警数": opened,
+            "告警关联事件数": _build_period_series(
+                Event.objects.filter(alert__in=queryset).distinct(), "received_at", trunc_func, target_tz, aware_start, aware_end, all_periods
+            ),
+            "已恢复告警数": _build_period_series(
+                alert_qs,
+                "updated_at",
+                trunc_func,
+                target_tz,
+                aware_start,
+                aware_end,
+                all_periods,
+                extra_filter=Q(status=AlertStatus.AUTO_RECOVERY),
+            ),
+        }
+        if include_closed:
+            data["关闭告警数"] = _closed_series()
 
     return {"result": True, "data": data, "message": ""}
 
@@ -1191,6 +1230,9 @@ def get_alert_snapshot_statistics(**kwargs):
         processing_count=Count("id", filter=Q(status=AlertStatus.PROCESSING)),
         auto_recovery_count=Count("id", filter=Q(status=AlertStatus.AUTO_RECOVERY)),
     )
+    critical_level_ids = Level.objects.filter(level_type=LevelType.ALERT, level_name__iexact="Critical").values_list("level_id", flat=True)
+    severe_level_keys = [str(level_id) for level_id in critical_level_ids]
+    severe_active_count = queryset.filter(status__in=AlertStatus.ACTIVATE_STATUS, level__in=severe_level_keys).count() if severe_level_keys else 0
     return {
         "result": True,
         "data": {
@@ -1202,6 +1244,7 @@ def get_alert_snapshot_statistics(**kwargs):
             "auto_recovery_rate": (
                 round(status_counts["auto_recovery_count"] / status_counts["total_count"] * 100, 1) if status_counts["total_count"] else 0
             ),
+            "severe_active_count": severe_active_count,
         },
         "message": "",
     }
