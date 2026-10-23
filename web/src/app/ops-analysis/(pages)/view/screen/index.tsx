@@ -142,6 +142,7 @@ import {
   type CanvasDraftPayload,
 } from "@/app/ops-analysis/api/canvasDraft";
 import { bindCanvasDraftControls } from "@/app/ops-analysis/components/canvasDraftControls";
+import { screenWidgetDataKey } from "./utils/screenWidgetDataKey";
 import { isSameScreenDataTarget } from "./utils/screenSelection";
 import { isSceneWidgetType } from "@/app/ops-analysis/types/sceneWidgetCapability";
 
@@ -156,16 +157,6 @@ interface ScreenQuerySnapshot {
   namespaceDraftId?: number;
   appliedNamespaceId?: number;
 }
-
-const screenWidgetDataKey = (item: ScreenWidgetItem) => {
-  const { appearance: _appearance, ...dataConfig } = item.valueConfig ?? {};
-  return JSON.stringify({
-    id: item.id,
-    title: item.title,
-    chartType: item.chartType,
-    dataConfig,
-  });
-};
 
 const ScreenDataConfig = memo(
   function ScreenDataConfig({

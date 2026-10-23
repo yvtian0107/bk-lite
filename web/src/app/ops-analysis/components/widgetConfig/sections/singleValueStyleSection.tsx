@@ -13,6 +13,7 @@ import SelectIcon, {
 } from '@/app/cmdb/(pages)/assetManage/management/list/selectIcon';
 import { getModelIconUrl } from '@/app/cmdb/utils/modelIcon';
 import {
+  ensureSingleValueIconFileType,
   isSingleValueIconDataUrl,
   persistSingleValueStyle,
   readSingleValueStyle,
@@ -149,7 +150,7 @@ export const SingleValueStyleFields: React.FC<{
       }
       patch({ iconImage: result, iconSource: 'upload' });
     };
-    reader.readAsDataURL(file);
+    reader.readAsDataURL(ensureSingleValueIconFileType(file));
   };
 
   const clearCurrent = () => {
@@ -387,20 +388,25 @@ const styleSignature = (style: SingleValueStyleConfig | undefined) =>
   JSON.stringify(style ?? null);
 
 // 大屏样式检查器：草稿保留另一来源，画布上只写入当前来源。
+// 换卡片时持久化结果可能一样，不能只比签名，否则上一张未落库的来源会写到下一张。
 export const ScreenSingleValueStyleSections: React.FC<{
+  itemId?: string;
   style: SingleValueStyleConfig | undefined;
   onStyleChange: (next: SingleValueStyleConfig | undefined) => void;
   t: (key: string) => string;
-}> = ({ style, onStyleChange, t }) => {
+}> = ({ itemId = '', style, onStyleChange, t }) => {
   const [draft, setDraft] = useState(() => readSingleValueStyle(style));
   const lastEmitted = useRef<string | null>(null);
+  const lastItemId = useRef(itemId);
 
   useEffect(() => {
     const incoming = styleSignature(style);
-    if (incoming === lastEmitted.current) return;
+    const itemChanged = lastItemId.current !== itemId;
+    if (!itemChanged && incoming === lastEmitted.current) return;
+    lastItemId.current = itemId;
     setDraft(readSingleValueStyle(style));
     lastEmitted.current = incoming;
-  }, [style]);
+  }, [itemId, style]);
 
   const handleChange = useCallback((next: SingleValueStyleDraft) => {
     setDraft(next);

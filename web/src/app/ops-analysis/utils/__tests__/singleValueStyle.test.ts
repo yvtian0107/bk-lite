@@ -3,6 +3,7 @@ import test from 'node:test';
 import {
   SINGLE_VALUE_ICON_FONT_RATIO,
   SINGLE_VALUE_ICON_GAP_RATIO,
+  ensureSingleValueIconFileType,
   isSingleValueIconDataUrl,
   persistSingleValueStyle,
   readSingleValueStyle,
@@ -113,12 +114,24 @@ test('icon file accepts png jpg webp svg within 100KB', () => {
   assert.equal(validateSingleValueIconFile({ name: 'a.webp', type: '', size: 100 }), null);
   assert.equal(validateSingleValueIconFile({ name: 'a.svg', type: 'image/svg+xml', size: 100 }), null);
   assert.equal(validateSingleValueIconFile({ name: 'a.gif', type: 'image/gif', size: 100 }), 'type');
+  assert.equal(validateSingleValueIconFile({ name: 'a.svg', type: 'text/html', size: 100 }), 'type');
   assert.equal(
     validateSingleValueIconFile({ name: 'a.png', type: 'image/png', size: 100 * 1024 + 1 }),
     'size',
   );
   assert.equal(isSingleValueIconDataUrl('data:image/webp;base64,xx'), true);
   assert.equal(isSingleValueIconDataUrl('data:text/plain,xx'), false);
+  assert.equal(isSingleValueIconDataUrl('data:;base64,xx'), false);
+
+  const emptyType = new File(['icon'], 'mark.webp', { type: '' });
+  const readable = ensureSingleValueIconFileType(emptyType);
+  assert.equal(emptyType.type, '');
+  assert.equal(readable.type, 'image/webp');
+  assert.equal(readable.name, 'mark.webp');
+  assert.equal(
+    ensureSingleValueIconFileType(new File(['icon'], 'mark.png', { type: 'image/png' })).type,
+    'image/png',
+  );
 });
 
 test('builtin icon needs a key and upload icon needs a data url', () => {

@@ -1689,6 +1689,8 @@ export const ScreenStyleInspector: React.FC<ScreenStyleInspectorProps> = ({
 
         {item.chartType === 'single' ? (
           <ScreenSingleValueStyleSections
+            key={item.id}
+            itemId={item.id}
             t={t}
             style={item.valueConfig?.singleStyle}
             onStyleChange={(singleStyle) => {

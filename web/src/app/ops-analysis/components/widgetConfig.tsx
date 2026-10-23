@@ -77,6 +77,7 @@ import { WidgetConfigBasicFields } from './widgetConfig/sections/widgetConfigBas
 import { WidgetDatasourceChartTypeFields } from './widgetConfig/sections/widgetDatasourceChartTypeFields';
 import { NetworkStatusTopologyDataFields } from './widgetConfig/sections/networkStatusTopologyDataFields';
 import { resolveCardListSettingsRemountKey } from './widgetConfig/utils/cardListSettingsRemountKey';
+import { viewConfigReloadKey } from './widgetConfig/utils/viewConfigReloadKey';
 import {
   buildDisplayColumnsFromSchema,
   isDisplayableDefaultField,
@@ -144,19 +145,6 @@ const isInteractionFieldError = (error: unknown) => {
 const readWidgetId = (item: ViewConfigItem | null | undefined) => (
   item && 'i' in item ? String(item.i || '') : ''
 );
-
-const viewConfigReloadKey = (item: ViewConfigItem | null | undefined) => {
-  if (!item) return '';
-  const id = 'i' in item && item.i ? String(item.i) : 'id' in item && item.id ? String(item.id) : '';
-  const name = 'name' in item ? item.name ?? '' : '';
-  const valueConfig = item.valueConfig;
-  if (!valueConfig) {
-    return JSON.stringify({ id, name });
-  }
-  const { appearance, ...dataConfig } = valueConfig;
-  void appearance;
-  return JSON.stringify({ id, name, dataConfig });
-};
 
 interface ViewConfigPropsWithManager extends ViewConfigProps {
   dataSourceManager: ReturnType<typeof useDataSourceManager>;

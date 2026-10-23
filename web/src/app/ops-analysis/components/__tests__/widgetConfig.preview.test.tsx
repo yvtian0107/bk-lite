@@ -378,6 +378,71 @@ describe('ViewConfig screen panel', () => {
       expect(ensureDataSource).toHaveBeenCalledTimes(2);
     });
   });
+
+  it('does not reload the data form when only single-value style changes', async () => {
+    const ensureDataSource = vi.fn(async () => lineDataSource);
+    const manager = {
+      ...buildManager(lineDataSource),
+      ensureDataSource,
+    };
+    const item = singleItem();
+    const view = render(
+      <ViewConfig
+        open
+        variant="panel"
+        item={item}
+        onClose={() => undefined}
+        dataSourceManager={manager as never}
+        surface="screen"
+      />,
+    );
+
+    await waitFor(() => {
+      expect(ensureDataSource).toHaveBeenCalledTimes(1);
+    });
+
+    view.rerender(
+      <ViewConfig
+        open
+        variant="panel"
+        item={{
+          ...item,
+          valueConfig: {
+            ...item.valueConfig,
+            singleStyle: { showIcon: true, align: 'center' },
+          },
+        }}
+        onClose={() => undefined}
+        dataSourceManager={manager as never}
+        surface="screen"
+      />,
+    );
+
+    await waitFor(() => {
+      expect(ensureDataSource).toHaveBeenCalledTimes(1);
+    });
+
+    view.rerender(
+      <ViewConfig
+        open
+        variant="panel"
+        item={{
+          ...item,
+          valueConfig: {
+            ...item.valueConfig,
+            descriptionField: 'note',
+          },
+        }}
+        onClose={() => undefined}
+        dataSourceManager={manager as never}
+        surface="screen"
+      />,
+    );
+
+    await waitFor(() => {
+      expect(ensureDataSource).toHaveBeenCalledTimes(2);
+    });
+  });
 });
 
 const waitForOpenedWidget = async () => {

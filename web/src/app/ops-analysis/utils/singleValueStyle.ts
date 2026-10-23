@@ -45,13 +45,25 @@ export const SINGLE_VALUE_ICON_GAP_RATIO = 0.31;
 /** 窄卡片先把图标收到这个比例，再窄则隐藏 */
 export const SINGLE_VALUE_ICON_MIN_SCALE = 0.45;
 
-const ICON_FILE_EXT = /\.(png|jpe?g|webp|svg)$/i;
 const ICON_MIME = new Set([
   'image/png',
   'image/jpeg',
   'image/webp',
   'image/svg+xml',
 ]);
+
+const ICON_MIME_BY_EXTENSION: Record<string, string> = {
+  png: 'image/png',
+  jpg: 'image/jpeg',
+  jpeg: 'image/jpeg',
+  webp: 'image/webp',
+  svg: 'image/svg+xml',
+};
+
+const singleValueIconExtension = (name: string) => {
+  const match = /\.([^.]+)$/.exec(name.trim());
+  return match?.[1]?.toLowerCase() ?? '';
+};
 
 const roundTenth = (value: number) => Math.round(value * 10) / 10;
 
@@ -100,10 +112,24 @@ export const validateSingleValueIconFile = (file: {
   type: string;
   size: number;
 }): 'type' | 'size' | null => {
-  const typeOk = ICON_MIME.has(file.type) || ICON_FILE_EXT.test(file.name);
+  // 浏览器给出的 MIME 必须在白名单里。只有空类型才按扩展名放行。
+  const typeOk = file.type
+    ? ICON_MIME.has(file.type)
+    : Boolean(ICON_MIME_BY_EXTENSION[singleValueIconExtension(file.name)]);
   if (!typeOk) return 'type';
   if (file.size > SINGLE_VALUE_ICON_MAX_BYTES) return 'size';
   return null;
+};
+
+/** FileReader 对空 type 会写成 data:;base64。扩展名合法时补上对应 MIME。 */
+export const ensureSingleValueIconFileType = (file: File): File => {
+  if (file.type) return file;
+  const mime = ICON_MIME_BY_EXTENSION[singleValueIconExtension(file.name)];
+  if (!mime) return file;
+  return new File([file], file.name, {
+    type: mime,
+    lastModified: file.lastModified,
+  });
 };
 
 export const resolveSingleValueIconSrc = (

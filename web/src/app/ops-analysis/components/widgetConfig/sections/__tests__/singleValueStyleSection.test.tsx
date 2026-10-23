@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import '@ant-design/v5-patch-for-react-19';
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
-import { Form } from 'antd';
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { Form, message } from 'antd';
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import type { FormInstance } from 'antd';
 import type { SingleValueStyleConfig } from '@/app/ops-analysis/utils/singleValueStyle';
@@ -64,11 +64,13 @@ afterEach(() => {
 
 const Harness: React.FC<{
   initial?: SingleValueStyleConfig;
+  itemId?: string;
   onStyleChange?: (next: SingleValueStyleConfig | undefined) => void;
-}> = ({ initial, onStyleChange }) => {
+}> = ({ initial, itemId, onStyleChange }) => {
   const [style, setStyle] = useState<SingleValueStyleConfig | undefined>(initial);
   return (
     <ScreenSingleValueStyleSections
+      itemId={itemId}
       t={(key) => key}
       style={style}
       onStyleChange={(next) => {
@@ -131,6 +133,44 @@ describe('SingleValueStyleSection on a real form', () => {
     expect(saved?.singleStyle.align).toBe('center');
     expect(saved?.singleStyle.iconSource).toBe('builtin');
   });
+
+  it('drops another widget\'s unpersisted icon when the form is refilled', async () => {
+    const formRef: { current: FormInstance | null } = { current: null };
+    render(<Harness formRef={formRef} />);
+
+    fireEvent.click(screen.getByRole('switch', { name: 'dashboard.singleStyleIcon' }));
+    fireEvent.click(screen.getByTestId('single-style-icon-cell'));
+    fireEvent.click(screen.getByTestId('select-icon-confirm'));
+    fireEvent.click(sourceRadio('dashboard.singleStyleIconUpload'));
+    expect(formRef.current?.getFieldsValue().singleStyle.iconKey).toBe('cc-host');
+
+    act(() => {
+      formRef.current?.setFieldsValue({
+        singleStyle: {
+          showIcon: true,
+          iconSource: 'builtin',
+          iconKey: undefined,
+          iconImage: undefined,
+          iconPosition: 'left',
+          iconSize: 'medium',
+          align: undefined,
+        },
+      });
+    });
+
+    await waitFor(() => {
+      const refilled = formRef.current?.getFieldValue('singleStyle');
+      expect(refilled.iconSource).toBe('builtin');
+      expect(refilled.iconKey).toBeUndefined();
+      expect(screen.getByText('dashboard.singleStyleIconBuiltin').closest('label')?.className)
+        .toContain('ant-radio-button-wrapper-checked');
+      expect(screen.getByTestId('single-style-icon-cell').querySelector('img')).toBeNull();
+    });
+
+    fireEvent.click(screen.getByRole('button', { name: 'dashboard.singleStyleAlignCenter' }));
+    expect(formRef.current?.getFieldsValue().singleStyle.iconKey).toBeUndefined();
+    expect(formRef.current?.getFieldsValue().singleStyle.align).toBe('center');
+  });
 });
 
 describe('ScreenSingleValueStyleSections', () => {
@@ -159,7 +199,7 @@ describe('ScreenSingleValueStyleSections', () => {
 
   it('keeps the other source while editing and persists only the active one', async () => {
     const onStyleChange = vi.fn();
-    render(<Harness onStyleChange={onStyleChange} />);
+    render(<Harness itemId="card-a" onStyleChange={onStyleChange} />);
 
     fireEvent.click(screen.getByRole('switch', { name: 'dashboard.singleStyleIcon' }));
     fireEvent.click(sourceRadio('dashboard.singleStyleIconBuiltin'));
@@ -209,6 +249,65 @@ describe('ScreenSingleValueStyleSections', () => {
       expect(latest.iconImage?.startsWith('data:image/png')).toBe(true);
       expect(latest.iconKey).toBeUndefined();
     });
+  });
+
+  it('does not carry an unpersisted icon key onto the next card', async () => {
+    const onStyleChange = vi.fn();
+    const view = render(<Harness itemId="card-a" onStyleChange={onStyleChange} />);
+
+    fireEvent.click(screen.getByRole('switch', { name: 'dashboard.singleStyleIcon' }));
+    fireEvent.click(screen.getByTestId('single-style-icon-cell'));
+    fireEvent.click(screen.getByTestId('select-icon-confirm'));
+    fireEvent.click(sourceRadio('dashboard.singleStyleIconUpload'));
+
+    await waitFor(() => {
+      expect(onStyleChange.mock.calls.at(-1)?.[0]).toEqual({ showIcon: true });
+    });
+
+    view.rerender(<Harness itemId="card-b" onStyleChange={onStyleChange} />);
+
+    await waitFor(() => {
+      expect(screen.getByText('dashboard.singleStyleIconBuiltin').closest('label')?.className)
+        .toContain('ant-radio-button-wrapper-checked');
+      expect(screen.getByTestId('single-style-icon-cell').querySelector('img')).toBeNull();
+    });
+
+    fireEvent.click(sourceRadio('dashboard.singleStyleIconUpload'));
+    fireEvent.click(sourceRadio('dashboard.singleStyleIconBuiltin'));
+    fireEvent.click(screen.getByRole('button', { name: 'dashboard.singleStyleAlignCenter' }));
+
+    await waitFor(() => {
+      expect(onStyleChange.mock.calls.at(-1)?.[0]).toEqual({
+        showIcon: true,
+        align: 'center',
+      });
+    });
+    expect(screen.getByTestId('single-style-icon-cell').querySelector('img')).toBeNull();
+  });
+
+  it('accepts an empty-type image with a known extension and rejects a disallowed mime', async () => {
+    const onStyleChange = vi.fn();
+    const warning = vi.spyOn(message, 'warning').mockImplementation(() => ({}) as never);
+    render(<Harness onStyleChange={onStyleChange} />);
+
+    fireEvent.click(screen.getByRole('switch', { name: 'dashboard.singleStyleIcon' }));
+    fireEvent.click(sourceRadio('dashboard.singleStyleIconUpload'));
+
+    fireEvent.change(screen.getByTestId('single-style-file-input'), {
+      target: { files: [new File(['<html></html>'], 'mark.svg', { type: 'text/html' })] },
+    });
+    expect(warning).toHaveBeenCalledWith('dashboard.singleStyleUploadTypeError');
+    expect(onStyleChange.mock.calls.some((call) => call[0]?.iconImage)).toBe(false);
+
+    fireEvent.change(screen.getByTestId('single-style-file-input'), {
+      target: { files: [new File(['icon'], 'mark.webp', { type: '' })] },
+    });
+    await waitFor(() => {
+      const latest = onStyleChange.mock.calls.at(-1)?.[0] as SingleValueStyleConfig;
+      expect(latest.iconSource).toBe('upload');
+      expect(latest.iconImage?.startsWith('data:image/webp')).toBe(true);
+    });
+    warning.mockRestore();
   });
 
   it('writes alignment only after a button is pressed', () => {
