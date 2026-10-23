@@ -651,12 +651,6 @@ dashboards:
         name: Resources
       ops-resource-types:
         name: Resource Types
-      ops-resource-total:
-        name: Resources
-      ops-collect-configured:
-        name: Collected
-      ops-collect-missing:
-        name: Not Collected
       ops-app-total:
         name: Applications
       ops-app-with-alert:
@@ -1039,9 +1033,6 @@ datasources:
       collected_instance_count:
         title: Instances with Collection Tasks
         description: Visible instances linked to at least one collection task
-      uncollected_instance_count:
-        title: Instances without Collection Tasks
-        description: Instance total minus instances with collection tasks, never below 0
       collect_coverage_rate:
         title: Collection Coverage
         description: Visible instances with collection tasks as a share of all instances, in %

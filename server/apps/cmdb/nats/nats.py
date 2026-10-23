@@ -1312,47 +1312,6 @@ def sync_display_fields(organizations=None, users=None):
     return result
 
 
-def _percent_share_text(part, total):
-    """一位小数百分比。没有分母时为 0.0%，供单值说明直接展示。"""
-    if not total:
-        return "0.0%"
-    return f"{round((part / total) * 100, 1):.1f}%"
-
-
-def _complement_share_text(part, total):
-    if not total:
-        return "0.0%"
-    rate = round((part / total) * 100, 1)
-    return f"{round(100 - rate, 1):.1f}%"
-
-
-def _cmdb_statistics_payload(
-    *,
-    classification_count,
-    model_count,
-    instance_count,
-    model_with_instance_count,
-    empty_model_count,
-    model_coverage_rate,
-    collected_instance_count,
-    uncollected_instance_count,
-    collect_coverage_rate,
-):
-    return {
-        "classification_count": classification_count,
-        "model_count": model_count,
-        "instance_count": instance_count,
-        "model_with_instance_count": model_with_instance_count,
-        "empty_model_count": empty_model_count,
-        "model_coverage_rate": model_coverage_rate,
-        "collected_instance_count": collected_instance_count,
-        "uncollected_instance_count": uncollected_instance_count,
-        "collect_coverage_rate": collect_coverage_rate,
-        "collected_instance_share": _percent_share_text(collected_instance_count, instance_count),
-        "uncollected_instance_share": _complement_share_text(collected_instance_count, instance_count),
-    }
-
-
 @nats_client.register
 def get_cmdb_statistics(user_info=None, **kwargs):
     """
@@ -1380,17 +1339,16 @@ def get_cmdb_statistics(user_info=None, **kwargs):
     if model_permissions_map is None or instance_permissions_map is None:
         return {
             "result": True,
-            "data": _cmdb_statistics_payload(
-                classification_count=0,
-                model_count=0,
-                instance_count=0,
-                model_with_instance_count=0,
-                empty_model_count=0,
-                model_coverage_rate=0,
-                collected_instance_count=0,
-                uncollected_instance_count=0,
-                collect_coverage_rate=0,
-            ),
+            "data": {
+                "classification_count": 0,
+                "model_count": 0,
+                "instance_count": 0,
+                "model_with_instance_count": 0,
+                "empty_model_count": 0,
+                "model_coverage_rate": 0,
+                "collected_instance_count": 0,
+                "collect_coverage_rate": 0,
+            },
             "message": "",
         }
 
@@ -1405,22 +1363,20 @@ def get_cmdb_statistics(user_info=None, **kwargs):
     model_coverage_rate = round((model_with_instance_count / model_count) * 100, 1) if model_count else 0
     task_keys = _collect_task_instance_keys(user_info)
     collected_instance_count = len(_authorized_collect_instance_keys(task_keys, instance_permissions_map))
-    uncollected_instance_count = max(instance_count - collected_instance_count, 0)
     collect_coverage_rate = round((collected_instance_count / instance_count) * 100, 1) if instance_count else 0
 
     return {
         "result": True,
-        "data": _cmdb_statistics_payload(
-            classification_count=classification_count,
-            model_count=model_count,
-            instance_count=instance_count,
-            model_with_instance_count=model_with_instance_count,
-            empty_model_count=empty_model_count,
-            model_coverage_rate=model_coverage_rate,
-            collected_instance_count=collected_instance_count,
-            uncollected_instance_count=uncollected_instance_count,
-            collect_coverage_rate=collect_coverage_rate,
-        ),
+        "data": {
+            "model_count": model_count,
+            "instance_count": instance_count,
+            "classification_count": classification_count,
+            "model_with_instance_count": model_with_instance_count,
+            "empty_model_count": empty_model_count,
+            "model_coverage_rate": model_coverage_rate,
+            "collected_instance_count": collected_instance_count,
+            "collect_coverage_rate": collect_coverage_rate,
+        },
         "message": "",
     }
 

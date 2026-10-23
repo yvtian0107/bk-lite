@@ -193,7 +193,7 @@ dashboards:
     subGridOpts:
       children:
       - h: 7
-        w: 3
+        w: 4
         x: 0
         y: 0
         id: ops-resource-types
@@ -230,76 +230,8 @@ dashboards:
             alias_name: 组织
             filterType: filter
       - h: 3
-        w: 3
-        x: 3
-        y: 0
-        id: ops-resource-total
-        name: 资源总数
-        itemType: widget
-        valueConfig:
-          chartType: single
-          dataSource: 模型/实例/分类总数统计::cmdb/get_cmdb_statistics
-          filterBindings:
-            organization__string: true
-          selectedFields:
-          - instance_count
-          dataSourceParams:
-          - name: organization
-            type: string
-            value: ''
-            inputConfig:
-              control: organization
-            alias_name: 组织
-            filterType: filter
-      - h: 2
-        w: 3
-        x: 3
-        y: 3
-        id: ops-collect-configured
-        name: 已配置采集
-        itemType: widget
-        valueConfig:
-          chartType: single
-          dataSource: 模型/实例/分类总数统计::cmdb/get_cmdb_statistics
-          descriptionField: collected_instance_share
-          filterBindings:
-            organization__string: true
-          selectedFields:
-          - collected_instance_count
-          dataSourceParams:
-          - name: organization
-            type: string
-            value: ''
-            inputConfig:
-              control: organization
-            alias_name: 组织
-            filterType: filter
-      - h: 2
-        w: 3
-        x: 3
-        y: 5
-        id: ops-collect-missing
-        name: 未配置采集
-        itemType: widget
-        valueConfig:
-          chartType: single
-          dataSource: 模型/实例/分类总数统计::cmdb/get_cmdb_statistics
-          descriptionField: uncollected_instance_share
-          filterBindings:
-            organization__string: true
-          selectedFields:
-          - uncollected_instance_count
-          dataSourceParams:
-          - name: organization
-            type: string
-            value: ''
-            inputConfig:
-              control: organization
-            alias_name: 组织
-            filterType: filter
-      - h: 3
-        w: 3
-        x: 6
+        w: 4
+        x: 4
         y: 0
         id: ops-app-total
         name: 应用总数
@@ -335,8 +267,8 @@ dashboards:
             alias_name: 组织
             filterType: filter
       - h: 2
-        w: 3
-        x: 6
+        w: 4
+        x: 4
         y: 3
         id: ops-app-with-alert
         name: 存在关联告警
@@ -373,8 +305,8 @@ dashboards:
             alias_name: 组织
             filterType: filter
       - h: 2
-        w: 3
-        x: 6
+        w: 4
+        x: 4
         y: 5
         id: ops-app-without-alert
         name: 无关联告警
@@ -411,8 +343,8 @@ dashboards:
             alias_name: 组织
             filterType: filter
       - h: 7
-        w: 3
-        x: 9
+        w: 4
+        x: 8
         y: 0
         id: ops-app-top
         name: 应用告警 TOP5

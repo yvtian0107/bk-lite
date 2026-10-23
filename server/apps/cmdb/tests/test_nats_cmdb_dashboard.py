@@ -204,10 +204,7 @@ def test_cmdb_statistics_collect_coverage_counts_unique_task_instances(monkeypat
     assert result["result"] is True
     assert result["data"]["instance_count"] == 4
     assert result["data"]["collected_instance_count"] == 3
-    assert result["data"]["uncollected_instance_count"] == 1
     assert result["data"]["collect_coverage_rate"] == 75.0
-    assert result["data"]["collected_instance_share"] == "75.0%"
-    assert result["data"]["uncollected_instance_share"] == "25.0%"
 
 
 def test_authorized_collect_instance_keys_queries_graph_batches_and_intersects(fake_graph):
@@ -289,8 +286,6 @@ def test_cmdb_statistics_collect_coverage_intersects_authorized_instances(monkey
     assert result["result"] is True
     assert result["data"]["collected_instance_count"] == 2
     assert result["data"]["collect_coverage_rate"] == 50.0
-    assert result["data"]["collected_instance_share"] == "50.0%"
-    assert result["data"]["uncollected_instance_share"] == "50.0%"
     assert any(call[0] == "query_entity" for call in fg.calls)
 
 
@@ -326,5 +321,3 @@ def test_cmdb_statistics_collect_coverage_counts_dual_key_instance_once(monkeypa
     assert result["data"]["instance_count"] == 2
     assert result["data"]["collected_instance_count"] == 1
     assert result["data"]["collect_coverage_rate"] == 50.0
-    assert result["data"]["collected_instance_share"] == "50.0%"
-    assert result["data"]["uncollected_instance_share"] == "50.0%"
