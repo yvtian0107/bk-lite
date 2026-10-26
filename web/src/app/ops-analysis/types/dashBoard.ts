@@ -47,6 +47,11 @@ export interface TimeConfig {
 
 export interface OtherConfig {
   timeSelector?: TimeConfig;
+  /**
+   * 仪表盘横向格数。缺省或 12 表示按旧 12 列保存的 x/w；
+   * 当前运行时为 24，打开旧盘时换算一次后写入 24。
+   */
+  gridCols?: number;
   [key: string]: unknown;
 }
 

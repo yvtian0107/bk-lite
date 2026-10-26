@@ -28,6 +28,7 @@ import type {
 import type { DatasourceItem } from '@/app/ops-analysis/types/dataSource';
 import PermissionWrapper from '@/components/permission';
 import MoreActionsDropdown from '@/components/more-actions-dropdown';
+import { DASHBOARD_GRID_COLS } from '@/app/ops-analysis/utils/dashboardGridColumns';
 import {
   buildDashboardGridStackLayout,
   buildDashboardGridStackStructureKey,
@@ -69,7 +70,6 @@ import {
   syncDashboardEdgeHandleVisibility,
 } from './dashboardEdgeHandles';
 
-const DASHBOARD_GRID_COLS = 12;
 const DASHBOARD_GRID_ROW_HEIGHT = 60;
 const DASHBOARD_GRID_MARGIN: [number, number] = [4, 4];
 const DASHBOARD_GRID_CONTAINER_PADDING: [number, number] = [6, 2];
@@ -1088,9 +1088,14 @@ const DashboardCanvas: React.FC<DashboardCanvasProps> = ({
           return;
         }
 
+        // GridStack 12.6 对手动 GridStack.init 会丢掉 auto 列并回落默认 12 列，
+        // 且不会标记 _autoColumn，之后也不会按父格宽度纠正。
+        // 分组子项的 x/w 已按当前 24 列写入；子网格若仍是 12 列，float 会把
+        // 超出 12 的格子重排，旧盘打开后分组内位置错乱。因此这里必须显式用
+        // DASHBOARD_GRID_COLS，不能依赖 auto。
         const subGrid = GridStack.init(
           {
-            column: 'auto',
+            column: DASHBOARD_GRID_COLS,
             cellHeight: DASHBOARD_GRID_ROW_HEIGHT,
             margin: DASHBOARD_GRID_MARGIN[0],
             float: false,
