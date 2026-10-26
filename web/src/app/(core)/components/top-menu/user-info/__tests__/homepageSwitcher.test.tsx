@@ -102,6 +102,9 @@ const Harness = () => {
   const menu = useHomepageMenu('group-1');
   return (
     <>
+      <button type="button" data-testid="reload-homepage-state" onClick={() => { void menu.reloadState(); }}>
+        reload
+      </button>
       <HomepageSwitcherRow mode={menu.personalMode} />
       <HomepageSwitcherPanel
         personalMode={menu.personalMode}
@@ -120,6 +123,14 @@ const Harness = () => {
     </>
   );
 };
+
+const workbenchState: HomepagePreferenceState = {
+  ...dashboardState,
+  personal_mode: 'workbench',
+  personal_dashboard_id: null,
+};
+
+const followRadio = () => screen.getByRole('radio', { name: 'common.homepageFollowGlobal' });
 
 afterEach(() => {
   cleanup();
@@ -318,6 +329,72 @@ describe('useHomepageMenu', () => {
       resolveMenus(viewMenus);
     });
     expect(await screen.findByTestId('homepage-dashboard-settings')).toBeTruthy();
+  });
+
+  it('keeps the administrator name while reloading the same dashboard', async () => {
+    resetMocks();
+    mocks.getState.mockResolvedValue(workbenchState);
+    render(<Harness />);
+
+    await waitFor(() => {
+      expect(followRadio().textContent).toContain('common.homepageFollowGlobalCurrent:运维总览');
+    });
+    expect(screen.getByTestId('homepage-dashboard-settings')).toBeTruthy();
+
+    let resolveAccess: (value: unknown) => void = () => {};
+    mocks.getAccess.mockImplementation(
+      () => new Promise((resolve) => {
+        resolveAccess = resolve;
+      }),
+    );
+    mocks.getState.mockResolvedValue({ ...workbenchState });
+
+    await act(async () => {
+      fireEvent.click(screen.getByTestId('reload-homepage-state'));
+    });
+
+    expect(followRadio().textContent).toContain('common.homepageFollowGlobalCurrent:运维总览');
+    expect(screen.getByTestId('homepage-personal-dashboard-caption').textContent).toBe(
+      'common.homepageDashboardSettingsHint',
+    );
+    expect(mocks.getAccess).toHaveBeenCalledWith(9);
+
+    await act(async () => {
+      resolveAccess({ status: 'ok', name: 'WeOpsX 平台使用', desc: '', is_build_in: false });
+    });
+    expect(followRadio().textContent).toContain('common.homepageFollowGlobalCurrent:WeOpsX 平台使用');
+  });
+
+  it('clears the administrator name when the bound dashboard changes', async () => {
+    resetMocks();
+    mocks.getState.mockResolvedValue(workbenchState);
+    render(<Harness />);
+    await waitFor(() => {
+      expect(followRadio().textContent).toContain('common.homepageFollowGlobalCurrent:运维总览');
+    });
+
+    let resolveAccess: (value: unknown) => void = () => {};
+    mocks.getAccess.mockImplementation(
+      () => new Promise((resolve) => {
+        resolveAccess = resolve;
+      }),
+    );
+    mocks.getState.mockResolvedValue({
+      ...workbenchState,
+      global_dashboard_id: 10,
+    });
+
+    await act(async () => {
+      fireEvent.click(screen.getByTestId('reload-homepage-state'));
+    });
+
+    expect(followRadio().textContent).not.toContain('运维总览');
+    expect(followRadio().textContent).not.toContain('common.homepageFollowGlobalCurrent');
+
+    await act(async () => {
+      resolveAccess({ status: 'ok', name: '新盘', desc: '', is_build_in: false });
+    });
+    expect(followRadio().textContent).toContain('common.homepageFollowGlobalCurrent:新盘');
   });
 
   it('stays on the menu when saving the preference fails', async () => {

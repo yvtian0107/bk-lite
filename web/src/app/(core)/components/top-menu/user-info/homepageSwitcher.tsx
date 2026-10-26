@@ -53,6 +53,8 @@ export const useHomepageMenu = (groupId?: string) => {
   const [personalNameResolved, setPersonalNameResolved] = useState(false);
   const applyingRef = useRef(false);
   const stateRequestSeq = useRef(0);
+  const adminNameIdRef = useRef<number | null>(null);
+  const personalNameIdRef = useRef<number | null>(null);
 
   const hasModule = hasAppAccess(clientData, OPS_ANALYSIS_APP);
 
@@ -114,9 +116,16 @@ export const useHomepageMenu = (groupId?: string) => {
       ? state.global_dashboard_id
       : null;
 
-    setPersonalName(null);
-    setPersonalNameResolved(!personalId && state !== null);
-    setAdminName(null);
+    // 同一块盘重新拉取时留着已显示的名称。先清空再填回会让说明折行，浮层高度跟着跳。
+    if (personalNameIdRef.current !== personalId) {
+      personalNameIdRef.current = personalId;
+      setPersonalName(null);
+      setPersonalNameResolved(!personalId && state !== null);
+    }
+    if (adminNameIdRef.current !== adminId) {
+      adminNameIdRef.current = adminId;
+      setAdminName(null);
+    }
 
     if (personalId) {
       void readDashboardName(getAccess, personalId).then((name) => {
