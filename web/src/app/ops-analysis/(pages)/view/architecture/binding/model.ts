@@ -139,6 +139,27 @@ export function sliceBindingPage(
   };
 }
 
+/**
+ * Ops-analysis resource_search page.
+ * by-type and by-model-text are already one server page.
+ * fulltext still arrives as the whole hit list and is sliced here.
+ */
+export function architectureSearchPage(
+  raw: unknown,
+  page: number,
+  pageSize: number,
+): BindingSearchPage {
+  const record = isRecord(raw) ? raw : {};
+  const hits = normalizeBindingSearchHits(record.hits);
+  if (record.mode === 'fulltext') {
+    return sliceBindingPage(hits, page, pageSize);
+  }
+  const total = typeof record.total === 'number' && Number.isFinite(record.total)
+    ? record.total
+    : hits.length;
+  return bindingPageFromTotal(hits, page, pageSize, total);
+}
+
 /** Appends a page, skipping rows already listed (offset paging can shift between requests). */
 export function appendBindingHits(
   current: BindingSearchHit[],

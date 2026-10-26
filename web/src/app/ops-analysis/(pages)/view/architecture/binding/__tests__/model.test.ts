@@ -11,6 +11,7 @@ import {
   normalizeBindingSearchHits,
   normalizeFulltextModelPage,
   normalizeInstanceSearchPage,
+  architectureSearchPage,
   sliceBindingPage,
 } from '../model';
 
@@ -119,6 +120,33 @@ describe('architecture binding model', () => {
     });
     expect(page.total).toBe(1);
     expect(bindingPageFromTotal(page.hits, 1, 30, page.total).hasMore).toBe(false);
+  });
+
+  it('pages ops-analysis resource search and slices cross-model hits locally', () => {
+    const listed = architectureSearchPage({
+      mode: 'by-type',
+      hits: [{ inst_uuid: 'u1', model_id: 'host', inst_name: 'web-01', ip_addr: '10.0.0.1', password: 'nope' }],
+      total: 80,
+      page: 1,
+      page_size: 30,
+    }, 1, 30);
+    expect(listed).toEqual({
+      hits: [{ inst_uuid: 'u1', model_id: 'host', inst_name: 'web-01', ip_addr: '10.0.0.1' }],
+      hasMore: true,
+      total: 80,
+    });
+
+    const all = Array.from({ length: 5 }, (_, index) => ({
+      inst_uuid: `u${index}`,
+      inst_name: `n${index}`,
+      ip_addr: '',
+      model_id: 'host',
+    }));
+    expect(architectureSearchPage({ mode: 'fulltext', hits: all, total: all.length }, 2, 2)).toEqual({
+      hits: all.slice(2, 4),
+      hasMore: true,
+      total: 5,
+    });
   });
 
   it('slices a full keyword result into pages and skips repeated rows', () => {
