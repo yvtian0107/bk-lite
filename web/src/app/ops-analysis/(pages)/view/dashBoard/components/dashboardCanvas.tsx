@@ -1088,9 +1088,14 @@ const DashboardCanvas: React.FC<DashboardCanvasProps> = ({
           return;
         }
 
+        // GridStack 12.6 对手动 GridStack.init 会丢掉 auto 列并回落默认 12 列，
+        // 且不会标记 _autoColumn，之后也不会按父格宽度纠正。
+        // 分组子项的 x/w 已按当前 24 列写入；子网格若仍是 12 列，float 会把
+        // 超出 12 的格子重排，旧盘打开后分组内位置错乱。因此这里必须显式用
+        // DASHBOARD_GRID_COLS，不能依赖 auto。
         const subGrid = GridStack.init(
           {
-            column: 'auto',
+            column: DASHBOARD_GRID_COLS,
             cellHeight: DASHBOARD_GRID_ROW_HEIGHT,
             margin: DASHBOARD_GRID_MARGIN[0],
             float: false,
