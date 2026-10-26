@@ -28,6 +28,7 @@ import type {
 import type { DatasourceItem } from '@/app/ops-analysis/types/dataSource';
 import PermissionWrapper from '@/components/permission';
 import MoreActionsDropdown from '@/components/more-actions-dropdown';
+import { DASHBOARD_GRID_COLS } from '@/app/ops-analysis/utils/dashboardGridColumns';
 import {
   buildDashboardGridStackLayout,
   buildDashboardGridStackStructureKey,
@@ -69,7 +70,6 @@ import {
   syncDashboardEdgeHandleVisibility,
 } from './dashboardEdgeHandles';
 
-const DASHBOARD_GRID_COLS = 12;
 const DASHBOARD_GRID_ROW_HEIGHT = 60;
 const DASHBOARD_GRID_MARGIN: [number, number] = [4, 4];
 const DASHBOARD_GRID_CONTAINER_PADDING: [number, number] = [6, 2];
