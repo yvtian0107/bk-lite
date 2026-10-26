@@ -175,24 +175,6 @@ export function appendBindingHits(
   return merged;
 }
 
-export function normalizeInstanceSearchPage(raw: unknown): { hits: BindingSearchHit[]; total: number } {
-  const record = isRecord(raw) ? raw : {};
-  const hits = normalizeBindingSearchHits(record.insts);
-  const total = typeof record.count === 'number' && Number.isFinite(record.count)
-    ? record.count
-    : hits.length;
-  return { hits, total };
-}
-
-export function normalizeFulltextModelPage(raw: unknown): { hits: BindingSearchHit[]; total: number } {
-  const record = isRecord(raw) ? raw : {};
-  const hits = normalizeBindingSearchHits(record.data);
-  const total = typeof record.total === 'number' && Number.isFinite(record.total)
-    ? record.total
-    : hits.length;
-  return { hits, total };
-}
-
 export function bindingModelLabel(models: ModelOption[], modelId: string): string {
   const name = models.find((model) => model.model_id === modelId)?.model_name.trim();
   return name || modelId;

@@ -9,8 +9,6 @@ import {
   findSelectionBinding,
   flattenModelOptions,
   normalizeBindingSearchHits,
-  normalizeFulltextModelPage,
-  normalizeInstanceSearchPage,
   architectureSearchPage,
   sliceBindingPage,
 } from '../model';
@@ -98,28 +96,16 @@ describe('architecture binding model', () => {
     expect(bindingSearchMode('web', 'host')).toBe('by-model-text');
     expect(bindingSearchMode('web', '')).toBe('fulltext');
 
-    const listed = normalizeInstanceSearchPage({
-      count: 120,
-      insts: [
-        { inst_uuid: 'u1', model_id: 'host', inst_name: 'web-01', ip_addr: '10.0.0.1' },
-        { inst_name: 'skip' },
-      ],
-    });
-    expect(listed.total).toBe(120);
-    expect(bindingPageFromTotal(listed.hits, 1, 30, listed.total)).toEqual({
-      hits: listed.hits,
+    const hits = [
+      { inst_uuid: 'u1', model_id: 'host', inst_name: 'web-01', ip_addr: '10.0.0.1' },
+    ];
+    expect(bindingPageFromTotal(hits, 1, 30, 120)).toEqual({
+      hits,
       hasMore: true,
       total: 120,
     });
-    expect(bindingPageFromTotal(listed.hits, 4, 30, listed.total).hasMore).toBe(false);
+    expect(bindingPageFromTotal(hits, 4, 30, 120).hasMore).toBe(false);
     expect(bindingPageFromTotal([], 1, 30, 120).hasMore).toBe(false);
-
-    const page = normalizeFulltextModelPage({
-      total: 1,
-      data: [{ inst_uuid: 'u1', model_id: 'host', inst_name: 'web-01', ip_addr: '10.0.0.1' }],
-    });
-    expect(page.total).toBe(1);
-    expect(bindingPageFromTotal(page.hits, 1, 30, page.total).hasMore).toBe(false);
   });
 
   it('pages ops-analysis resource search and slices cross-model hits locally', () => {
