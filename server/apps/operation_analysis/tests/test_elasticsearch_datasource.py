@@ -41,7 +41,22 @@ def _resolve(addrinfo):
 def test_private_and_public_targets_are_allowed_without_whitelist():
     assert validate_elasticsearch_url("http://10.1.1.8:9200") == "http://10.1.1.8:9200"
     assert validate_elasticsearch_url("https://192.168.1.9:9200") == "https://192.168.1.9:9200"
+    assert validate_elasticsearch_url("http://172.16.4.4:9200") == "http://172.16.4.4:9200"
     assert validate_elasticsearch_url("http://8.8.8.8:9200") == "http://8.8.8.8:9200"
+
+
+@pytest.mark.parametrize(
+    "url",
+    [
+        "http://[64:ff9b::a9fe:a9fe]/",
+        "http://[64:ff9b::7f00:1]:9200",
+        "http://[64:ff9b::a9fe:1]/",
+    ],
+)
+def test_nat64_well_known_prefix_is_blocked(url):
+    with pytest.raises(ConnectorError) as exc:
+        validate_elasticsearch_url(url)
+    assert exc.value.code == "elasticsearch_target_forbidden"
 
 
 @pytest.mark.parametrize(

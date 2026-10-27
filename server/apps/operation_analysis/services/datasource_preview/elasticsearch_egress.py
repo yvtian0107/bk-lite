@@ -21,6 +21,12 @@ _RFC1918 = (
 )
 _CGNAT = ipaddress.ip_network("100.64.0.0/10")
 _ULA = ipaddress.ip_network("fc00::/7")
+# NAT64 把 IPv4 编进 IPv6。Python 3.12 把 64:ff9b::/96 标成 is_global。
+# 与 SSRFValidator.BLOCKED_NETWORKS 里的翻译前缀对齐，整段拒绝。
+_IPV4_TRANSLATION_NETWORKS = (
+    ipaddress.ip_network("64:ff9b::/96"),
+    ipaddress.ip_network("64:ff9b:1::/48"),
+)
 # CGNAT 里的云元数据。SSRFValidator 的 169.254.169.254 拦不住这段。
 _EXTRA_METADATA_IPS = frozenset({ipaddress.ip_address("100.100.100.200")})
 _EXTRA_METADATA_HOSTS = frozenset({"100.100.100.200", "metadata.aliyun.com"})
@@ -38,6 +44,8 @@ def _ip_allowed(ip: ipaddress.IPv4Address | ipaddress.IPv6Address) -> bool:
         return False
     if isinstance(ip, ipaddress.IPv6Address) and ip.ipv4_mapped is not None:
         return _ip_allowed(ip.ipv4_mapped)
+    if isinstance(ip, ipaddress.IPv6Address) and any(ip in network for network in _IPV4_TRANSLATION_NETWORKS):
+        return False
     if any(ip in network for network in _RFC1918):
         return True
     if ip in _CGNAT or ip in _ULA:
