@@ -120,7 +120,6 @@ describe('buildConnectorPayload type-specific transform', () => {
         connection_overrides: { index: 'logs-today' },
         connection_config: { url: 'http://10.0.0.8:9200', index: 'logs' },
         query_config: {
-          time_field: '@timestamp',
           body: '{ "size": 20, "query": { "match_all": {} } }',
         },
         transform_config: leftoverTransform,
@@ -131,7 +130,7 @@ describe('buildConnectorPayload type-specific transform', () => {
     assert.deepEqual(shared.connection_config, {});
     assert.deepEqual(shared.connection_overrides, { index: 'logs-today' });
     assert.deepEqual(shared.query_config.body, { size: 20, query: { match_all: {} } });
-    assert.equal(shared.query_config.time_field, '@timestamp');
+    assert.equal(shared.query_config.time_field, undefined);
     assert.equal(shared.transform_config.enabled, false);
 
     const inline = buildConnectorPayload(

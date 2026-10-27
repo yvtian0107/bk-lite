@@ -168,15 +168,6 @@ export const ElasticsearchConnectFields: React.FC<ElasticsearchConnectFieldsProp
             </Form.Item>
           </div>
         )}
-        <div className="grid grid-cols-2 gap-x-3">
-          <Form.Item
-            name={["query_config", "time_field"]}
-            label={t("dataSource.timeField")}
-            className="!mb-2"
-          >
-            <Input placeholder="@timestamp" disabled={definitionReadOnly} />
-          </Form.Item>
-        </div>
         <Form.Item
           name={["query_config", "body"]}
           label={t("dataSource.queryDsl")}

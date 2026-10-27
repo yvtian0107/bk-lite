@@ -108,62 +108,33 @@ def test_hostname_allows_rfc1918_and_blocks_metadata_resolution(monkeypatch):
     validate_elasticsearch_url("https://es.example:9200")
 
 
-def test_query_body_stays_read_only_and_uses_only_declared_params():
-    specs = [{"name": "service", "type": "string"}]
-    body, _field = prepare_search_body(
-        {"body": {"query": {"term": {"service": "{{service}}"}}, "size": 20, "sort": ["@timestamp"]}},
-        params={"service": "api"},
-        param_specs=specs,
-    )
-    assert body["query"]["term"]["service"] == "api"
+def test_query_body_stays_read_only_without_param_or_time_injection():
+    body = prepare_search_body({"body": {"query": {"term": {"service": "{{service}}"}}, "size": 20, "sort": ["@timestamp"]}})
+    assert body["query"]["term"]["service"] == "{{service}}"
     assert body["size"] == 20
 
     with pytest.raises(ConnectorError) as script_error:
-        prepare_search_body(
-            {"body": {"query": {"script_score": {"script": {"source": "return 1"}}}}},
-            params={},
-            param_specs=[],
-        )
+        prepare_search_body({"body": {"query": {"script_score": {"script": {"source": "return 1"}}}}})
     assert script_error.value.code == "elasticsearch_query_forbidden"
 
     with pytest.raises(ConnectorError) as string_script:
-        prepare_search_body(
-            {"body": {"aggs": {"by_status": {"terms": {"field": "status", "script": "doc['status'].value"}}}}},
-            params={},
-            param_specs=[],
-        )
+        prepare_search_body({"body": {"aggs": {"by_status": {"terms": {"field": "status", "script": "doc['status'].value"}}}}})
     assert string_script.value.code == "elasticsearch_query_forbidden"
 
     with pytest.raises(ConnectorError) as long_timeout:
-        prepare_search_body({"body": {"query": {"match_all": {}}, "timeout": "2m"}}, params={}, param_specs=[])
+        prepare_search_body({"body": {"query": {"match_all": {}}, "timeout": "2m"}})
     assert long_timeout.value.code == "elasticsearch_query_invalid"
-    allowed, _field = prepare_search_body(
-        {"body": {"query": {"match_all": {}}, "timeout": "30s"}},
-        params={},
-        param_specs=[],
-    )
+    allowed = prepare_search_body({"body": {"query": {"match_all": {}}, "timeout": "30s"}})
     assert allowed["timeout"] == "30s"
 
-    with pytest.raises(ConnectorError) as injected:
-        prepare_search_body(
-            {"body": {"query": {"term": {"service": "{{service}}"}}}},
-            params={"service": {"script": {"source": "return 1"}}},
-            param_specs=specs,
-        )
-    assert injected.value.code == "elasticsearch_param_invalid"
-
-    with pytest.raises(ConnectorError) as undeclared:
-        prepare_search_body(
-            {"body": {"query": {"term": {"service": "{{other}}"}}}},
-            params={"other": "api"},
-            param_specs=specs,
-        )
-    assert undeclared.value.code == "elasticsearch_param_undeclared"
+    with pytest.raises(ConnectorError) as timed:
+        prepare_search_body({"body": {"query": {"match_all": {}}}, "time_field": "@timestamp"})
+    assert timed.value.code == "elasticsearch_query_forbidden"
 
 
 def _assert_query_forbidden(query_config):
     with pytest.raises(ConnectorError) as exc:
-        prepare_search_body(query_config, params={}, param_specs=[])
+        prepare_search_body(query_config)
     assert exc.value.code == "elasticsearch_query_forbidden"
     with pytest.raises(ConnectorError) as stored:
         validate_stored_query_config(query_config)
@@ -225,28 +196,15 @@ def test_scripted_metric_and_wrapper_queries_are_rejected():
     _assert_query_forbidden({"body": {"query": {"wrapper": {"query": "not-base64!!!"}}}})
 
     benign = base64.b64encode(json.dumps({"match_all": {}}).encode()).decode()
-    body, _field = prepare_search_body(
-        {"body": {"query": {"wrapper": {"query": benign}}}},
-        params={},
-        param_specs=[],
-    )
+    body = prepare_search_body({"body": {"query": {"wrapper": {"query": benign}}}})
     assert body["query"]["wrapper"]["query"] == benign
     validate_stored_query_config({"body": {"query": {"wrapper": {"query": benign}}}})
 
 
-def test_time_field_injects_canvas_range_and_aggs_force_size_zero():
-    body, field = prepare_search_body(
-        {
-            "time_field": "@timestamp",
-            "body": {"query": {"match_all": {}}, "aggs": {"by_status": {"terms": {"field": "status"}}}},
-        },
-        params={"timeRange": ["2026-01-01T00:00:00Z", "2026-01-02T00:00:00Z"]},
-        param_specs=[{"name": "timeRange", "type": "timeRange"}],
-    )
-    assert field == "@timestamp"
+def test_aggs_force_size_zero_without_injecting_canvas_time():
+    body = prepare_search_body({"body": {"query": {"match_all": {}}, "aggs": {"by_status": {"terms": {"field": "status"}}}}})
     assert body["size"] == 0
-    assert body["query"]["bool"]["must"] == [{"match_all": {}}]
-    assert body["query"]["bool"]["filter"][0]["range"]["@timestamp"]["gte"] == "2026-01-01T00:00:00Z"
+    assert body["query"] == {"match_all": {}}
 
 
 def test_flatten_aggs_to_name_value_and_hits_source_for_tables():
@@ -360,9 +318,17 @@ def test_import_schema_accepts_elasticsearch_and_rejects_script():
         name="日志",
         source_type="elasticsearch",
         connection_config={"url": "http://10.0.0.8:9200", "auth_type": "none", "index": "logs-*"},
-        query_config={"body": {"size": 10, "query": {"match_all": {}}}, "time_field": "@timestamp"},
+        query_config={"body": {"size": 10, "query": {"match_all": {}}}},
     )
     assert item.source_type == "elasticsearch"
+    with pytest.raises(ValueError):
+        DatasourceItem(
+            key="es-time",
+            name="时间",
+            source_type="elasticsearch",
+            connection_config={"url": "http://10.0.0.8:9200", "auth_type": "none", "index": "logs"},
+            query_config={"body": {"query": {"match_all": {}}}, "time_field": "@timestamp"},
+        )
 
     with pytest.raises(ValueError):
         DatasourceItem(
@@ -405,7 +371,7 @@ def test_resolver_overrides_index_like_database_name():
     assert resolved["api_key"] == "id:secret"
 
 
-def test_get_source_data_ignores_widget_query_and_injects_saved_time_range(monkeypatch):
+def test_get_source_data_ignores_widget_query_and_canvas_time(monkeypatch):
     from rest_framework.test import APIRequestFactory, force_authenticate
 
     factory = APIRequestFactory()
@@ -441,11 +407,8 @@ def test_get_source_data_ignores_widget_query_and_injects_saved_time_range(monke
             source_type=DataSourceAPIModel.SOURCE_TYPE_ELASTICSEARCH,
             connection_id=None,
             connection_config={"url": "http://10.0.0.8:9200", "auth_type": "none", "index": "logs"},
-            query_config={
-                "time_field": "@timestamp",
-                "body": {"size": 10, "query": {"match_all": {}}},
-            },
-            params=[{"name": "timeRange", "type": "timeRange", "filterType": "filter", "value": 60}],
+            query_config={"body": {"size": 10, "query": {"match_all": {}}}},
+            params=[],
             rest_api="",
             transform_config={},
         ),
@@ -457,12 +420,12 @@ def test_get_source_data_ignores_widget_query_and_injects_saved_time_range(monke
     assert rejected.status_code == status.HTTP_400_BAD_REQUEST
     assert client.searches == []
 
-    response = call({"timeRange": ["2026-01-01T00:00:00Z", "2026-01-02T00:00:00Z"]})
+    response = call({})
     assert response.status_code == status.HTTP_200_OK
     assert response.data["data"] == [{"name": "ok", "value": 2}]
     assert client.searches[0]["index"] == "logs"
-    assert client.searches[0]["body"]["query"]["bool"]["must"] == [{"match_all": {}}]
-    assert "boost" not in str(client.searches[0]["body"])
+    assert client.searches[0]["body"]["query"] == {"match_all": {}}
+    assert "range" not in client.searches[0]["body"]["query"]
 
 
 def test_client_uses_library_without_sniff(monkeypatch):

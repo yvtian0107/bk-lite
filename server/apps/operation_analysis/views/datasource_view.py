@@ -4,7 +4,6 @@
 # @Author: windyzhao
 import json
 from datetime import datetime, timedelta, timezone
-from types import SimpleNamespace
 
 from django.http import Http404
 from rest_framework import status, viewsets
@@ -131,17 +130,6 @@ def _request_flag_true(data, key: str, *, default: bool = False) -> bool:
     return str(value).strip().lower() in {"1", "true", "yes", "on"}
 
 
-def _elasticsearch_saved_params(request_data, instance=None):
-    """编辑预览只用参数声明里的默认值，不接受请求里的查询体重写。"""
-    specs = None
-    if isinstance(request_data, dict) and isinstance(request_data.get("params"), list):
-        specs = request_data.get("params")
-    elif instance is not None and isinstance(getattr(instance, "params", None), list):
-        specs = instance.params
-    specs = specs or []
-    return _resolve_request_params(SimpleNamespace(params=specs, rest_api=""), {}), specs
-
-
 def _execute_inline_preview(
     source_type,
     connection_config,
@@ -150,21 +138,14 @@ def _execute_inline_preview(
     *,
     transform_config=None,
     org_id=None,
-    params=None,
-    param_specs=None,
 ):
     executor = get_preview_executor(source_type)
-    extra = {}
-    if source_type == DataSourceAPIModel.SOURCE_TYPE_ELASTICSEARCH:
-        extra["params"] = params if isinstance(params, dict) else {}
-        extra["param_specs"] = param_specs if isinstance(param_specs, list) else []
     result = executor.preview(
         connection_config if isinstance(connection_config, dict) else {},
         query_config if isinstance(query_config, dict) else {},
         limit=limit,
         transform_config=transform_config,
         org_id=org_id,
-        **extra,
     )
     return result.as_dict()
 
@@ -206,8 +187,6 @@ def _query_non_nats_source(request, instance, params, current_team):
             runtime_limit,
             transform_config=instance.transform_config or {},
             org_id=current_team,
-            params=params,
-            param_specs=instance.params if isinstance(instance.params, list) else [],
         )
     except ConnectionResolveError as exc:
         return _build_error_response(exc.message, exc.status_code, {"code": exc.code})
@@ -811,10 +790,6 @@ class DataSourceAPIModelViewSet(AuthViewSet):
                 )
             limit = _normalize_preview_limit(request.data.get("limit"))
             transform_config = _normalize_transform_config_payload(request.data.get("transform_config"))
-            preview_params = None
-            preview_specs = None
-            if source_type == DataSourceAPIModel.SOURCE_TYPE_ELASTICSEARCH:
-                preview_params, preview_specs = _elasticsearch_saved_params(request.data if isinstance(request.data, dict) else {})
             payload = _execute_inline_preview(
                 source_type,
                 connection_config,
@@ -822,8 +797,6 @@ class DataSourceAPIModelViewSet(AuthViewSet):
                 limit,
                 transform_config=transform_config,
                 org_id=current_team,
-                params=preview_params,
-                param_specs=preview_specs,
             )
         except ConnectionResolveError as exc:
             return _build_error_response(exc.message, exc.status_code, {"code": exc.code})
@@ -892,13 +865,6 @@ class DataSourceAPIModelViewSet(AuthViewSet):
             transform_config = _normalize_transform_config_payload(request.data.get("transform_config"))
             if not transform_config:
                 transform_config = instance.transform_config or {}
-            preview_params = None
-            preview_specs = None
-            if source_type == DataSourceAPIModel.SOURCE_TYPE_ELASTICSEARCH:
-                preview_params, preview_specs = _elasticsearch_saved_params(
-                    request.data if isinstance(request.data, dict) else {},
-                    instance,
-                )
             payload = _execute_inline_preview(
                 source_type,
                 connection_config,
@@ -906,8 +872,6 @@ class DataSourceAPIModelViewSet(AuthViewSet):
                 limit,
                 transform_config=transform_config,
                 org_id=current_team,
-                params=preview_params,
-                param_specs=preview_specs,
             )
         except ConnectionResolveError as exc:
             return _build_error_response(exc.message, exc.status_code, {"code": exc.code})

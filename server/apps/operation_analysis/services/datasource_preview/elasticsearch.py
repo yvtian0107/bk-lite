@@ -64,14 +64,12 @@ class ElasticsearchConnectorExecutor(BaseConnectorExecutor):
         self,
         connection_config: dict[str, Any],
         query_config: dict[str, Any],
-        params: dict | None = None,
-        param_specs: list | None = None,
         *,
         limit: int = MAX_ROWS,
     ) -> tuple[list[dict], list[str]]:
         normalized = normalize_elasticsearch_config(connection_config)
         index = validate_index_name(normalized.get("index") or "")
-        body, _time_field = prepare_search_body(query_config, params=params, param_specs=param_specs)
+        body = prepare_search_body(query_config)
         info = self.client.info(normalized)
         assert_supported_cluster(info)
         payload = self.client.search(normalized, index, body)
@@ -96,13 +94,7 @@ class ElasticsearchConnectorExecutor(BaseConnectorExecutor):
         **kwargs,
     ) -> PreviewResult:
         try:
-            rows, warnings = self.execute(
-                connection_config,
-                query_config,
-                params=kwargs.get("params"),
-                param_specs=kwargs.get("param_specs"),
-                limit=limit,
-            )
+            rows, warnings = self.execute(connection_config, query_config, limit=limit)
         except ConnectorError:
             raise
         except Exception as exc:

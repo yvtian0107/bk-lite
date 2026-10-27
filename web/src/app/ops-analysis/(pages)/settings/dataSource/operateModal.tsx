@@ -44,9 +44,7 @@ import {
   createDefaultParam,
   createDefaultSchemaField,
   createDefaultTransformConfig,
-  createElasticsearchDefaultParams,
   createPrometheusDefaultParams,
-  ELASTICSEARCH_DEFAULT_CHART_TYPES,
   ELASTICSEARCH_DEFAULT_QUERY_BODY,
   getDatasourceSourceFlags,
   getPreviewFieldNames,
@@ -512,11 +510,6 @@ const OperateModal: React.FC<OperateModalProps> = ({
           item.value as (typeof PROMETHEUS_DEFAULT_CHART_TYPES)[number],
         );
       }
-      if (isElasticsearchSource) {
-        return ELASTICSEARCH_DEFAULT_CHART_TYPES.includes(
-          item.value as (typeof ELASTICSEARCH_DEFAULT_CHART_TYPES)[number],
-        );
-      }
       return TABULAR_CHART_TYPES.includes(item.value);
     })
     .map((item) => ({
@@ -703,17 +696,16 @@ const OperateModal: React.FC<OperateModalProps> = ({
         setParams(createPrometheusDefaultParams(t));
       } else if (sourceType === SOURCE_TYPE_ELASTICSEARCH) {
         form.setFieldsValue({
-          chart_type: [...ELASTICSEARCH_DEFAULT_CHART_TYPES],
+          chart_type: [TABLE_CHART_TYPE],
           connection_config: {
             auth_type: "none",
             timeout_seconds: 30,
           },
           query_config: {
             body: ELASTICSEARCH_DEFAULT_QUERY_BODY,
-            time_field: "",
           },
         });
-        setParams(createElasticsearchDefaultParams(t));
+        setParams([]);
       } else if (sourceType !== SOURCE_TYPE_NATS) {
         form.setFieldValue("chart_type", [TABLE_CHART_TYPE]);
         setParams([]);
@@ -846,7 +838,6 @@ const OperateModal: React.FC<OperateModalProps> = ({
             t,
           }),
           groups: values.groups || [],
-          ...(isElasticsearchSource ? { params: normalizeParams(params) } : {}),
           limit: 50,
           transform_config: isRestApiSource
             ? {
@@ -1057,17 +1048,16 @@ const OperateModal: React.FC<OperateModalProps> = ({
     }
     if (nextSourceType === SOURCE_TYPE_ELASTICSEARCH) {
       form.setFieldsValue({
-        chart_type: [...ELASTICSEARCH_DEFAULT_CHART_TYPES],
+        chart_type: [TABLE_CHART_TYPE],
         connection_config: {
           auth_type: "none",
           timeout_seconds: 30,
         },
         query_config: {
           body: ELASTICSEARCH_DEFAULT_QUERY_BODY,
-          time_field: "",
         },
       });
-      setParams(createElasticsearchDefaultParams(t));
+      setParams([]);
     }
     if (
       nextSourceType !== SOURCE_TYPE_NATS &&
@@ -1092,7 +1082,7 @@ const OperateModal: React.FC<OperateModalProps> = ({
         return;
       }
 
-      if (isNatsSource || isElasticsearchSource) {
+      if (isNatsSource) {
         if (!paramTableRef.current?.validate()) {
           scrollToFormError(undefined, "process", "connect");
           setLoading(false);
@@ -1154,17 +1144,11 @@ const OperateModal: React.FC<OperateModalProps> = ({
           ? values.chart_type || []
           : isPrometheusSource
             ? values.chart_type || [...PROMETHEUS_DEFAULT_CHART_TYPES]
-            : isElasticsearchSource
-              ? values.chart_type?.length
-                ? values.chart_type
-                : [...ELASTICSEARCH_DEFAULT_CHART_TYPES]
-              : normalizeTabularChartTypes(values.chart_type),
+            : normalizeTabularChartTypes(values.chart_type),
         groups: values.groups || [],
         field_schema: fieldSchema,
         params:
-          isNatsSource || isPrometheusSource || isElasticsearchSource
-            ? normalizeParams(params)
-            : [],
+          isNatsSource || isPrometheusSource ? normalizeParams(params) : [],
       };
 
       const isEdit = Boolean(currentRow?.id);
@@ -1394,7 +1378,7 @@ const OperateModal: React.FC<OperateModalProps> = ({
           id="connect"
           title={connectSubsectionTitle}
           extra={
-            (isNatsSource || isElasticsearchSource) && !definitionReadOnly ? (
+            isNatsSource && !definitionReadOnly ? (
               <Button
                 type="link"
                 size="small"
@@ -1484,7 +1468,7 @@ const OperateModal: React.FC<OperateModalProps> = ({
             }
           />
         )}
-        {(isNatsSource || isElasticsearchSource) && (
+        {isNatsSource && (
           <ParamTable
             ref={paramTableRef}
             params={params}

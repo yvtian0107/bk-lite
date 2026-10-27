@@ -23,31 +23,12 @@ export const SOURCE_TYPE_ELASTICSEARCH: DataSourceSourceType = "elasticsearch";
 
 type PrometheusLabel = (id: string, defaultMessage?: string) => string;
 
-export const ELASTICSEARCH_DEFAULT_CHART_TYPES = ["table", "line", "bar"] as const;
-
 export const ELASTICSEARCH_DEFAULT_QUERY_BODY = `{
   "size": 100,
   "query": {
     "match_all": {}
   }
 }`;
-
-export function createElasticsearchDefaultParams(
-  translate?: PrometheusLabel,
-): ParamItem[] {
-  const t: PrometheusLabel =
-    translate ?? ((_id, defaultMessage) => defaultMessage ?? "");
-  return [
-    {
-      id: uuidv4(),
-      name: "timeRange",
-      alias_name: t("dataSource.paramTypes.timeRange", "时间范围"),
-      type: "timeRange",
-      filterType: "filter",
-      value: "",
-    },
-  ];
-}
 
 export const PROMETHEUS_DEFAULT_CHART_TYPES = [
   "line",
@@ -393,13 +374,11 @@ function elasticsearchQueryConfig(
     typeof queryConfig.body === "string"
       ? queryConfig.body
       : formatJsonText(queryConfig.body);
-  const timeField = String(queryConfig.time_field || "").trim();
   return {
     body: parseJsonObject(
       bodyText,
       `${t("dataSource.queryDsl")}${t("dataSource.jsonObjectRequired")}`,
     ),
-    ...(timeField ? { time_field: timeField } : {}),
   };
 }
 
@@ -1080,11 +1059,7 @@ export function buildHydratedDatasourceFormState(
           ? row.chart_type?.length
             ? row.chart_type
             : [...PROMETHEUS_DEFAULT_CHART_TYPES]
-          : rowSourceType === SOURCE_TYPE_ELASTICSEARCH
-            ? row.chart_type?.length
-              ? row.chart_type
-              : [...ELASTICSEARCH_DEFAULT_CHART_TYPES]
-            : normalizeTabularChartTypes(row.chart_type),
+          : normalizeTabularChartTypes(row.chart_type),
     connection_config: {
       ...prometheusConnectionConfig,
       headersText: formatJsonText(connectionConfig.headers),
@@ -1109,6 +1084,10 @@ export function buildHydratedDatasourceFormState(
     },
     transform_config: createDefaultTransformConfig(row.transform_config),
   };
+  if (rowSourceType === SOURCE_TYPE_ELASTICSEARCH) {
+    const storedQuery = formValues.query_config as Record<string, unknown>;
+    delete storedQuery.time_field;
+  }
 
   let excelPreview: DataSourcePreviewResult | null = null;
   if (
@@ -1152,8 +1131,6 @@ export function buildHydratedDatasourceFormState(
         : restoredParams;
   } else if (rowSourceType === SOURCE_TYPE_PROMETHEUS) {
     params = createPrometheusDefaultParams(options?.t);
-  } else if (rowSourceType === SOURCE_TYPE_ELASTICSEARCH) {
-    params = createElasticsearchDefaultParams(options?.t);
   }
 
   return {

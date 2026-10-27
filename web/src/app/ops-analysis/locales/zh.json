@@ -280,11 +280,10 @@
       "apiKey": "API Key"
     },
     "index": "索引",
-    "timeField": "时间字段",
     "queryDsl": "Query DSL",
     "apiKey": "API Key",
     "caCert": "CA 证书",
-    "elasticsearchQueryHelp": "查询体只保存在数据源上。有聚合时展平为 name/value/count 行，供表格、折线和柱状图使用；没有聚合时使用 hits._source。",
+    "elasticsearchQueryHelp": "查询体只保存在数据源上，时间过滤写在查询体里。有聚合时展平为 name/value/count 行，供表格类图表使用；没有聚合时使用 hits._source。",
     "token": "Token",
     "testConnection": "测试连接",
     "testConnectionSuccess": "连接测试成功",

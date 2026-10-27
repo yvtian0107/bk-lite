@@ -1,4 +1,4 @@
-"""只读 Query DSL、声明参数替换、时间范围注入和结果展平。"""
+"""只读 Query DSL 和结果展平。时间过滤写在已保存的查询体里。"""
 
 from __future__ import annotations
 
@@ -15,10 +15,7 @@ MAX_FROM = 1000
 MAX_QUERY_BYTES = 256 * 1024
 MAX_RESPONSE_BYTES = 2 * 1024 * 1024
 
-_PLACEHOLDER = re.compile(r"^\{\{\s*([A-Za-z_][A-Za-z0-9_]*)\s*\}\}$")
-_PLACEHOLDER_PART = re.compile(r"\{\{\s*([A-Za-z_][A-Za-z0-9_]*)\s*\}\}")
 _INDEX_RE = re.compile(r"^[A-Za-z0-9.*][A-Za-z0-9_.*-]{0,255}$")
-_TIME_FIELD_RE = re.compile(r"^@?[A-Za-z_][A-Za-z0-9_]*(\.[A-Za-z_][A-Za-z0-9_]*)*$")
 
 _ROOT_KEYS = frozenset(
     {
@@ -78,89 +75,6 @@ def validate_index_name(index: str) -> str:
     if not text or text in {"*", "_all"} or text.startswith("_") or ".." in text or not _INDEX_RE.match(text):
         raise _fail("messages.es_index_invalid", "Elasticsearch 索引名无效", code="elasticsearch_index_invalid")
     return text
-
-
-def validate_time_field(time_field: str) -> str:
-    text = str(time_field or "").strip()
-    if not text or not _TIME_FIELD_RE.match(text):
-        raise _fail("messages.es_time_field_invalid", "Elasticsearch 时间字段无效", code="elasticsearch_time_field_invalid")
-    return text
-
-
-def _scalar_or_list(value: Any) -> bool:
-    if value is None or isinstance(value, str) or isinstance(value, bool) or isinstance(value, int) or isinstance(value, float):
-        return True
-    if isinstance(value, list):
-        return all(item is None or isinstance(item, (str, bool, int, float)) for item in value)
-    return False
-
-
-def _declared_names(param_specs: list | None) -> set[str]:
-    names = set()
-    for spec in param_specs or []:
-        if isinstance(spec, dict) and isinstance(spec.get("name"), str) and spec["name"].strip():
-            names.add(spec["name"].strip())
-    return names
-
-
-def _lookup_param(name: str, params: dict, allowed: set[str]) -> Any:
-    if name not in allowed:
-        raise _fail(
-            "messages.es_param_undeclared",
-            "查询引用了未声明参数: {name}",
-            code="elasticsearch_param_undeclared",
-            name=name,
-        )
-    if name not in params:
-        raise _fail(
-            "messages.es_param_missing",
-            "查询参数缺少取值: {name}",
-            code="elasticsearch_param_missing",
-            name=name,
-        )
-    value = params[name]
-    if not _scalar_or_list(value):
-        raise _fail(
-            "messages.es_param_scalar",
-            "查询参数只能是标量或标量数组: {name}",
-            code="elasticsearch_param_invalid",
-            name=name,
-        )
-    return value
-
-
-def substitute_declared_params(value: Any, params: dict | None, param_specs: list | None) -> Any:
-    """只替换 {{param}}。整个字符串占位符保留原类型，其余位置只做字符串替换。"""
-    allowed = _declared_names(param_specs)
-    resolved = params if isinstance(params, dict) else {}
-
-    def walk(node: Any) -> Any:
-        if isinstance(node, dict):
-            return {key: walk(item) for key, item in node.items()}
-        if isinstance(node, list):
-            return [walk(item) for item in node]
-        if not isinstance(node, str):
-            return node
-        whole = _PLACEHOLDER.fullmatch(node)
-        if whole:
-            return _lookup_param(whole.group(1), resolved, allowed)
-        if not _PLACEHOLDER_PART.search(node):
-            return node
-
-        def replace(match: re.Match) -> str:
-            value = _lookup_param(match.group(1), resolved, allowed)
-            if isinstance(value, (dict, list)):
-                raise _fail(
-                    "messages.es_param_scalar",
-                    "查询参数只能是标量或标量数组: {name}",
-                    code="elasticsearch_param_invalid",
-                    name=match.group(1),
-                )
-            return "" if value is None else str(value)
-
-        return _PLACEHOLDER_PART.sub(replace, node)
-
-    return walk(value)
 
 
 def _script_forbidden() -> ConnectorError:
@@ -290,44 +204,10 @@ def _bounded_timeout(value: Any) -> str:
     return value.strip()
 
 
-def select_time_range(params: dict | None, param_specs: list | None) -> list[str] | None:
-    resolved = params if isinstance(params, dict) else {}
-    specs = [item for item in (param_specs or []) if isinstance(item, dict) and item.get("type") == "timeRange"]
-    ordered = sorted(specs, key=lambda item: 0 if item.get("name") in {"timeRange", "time_range"} else 1)
-    for spec in ordered:
-        name = spec.get("name")
-        value = resolved.get(name)
-        if isinstance(value, list) and len(value) == 2 and all(isinstance(item, str) and item for item in value):
-            return [value[0], value[1]]
-    return None
-
-
-def inject_time_range(body: dict, time_field: str, time_range: list[str]) -> dict:
-    clause = {"range": {time_field: {"gte": time_range[0], "lte": time_range[1]}}}
-    prepared = dict(body)
-    query = prepared.get("query")
-    if not isinstance(query, dict):
-        prepared["query"] = clause
-        return prepared
-    if isinstance(query.get("bool"), dict):
-        bool_query = dict(query["bool"])
-        filters = bool_query.get("filter")
-        if isinstance(filters, list):
-            bool_query["filter"] = [*filters, clause]
-        elif isinstance(filters, dict):
-            bool_query["filter"] = [filters, clause]
-        else:
-            bool_query["filter"] = [clause]
-        prepared["query"] = {**query, "bool": bool_query}
-        return prepared
-    prepared["query"] = {"bool": {"must": [query], "filter": [clause]}}
-    return prepared
-
-
-def _load_query_body(query_config: dict) -> tuple[dict, str]:
+def _load_query_body(query_config: dict) -> dict:
     if not isinstance(query_config, dict):
         raise _fail("messages.es_query_object", "Elasticsearch 查询体必须是 JSON 对象", code="elasticsearch_query_invalid")
-    unexpected = sorted(set(query_config.keys()) - {"body", "time_field"})
+    unexpected = sorted(set(query_config.keys()) - {"body"})
     if unexpected:
         raise _fail(
             "messages.es_query_config_keys",
@@ -343,35 +223,18 @@ def _load_query_body(query_config: dict) -> tuple[dict, str]:
             raise _fail("messages.es_query_object", "Elasticsearch 查询体必须是 JSON 对象", code="elasticsearch_query_invalid") from exc
     if not isinstance(body, dict):
         raise _fail("messages.es_query_object", "Elasticsearch 查询体必须是 JSON 对象", code="elasticsearch_query_invalid")
-    time_field = str(query_config.get("time_field") or "").strip()
-    if time_field:
-        time_field = validate_time_field(time_field)
-    return body, time_field
+    return body
 
 
 def validate_stored_query_config(query_config: dict) -> dict:
-    """保存/导入时检查查询形状。占位符保持原样，运行时再替换。"""
-    body, _time_field = _load_query_body(query_config or {})
-    validate_query_body(body)
+    """保存/导入时检查查询形状。查询体原样执行，不替换参数，也不注入画布时间。"""
+    validate_query_body(_load_query_body(query_config or {}))
     return query_config or {}
 
 
-def prepare_search_body(
-    query_config: dict,
-    *,
-    params: dict | None = None,
-    param_specs: list | None = None,
-) -> tuple[dict, str]:
-    """返回 (body, time_field)。time_field 为空表示不注入画布时间。"""
-    body, time_field = _load_query_body(query_config)
-    substituted = substitute_declared_params(body, params, param_specs)
-    prepared = validate_query_body(substituted)
-    if not time_field:
-        return prepared, ""
-    time_range = select_time_range(params, param_specs)
-    if time_range is None:
-        return prepared, time_field
-    return inject_time_range(prepared, time_field, time_range), time_field
+def prepare_search_body(query_config: dict) -> dict:
+    """返回已校验的查询体。不替换声明参数，也不注入画布时间。"""
+    return validate_query_body(_load_query_body(query_config))
 
 
 def _is_bucket_agg(value: Any) -> bool:

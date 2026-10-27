@@ -206,10 +206,45 @@ describe('buildHydratedDatasourceFormState', () => {
     assert.equal(state.excelPreview?.count, 1);
     assert.equal(state.schemaFields[0]?.id, 'schema-1');
   });
+
+  it('hydrates elasticsearch like other tabular sources', () => {
+    const state = buildHydratedDatasourceFormState(
+      {
+        id: 8,
+        created_at: '',
+        updated_at: '',
+        created_by: '',
+        updated_by: '',
+        domain: '',
+        updated_by_domain: '',
+        name: 'es',
+        desc: '',
+        source_type: SOURCE_TYPE_ELASTICSEARCH,
+        query_config: {
+          time_field: '@timestamp',
+          body: { size: 10, query: { match_all: {} } },
+        },
+        params: [],
+        chart_type: ['pie', 'table'],
+        namespaces: [],
+      },
+      { createId: () => 'id-1' },
+    );
+    const queryConfig = state.formValues.query_config as Record<string, unknown>;
+    assert.equal(queryConfig.time_field, undefined);
+    assert.deepEqual(state.formValues.chart_type, ['pie', 'table']);
+    assert.deepEqual(state.params, []);
+  });
 });
 
 describe('tabular datasource chart selection', () => {
-  for (const sourceType of [SOURCE_TYPE_REST_API, SOURCE_TYPE_MYSQL, SOURCE_TYPE_POSTGRESQL, SOURCE_TYPE_EXCEL]) {
+  for (const sourceType of [
+    SOURCE_TYPE_REST_API,
+    SOURCE_TYPE_MYSQL,
+    SOURCE_TYPE_POSTGRESQL,
+    SOURCE_TYPE_EXCEL,
+    SOURCE_TYPE_ELASTICSEARCH,
+  ]) {
     it(`preserves record-based chart selections through save and edit for ${sourceType}`, () => {
       for (const selected of [...TABULAR_CHART_TYPES.map((type) => [type]), [...TABULAR_CHART_TYPES]]) {
         const savedChartTypes = normalizeTabularChartTypes(selected);
