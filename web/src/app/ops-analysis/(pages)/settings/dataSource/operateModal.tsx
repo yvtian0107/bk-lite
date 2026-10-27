@@ -939,57 +939,32 @@ const OperateModal: React.FC<OperateModalProps> = ({
   };
 
   const handleTestConnection = async () => {
-    if (definitionReadOnly || (!isPrometheusSource && !isElasticsearchSource)) return;
+    if (definitionReadOnly || !isPrometheusSource) return;
 
     try {
       setTestConnectionLoading(true);
-      const validateFields: (string | (string | number)[])[] = ["source_type"];
-      if (isElasticsearchSource && useSharedConnection) {
-        validateFields.push("connection");
-      } else {
-        validateFields.push(["connection_config", "url"]);
-        if (isElasticsearchSource) {
-          validateFields.push(["connection_config", "index"]);
-          if (elasticsearchAuthType === "basic") {
-            validateFields.push(
-              ["connection_config", "username"],
-              ["connection_config", "password"],
-            );
-          }
-          if (elasticsearchAuthType === "api_key") {
-            validateFields.push(["connection_config", "api_key"]);
-          }
-        }
-        if (isPrometheusSource && prometheusAuthType === "basic") {
-          validateFields.push(
-            ["connection_config", "username"],
-            ["connection_config", "password"],
-          );
-        }
-        if (isPrometheusSource && prometheusAuthType === "bearer") {
-          validateFields.push(["connection_config", "token"]);
-        }
+      const validateFields: (string | (string | number)[])[] = [
+        "source_type",
+        ["connection_config", "url"],
+      ];
+      if (prometheusAuthType === "basic") {
+        validateFields.push(
+          ["connection_config", "username"],
+          ["connection_config", "password"],
+        );
+      }
+      if (prometheusAuthType === "bearer") {
+        validateFields.push(["connection_config", "token"]);
       }
       await form.validateFields(validateFields);
       const values = form.getFieldsValue(true);
-      const payload = buildConnectorPayload(
-        isElasticsearchSource
-          ? {
-            ...values,
-            query_config: { body: ELASTICSEARCH_DEFAULT_QUERY_BODY },
-          }
-          : values,
-        {
-          excelFileName: excelFile?.name,
-          previewData,
-          t,
-        },
-      );
-      const testSourceType = isElasticsearchSource
-        ? SOURCE_TYPE_ELASTICSEARCH
-        : SOURCE_TYPE_PROMETHEUS;
+      const payload = buildConnectorPayload(values, {
+        excelFileName: excelFile?.name,
+        previewData,
+        t,
+      });
       const testBody = {
-        source_type: testSourceType,
+        source_type: SOURCE_TYPE_PROMETHEUS,
         connection: payload.connection,
         connection_overrides: payload.connection_overrides,
         connection_config: payload.connection_config,
@@ -1415,10 +1390,6 @@ const OperateModal: React.FC<OperateModalProps> = ({
             connectionList={connectionList}
             authType={elasticsearchAuthType}
             extractButton={extractToConnectionLibraryButton}
-            testConnectionLoading={testConnectionLoading}
-            onTestConnection={() => {
-              void handleTestConnection();
-            }}
             onPasswordFocus={handlePasswordFocus}
             onPasswordBlur={handlePasswordBlur}
             onSecretFocus={handleSecretFocus}

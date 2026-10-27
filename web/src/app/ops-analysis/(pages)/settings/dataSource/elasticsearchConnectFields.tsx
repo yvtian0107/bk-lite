@@ -1,7 +1,7 @@
 "use client";
 
 import React from "react";
-import { Button, Form, Input, InputNumber, Select } from "antd";
+import { Form, Input, InputNumber, Select } from "antd";
 import { useTranslation } from "@/utils/i18n";
 import { DataConnectionItem } from "@/app/ops-analysis/types/dataConnection";
 import { ELASTICSEARCH_DEFAULT_QUERY_BODY } from "./operateModalUtils";
@@ -17,8 +17,6 @@ interface ElasticsearchConnectFieldsProps {
   connectionList: DataConnectionItem[];
   authType: string;
   extractButton: React.ReactNode;
-  testConnectionLoading: boolean;
-  onTestConnection: () => void;
   onPasswordFocus: (event: React.FocusEvent<HTMLInputElement>) => void;
   onPasswordBlur: (event: React.FocusEvent<HTMLInputElement>) => void;
   onSecretFocus: (
@@ -37,8 +35,6 @@ export const ElasticsearchConnectFields: React.FC<ElasticsearchConnectFieldsProp
   connectionList,
   authType,
   extractButton,
-  testConnectionLoading,
-  onTestConnection,
   onPasswordFocus,
   onPasswordBlur,
   onSecretFocus,
@@ -180,20 +176,6 @@ export const ElasticsearchConnectFields: React.FC<ElasticsearchConnectFieldsProp
             disabled={definitionReadOnly}
           />
         </Form.Item>
-        <p className="mb-2 text-[12px] leading-5 text-[var(--color-text-3)]">
-          {t("dataSource.elasticsearchQueryHelp")}
-        </p>
-        {definitionReadOnly ? null : (
-          <div className="mb-2 text-right">
-            <Button
-              size="small"
-              loading={testConnectionLoading}
-              onClick={onTestConnection}
-            >
-              {t("dataSource.testConnection")}
-            </Button>
-          </div>
-        )}
         {extractButton}
       </ConnectCard>
     </Form.Item>

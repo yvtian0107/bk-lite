@@ -283,7 +283,6 @@
     "queryDsl": "Query DSL",
     "apiKey": "API Key",
     "caCert": "CA certificate",
-    "elasticsearchQueryHelp": "The query body stays on the datasource, including any time filter. Aggregations flatten to name/value/count rows for tabular charts. Without aggregations, rows come from hits._source.",
     "token": "Token",
     "testConnection": "Test Connection",
     "testConnectionSuccess": "Connection test succeeded",
