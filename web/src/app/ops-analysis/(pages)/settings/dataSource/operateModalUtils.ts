@@ -19,6 +19,35 @@ export const SOURCE_TYPE_POSTGRESQL: DataSourceSourceType = "postgresql";
 export const SOURCE_TYPE_REST_API: DataSourceSourceType = "rest_api";
 export const SOURCE_TYPE_EXCEL: DataSourceSourceType = "excel";
 export const SOURCE_TYPE_PROMETHEUS: DataSourceSourceType = "prometheus";
+export const SOURCE_TYPE_ELASTICSEARCH: DataSourceSourceType = "elasticsearch";
+
+type PrometheusLabel = (id: string, defaultMessage?: string) => string;
+
+export const ELASTICSEARCH_DEFAULT_CHART_TYPES = ["table", "line", "bar"] as const;
+
+export const ELASTICSEARCH_DEFAULT_QUERY_BODY = `{
+  "size": 100,
+  "query": {
+    "match_all": {}
+  }
+}`;
+
+export function createElasticsearchDefaultParams(
+  translate?: PrometheusLabel,
+): ParamItem[] {
+  const t: PrometheusLabel =
+    translate ?? ((_id, defaultMessage) => defaultMessage ?? "");
+  return [
+    {
+      id: uuidv4(),
+      name: "timeRange",
+      alias_name: t("dataSource.paramTypes.timeRange", "时间范围"),
+      type: "timeRange",
+      filterType: "filter",
+      value: "",
+    },
+  ];
+}
 
 export const PROMETHEUS_DEFAULT_CHART_TYPES = [
   "line",
@@ -30,8 +59,6 @@ export const PROMETHEUS_DEFAULT_CHART_TYPES = [
   "table",
   "topN",
 ] as const;
-
-type PrometheusLabel = (id: string, defaultMessage?: string) => string;
 
 export function createPrometheusDefaultParams(
   translate?: PrometheusLabel,
@@ -358,6 +385,45 @@ export const normalizeParams = (params: ParamItem[]) =>
       required: param.required,
     }));
 
+function elasticsearchQueryConfig(
+  queryConfig: Record<string, any>,
+  t: (key: string) => string,
+) {
+  const bodyText =
+    typeof queryConfig.body === "string"
+      ? queryConfig.body
+      : formatJsonText(queryConfig.body);
+  const timeField = String(queryConfig.time_field || "").trim();
+  return {
+    body: parseJsonObject(
+      bodyText,
+      `${t("dataSource.queryDsl")}${t("dataSource.jsonObjectRequired")}`,
+    ),
+    ...(timeField ? { time_field: timeField } : {}),
+  };
+}
+
+function elasticsearchInlineConnectionConfig(connectionConfig: Record<string, any>) {
+  const authType = connectionConfig.auth_type || "none";
+  const config: Record<string, unknown> = {
+    url: connectionConfig.url,
+    auth_type: authType,
+    timeout_seconds: connectionConfig.timeout_seconds ?? 30,
+    index: connectionConfig.index,
+  };
+  if (String(connectionConfig.ca_cert || "").trim()) {
+    config.ca_cert = connectionConfig.ca_cert;
+  }
+  if (authType === "basic") {
+    config.username = connectionConfig.username;
+    config.password = connectionConfig.password;
+  }
+  if (authType === "api_key") {
+    config.api_key = connectionConfig.api_key;
+  }
+  return config;
+}
+
 export const buildConnectorPayload = (
   values: any,
   options: {
@@ -377,7 +443,8 @@ export const buildConnectorPayload = (
     values.connection_mode !== "inline" &&
     (currentSourceType === SOURCE_TYPE_MYSQL ||
       currentSourceType === SOURCE_TYPE_POSTGRESQL ||
-      currentSourceType === SOURCE_TYPE_REST_API);
+      currentSourceType === SOURCE_TYPE_REST_API ||
+      currentSourceType === SOURCE_TYPE_ELASTICSEARCH);
 
   if (currentSourceType === SOURCE_TYPE_REST_API) {
     if (useSharedConnection) {
@@ -510,6 +577,29 @@ export const buildConnectorPayload = (
     };
   }
 
+  if (currentSourceType === SOURCE_TYPE_ELASTICSEARCH) {
+    const queryConfigPayload = elasticsearchQueryConfig(queryConfig, options.t);
+    if (useSharedConnection) {
+      const overrideIndex = String(values.connection_overrides?.index || "").trim();
+      return {
+        source_type: currentSourceType,
+        connection: connectionId,
+        connection_overrides: overrideIndex ? { index: overrideIndex } : {},
+        connection_config: {},
+        query_config: queryConfigPayload,
+        transform_config: transformConfigForSourceType(currentSourceType, values.transform_config),
+      };
+    }
+    return {
+      source_type: currentSourceType,
+      connection: null,
+      connection_overrides: {},
+      connection_config: elasticsearchInlineConnectionConfig(connectionConfig),
+      query_config: queryConfigPayload,
+      transform_config: transformConfigForSourceType(currentSourceType, values.transform_config),
+    };
+  }
+
   if (currentSourceType === SOURCE_TYPE_PROMETHEUS) {
     const authType = connectionConfig.auth_type || "none";
     const prometheusConnectionConfig: Record<string, unknown> = {
@@ -624,6 +714,21 @@ export function canExtractConnectionFromDatasourceForm(values: any): boolean {
     });
   }
 
+  if (sourceType === SOURCE_TYPE_ELASTICSEARCH) {
+    const authType = connectionConfig.auth_type || "none";
+    const required = ["url", "index"];
+    if (authType === "basic") {
+      required.push("username", "password");
+    }
+    if (authType === "api_key") {
+      required.push("api_key");
+    }
+    return required.every((key) => {
+      const value = connectionConfig[key];
+      return value !== undefined && value !== null && String(value).trim() !== "";
+    });
+  }
+
   return false;
 }
 
@@ -700,6 +805,25 @@ export function buildConnectionLibraryCreateFromDatasourceForm(
     };
   }
 
+  if (sourceType === SOURCE_TYPE_ELASTICSEARCH) {
+    if (!canExtractConnectionFromDatasourceForm(values)) {
+      throw new Error(options.t("common.inputMsg"));
+    }
+    const config = elasticsearchInlineConnectionConfig(connectionConfig);
+    return {
+      createPayload: {
+        name,
+        connection_type: sourceType,
+        description,
+        groups,
+        is_active: true,
+        config,
+      },
+      connectionOverrides: {},
+      inlineConnectionConfig: config,
+    };
+  }
+
   if (sourceType === SOURCE_TYPE_MYSQL || sourceType === SOURCE_TYPE_POSTGRESQL) {
     const required = ["host", "port", "database", "username", "password"] as const;
     const missing = required.filter((key) => {
@@ -768,6 +892,7 @@ export interface DatasourceSourceFlags {
   isNatsSource: boolean;
   isRestApiSource: boolean;
   isPrometheusSource: boolean;
+  isElasticsearchSource: boolean;
   isDatabaseSource: boolean;
   isExcelSource: boolean;
   supportsTransform: boolean;
@@ -780,6 +905,7 @@ export function getDatasourceSourceFlags(
   const isNatsSource = sourceType === SOURCE_TYPE_NATS;
   const isRestApiSource = sourceType === SOURCE_TYPE_REST_API;
   const isPrometheusSource = sourceType === SOURCE_TYPE_PROMETHEUS;
+  const isElasticsearchSource = sourceType === SOURCE_TYPE_ELASTICSEARCH;
   const isDatabaseSource =
     sourceType === SOURCE_TYPE_MYSQL || sourceType === SOURCE_TYPE_POSTGRESQL;
   const isExcelSource = sourceType === SOURCE_TYPE_EXCEL;
@@ -787,10 +913,11 @@ export function getDatasourceSourceFlags(
     isNatsSource,
     isRestApiSource,
     isPrometheusSource,
+    isElasticsearchSource,
     isDatabaseSource,
     isExcelSource,
     supportsTransform: isRestApiSource || isExcelSource,
-    supportsSharedConnection: isDatabaseSource || isRestApiSource,
+    supportsSharedConnection: isDatabaseSource || isRestApiSource || isElasticsearchSource,
   };
 }
 
@@ -818,8 +945,9 @@ export function getPreviewFieldNames(options: {
   sourceType: DataSourceSourceType;
   useSharedConnection: boolean;
   prometheusQueryType?: string;
+  elasticsearchAuthType?: string;
 }): DatasourcePreviewFieldName[] {
-  const { sourceType, useSharedConnection, prometheusQueryType } = options;
+  const { sourceType, useSharedConnection, prometheusQueryType, elasticsearchAuthType } = options;
   if (sourceType === SOURCE_TYPE_REST_API) {
     if (useSharedConnection) {
       return ["source_type", "connection", ["connection_config", "method"]];
@@ -842,6 +970,26 @@ export function getPreviewFieldNames(options: {
       ["connection_config", "username"],
       ["connection_config", "password"],
     ];
+  }
+  if (sourceType === SOURCE_TYPE_ELASTICSEARCH) {
+    const fieldNames: DatasourcePreviewFieldName[] = useSharedConnection
+      ? ["source_type", "connection", ["query_config", "body"]]
+      : [
+        "source_type",
+        ["connection_config", "url"],
+        ["connection_config", "index"],
+        ["query_config", "body"],
+      ];
+    if (!useSharedConnection && elasticsearchAuthType === "basic") {
+      fieldNames.push(
+        ["connection_config", "username"],
+        ["connection_config", "password"],
+      );
+    }
+    if (!useSharedConnection && elasticsearchAuthType === "api_key") {
+      fieldNames.push(["connection_config", "api_key"]);
+    }
+    return fieldNames;
   }
   if (sourceType === SOURCE_TYPE_PROMETHEUS) {
     const fieldNames: DatasourcePreviewFieldName[] = [
@@ -910,6 +1058,12 @@ export function buildHydratedDatasourceFormState(
       prometheusConnectionConfig.token = PASSWORD_PLACEHOLDER;
     }
   }
+  const elasticsearchBody =
+    rowSourceType === SOURCE_TYPE_ELASTICSEARCH
+      ? typeof queryConfig.body === "string"
+        ? queryConfig.body
+        : formatJsonText(queryConfig.body) || ELASTICSEARCH_DEFAULT_QUERY_BODY
+      : undefined;
 
   const formValues: Record<string, unknown> = {
     ...row,
@@ -926,13 +1080,20 @@ export function buildHydratedDatasourceFormState(
           ? row.chart_type?.length
             ? row.chart_type
             : [...PROMETHEUS_DEFAULT_CHART_TYPES]
-          : normalizeTabularChartTypes(row.chart_type),
+          : rowSourceType === SOURCE_TYPE_ELASTICSEARCH
+            ? row.chart_type?.length
+              ? row.chart_type
+              : [...ELASTICSEARCH_DEFAULT_CHART_TYPES]
+            : normalizeTabularChartTypes(row.chart_type),
     connection_config: {
       ...prometheusConnectionConfig,
       headersText: formatJsonText(connectionConfig.headers),
       password: connectionConfig.password
         ? PASSWORD_PLACEHOLDER
         : connectionConfig.password,
+      ...(connectionConfig.api_key
+        ? { api_key: PASSWORD_PLACEHOLDER }
+        : {}),
     },
     query_config: {
       ...queryConfig,
@@ -944,6 +1105,7 @@ export function buildHydratedDatasourceFormState(
           max_series: queryConfig.max_series ?? 20,
         }
         : {}),
+      ...(elasticsearchBody !== undefined ? { body: elasticsearchBody } : {}),
     },
     transform_config: createDefaultTransformConfig(row.transform_config),
   };
@@ -990,6 +1152,8 @@ export function buildHydratedDatasourceFormState(
         : restoredParams;
   } else if (rowSourceType === SOURCE_TYPE_PROMETHEUS) {
     params = createPrometheusDefaultParams(options?.t);
+  } else if (rowSourceType === SOURCE_TYPE_ELASTICSEARCH) {
+    params = createElasticsearchDefaultParams(options?.t);
   }
 
   return {

@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'vitest';
 import {
+  SOURCE_TYPE_ELASTICSEARCH,
   SOURCE_TYPE_EXCEL,
   SOURCE_TYPE_MYSQL,
   SOURCE_TYPE_NATS,
@@ -25,6 +26,7 @@ describe('getDatasourceSourceFlags', () => {
       isNatsSource: true,
       isRestApiSource: false,
       isPrometheusSource: false,
+      isElasticsearchSource: false,
       isDatabaseSource: false,
       isExcelSource: false,
       supportsTransform: false,
@@ -43,6 +45,8 @@ describe('getDatasourceSourceFlags', () => {
     assert.equal(getDatasourceSourceFlags(SOURCE_TYPE_POSTGRESQL).supportsSharedConnection, true);
     assert.equal(getDatasourceSourceFlags(SOURCE_TYPE_REST_API).supportsSharedConnection, true);
     assert.equal(getDatasourceSourceFlags(SOURCE_TYPE_PROMETHEUS).supportsSharedConnection, false);
+    assert.equal(getDatasourceSourceFlags(SOURCE_TYPE_ELASTICSEARCH).supportsSharedConnection, true);
+    assert.equal(getDatasourceSourceFlags(SOURCE_TYPE_ELASTICSEARCH).supportsTransform, false);
   });
 });
 
@@ -94,6 +98,23 @@ describe('getPreviewFieldNames', () => {
         ['query_config', 'query_type'],
         ['query_config', 'time_range'],
         ['query_config', 'step'],
+      ],
+    );
+  });
+
+  it('validates elasticsearch inline url, index and query body', () => {
+    assert.deepEqual(
+      getPreviewFieldNames({
+        sourceType: SOURCE_TYPE_ELASTICSEARCH,
+        useSharedConnection: false,
+        elasticsearchAuthType: 'api_key',
+      }),
+      [
+        'source_type',
+        ['connection_config', 'url'],
+        ['connection_config', 'index'],
+        ['query_config', 'body'],
+        ['connection_config', 'api_key'],
       ],
     );
   });
