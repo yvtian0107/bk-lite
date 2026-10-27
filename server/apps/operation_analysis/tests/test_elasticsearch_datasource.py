@@ -1,5 +1,7 @@
 """Elasticsearch 连接：出站、只读 DSL、展平、版本和运行时取数。"""
 
+import base64
+import json
 from types import SimpleNamespace
 
 import pytest
@@ -15,7 +17,11 @@ from apps.operation_analysis.services.datasource_preview.base import ConnectorEr
 from apps.operation_analysis.services.datasource_preview.elasticsearch import ElasticsearchConnectorExecutor
 from apps.operation_analysis.services.datasource_preview.elasticsearch_client import normalize_elasticsearch_config
 from apps.operation_analysis.services.datasource_preview.elasticsearch_egress import validate_elasticsearch_url
-from apps.operation_analysis.services.datasource_preview.elasticsearch_query import flatten_search_response, prepare_search_body
+from apps.operation_analysis.services.datasource_preview.elasticsearch_query import (
+    flatten_search_response,
+    prepare_search_body,
+    validate_stored_query_config,
+)
 from apps.operation_analysis.services.import_export.export_service import ExportService
 from apps.operation_analysis.views import datasource_view
 
@@ -138,6 +144,79 @@ def test_query_body_stays_read_only_and_uses_only_declared_params():
             param_specs=specs,
         )
     assert undeclared.value.code == "elasticsearch_param_undeclared"
+
+
+def _assert_query_forbidden(query_config):
+    with pytest.raises(ConnectorError) as exc:
+        prepare_search_body(query_config, params={}, param_specs=[])
+    assert exc.value.code == "elasticsearch_query_forbidden"
+    with pytest.raises(ConnectorError) as stored:
+        validate_stored_query_config(query_config)
+    assert stored.value.code == "elasticsearch_query_forbidden"
+
+
+def test_scripted_metric_and_wrapper_queries_are_rejected():
+    _assert_query_forbidden(
+        {
+            "body": {
+                "aggs": {
+                    "profit": {
+                        "scripted_metric": {
+                            "init_script": "state.transactions = []",
+                            "map_script": "state.transactions.add(1)",
+                            "combine_script": "return state.transactions",
+                            "reduce_script": "return states",
+                        }
+                    }
+                }
+            }
+        }
+    )
+    _assert_query_forbidden(
+        {
+            "body": {
+                "aggs": {
+                    "profit": {
+                        "scripted_metric": {
+                            "init_script": {"source": "state.transactions = []"},
+                            "map_script": {"source": "state.transactions.add(1)"},
+                            "combine_script": {"source": "return state"},
+                            "reduce_script": {"source": "return states[0]"},
+                        }
+                    }
+                }
+            }
+        }
+    )
+    _assert_query_forbidden({"body": {"aggs": {"by_status": {"terms": {"field": "status", "map_script": "doc['status'].value"}}}}})
+    _assert_query_forbidden(
+        {
+            "body": {
+                "aggs": {
+                    "by_status": {
+                        "terms": {"field": "status", "map_script": {"source": "doc['status'].value"}},
+                    }
+                }
+            }
+        }
+    )
+    hidden_script = base64.b64encode(json.dumps({"script": {"source": "return true"}}).encode()).decode()
+    _assert_query_forbidden({"body": {"query": {"wrapper": {"query": hidden_script}}}})
+    hidden_metric = base64.b64encode(
+        json.dumps({"scripted_metric": {"map_script": "state.n = 1", "reduce_script": "return states"}}).encode()
+    ).decode()
+    nested = base64.b64encode(json.dumps({"wrapper": {"query": hidden_metric}}).encode()).decode()
+    _assert_query_forbidden({"body": {"query": {"wrapper": {"query": nested}}}})
+    _assert_query_forbidden({"body": {"query": {"wrapper": {"query": "not-base64!!!"}}}})
+
+    benign = base64.b64encode(json.dumps({"match_all": {}}).encode()).decode()
+    body, _field = prepare_search_body(
+        {"body": {"query": {"wrapper": {"query": benign}}}},
+        params={},
+        param_specs=[],
+    )
+    assert body["query"]["wrapper"]["query"] == benign
+    validate_stored_query_config({"body": {"query": {"wrapper": {"query": benign}}}})
 
 
 def test_time_field_injects_canvas_range_and_aggs_force_size_zero():

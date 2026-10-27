@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import base64
 import json
 import re
 from typing import Any
@@ -55,6 +56,7 @@ _ALWAYS_FORBIDDEN = frozenset(
     }
 )
 _SCRIPT_LANGUAGES = frozenset({"painless", "expression"})
+_MAX_WRAPPER_DEPTH = 8
 _BUCKET_SKIP = frozenset(
     {
         "key",
@@ -161,21 +163,71 @@ def substitute_declared_params(value: Any, params: dict | None, param_specs: lis
     return walk(value)
 
 
-def _reject_scripts(node: Any) -> None:
+def _script_forbidden() -> ConnectorError:
+    return _fail("messages.es_query_readonly", "Elasticsearch 查询只允许只读 Query DSL", code="elasticsearch_query_forbidden")
+
+
+def _is_script_bearing_key(lowered: str) -> bool:
+    """script、script_*、*_script 和 scripted_metric 都会执行 Painless。"""
+    return lowered == "script" or lowered == "scripted_metric" or lowered.startswith("script_") or lowered.endswith("_script")
+
+
+def _decode_wrapper_body(encoded: str) -> Any:
+    compact = "".join(str(encoded).split())
+    if not compact:
+        raise _script_forbidden()
+    try:
+        raw = base64.b64decode(compact + ("=" * ((-len(compact)) % 4)), validate=True)
+    except ValueError:
+        raise _script_forbidden() from None
+    if len(raw) > MAX_QUERY_BYTES:
+        raise _fail("messages.es_query_too_large", "Elasticsearch 查询体过大", code="elasticsearch_query_too_large")
+    try:
+        payload = json.loads(raw)
+    except (UnicodeDecodeError, json.JSONDecodeError):
+        raise _script_forbidden() from None
+    if not isinstance(payload, (dict, list)):
+        raise _script_forbidden()
+    return payload
+
+
+def _reject_wrapper_query(value: Any, *, wrapper_depth: int) -> None:
+    """拆开 wrapper.query 的 base64，按同一套只读规则递归检查。"""
+    if not isinstance(value, dict):
+        _reject_scripts(value, wrapper_depth=wrapper_depth)
+        return
+    encoded = None
+    for key, item in value.items():
+        lowered = str(key).lower()
+        if lowered in _ALWAYS_FORBIDDEN or _is_script_bearing_key(lowered):
+            raise _script_forbidden()
+        if lowered == "query" and isinstance(item, str):
+            encoded = item
+            continue
+        _reject_scripts(item, wrapper_depth=wrapper_depth)
+    if encoded is None:
+        return
+    if wrapper_depth >= _MAX_WRAPPER_DEPTH:
+        raise _script_forbidden()
+    _reject_scripts(_decode_wrapper_body(encoded), wrapper_depth=wrapper_depth + 1)
+
+
+def _reject_scripts(node: Any, *, wrapper_depth: int = 0) -> None:
     if isinstance(node, dict):
         for key, value in node.items():
             lowered = str(key).lower()
-            if lowered in _ALWAYS_FORBIDDEN:
-                raise _fail("messages.es_query_readonly", "Elasticsearch 查询只允许只读 Query DSL", code="elasticsearch_query_forbidden")
-            if lowered == "script":
-                raise _fail("messages.es_query_readonly", "Elasticsearch 查询只允许只读 Query DSL", code="elasticsearch_query_forbidden")
+            if lowered in _ALWAYS_FORBIDDEN or _is_script_bearing_key(lowered):
+                raise _script_forbidden()
             if lowered == "lang" and str(value).lower() in _SCRIPT_LANGUAGES:
-                raise _fail("messages.es_query_readonly", "Elasticsearch 查询只允许只读 Query DSL", code="elasticsearch_query_forbidden")
-            _reject_scripts(value)
+                raise _script_forbidden()
+            if lowered == "wrapper":
+                _reject_wrapper_query(value, wrapper_depth=wrapper_depth)
+                continue
+            _reject_scripts(value, wrapper_depth=wrapper_depth)
         return
     if isinstance(node, list):
         for item in node:
-            _reject_scripts(item)
+            _reject_scripts(item, wrapper_depth=wrapper_depth)
 
 
 def validate_query_body(body: dict) -> dict:
