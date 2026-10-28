@@ -266,6 +266,8 @@ class DashboardItem(BaseModel):
     view_sets: list = Field(default_factory=list)
     refresh_interval: CanvasRefreshIntervalField = Field(default=0)
     refs: CanvasRefs = Field(default_factory=CanvasRefs)
+    canvas_key: str = Field(default="", max_length=255)
+    directory_path: str = Field(default="", max_length=1024)
 
     @field_validator("key", "name")
     @classmethod
@@ -274,6 +276,13 @@ class DashboardItem(BaseModel):
         if not value:
             raise ValueError(_blank_field_message(info.field_name))
         return value
+
+    @field_validator("canvas_key", "directory_path", mode="before")
+    @classmethod
+    def strip_stable_canvas_text(cls, v: Any) -> str:
+        if v is None:
+            return ""
+        return str(v).strip()
 
     @field_validator("desc", mode="before")
     @classmethod
@@ -363,6 +372,8 @@ class ScreenItem(BaseModel):
     view_sets: dict
     refresh_interval: CanvasRefreshIntervalField = Field(default=0)
     refs: CanvasRefs = Field(default_factory=CanvasRefs)
+    canvas_key: str = Field(default="", max_length=255)
+    directory_path: str = Field(default="", max_length=1024)
 
     @field_validator("key", "name")
     @classmethod
@@ -371,6 +382,13 @@ class ScreenItem(BaseModel):
         if not value:
             raise ValueError(_blank_field_message(info.field_name))
         return value
+
+    @field_validator("canvas_key", "directory_path", mode="before")
+    @classmethod
+    def strip_stable_canvas_text(cls, v: Any) -> str:
+        if v is None:
+            return ""
+        return str(v).strip()
 
     @field_validator("desc", mode="before")
     @classmethod

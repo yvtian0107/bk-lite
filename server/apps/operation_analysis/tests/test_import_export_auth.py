@@ -615,11 +615,11 @@ def test_backend_import_submit_logs_success_results_as_create_and_update(authent
     )
     monkeypatch.setattr(
         "apps.operation_analysis.views.import_export_view.ImportExportAuthorizationService.validate_conflict_decisions",
-        classmethod(lambda cls, conflicts, conflict_decisions: []),
+        classmethod(lambda cls, conflicts, conflict_decisions, **kwargs: []),
     )
     monkeypatch.setattr(
         "apps.operation_analysis.views.import_export_view.ImportExportAuthorizationService.validate_import_submit_permissions",
-        classmethod(lambda cls, request, doc, conflicts, conflict_decisions, current_team: None),
+        classmethod(lambda cls, request, doc, conflicts, conflict_decisions, current_team, **kwargs: None),
     )
 
     class FakeImportService:
