@@ -8,6 +8,8 @@ import pytest
 import yaml
 from django.core.management import call_command
 from django.core.management.base import CommandError
+from django.db import IntegrityError, connection
+from django.test.utils import CaptureQueriesContext
 from rest_framework import status
 from rest_framework.test import APIRequestFactory, force_authenticate
 
@@ -298,8 +300,10 @@ def test_builtin_and_draft_export_do_not_persist_user_canvas_key():
     assert builtin.canvas_key in (None, "")
 
     draft_source = Dashboard.objects.create(name="草稿源", groups=[1], created_by="tester")
-    encode_yaml(draft_source, {"name": "草稿源", "desc": "", "view_sets": [], "other": {}}, ObjectType.DASHBOARD, {}, {})
+    with CaptureQueriesContext(connection) as captured:
+        encode_yaml(draft_source, {"name": "草稿源", "desc": "", "view_sets": [], "other": {}}, ObjectType.DASHBOARD, {}, {})
     draft_source.refresh_from_db()
+    assert captured.captured_queries == []
     assert draft_source.canvas_key in (None, "")
 
 
@@ -389,7 +393,14 @@ def test_prefer_existing_reuses_datasource_and_namespace_and_creates_missing_sou
             _datasource(namespace_keys=["ns1"], desc="package-definition"),
             _datasource(key="ds-new::monitor/query", name="ds-new", desc="created-from-package"),
         ],
-        dashboards=[_dashboard(canvas_key="dashboard::with-ds", directory_path="交付目录")],
+        dashboards=[
+            _dashboard(
+                canvas_key="dashboard::with-ds",
+                directory_path="交付目录",
+                view_sets=[{"valueConfig": {"dataSource": "ds1::monitor/query"}}],
+                refs={"datasource_keys": ["ds1::monitor/query"]},
+            )
+        ],
     )
 
     result = _service(doc, inherit_directory_groups=True).execute()
@@ -406,6 +417,7 @@ def test_prefer_existing_reuses_datasource_and_namespace_and_creates_missing_sou
     dashboard = Dashboard.objects.get(canvas_key="dashboard::with-ds")
     assert dashboard.groups == [4]
     assert dashboard.directory_id == target.id
+    assert dashboard.view_sets[0]["valueConfig"]["dataSource"] == existing.id
 
 
 @pytest.mark.django_db
@@ -580,7 +592,317 @@ def test_apply_canvas_yaml_command_creates_then_overwrites(tmp_path: Path):
     assert dashboard.desc == "v2"
     assert dashboard.canvas_key == "dashboard::cli-1"
     assert Dashboard.objects.count() == 1
+    assert Screen.objects.count() == 1
 
     missing = tmp_path / "missing.yaml"
     with pytest.raises(CommandError, match="不存在"):
         call_command("apply_canvas_yaml", file=str(missing))
+
+
+def _failed_messages(result):
+    return " ".join(item.get("message") or "" for item in result["results"] if item.get("status") == "failed")
+
+
+@pytest.mark.django_db
+def test_http_key_overwrite_rejects_invisible_and_builtin_directories():
+    home = _directory("可见目录", groups=[1])
+    hidden = _directory("看不见", groups=[99])
+    Directory.objects.create(name="内置目录", is_build_in=True, groups=[1], created_by="tester")
+    existing = Dashboard.objects.create(
+        name="已有",
+        canvas_key="dashboard::stay",
+        directory=home,
+        groups=[1],
+        created_by="tester",
+    )
+    hidden_item = _dashboard(name="已有", canvas_key="dashboard::stay", directory_path="看不见")
+    hidden_precheck = PrecheckService.precheck(
+        yaml.safe_dump(_yaml_document(dashboards=[hidden_item])),
+        conflict_policy="key_overwrite",
+        current_team=1,
+        enforce_directory_visibility=True,
+    )
+    assert hidden_precheck["valid"] is False
+    assert hidden_precheck["errors"][0]["code"] == ImportExportErrorCode.IMPORT_DIRECTORY_NOT_VISIBLE
+
+    result = _service(_doc(dashboards=[hidden_item]), current_team=1, enforce_directory_visibility=True).execute()
+    assert result["success"] is False
+    assert ImportExportErrorCode.IMPORT_DIRECTORY_NOT_VISIBLE in _codes(result)
+    existing.refresh_from_db()
+    assert existing.directory_id == home.id
+    assert existing.groups == [1]
+
+    fallback = _service(
+        _doc(dashboards=[_dashboard(canvas_key="dashboard::fallback")]),
+        target_directory_id=hidden.id,
+        current_team=1,
+        enforce_directory_visibility=True,
+    ).execute()
+    assert ImportExportErrorCode.IMPORT_DIRECTORY_NOT_VISIBLE in _codes(fallback)
+    assert not Dashboard.objects.filter(canvas_key="dashboard::fallback").exists()
+
+    builtin_result = _service(
+        _doc(dashboards=[_dashboard(canvas_key="dashboard::into-builtin", directory_path="内置目录")]),
+        current_team=1,
+        enforce_directory_visibility=True,
+    ).execute()
+    assert ImportExportErrorCode.IMPORT_DIRECTORY_BUILTIN in _codes(builtin_result)
+    assert not Dashboard.objects.filter(canvas_key="dashboard::into-builtin").exists()
+
+    superuser = _service(
+        _doc(dashboards=[_dashboard(canvas_key="dashboard::super", directory_path="看不见")]),
+        current_team=1,
+        enforce_directory_visibility=True,
+        directory_visibility_superuser=True,
+    ).execute()
+    assert superuser["success"] is True
+    assert Dashboard.objects.get(canvas_key="dashboard::super").directory_id == hidden.id
+
+    super_builtin = _service(
+        _doc(dashboards=[_dashboard(canvas_key="dashboard::super-builtin", directory_path="内置目录")]),
+        current_team=1,
+        enforce_directory_visibility=True,
+        directory_visibility_superuser=True,
+    ).execute()
+    assert ImportExportErrorCode.IMPORT_DIRECTORY_BUILTIN in _codes(super_builtin)
+
+
+@pytest.mark.django_db
+def test_same_name_directories_are_ambiguous_unless_http_team_owns_exactly_one():
+    other = _directory("对方目录", groups=[99])
+    cli_doc = _doc(dashboards=[_dashboard(canvas_key="dashboard::cli-org", directory_path="对方目录")])
+    cli_result = _service(cli_doc, groups=[1]).execute()
+    assert cli_result["success"] is True
+    bound = Dashboard.objects.get(canvas_key="dashboard::cli-org")
+    assert bound.directory_id == other.id
+    assert bound.groups == [99]
+
+    left = _directory("同名根", groups=[1])
+    right = _directory("同名根", groups=[2])
+    ambiguous_item = _dashboard(canvas_key="dashboard::ambiguous", directory_path="同名根")
+    precheck = PrecheckService.precheck(
+        yaml.safe_dump(_yaml_document(dashboards=[ambiguous_item])),
+        conflict_policy="key_overwrite",
+    )
+    assert precheck["valid"] is False
+    assert precheck["errors"][0]["code"] == ImportExportErrorCode.IMPORT_DIRECTORY_PATH_AMBIGUOUS
+    assert str(left.id) in precheck["errors"][0]["message"]
+    assert str(right.id) in precheck["errors"][0]["message"]
+    assert "groups=" in precheck["errors"][0]["message"]
+
+    imported = _service(_doc(dashboards=[ambiguous_item])).execute()
+    assert ImportExportErrorCode.IMPORT_DIRECTORY_PATH_AMBIGUOUS in _codes(imported)
+    assert str(left.id) in _failed_messages(imported)
+    assert str(right.id) in _failed_messages(imported)
+    assert not Dashboard.objects.filter(canvas_key="dashboard::ambiguous").exists()
+
+    owned = _service(
+        _doc(dashboards=[_dashboard(name="本组织面板", canvas_key="dashboard::owned", directory_path="同名根")]),
+        current_team=1,
+        enforce_directory_visibility=True,
+    ).execute()
+    assert owned["success"] is True
+    assert Dashboard.objects.get(canvas_key="dashboard::owned").directory_id == left.id
+
+    invisible = PrecheckService.precheck(
+        yaml.safe_dump(_yaml_document(dashboards=[ambiguous_item])),
+        conflict_policy="key_overwrite",
+        current_team=3,
+        enforce_directory_visibility=True,
+    )
+    assert invisible["errors"][0]["code"] == ImportExportErrorCode.IMPORT_DIRECTORY_NOT_VISIBLE
+    assert str(left.id) in invisible["errors"][0]["message"]
+    assert str(right.id) in invisible["errors"][0]["message"]
+    untouched = _service(
+        _doc(dashboards=[ambiguous_item]),
+        current_team=3,
+        enforce_directory_visibility=True,
+    ).execute()
+    assert ImportExportErrorCode.IMPORT_DIRECTORY_NOT_VISIBLE in _codes(untouched)
+    assert not Dashboard.objects.filter(canvas_key="dashboard::ambiguous").exists()
+
+
+@pytest.mark.django_db
+def test_reserved_builtin_key_blocks_new_writes_but_not_the_holding_user_row(monkeypatch):
+    from apps.operation_analysis.services.import_export import canvas_authority
+
+    monkeypatch.setattr(canvas_authority, "reserved_builtin_key_catalog", lambda: {"dashboard::reserved-unsynced"})
+    directory = _directory("交付目录", groups=[1])
+    holder = Dashboard.objects.create(
+        name="先占",
+        canvas_key="dashboard::reserved-unsynced",
+        is_build_in=False,
+        directory=directory,
+        groups=[1],
+        created_by="tester",
+        desc="old",
+    )
+    held_item = _dashboard(
+        name="先占改名",
+        canvas_key="dashboard::reserved-unsynced",
+        directory_path="交付目录",
+        desc="updated",
+    )
+    held_precheck = PrecheckService.precheck(
+        yaml.safe_dump(_yaml_document(dashboards=[held_item])),
+        conflict_policy="key_overwrite",
+    )
+    assert held_precheck["valid"] is True, held_precheck["errors"]
+    overwritten = _service(_doc(dashboards=[held_item])).execute()
+    assert overwritten["success"] is True, overwritten
+    holder.refresh_from_db()
+    assert holder.desc == "updated"
+    assert holder.name == "先占改名"
+    assert holder.canvas_key == "dashboard::reserved-unsynced"
+    assert holder.is_build_in is False
+    assert Dashboard.objects.count() == 1
+
+    fresh_item = _dashboard(name="新行", canvas_key="dashboard::not-yet-written", directory_path="交付目录")
+    monkeypatch.setattr(canvas_authority, "reserved_builtin_key_catalog", lambda: {"dashboard::not-yet-written"})
+    fresh_precheck = PrecheckService.precheck(
+        yaml.safe_dump(_yaml_document(dashboards=[fresh_item])),
+        conflict_policy="key_overwrite",
+    )
+    assert fresh_precheck["errors"][0]["code"] == ImportExportErrorCode.IMPORT_BUILTIN_KEY_REJECTED
+    rejected = _service(_doc(dashboards=[fresh_item])).execute()
+    assert ImportExportErrorCode.IMPORT_BUILTIN_KEY_REJECTED in _codes(rejected)
+    assert not Dashboard.objects.filter(canvas_key="dashboard::not-yet-written").exists()
+
+    builtin = Dashboard.objects.create(
+        name="内置行",
+        canvas_key="dashboard::held-by-builtin",
+        is_build_in=True,
+        build_in_key="dashboard::held-by-builtin",
+        directory=directory,
+        groups=[1],
+        created_by="system",
+        desc="builtin",
+    )
+    monkeypatch.setattr(canvas_authority, "reserved_builtin_key_catalog", lambda: {"dashboard::held-by-builtin"})
+    protected = _service(
+        _doc(dashboards=[_dashboard(name="内置行", canvas_key="dashboard::held-by-builtin", directory_path="交付目录", desc="hijack")])
+    ).execute()
+    assert ImportExportErrorCode.IMPORT_BUILTIN_PROTECTED in _codes(protected)
+    builtin.refresh_from_db()
+    assert builtin.desc == "builtin"
+
+
+@pytest.mark.django_db
+def test_support_file_builtin_key_is_reserved_before_it_is_synced():
+    from apps.operation_analysis.services.import_export import canvas_authority
+
+    if hasattr(canvas_authority.reserved_builtin_key_catalog, "_cache"):
+        del canvas_authority.reserved_builtin_key_catalog._cache
+    assert "dashboard::CMDB仪表盘_内置" in canvas_authority.reserved_builtin_key_catalog()
+
+    _directory("交付目录")
+    result = _service(
+        _doc(dashboards=[_dashboard(canvas_key="dashboard::CMDB仪表盘_内置", directory_path="交付目录")])
+    ).execute()
+    assert ImportExportErrorCode.IMPORT_BUILTIN_KEY_REJECTED in _codes(result)
+    assert not Dashboard.objects.filter(canvas_key="dashboard::CMDB仪表盘_内置").exists()
+
+
+@pytest.mark.django_db
+def test_key_overwrite_datasources_follow_each_directory_and_reject_cross_org_packages():
+    _directory("甲", groups=[4])
+    created = _service(
+        _doc(
+            datasources=[_datasource(key="fresh::monitor/query", name="fresh-ds")],
+            dashboards=[_dashboard(name="甲面板", canvas_key="dashboard::org-a", directory_path="甲")],
+        ),
+        groups=[9],
+        inherit_directory_groups=False,
+    ).execute()
+    assert created["success"] is True, created
+    assert DataSourceAPIModel.objects.get(name="fresh-ds").groups == [4]
+    assert Dashboard.objects.get(canvas_key="dashboard::org-a").groups == [4]
+
+    _directory("乙", groups=[2])
+    failed = _service(
+        _doc(
+            datasources=[_datasource(key="other::monitor/query", name="other-ds")],
+            dashboards=[
+                _dashboard(key="dashboard::a", name="面板甲", canvas_key="dashboard::pack-a", directory_path="甲"),
+                _dashboard(key="dashboard::b", name="面板乙", canvas_key="dashboard::pack-b", directory_path="乙"),
+            ],
+        ),
+        groups=[9],
+    ).execute()
+    assert ImportExportErrorCode.IMPORT_PACKAGE_ORG_DIVERGED in _codes(failed)
+    assert not DataSourceAPIModel.objects.filter(name="other-ds").exists()
+    assert Dashboard.objects.filter(canvas_key__in=["dashboard::pack-a", "dashboard::pack-b"]).count() == 0
+
+
+@pytest.mark.django_db
+def test_prefer_existing_looks_up_undeclared_datasource_in_the_target_database():
+    directory = _directory("交付目录", groups=[4])
+    existing = DataSourceAPIModel.objects.create(
+        name="live-ds",
+        rest_api="monitor/query",
+        desc="local",
+        groups=[4],
+        created_by="local",
+        updated_by="local",
+    )
+    item = _dashboard(
+        canvas_key="dashboard::reuse-undeclared",
+        directory_path="交付目录",
+        view_sets=[{"valueConfig": {"dataSource": "live-ds::monitor/query"}}],
+        refs={"datasource_keys": ["live-ds::monitor/query"]},
+    )
+    precheck = PrecheckService.precheck(
+        yaml.safe_dump(_yaml_document(dashboards=[item])),
+        conflict_policy="key_overwrite",
+        datasource_resolve="prefer_existing",
+    )
+    assert precheck["valid"] is True, precheck["errors"]
+    result = _service(_doc(dashboards=[item])).execute()
+    assert result["success"] is True, result
+    dashboard = Dashboard.objects.get(canvas_key="dashboard::reuse-undeclared")
+    assert dashboard.view_sets[0]["valueConfig"]["dataSource"] == existing.id
+
+    missing_item = _dashboard(
+        name="缺源",
+        canvas_key="dashboard::missing-ds",
+        directory_path="交付目录",
+        refs={"datasource_keys": ["absent::monitor/query"]},
+    )
+    missing_precheck = PrecheckService.precheck(
+        yaml.safe_dump(_yaml_document(dashboards=[missing_item])),
+        conflict_policy="key_overwrite",
+    )
+    assert missing_precheck["valid"] is False
+    assert "未在YAML中声明" in missing_precheck["errors"][0]["message"]
+    assert "目标环境中也不存在" in missing_precheck["errors"][0]["message"]
+    missing = _service(_doc(dashboards=[missing_item])).execute()
+    assert missing["success"] is False
+    assert "未在YAML中声明" in _failed_messages(missing)
+    assert "目标环境中也不存在" in _failed_messages(missing)
+
+    package_mode = PrecheckService.precheck(
+        yaml.safe_dump(_yaml_document(dashboards=[_dashboard(refs={"datasource_keys": ["live-ds::monitor/query"]})])),
+        target_directory_id=directory.id,
+    )
+    assert package_mode["errors"][0]["code"] == ImportExportErrorCode.IMPORT_DEPENDENCY_MISSING
+    assert "目标环境中也不存在" not in package_mode["errors"][0]["message"]
+
+
+@pytest.mark.django_db
+def test_canvas_unique_constraint_becomes_business_error(monkeypatch):
+    _directory("交付目录")
+
+    def raise_key(**kwargs):
+        raise IntegrityError("UNIQUE constraint failed: operation_analysis_dashboard.canvas_key")
+
+    monkeypatch.setattr(Dashboard.objects, "create", raise_key)
+    raced = _service(_doc(dashboards=[_dashboard(canvas_key="dashboard::race", directory_path="交付目录")])).execute()
+    assert raced["success"] is False
+    assert ImportExportErrorCode.IMPORT_CANVAS_KEY_TAKEN in _codes(raced)
+
+    def raise_name(**kwargs):
+        raise IntegrityError("UNIQUE constraint failed: operation_analysis_dashboard.name")
+
+    monkeypatch.setattr(Dashboard.objects, "create", raise_name)
+    named = _service(_doc(dashboards=[_dashboard(name="撞名", canvas_key="dashboard::race-name", directory_path="交付目录")])).execute()
+    assert ImportExportErrorCode.IMPORT_CANVAS_NAME_TAKEN in _codes(named)

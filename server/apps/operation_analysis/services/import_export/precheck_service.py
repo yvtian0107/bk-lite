@@ -32,17 +32,22 @@ from apps.operation_analysis.constants.import_export import (
 from apps.operation_analysis.models.datasource_models import DataSourceAPIModel, NameSpace
 from apps.operation_analysis.models.models import Architecture, Dashboard, Directory, NetworkTopology, Report, Screen, Topology
 from apps.operation_analysis.services.import_export.canvas_authority import (
+    DIRECTORY_RESOLUTION_ERROR_CODES,
     ConflictPolicy,
     DatasourceResolve,
     DirectoryPathError,
     builtin_key_rejected_message,
     builtin_protected_message,
+    canvas_datasource_missing_target_message,
     canvas_keys_occupied_by_builtin,
     canvas_name_taken_message,
     directory_missing_message,
     directory_path_error_message,
     directory_path_required_message,
     duplicated_canvas_key_message,
+    effective_datasource_resolve,
+    ensure_directory_visible,
+    find_existing_datasource_by_key,
     index_existing_canvases,
     normalized_canvas_key,
     normalized_directory_path,
@@ -403,9 +408,10 @@ class PrecheckService:
         return warnings
 
     @staticmethod
-    def check_dependencies(doc: YAMLDocument) -> list[dict]:
+    def check_dependencies(doc: YAMLDocument, datasource_resolve: str | None = None) -> list[dict]:
         """检查依赖完整性：画布引用的数据源和命名空间是否在YAML中声明"""
         errors = []
+        prefer_existing = datasource_resolve == DatasourceResolve.PREFER_EXISTING.value
 
         # 收集YAML中声明的命名空间和数据源键
         declared_ns_keys = {ns.key for ns in doc.namespaces}
@@ -442,21 +448,28 @@ class PrecheckService:
         for canvas_list, obj_type in all_canvases:
             for canvas in canvas_list:
                 for ds_key in canvas.refs.datasource_keys:
-                    if ds_key not in declared_ds_keys:
-                        errors.append(
-                            {
-                                "code": ImportExportErrorCode.IMPORT_DEPENDENCY_MISSING,
-                                "message": oa_message(
-                                    "messages.canvas_datasource_missing",
-                                    "{object_type} '{name}' 依赖的数据源 '{datasource}' 未在YAML中声明",
-                                    object_type=obj_type.value,
-                                    name=canvas.name,
-                                    datasource=ds_key,
-                                ),
-                                "object_key": canvas.key,
-                                "missing_dependency": ds_key,
-                            }
+                    if ds_key in declared_ds_keys:
+                        continue
+                    if prefer_existing and find_existing_datasource_by_key(ds_key) is not None:
+                        continue
+                    if prefer_existing:
+                        message = canvas_datasource_missing_target_message(obj_type.value, canvas.name, ds_key)
+                    else:
+                        message = oa_message(
+                            "messages.canvas_datasource_missing",
+                            "{object_type} '{name}' 依赖的数据源 '{datasource}' 未在YAML中声明",
+                            object_type=obj_type.value,
+                            name=canvas.name,
+                            datasource=ds_key,
                         )
+                    errors.append(
+                        {
+                            "code": ImportExportErrorCode.IMPORT_DEPENDENCY_MISSING,
+                            "message": message,
+                            "object_key": canvas.key,
+                            "missing_dependency": ds_key,
+                        }
+                    )
 
                 for ns_key in canvas.refs.namespace_keys:
                     if ns_key not in declared_ns_keys:
@@ -492,13 +505,29 @@ class PrecheckService:
         ]
 
     @classmethod
-    def check_canvas_authority(cls, doc: YAMLDocument, target_directory_id: int | None = None, conflict_policy: str | None = None) -> list[dict]:
+    def check_canvas_authority(
+        cls,
+        doc: YAMLDocument,
+        target_directory_id: int | None = None,
+        conflict_policy: str | None = None,
+        current_team: int | None = None,
+        enforce_directory_visibility: bool = False,
+        directory_visibility_superuser: bool = False,
+    ) -> list[dict]:
         """仪表盘/大屏稳定键与目录路径校验。其它类型仍只要求页面所选目录。"""
         errors = []
         errors.extend(cls._duplicated_canvas_key_errors(doc))
         errors.extend(cls._builtin_canvas_key_errors(doc))
         if conflict_policy == ConflictPolicy.KEY_OVERWRITE.value:
-            errors.extend(cls._key_overwrite_directory_errors(doc, target_directory_id))
+            errors.extend(
+                cls._key_overwrite_directory_errors(
+                    doc,
+                    target_directory_id,
+                    current_team=current_team,
+                    enforce_visibility=enforce_directory_visibility,
+                    is_superuser=directory_visibility_superuser,
+                )
+            )
             errors.extend(cls._key_overwrite_identity_errors(doc))
         elif cls.has_canvas_objects(doc) and target_directory_id is None:
             errors.append(
@@ -540,24 +569,45 @@ class PrecheckService:
 
     @classmethod
     def _builtin_canvas_key_errors(cls, doc: YAMLDocument) -> list[dict]:
-        items = [(item, object_type) for section, object_type, _model in cls._stable_canvas_sections(doc) for item in section]
-        keys = [normalized_canvas_key(item) for item, _object_type in items if normalized_canvas_key(item)]
+        items = [(item, object_type, model) for section, object_type, model in cls._stable_canvas_sections(doc) for item in section]
+        keys = [normalized_canvas_key(item) for item, _object_type, _model in items if normalized_canvas_key(item)]
         occupied = canvas_keys_occupied_by_builtin(keys)
         if not occupied:
             return []
-        return [
-            {
-                "code": ImportExportErrorCode.IMPORT_BUILTIN_KEY_REJECTED,
-                "message": builtin_key_rejected_message(),
-                "object_key": item.key,
-                "object_type": object_type.value,
-            }
-            for item, object_type in items
-            if normalized_canvas_key(item) in occupied
-        ]
+        errors = []
+        for item, object_type, model in items:
+            canvas_key = normalized_canvas_key(item)
+            if canvas_key not in occupied:
+                continue
+            holder = model.objects.filter(canvas_key=canvas_key).first()
+            if holder is not None and not holder.is_build_in:
+                continue
+            if holder is not None and holder.is_build_in:
+                code = ImportExportErrorCode.IMPORT_BUILTIN_PROTECTED
+                message = builtin_protected_message()
+            else:
+                code = ImportExportErrorCode.IMPORT_BUILTIN_KEY_REJECTED
+                message = builtin_key_rejected_message()
+            errors.append(
+                {
+                    "code": code,
+                    "message": message,
+                    "object_key": item.key,
+                    "object_type": object_type.value,
+                }
+            )
+        return errors
 
     @classmethod
-    def _key_overwrite_directory_errors(cls, doc: YAMLDocument, target_directory_id: int | None) -> list[dict]:
+    def _key_overwrite_directory_errors(
+        cls,
+        doc: YAMLDocument,
+        target_directory_id: int | None,
+        *,
+        current_team: int | None = None,
+        enforce_visibility: bool = False,
+        is_superuser: bool = False,
+    ) -> list[dict]:
         errors = []
         needs_directory = bool(doc.topologies or doc.architectures or doc.reports or doc.network_topologies)
         stable_needs_directory = False
@@ -577,14 +627,14 @@ class PrecheckService:
                         )
                     continue
                 try:
-                    resolve_directory_path(path)
+                    resolve_directory_path(
+                        path,
+                        current_team=current_team,
+                        enforce_visibility=enforce_visibility,
+                        is_superuser=is_superuser,
+                    )
                 except DirectoryPathError as exc:
-                    code = exc.code
-                    if code not in {
-                        ImportExportErrorCode.IMPORT_DIRECTORY_PATH_INVALID,
-                        ImportExportErrorCode.IMPORT_DIRECTORY_PATH_NOT_FOUND,
-                    }:
-                        code = ImportExportErrorCode.IMPORT_DIRECTORY_PATH_INVALID
+                    code = exc.code if exc.code in DIRECTORY_RESOLUTION_ERROR_CODES else ImportExportErrorCode.IMPORT_DIRECTORY_PATH_INVALID
                     errors.append(
                         {
                             "code": code,
@@ -600,13 +650,24 @@ class PrecheckService:
                     "message": oa_message("messages.canvas_directory_required", "YAML包含画布对象，必须指定目标目录"),
                 }
             )
-        if stable_needs_directory and target_directory_id is not None and not Directory.objects.filter(id=target_directory_id).exists():
-            errors.append(
-                {
-                    "code": ImportExportErrorCode.IMPORT_DIRECTORY_MISSING,
-                    "message": directory_missing_message(),
-                }
-            )
+        if stable_needs_directory and target_directory_id is not None:
+            directory = Directory.objects.filter(id=target_directory_id).first()
+            if directory is None:
+                errors.append(
+                    {
+                        "code": ImportExportErrorCode.IMPORT_DIRECTORY_MISSING,
+                        "message": directory_missing_message(),
+                    }
+                )
+            else:
+                visible_error = ensure_directory_visible(
+                    directory,
+                    current_team=current_team,
+                    enforce_visibility=enforce_visibility,
+                    is_superuser=is_superuser,
+                )
+                if visible_error:
+                    errors.append({"code": visible_error[0], "message": visible_error[1]})
         return errors
 
     @staticmethod
@@ -824,6 +885,8 @@ class PrecheckService:
         current_team: int | None = None,
         conflict_policy: str | None = None,
         datasource_resolve: str | None = None,
+        enforce_directory_visibility: bool = False,
+        directory_visibility_superuser: bool = False,
     ) -> dict:
         """
         执行完整预检流程
@@ -886,11 +949,21 @@ class PrecheckService:
         all_errors.extend(cls.check_db_id_references(data))
 
         # Step 6: 依赖完整性检查
-        all_errors.extend(cls.check_dependencies(doc))
+        resolved_datasource = effective_datasource_resolve(conflict_policy, datasource_resolve)
+        all_errors.extend(cls.check_dependencies(doc, resolved_datasource))
         all_errors.extend(cls.check_datasource_security(doc))
 
         # Step 7: 画布目录与仪表盘/大屏稳定键
-        all_errors.extend(cls.check_canvas_authority(doc, target_directory_id, conflict_policy))
+        all_errors.extend(
+            cls.check_canvas_authority(
+                doc,
+                target_directory_id,
+                conflict_policy,
+                current_team=current_team,
+                enforce_directory_visibility=enforce_directory_visibility,
+                directory_visibility_superuser=directory_visibility_superuser,
+            )
+        )
 
         # Step 8: 敏感字段警告
         all_warnings.extend(cls.check_sensitive_placeholders(doc))

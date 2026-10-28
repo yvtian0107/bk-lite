@@ -7,8 +7,11 @@
 
 from __future__ import annotations
 
+import os
 import uuid
 from enum import Enum
+
+import yaml
 
 from apps.operation_analysis.constants.import_export import (
     BUSINESS_KEY_SEPARATOR,
@@ -52,10 +55,22 @@ class DatasourceResolve(str, Enum):
 
 
 class DirectoryPathError(Exception):
-    def __init__(self, code: str, path: str):
+    def __init__(self, code: str, path: str, candidates: list | None = None):
         self.code = code
         self.path = path
+        self.candidates = candidates or []
         super().__init__(code)
+
+
+DIRECTORY_RESOLUTION_ERROR_CODES = frozenset(
+    {
+        ImportExportErrorCode.IMPORT_DIRECTORY_PATH_INVALID,
+        ImportExportErrorCode.IMPORT_DIRECTORY_PATH_NOT_FOUND,
+        ImportExportErrorCode.IMPORT_DIRECTORY_PATH_AMBIGUOUS,
+        ImportExportErrorCode.IMPORT_DIRECTORY_NOT_VISIBLE,
+        ImportExportErrorCode.IMPORT_DIRECTORY_BUILTIN,
+    }
+)
 
 
 def normalized_canvas_key(item) -> str:
@@ -129,13 +144,66 @@ def resolve_conflict_action(
 
 
 def canvas_keys_occupied_by_builtin(keys: list[str]) -> set[str]:
+    """库内 build_in_key，加上 support-files / source_api 里尚未同步的内置键。"""
     normalized = [key for key in dict.fromkeys(keys) if key]
     if not normalized:
         return set()
     occupied: set[str] = set()
     for model in _BUILTIN_KEY_MODELS:
         occupied.update(model.objects.filter(build_in_key__in=normalized).values_list("build_in_key", flat=True))
+    catalog = reserved_builtin_key_catalog()
+    occupied.update(key for key in normalized if key in catalog)
     return occupied
+
+
+def reserved_builtin_key_catalog() -> set[str]:
+    cached = getattr(reserved_builtin_key_catalog, "_cache", None)
+    if cached is not None:
+        return cached
+    keys = {"__builtin__"}
+    try:
+        from apps.operation_analysis.management.commands.init_builtin_canvases import (
+            BUILTIN_DIRECTORY_KEY,
+            MERGEABLE_SECTIONS,
+            _get_builtin_canvas_file_paths,
+            _load_source_api_document,
+        )
+
+        keys.add(BUILTIN_DIRECTORY_KEY)
+        documents = []
+        try:
+            documents.append(_load_source_api_document())
+        except Exception:
+            documents = []
+        for file_path in _get_builtin_canvas_file_paths():
+            if not os.path.isfile(file_path):
+                continue
+            try:
+                with open(file_path, encoding="utf-8") as handle:
+                    loaded = yaml.safe_load(handle)
+            except (OSError, UnicodeError, yaml.YAMLError):
+                continue
+            if isinstance(loaded, dict):
+                documents.append(loaded)
+        for document in documents:
+            for section in MERGEABLE_SECTIONS:
+                for item in document.get(section) or []:
+                    if isinstance(item, dict) and item.get("key"):
+                        keys.add(str(item["key"]).strip())
+    except Exception:
+        keys = {"__builtin__"}
+    reserved_builtin_key_catalog._cache = keys
+    return keys
+
+
+def user_canvas_key_may_keep_reserved_key(model, canvas_key: str):
+    """本行已经持有该键且不是内置画布时，允许按键覆盖，不再当成新写入。"""
+    if not canvas_key:
+        return None
+    holder = model.objects.filter(canvas_key=canvas_key).first()
+    if holder is not None and not holder.is_build_in:
+        return holder
+    return None
 
 
 def allocate_canvas_key(model, object_type: ObjectType) -> str:
@@ -182,7 +250,27 @@ def format_directory_path(directory: Directory | None) -> str:
     return DIRECTORY_PATH_SEPARATOR.join(item.name for item in chain)
 
 
-def resolve_directory_path(path: str) -> Directory:
+def directory_candidates(directories) -> list[dict]:
+    return [{"id": item.id, "groups": list(item.groups or [])} for item in directories]
+
+
+def directory_visible_to_team(directory: Directory, current_team: int | None, *, is_superuser: bool) -> bool:
+    if getattr(directory, "is_build_in", False):
+        return False
+    if is_superuser:
+        return True
+    if current_team is None:
+        return False
+    return int(current_team) in {int(group_id) for group_id in (directory.groups or [])}
+
+
+def resolve_directory_path(
+    path: str,
+    *,
+    current_team: int | None = None,
+    enforce_visibility: bool = False,
+    is_superuser: bool = False,
+) -> Directory:
     raw = (path or "").strip()
     if not raw or raw.startswith(DIRECTORY_PATH_SEPARATOR) or raw.endswith(DIRECTORY_PATH_SEPARATOR):
         raise DirectoryPathError(ImportExportErrorCode.IMPORT_DIRECTORY_PATH_INVALID, raw)
@@ -191,14 +279,62 @@ def resolve_directory_path(path: str) -> Directory:
     parent = None
     current = None
     for part in raw.split(DIRECTORY_PATH_SEPARATOR):
-        matches = list(Directory.objects.filter(name=part, parent=parent)[:2])
-        if not matches:
-            raise DirectoryPathError(ImportExportErrorCode.IMPORT_DIRECTORY_PATH_NOT_FOUND, raw)
-        if len(matches) > 1:
-            raise DirectoryPathError(ImportExportErrorCode.IMPORT_DIRECTORY_PATH_INVALID, raw)
-        current = matches[0]
+        matches = list(Directory.objects.filter(name=part, parent=parent))
+        current = _select_directory_match(
+            matches,
+            raw,
+            current_team=current_team,
+            enforce_visibility=enforce_visibility,
+            is_superuser=is_superuser,
+        )
         parent = current
     return current
+
+
+def _select_directory_match(matches, path: str, *, current_team, enforce_visibility: bool, is_superuser: bool) -> Directory:
+    if not matches:
+        raise DirectoryPathError(ImportExportErrorCode.IMPORT_DIRECTORY_PATH_NOT_FOUND, path)
+    if not enforce_visibility:
+        if len(matches) > 1:
+            raise DirectoryPathError(ImportExportErrorCode.IMPORT_DIRECTORY_PATH_AMBIGUOUS, path, directory_candidates(matches))
+        return matches[0]
+    visible = [item for item in matches if directory_visible_to_team(item, current_team, is_superuser=is_superuser)]
+    if len(visible) == 1:
+        return visible[0]
+    if len(visible) > 1:
+        raise DirectoryPathError(ImportExportErrorCode.IMPORT_DIRECTORY_PATH_AMBIGUOUS, path, directory_candidates(visible))
+    if matches and all(getattr(item, "is_build_in", False) for item in matches):
+        raise DirectoryPathError(ImportExportErrorCode.IMPORT_DIRECTORY_BUILTIN, path, directory_candidates(matches))
+    raise DirectoryPathError(ImportExportErrorCode.IMPORT_DIRECTORY_NOT_VISIBLE, path, directory_candidates(matches))
+
+
+def ensure_directory_visible(directory: Directory | None, *, current_team: int | None, enforce_visibility: bool, is_superuser: bool):
+    if directory is None or not enforce_visibility:
+        return None
+    if getattr(directory, "is_build_in", False):
+        return ImportExportErrorCode.IMPORT_DIRECTORY_BUILTIN, directory_builtin_message(directory.name)
+    if directory_visible_to_team(directory, current_team, is_superuser=is_superuser):
+        return None
+    candidates = format_directory_candidates(directory_candidates([directory]))
+    return ImportExportErrorCode.IMPORT_DIRECTORY_NOT_VISIBLE, directory_not_visible_message(directory.name, candidates)
+
+
+def split_datasource_business_key(key: str) -> tuple[str, str] | None:
+    if BUSINESS_KEY_SEPARATOR not in (key or ""):
+        return None
+    name, rest_api = key.split(BUSINESS_KEY_SEPARATOR, 1)
+    name = name.strip()
+    if not name:
+        return None
+    return name, rest_api
+
+
+def find_existing_datasource_by_key(key: str):
+    parsed = split_datasource_business_key(key)
+    if parsed is None:
+        return None
+    name, rest_api = parsed
+    return DataSourceAPIModel.objects.filter(name=name, rest_api=rest_api).first()
 
 
 def index_existing_canvases(model, items) -> dict:
@@ -247,10 +383,57 @@ def directory_missing_message() -> str:
     return oa_message("messages.import_directory_missing", "目标目录不存在")
 
 
+def format_directory_candidates(candidates: list[dict]) -> str:
+    return ", ".join(f"id={item['id']} groups={item['groups']}" for item in candidates)
+
+
 def directory_path_error_message(exc: DirectoryPathError) -> str:
+    candidates = format_directory_candidates(exc.candidates)
     if exc.code == ImportExportErrorCode.IMPORT_DIRECTORY_PATH_NOT_FOUND:
         return oa_message("messages.import_directory_path_not_found", "directory_path 对应的目录不存在: {path}", path=exc.path)
+    if exc.code == ImportExportErrorCode.IMPORT_DIRECTORY_PATH_AMBIGUOUS:
+        return oa_message(
+            "messages.import_directory_path_ambiguous",
+            "directory_path 匹配到多个目录: {path}（{candidates}）",
+            path=exc.path,
+            candidates=candidates,
+        )
+    if exc.code == ImportExportErrorCode.IMPORT_DIRECTORY_NOT_VISIBLE:
+        return directory_not_visible_message(exc.path, candidates)
+    if exc.code == ImportExportErrorCode.IMPORT_DIRECTORY_BUILTIN:
+        return directory_builtin_message(exc.path)
     return oa_message("messages.import_directory_path_invalid", "directory_path 不合法: {path}", path=exc.path)
+
+
+def directory_not_visible_message(path: str, candidates: str) -> str:
+    return oa_message(
+        "messages.import_directory_not_visible",
+        "directory_path 不在当前组织可见范围内: {path}（{candidates}）",
+        path=path,
+        candidates=candidates,
+    )
+
+
+def directory_builtin_message(path: str) -> str:
+    return oa_message("messages.import_directory_builtin", "不能导入到内置目录: {path}", path=path)
+
+
+def package_org_diverged_message() -> str:
+    return oa_message("messages.import_package_org_diverged", "同一 YAML 的仪表盘/大屏落在不同组织目录，不能共用数据源可见范围")
+
+
+def canvas_key_taken_message() -> str:
+    return oa_message("messages.import_canvas_key_taken", "用户稳定键已被占用")
+
+
+def canvas_datasource_missing_target_message(object_type: str, name: str, datasource: str) -> str:
+    return oa_message(
+        "messages.canvas_datasource_missing_target",
+        "{object_type} '{name}' 依赖的数据源 '{datasource}' 未在YAML中声明，目标环境中也不存在",
+        object_type=object_type,
+        name=name,
+        datasource=datasource,
+    )
 
 
 def duplicated_canvas_key_message(canvas_key: str) -> str:
@@ -259,6 +442,16 @@ def duplicated_canvas_key_message(canvas_key: str) -> str:
 
 def datasource_reused_message() -> str:
     return oa_message("messages.import_datasource_reused", "复用已有数据源，未覆盖源定义")
+
+
+def http_directory_visibility(request, current_team: int | None) -> dict:
+    """页面和 OpenAPI 的 key_overwrite 与复制目录使用同一套组织、内置目录约束。"""
+    user = getattr(request, "user", None)
+    return {
+        "current_team": current_team,
+        "enforce_directory_visibility": True,
+        "directory_visibility_superuser": bool(getattr(user, "is_superuser", False)),
+    }
 
 
 def import_call_options(data: dict) -> dict:

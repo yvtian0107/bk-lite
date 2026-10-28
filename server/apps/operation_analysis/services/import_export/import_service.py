@@ -15,7 +15,7 @@ Tech Plan参考：
 
 from copy import deepcopy
 
-from django.db import transaction
+from django.db import IntegrityError, transaction
 
 from apps.core.logger import operation_analysis_logger as logger
 from apps.operation_analysis.common.datasource_security import LEGACY_RAW_MONITOR_QUERY_ERROR, is_legacy_raw_monitor_query
@@ -30,12 +30,16 @@ from apps.operation_analysis.constants.import_export import (
     is_sensitive_field_name,
 )
 from apps.operation_analysis.services.import_export.canvas_authority import (
+    DIRECTORY_RESOLUTION_ERROR_CODES,
+    ConflictPolicy,
     DatasourceResolve,
     DirectoryPathError,
     allocate_canvas_key,
     duplicated_canvas_key_message,
     builtin_key_rejected_message,
     builtin_protected_message,
+    canvas_datasource_missing_target_message,
+    canvas_key_taken_message,
     canvas_keys_occupied_by_builtin,
     canvas_name_taken_message,
     datasource_reused_message,
@@ -43,11 +47,15 @@ from apps.operation_analysis.services.import_export.canvas_authority import (
     directory_path_error_message,
     directory_path_required_message,
     effective_datasource_resolve,
+    ensure_directory_visible,
+    find_existing_datasource_by_key,
     normalized_canvas_key,
     normalized_directory_path,
+    package_org_diverged_message,
     resolve_conflict_action,
     resolve_directory_path,
     supports_user_canvas_key,
+    user_canvas_key_may_keep_reserved_key,
     uses_directory_path,
 )
 from apps.operation_analysis.models.datasource_models import DataSourceAPIModel, DataSourceTag, NameSpace
@@ -107,6 +115,9 @@ class ImportService:
         use_directory_path: bool | None = None,
         assign_user_canvas_key: bool = True,
         inherit_directory_groups: bool = False,
+        current_team: int | None = None,
+        enforce_directory_visibility: bool = False,
+        directory_visibility_superuser: bool = False,
     ):
         """
         初始化导入服务
@@ -137,7 +148,10 @@ class ImportService:
         self.datasource_resolve = effective_datasource_resolve(self.conflict_policy, datasource_resolve)
         self.use_directory_path = uses_directory_path(self.conflict_policy) if use_directory_path is None else use_directory_path
         self.assign_user_canvas_key = assign_user_canvas_key
-        self.inherit_directory_groups = inherit_directory_groups
+        self.inherit_directory_groups = inherit_directory_groups or self.conflict_policy == ConflictPolicy.KEY_OVERWRITE.value
+        self.current_team = current_team
+        self.enforce_directory_visibility = enforce_directory_visibility
+        self.directory_visibility_superuser = directory_visibility_superuser
         self._builtin_key_blocklist: set[str] = set()
 
         # 导入过程中的映射表：YAML key -> DB ID
@@ -588,11 +602,11 @@ class ImportService:
 
         canvas_key = normalized_canvas_key(canvas_item) if supports_user_canvas_key(object_type) else ""
         if self.assign_user_canvas_key and canvas_key:
-            if canvas_key in self._builtin_key_blocklist:
-                return None, "canvas_key", None, (ImportExportErrorCode.IMPORT_BUILTIN_KEY_REJECTED, builtin_key_rejected_message())
             existing = model.objects.filter(canvas_key=canvas_key).first()
             if existing is not None and existing.is_build_in:
                 return None, "canvas_key", None, (ImportExportErrorCode.IMPORT_BUILTIN_PROTECTED, builtin_protected_message())
+            if canvas_key in self._builtin_key_blocklist and existing is None:
+                return None, "canvas_key", None, (ImportExportErrorCode.IMPORT_BUILTIN_KEY_REJECTED, builtin_key_rejected_message())
             return existing, "canvas_key", None, None
 
         return model.objects.filter(name=canvas_item.name).first(), "name", None, None
@@ -602,19 +616,17 @@ class ImportService:
             path = normalized_directory_path(canvas_item)
             if path:
                 try:
-                    return resolve_directory_path(path), None
+                    return resolve_directory_path(path, **self._directory_visibility_kwargs()), None
                 except DirectoryPathError as exc:
-                    code = exc.code
-                    if code not in {
-                        ImportExportErrorCode.IMPORT_DIRECTORY_PATH_INVALID,
-                        ImportExportErrorCode.IMPORT_DIRECTORY_PATH_NOT_FOUND,
-                    }:
-                        code = ImportExportErrorCode.IMPORT_DIRECTORY_PATH_INVALID
+                    code = exc.code if exc.code in DIRECTORY_RESOLUTION_ERROR_CODES else ImportExportErrorCode.IMPORT_DIRECTORY_PATH_INVALID
                     return None, (code, directory_path_error_message(exc))
             if self.target_directory_id:
                 directory = Directory.objects.filter(id=self.target_directory_id).first()
                 if directory is None:
                     return None, (ImportExportErrorCode.IMPORT_DIRECTORY_MISSING, directory_missing_message())
+                visible_error = ensure_directory_visible(directory, **self._directory_visibility_kwargs())
+                if visible_error:
+                    return None, visible_error
                 return directory, None
             return None, (ImportExportErrorCode.IMPORT_DIRECTORY_PATH_REQUIRED, directory_path_required_message())
 
@@ -622,6 +634,13 @@ class ImportService:
         if self.target_directory_id:
             directory = Directory.objects.filter(id=self.target_directory_id).first()
         return directory, None
+
+    def _directory_visibility_kwargs(self) -> dict:
+        return {
+            "current_team": self.current_team,
+            "enforce_visibility": self.enforce_directory_visibility,
+            "is_superuser": self.directory_visibility_superuser,
+        }
 
     def _fail_canvas(self, canvas_item, object_type: ObjectType, code: str, message: str) -> None:
         self._record_result(canvas_item.key, object_type.value, ImportStatus.FAILED.value, message)
@@ -632,7 +651,8 @@ class ImportService:
             return None
         package_key = normalized_canvas_key(canvas_item)
         if reuse_package_key and package_key:
-            if package_key in self._builtin_key_blocklist:
+            holder = user_canvas_key_may_keep_reserved_key(model, package_key)
+            if package_key in self._builtin_key_blocklist and holder is None:
                 return ImportExportErrorCode.IMPORT_BUILTIN_KEY_REJECTED, builtin_key_rejected_message()
             canvas_data["canvas_key"] = package_key
             return None
@@ -661,11 +681,22 @@ class ImportService:
                 )
         return duplicated
 
-    def _inherit_directory_groups(self) -> None:
+    @staticmethod
+    def _group_identity(groups) -> set:
+        identity = set()
+        for group_id in groups or []:
+            try:
+                identity.add(int(group_id))
+            except (TypeError, ValueError):
+                identity.add(group_id)
+        return identity
+
+    def _inherit_directory_groups(self) -> bool:
+        """key_overwrite 的新数据源跟随画布目录组织。跨组织的包直接失败，不把组织并成一份。"""
         if not self.inherit_directory_groups:
-            return
-        seen: list[int] = []
-        resolved = False
+            return False
+        chosen: list | None = None
+        chosen_identity: set | None = None
         for object_type, items in (
             (ObjectType.DASHBOARD, self.doc.dashboards),
             (ObjectType.SCREEN, self.doc.screens),
@@ -674,12 +705,75 @@ class ImportService:
                 directory, error = self._directory_for_canvas(item, object_type)
                 if error or directory is None:
                     continue
-                resolved = True
-                for group_id in directory.groups or []:
-                    if group_id not in seen:
-                        seen.append(group_id)
-        if resolved:
-            self.datasource_groups = seen
+                identity = self._group_identity(directory.groups)
+                if chosen is None:
+                    chosen = list(directory.groups or [])
+                    chosen_identity = identity
+                    continue
+                if identity != chosen_identity:
+                    self._fail_canvas(
+                        item,
+                        object_type,
+                        ImportExportErrorCode.IMPORT_PACKAGE_ORG_DIVERGED,
+                        package_org_diverged_message(),
+                    )
+                    return True
+        if chosen is not None:
+            self.datasource_groups = chosen
+        return False
+
+    def _store_canvas(self, canvas_item, object_type: ObjectType, model, canvas_data: dict, existing, status: str, message: str):
+        saved, persist_error = self._persist_canvas(model, canvas_data, existing)
+        if persist_error:
+            self._fail_canvas(canvas_item, object_type, persist_error[0], persist_error[1])
+            return None
+        self._record_result(canvas_item.key, object_type.value, status, message, saved.id)
+        return saved.id
+
+    def _persist_canvas(self, model, canvas_data: dict, existing=None):
+        try:
+            with transaction.atomic():
+                if existing is None:
+                    return model.objects.create(**canvas_data), None
+                for key, value in canvas_data.items():
+                    setattr(existing, key, value)
+                existing.updated_by = self.updated_by
+                existing.save()
+                return existing, None
+        except IntegrityError as exc:
+            detail = str(exc).lower()
+            if "canvas_key" in detail:
+                return None, (ImportExportErrorCode.IMPORT_CANVAS_KEY_TAKEN, canvas_key_taken_message())
+            if "name" in detail:
+                return None, (ImportExportErrorCode.IMPORT_CANVAS_NAME_TAKEN, canvas_name_taken_message(canvas_data.get("name", "")))
+            raise
+
+    def _bind_undeclared_datasources(self) -> None:
+        if self.datasource_resolve != DatasourceResolve.PREFER_EXISTING.value:
+            return
+        sections = (
+            (self.doc.dashboards, ObjectType.DASHBOARD),
+            (self.doc.topologies, ObjectType.TOPOLOGY),
+            (self.doc.architectures, ObjectType.ARCHITECTURE),
+            (self.doc.screens, ObjectType.SCREEN),
+            (self.doc.reports, ObjectType.REPORT),
+            (self.doc.network_topologies, ObjectType.NETWORK_TOPOLOGY),
+        )
+        for items, object_type in sections:
+            for canvas in items:
+                for ds_key in canvas.refs.datasource_keys:
+                    if ds_key in self.datasource_key_to_id:
+                        continue
+                    existing = find_existing_datasource_by_key(ds_key)
+                    if existing is not None:
+                        self.datasource_key_to_id[ds_key] = existing.id
+                        continue
+                    self._fail_canvas(
+                        canvas,
+                        object_type,
+                        ImportExportErrorCode.IMPORT_DEPENDENCY_MISSING,
+                        canvas_datasource_missing_target_message(object_type.value, canvas.name, ds_key),
+                    )
 
     def _import_canvas(
         self,
@@ -790,18 +884,15 @@ class ImportService:
                     if key_error:
                         self._fail_canvas(canvas_item, object_type, key_error[0], key_error[1])
                         return None
-                for key, value in canvas_data.items():
-                    setattr(existing, key, value)
-                existing.updated_by = self.updated_by
-                existing.save()
-                self._record_result(
-                    canvas_item.key,
-                    object_type.value,
+                return self._store_canvas(
+                    canvas_item,
+                    object_type,
+                    model,
+                    canvas_data,
+                    existing,
                     ImportStatus.OVERWRITTEN.value,
                     oa_message("messages.import_canvas_overwritten", "覆盖已存在的{object_type}", object_type=object_type.value),
-                    existing.id,
                 )
-                return existing.id
 
             else:  # rename
                 new_name = self._generate_rename_name(canvas_item.name, model)
@@ -818,15 +909,15 @@ class ImportService:
                 if key_error:
                     self._fail_canvas(canvas_item, object_type, key_error[0], key_error[1])
                     return None
-                canvas = model.objects.create(**canvas_data)
-                self._record_result(
-                    canvas_item.key,
-                    object_type.value,
+                return self._store_canvas(
+                    canvas_item,
+                    object_type,
+                    model,
+                    canvas_data,
+                    None,
                     ImportStatus.SUCCESS.value,
                     oa_message("messages.import_renamed", "重命名为 {name}", name=new_name),
-                    canvas.id,
                 )
-                return canvas.id
         else:
             # 新建
             canvas_data["name"] = canvas_item.name
@@ -853,15 +944,15 @@ class ImportService:
             if key_error:
                 self._fail_canvas(canvas_item, object_type, key_error[0], key_error[1])
                 return None
-            canvas = model.objects.create(**canvas_data)
-            self._record_result(
-                canvas_item.key,
-                object_type.value,
+            return self._store_canvas(
+                canvas_item,
+                object_type,
+                model,
+                canvas_data,
+                None,
                 ImportStatus.SUCCESS.value,
                 oa_message("messages.import_canvas_created", "新建{object_type}", object_type=object_type.value),
-                canvas.id,
             )
-            return canvas.id
 
     @transaction.atomic
     def execute(self) -> dict:
@@ -890,7 +981,8 @@ class ImportService:
         self._builtin_key_blocklist = canvas_keys_occupied_by_builtin(package_keys)
         if self._fail_duplicate_canvas_keys():
             return self._rollback_on_failure()
-        self._inherit_directory_groups()
+        if self._inherit_directory_groups():
+            return self._rollback_on_failure()
 
         logger.info(
             "[CanvasImport] 开始导入：命名空间 %s、数据源 %s、仪表盘 %s、拓扑 %s、架构 %s、大屏 %s、报表 %s、网络拓扑 %s",
@@ -927,6 +1019,11 @@ class ImportService:
                 if ds_id:
                     self.datasource_key_to_id[ds_item.key] = ds_id
 
+            rollback_result = self._rollback_on_failure()
+            if rollback_result:
+                return rollback_result
+
+            self._bind_undeclared_datasources()
             rollback_result = self._rollback_on_failure()
             if rollback_result:
                 return rollback_result

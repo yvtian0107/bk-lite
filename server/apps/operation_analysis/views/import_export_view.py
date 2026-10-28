@@ -12,7 +12,7 @@ from apps.operation_analysis.serializers.import_export_serializers import (
     ImportPrecheckRequestSerializer,
     ImportSubmitRequestSerializer,
 )
-from apps.operation_analysis.services.import_export.canvas_authority import import_call_options
+from apps.operation_analysis.services.import_export.canvas_authority import http_directory_visibility, import_call_options
 from apps.operation_analysis.services.import_export.authorization_service import ImportExportAuthorizationService
 from apps.operation_analysis.services.import_export.export_service import ExportService
 from apps.operation_analysis.services.import_export.import_service import ImportService
@@ -70,13 +70,14 @@ class ImportExportViewSet(ViewSet):
         options = import_call_options(data)
 
         current_team = self._get_current_team(request)
+        visibility = http_directory_visibility(request, current_team)
 
         result = PrecheckService.precheck(
             yaml_content=yaml_content,
             target_directory_id=options["target_directory_id"],
-            current_team=current_team,
             conflict_policy=options["conflict_policy"],
             datasource_resolve=options["datasource_resolve"],
+            **visibility,
         )
         doc = result.pop("_doc")
 
@@ -104,13 +105,14 @@ class ImportExportViewSet(ViewSet):
         secret_supplements_list = data.get("secret_supplements", [])
 
         current_team = self._get_current_team(request)
+        visibility = http_directory_visibility(request, current_team)
 
         precheck_result = PrecheckService.precheck(
             yaml_content=yaml_content,
             target_directory_id=options["target_directory_id"],
-            current_team=current_team,
             conflict_policy=options["conflict_policy"],
             datasource_resolve=options["datasource_resolve"],
+            **visibility,
         )
         doc = precheck_result.pop("_doc")
 
@@ -190,6 +192,7 @@ class ImportExportViewSet(ViewSet):
             conflict_policy=options["conflict_policy"],
             datasource_resolve=options["datasource_resolve"],
             use_directory_path=options["use_directory_path"],
+            **visibility,
         )
 
         result = import_service.execute()
