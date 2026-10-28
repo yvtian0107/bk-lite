@@ -153,7 +153,34 @@ test('screen save drops pie dimension and value when both are cleared', () => {
   assert.equal('valueField' in saved, false);
 });
 
-test('screen save of a line chart drops leftover pie dimension fields', () => {
+test('opening a line chart fills the value list from valueField when valueFields is absent', () => {
+  const reopened = applyOpenedValueConfigToFormValues(
+    { name: '折线', chartType: 'line' },
+    {
+      chartType: 'line',
+      dimensionField: 'host',
+      valueField: ' cpu ',
+      seriesField: ' metric ',
+    },
+    undefined,
+  );
+  assert.equal(reopened.dimensionField, 'host');
+  assert.deepEqual(reopened.valueFields, ['cpu']);
+  assert.equal(reopened.seriesField, 'metric');
+
+  const listed = applyOpenedValueConfigToFormValues(
+    { name: '折线', chartType: 'line' },
+    {
+      chartType: 'line',
+      valueField: 'cpu',
+      valueFields: ['mem', 'mem', ' '],
+    },
+    undefined,
+  );
+  assert.deepEqual(listed.valueFields, ['mem']);
+});
+
+test('screen save of a line chart keeps a single value mapping and drops it when cleared', () => {
   const submitted = buildWidgetSubmitConfig({
     ...baseInput,
     selectedFields: [],
@@ -162,22 +189,38 @@ test('screen save of a line chart drops leftover pie dimension fields', () => {
       name: '折线',
       chartType: 'line',
       dimensionField: 'host',
-      valueField: 'count',
+      valueFields: ['count'],
+      seriesField: 'metric',
     },
   });
   assert.equal(submitted.error, undefined);
   const saved = persisted(mergeLikeScreen(
-    {
-      chartType: 'line',
-      dimensionField: 'host',
-      valueField: 'count',
-    },
+    { chartType: 'line' },
     submitted.config!,
     'line',
   ));
+  assert.equal(saved.dimensionField, 'host');
+  assert.equal(saved.valueField, 'count');
+  assert.deepEqual(saved.valueFields, ['count']);
+  assert.equal(saved.seriesField, 'metric');
 
-  assert.equal('dimensionField' in saved, false);
-  assert.equal('valueField' in saved, false);
+  const cleared = buildWidgetSubmitConfig({
+    ...baseInput,
+    selectedFields: [],
+    chartType: 'line',
+    values: {
+      name: '折线',
+      chartType: 'line',
+      dimensionField: '  ',
+      valueFields: [],
+      seriesField: '',
+    },
+  });
+  const dropped = persisted(mergeLikeScreen(saved, cleared.config!, 'line'));
+  assert.equal('dimensionField' in dropped, false);
+  assert.equal('valueField' in dropped, false);
+  assert.equal('valueFields' in dropped, false);
+  assert.equal('seriesField' in dropped, false);
 });
 
 test('screen save drops nodeGraph port after leaving service mode', () => {

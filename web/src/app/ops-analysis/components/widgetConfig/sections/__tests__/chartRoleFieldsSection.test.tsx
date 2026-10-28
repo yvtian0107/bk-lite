@@ -51,10 +51,25 @@ const Harness = ({
 };
 
 describe('ChartRoleFieldsSection', () => {
-  it('does not expose field roles for line or bar', () => {
+  it('exposes category, values, and series for line and bar', () => {
     const t = (key: string) => key;
-    expect(buildChartRoleFields('line', t, false)).toEqual([]);
-    expect(buildChartRoleFields('bar', t, false)).toEqual([]);
+    const line = buildChartRoleFields('line', t, false);
+    const bar = buildChartRoleFields('bar', t, false);
+    expect(line.map((role) => role.name)).toEqual([
+      'dimensionField',
+      'valueFields',
+      'seriesField',
+    ]);
+    expect(bar.map((role) => [role.name, role.multiple || false, role.optionScope])).toEqual([
+      ['dimensionField', false, 'all'],
+      ['valueFields', true, 'values'],
+      ['seriesField', false, 'series'],
+    ]);
+    expect(line.map((role) => role.label)).toEqual([
+      'dashboard.lineBarCategoryField',
+      'dashboard.lineBarValueFields',
+      'dashboard.lineBarSeriesField',
+    ]);
     expect(buildChartRoleFields('pie', t, false).map((role) => role.name)).toEqual([
       'dimensionField',
       'valueField',
@@ -87,6 +102,77 @@ describe('ChartRoleFieldsSection', () => {
     expect(formApi?.getFieldValue('valueField')).toBeUndefined();
     expect(screen.queryByText('name')).toBeNull();
     expect(screen.queryByText('value')).toBeNull();
+  });
+
+  it('locks and clears series when several value fields are selected', () => {
+    let formApi: ReturnType<typeof Form.useForm>[0] | undefined;
+    const Ready = () => {
+      const [form] = Form.useForm();
+      useEffect(() => {
+        formApi = form;
+        form.setFieldsValue({
+          dimensionField: 'time',
+          valueFields: ['cpu', 'mem'],
+          seriesField: 'host',
+        });
+      }, [form]);
+      return (
+        <Form form={form}>
+          <ChartRoleFieldsSection
+            t={(key) => key}
+            selectedDataSource={{ id: 1 } as DatasourceItem}
+            options={[
+              { label: 'time', value: 'time' },
+              { label: 'cpu', value: 'cpu' },
+              { label: 'mem', value: 'mem' },
+              { label: 'host', value: 'host' },
+            ]}
+            valueOptions={[
+              { label: 'cpu', value: 'cpu' },
+              { label: 'mem', value: 'mem' },
+            ]}
+            roles={buildChartRoleFields('line', (key) => key, false)}
+            onRefreshFields={() => undefined}
+          />
+        </Form>
+      );
+    };
+    render(<Ready />);
+
+    expect(document.querySelectorAll('.ant-select-multiple')).toHaveLength(1);
+    expect(document.querySelectorAll('.ant-select-disabled')).toHaveLength(1);
+    expect(formApi?.getFieldValue('seriesField')).toBeUndefined();
+  });
+
+  it('restores name and value when the user asks for a suggestion', () => {
+    let formApi: ReturnType<typeof Form.useForm>[0] | undefined;
+    const Ready = () => {
+      const [form] = Form.useForm();
+      useEffect(() => {
+        formApi = form;
+      }, [form]);
+      return (
+        <Form form={form}>
+          <ChartRoleFieldsSection
+            t={(key) => key}
+            selectedDataSource={{ id: 1 } as DatasourceItem}
+            options={[]}
+            schemaFields={[
+              { key: 'cpu', title: 'CPU', value_type: 'number' },
+              { key: 'name', title: '名称', value_type: 'string' },
+              { key: 'value', title: '数值', value_type: 'number' },
+            ]}
+            roles={buildChartRoleFields('line', (key) => key, false)}
+            onRefreshFields={() => undefined}
+          />
+        </Form>
+      );
+    };
+    render(<Ready />);
+    fireEvent.click(screen.getByText('dashboard.lineBarRestoreRecommended'));
+    expect(formApi?.getFieldValue('dimensionField')).toBe('name');
+    expect(formApi?.getFieldValue('valueFields')).toEqual(['value']);
+    expect(formApi?.getFieldValue('seriesField')).toBeUndefined();
   });
 
   it('calls refresh once for the whole group', () => {

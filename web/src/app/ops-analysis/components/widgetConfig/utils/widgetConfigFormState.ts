@@ -25,6 +25,7 @@ import {
   getFilterDefinitionId,
 } from '@/app/ops-analysis/utils/widgetDataTransform';
 import { readWidgetInteraction } from '@/app/ops-analysis/utils/interactionLink';
+import { normalizeLineBarFieldList } from '@/app/ops-analysis/utils/lineBarFieldMapping';
 import { readSingleValueStyle } from '@/app/ops-analysis/utils/singleValueStyle';
 import type { WidgetConfigFormValues } from './submitConfig';
 
@@ -192,6 +193,8 @@ function buildClearedChartDependentFormFields() {
     barMax: undefined,
     dimensionField: undefined,
     valueField: undefined,
+    valueFields: [] as string[],
+    seriesField: undefined,
     multiValueLabelField: undefined,
     multiValueValueField: undefined,
     nodeGraphIdentityMode: 'ip' as const,
@@ -361,6 +364,15 @@ export function applyOpenedValueConfigToFormValues(
   if (valueConfig?.valueField !== undefined) {
     formValues.valueField = valueConfig.valueField;
   }
+  const openedValueFields = normalizeLineBarFieldList(valueConfig?.valueFields);
+  if (openedValueFields.length > 0) {
+    formValues.valueFields = openedValueFields;
+  } else if (valueConfig?.valueField?.trim()) {
+    formValues.valueFields = [valueConfig.valueField.trim()];
+  } else {
+    formValues.valueFields = [];
+  }
+  formValues.seriesField = valueConfig?.seriesField?.trim() || undefined;
   formValues.pieScalarFields = valueConfig?.pieScalarFields?.length
     ? valueConfig.pieScalarFields
     : [];

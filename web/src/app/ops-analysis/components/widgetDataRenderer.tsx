@@ -47,6 +47,7 @@ import { useParamInputOptions } from "@/app/ops-analysis/hooks/useParamInputOpti
 import { fetchCompareData, validateGaugeData } from "@/app/ops-analysis/utils/compareQuery";
 import { useDataSourceApi, withRuntimeSourceDataErrorSuppression } from "@/app/ops-analysis/api/dataSource";
 import { ChartDataTransformer } from "@/app/ops-analysis/utils/chartDataTransform";
+import { toLineBarFieldMapping } from "@/app/ops-analysis/utils/lineBarFieldMapping";
 import { getRequestErrorMessage, classifyWidgetQueryError } from "@/app/ops-analysis/utils/requestError";
 import { buildWidgetRequestCacheKey } from "@/app/ops-analysis/utils/widgetRequestCache";
 import { useDashboardRuntimeScheduler } from "@/app/ops-analysis/context/dashboardRuntimeScheduler";
@@ -721,10 +722,13 @@ const WidgetWrapper: React.FC<WidgetWrapperProps> = ({
           });
         case "line":
         case "bar":
-          return ChartDataTransformer.validateLineBarData(data, errorMessage, {
-            dimensionField: config?.dimensionField,
-            valueField: config?.valueField,
-          });
+          return localizeStructureMessage(
+            ChartDataTransformer.validateLineBarData(
+              data,
+              errorMessage,
+              toLineBarFieldMapping(config, dataSource?.field_schema),
+            ),
+          );
         case "topN":
           return validateTopNData(data, config, errorMessage);
         case "gauge":
@@ -747,7 +751,7 @@ const WidgetWrapper: React.FC<WidgetWrapperProps> = ({
           return { isValid: true };
       }
     },
-    [config, t],
+    [config, dataSource, t],
   );
 
   const fetchDataRef = useRef<
