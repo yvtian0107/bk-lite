@@ -25,6 +25,7 @@ from apps.operation_analysis.serializers.import_export_serializers import (
     ImportPrecheckRequestSerializer,
     ImportSubmitRequestSerializer,
 )
+from apps.operation_analysis.services.import_export.canvas_authority import import_call_options
 from apps.operation_analysis.services.import_export.authorization_service import ImportExportAuthorizationService
 from apps.operation_analysis.services.import_export.export_service import ExportService
 from apps.operation_analysis.services.import_export.import_service import ImportService
@@ -214,7 +215,9 @@ class OpenImportExportViewSet(OpenAPIViewSet):
         Request Body:
             {
                 "yaml_content": "version: '1.0'\\n...",  # YAML 内容
-                "target_directory_id": 1  # 可选，目标目录 ID（仅对画布类对象有效）
+                "target_directory_id": 1,  # 可选。页面导入画布时必填；key_overwrite 可读 directory_path
+                "conflict_policy": "key_overwrite",  # 可选：skip | overwrite | rename | key_overwrite
+                "datasource_resolve": "prefer_existing"  # 可选：prefer_existing | package
             }
 
         Response (200 OK):
@@ -260,7 +263,7 @@ class OpenImportExportViewSet(OpenAPIViewSet):
 
         data = serializer.validated_data
         yaml_content = data["yaml_content"]
-        target_directory_id = data.get("target_directory_id")
+        options = import_call_options(data)
 
         groups = self._require_groups(request)
         current_team = groups[0]
@@ -268,14 +271,16 @@ class OpenImportExportViewSet(OpenAPIViewSet):
         logger.info(
             "Open API import precheck request: yaml_size=%d, target_directory_id=%s, current_team=%s",
             len(yaml_content),
-            target_directory_id,
+            options["target_directory_id"],
             current_team,
         )
 
         result = PrecheckService.precheck(
             yaml_content=yaml_content,
-            target_directory_id=target_directory_id,
+            target_directory_id=options["target_directory_id"],
             current_team=current_team,
+            conflict_policy=options["conflict_policy"],
+            datasource_resolve=options["datasource_resolve"],
         )
         doc = result.pop("_doc")
 
@@ -304,8 +309,10 @@ class OpenImportExportViewSet(OpenAPIViewSet):
         Request Body:
             {
                 "yaml_content": "version: '1.0'\\n...",  # YAML 内容
-                "target_directory_id": 1,  # 可选，目标目录 ID
-                "conflict_decisions": [  # 冲突决策列表
+                "target_directory_id": 1,  # 可选。页面导入以该目录为准，忽略 directory_path
+                "conflict_policy": "key_overwrite",  # 可选。无人值守按 canvas_key 覆盖仪表盘/大屏
+                "datasource_resolve": "prefer_existing",  # 可选。默认在 key_overwrite 下复用已有数据源
+                "conflict_decisions": [  # 冲突决策列表，优先于 conflict_policy
                     {
                         "object_key": "dashboard::my-dashboard",
                         "action": "overwrite"  # "overwrite" | "rename" | "skip"
@@ -362,7 +369,7 @@ class OpenImportExportViewSet(OpenAPIViewSet):
 
         data = serializer.validated_data
         yaml_content = data["yaml_content"]
-        target_directory_id = data.get("target_directory_id")
+        options = import_call_options(data)
         conflict_decisions_list = data.get("conflict_decisions", [])
         secret_supplements_list = data.get("secret_supplements", [])
 
@@ -373,15 +380,17 @@ class OpenImportExportViewSet(OpenAPIViewSet):
         logger.info(
             "Open API import submit request: yaml_size=%d, target_directory_id=%s, groups=%s, operator=%s",
             len(yaml_content),
-            target_directory_id,
+            options["target_directory_id"],
             groups,
             username,
         )
 
         precheck_result = PrecheckService.precheck(
             yaml_content=yaml_content,
-            target_directory_id=target_directory_id,
+            target_directory_id=options["target_directory_id"],
             current_team=current_team,
+            conflict_policy=options["conflict_policy"],
+            datasource_resolve=options["datasource_resolve"],
         )
         doc = precheck_result.pop("_doc")
 
@@ -417,6 +426,8 @@ class OpenImportExportViewSet(OpenAPIViewSet):
         invalid_decisions = ImportExportAuthorizationService.validate_conflict_decisions(
             precheck_result["conflicts"],
             conflict_decisions,
+            conflict_policy=options["conflict_policy"],
+            datasource_resolve=options["datasource_resolve"],
         )
         if invalid_decisions:
             return Response(
@@ -441,16 +452,21 @@ class OpenImportExportViewSet(OpenAPIViewSet):
             precheck_result["conflicts"],
             conflict_decisions,
             current_team=current_team,
+            conflict_policy=options["conflict_policy"],
+            datasource_resolve=options["datasource_resolve"],
         )
 
         import_service = ImportService(
             doc=doc,
-            target_directory_id=target_directory_id,
+            target_directory_id=options["target_directory_id"],
             conflict_decisions=conflict_decisions,
             secret_supplements=secret_supplements,
             created_by=username,
             updated_by=username,
             groups=groups,
+            conflict_policy=options["conflict_policy"],
+            datasource_resolve=options["datasource_resolve"],
+            use_directory_path=options["use_directory_path"],
         )
 
         result = import_service.execute()

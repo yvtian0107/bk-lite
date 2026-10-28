@@ -2,6 +2,7 @@
 from rest_framework import serializers
 
 from apps.operation_analysis.constants.import_export import CANVAS_TYPES, CONFIG_TYPES, ConflictAction, ObjectType, ScopeType
+from apps.operation_analysis.services.import_export.canvas_authority import ConflictPolicy, DatasourceResolve
 from apps.operation_analysis.services.user_messages import oa_message
 
 
@@ -39,7 +40,19 @@ class ImportPrecheckRequestSerializer(serializers.Serializer):
     target_directory_id = serializers.IntegerField(
         required=False,
         allow_null=True,
-        help_text="画布对象目标目录ID（导入画布时必填）",
+        help_text="画布对象目标目录ID。页面导入画布时必填；key_overwrite 在 YAML 含 directory_path 时可以不填",
+    )
+    conflict_policy = serializers.ChoiceField(
+        choices=[item.value for item in ConflictPolicy],
+        required=False,
+        allow_null=True,
+        help_text="整包冲突策略。省略时沿用逐对象 skip/overwrite/rename，缺省动作为 rename。key_overwrite 按 canvas_key 覆盖仪表盘/大屏，供无人值守交付；页面导入不必传",
+    )
+    datasource_resolve = serializers.ChoiceField(
+        choices=[item.value for item in DatasourceResolve],
+        required=False,
+        allow_null=True,
+        help_text="数据源解析。prefer_existing：目标已有则复用且不覆盖源定义，没有再用包内定义。省略且 conflict_policy=key_overwrite 时默认 prefer_existing；页面导入省略时仍按冲突决策处理数据源",
     )
 
     def validate_yaml_content(self, value):
@@ -69,7 +82,19 @@ class ImportSubmitRequestSerializer(serializers.Serializer):
     target_directory_id = serializers.IntegerField(
         required=False,
         allow_null=True,
-        help_text="画布对象目标目录ID",
+        help_text="画布对象目标目录ID。页面导入以该目录为准，忽略 YAML directory_path；key_overwrite 仅在对应画布没有 directory_path 时使用",
+    )
+    conflict_policy = serializers.ChoiceField(
+        choices=[item.value for item in ConflictPolicy],
+        required=False,
+        allow_null=True,
+        help_text="整包冲突策略。key_overwrite 按稳定键覆盖仪表盘/大屏。显式 conflict_decisions 优先于该策略",
+    )
+    datasource_resolve = serializers.ChoiceField(
+        choices=[item.value for item in DatasourceResolve],
+        required=False,
+        allow_null=True,
+        help_text="数据源解析。prefer_existing 复用目标已有数据源且不覆盖其定义；package 按冲突决策写入包内定义。key_overwrite 未传时默认 prefer_existing",
     )
     conflict_decisions = serializers.ListField(
         child=ConflictDecisionSerializer(),

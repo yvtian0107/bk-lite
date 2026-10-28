@@ -30,7 +30,25 @@ from apps.operation_analysis.constants.import_export import (
     is_sensitive_field_name,
 )
 from apps.operation_analysis.models.datasource_models import DataSourceAPIModel, NameSpace
-from apps.operation_analysis.models.models import Architecture, Dashboard, NetworkTopology, Report, Screen, Topology
+from apps.operation_analysis.models.models import Architecture, Dashboard, Directory, NetworkTopology, Report, Screen, Topology
+from apps.operation_analysis.services.import_export.canvas_authority import (
+    ConflictPolicy,
+    DatasourceResolve,
+    DirectoryPathError,
+    builtin_key_rejected_message,
+    builtin_protected_message,
+    canvas_keys_occupied_by_builtin,
+    canvas_name_taken_message,
+    directory_missing_message,
+    directory_path_error_message,
+    directory_path_required_message,
+    duplicated_canvas_key_message,
+    index_existing_canvases,
+    normalized_canvas_key,
+    normalized_directory_path,
+    resolve_directory_path,
+    supports_user_canvas_key,
+)
 from apps.operation_analysis.schemas.import_export_schema import (
     ImportExportValidationError,
     YAMLDocument,
@@ -474,7 +492,184 @@ class PrecheckService:
         ]
 
     @classmethod
-    def identify_conflicts(cls, doc: YAMLDocument, current_team: int | None = None) -> list[dict]:
+    def check_canvas_authority(cls, doc: YAMLDocument, target_directory_id: int | None = None, conflict_policy: str | None = None) -> list[dict]:
+        """仪表盘/大屏稳定键与目录路径校验。其它类型仍只要求页面所选目录。"""
+        errors = []
+        errors.extend(cls._duplicated_canvas_key_errors(doc))
+        errors.extend(cls._builtin_canvas_key_errors(doc))
+        if conflict_policy == ConflictPolicy.KEY_OVERWRITE.value:
+            errors.extend(cls._key_overwrite_directory_errors(doc, target_directory_id))
+            errors.extend(cls._key_overwrite_identity_errors(doc))
+        elif cls.has_canvas_objects(doc) and target_directory_id is None:
+            errors.append(
+                {
+                    "code": ImportExportErrorCode.IMPORT_TARGET_DIRECTORY_REQUIRED,
+                    "message": oa_message("messages.canvas_directory_required", "YAML包含画布对象，必须指定目标目录"),
+                }
+            )
+        return errors
+
+    @staticmethod
+    def _stable_canvas_sections(doc: YAMLDocument):
+        return (
+            (doc.dashboards, ObjectType.DASHBOARD, Dashboard),
+            (doc.screens, ObjectType.SCREEN, Screen),
+        )
+
+    @classmethod
+    def _duplicated_canvas_key_errors(cls, doc: YAMLDocument) -> list[dict]:
+        errors = []
+        seen: dict[str, str] = {}
+        for items, object_type, _model in cls._stable_canvas_sections(doc):
+            for item in items:
+                canvas_key = normalized_canvas_key(item)
+                if not canvas_key:
+                    continue
+                if canvas_key in seen:
+                    errors.append(
+                        {
+                            "code": ImportExportErrorCode.IMPORT_CANVAS_KEY_DUPLICATED,
+                            "message": duplicated_canvas_key_message(canvas_key),
+                            "object_key": item.key,
+                            "object_type": object_type.value,
+                        }
+                    )
+                    continue
+                seen[canvas_key] = item.key
+        return errors
+
+    @classmethod
+    def _builtin_canvas_key_errors(cls, doc: YAMLDocument) -> list[dict]:
+        items = [(item, object_type) for section, object_type, _model in cls._stable_canvas_sections(doc) for item in section]
+        keys = [normalized_canvas_key(item) for item, _object_type in items if normalized_canvas_key(item)]
+        occupied = canvas_keys_occupied_by_builtin(keys)
+        if not occupied:
+            return []
+        return [
+            {
+                "code": ImportExportErrorCode.IMPORT_BUILTIN_KEY_REJECTED,
+                "message": builtin_key_rejected_message(),
+                "object_key": item.key,
+                "object_type": object_type.value,
+            }
+            for item, object_type in items
+            if normalized_canvas_key(item) in occupied
+        ]
+
+    @classmethod
+    def _key_overwrite_directory_errors(cls, doc: YAMLDocument, target_directory_id: int | None) -> list[dict]:
+        errors = []
+        needs_directory = bool(doc.topologies or doc.architectures or doc.reports or doc.network_topologies)
+        stable_needs_directory = False
+        for items, object_type, _model in cls._stable_canvas_sections(doc):
+            for item in items:
+                path = normalized_directory_path(item)
+                if not path:
+                    stable_needs_directory = True
+                    if target_directory_id is None:
+                        errors.append(
+                            {
+                                "code": ImportExportErrorCode.IMPORT_DIRECTORY_PATH_REQUIRED,
+                                "message": directory_path_required_message(),
+                                "object_key": item.key,
+                                "object_type": object_type.value,
+                            }
+                        )
+                    continue
+                try:
+                    resolve_directory_path(path)
+                except DirectoryPathError as exc:
+                    code = exc.code
+                    if code not in {
+                        ImportExportErrorCode.IMPORT_DIRECTORY_PATH_INVALID,
+                        ImportExportErrorCode.IMPORT_DIRECTORY_PATH_NOT_FOUND,
+                    }:
+                        code = ImportExportErrorCode.IMPORT_DIRECTORY_PATH_INVALID
+                    errors.append(
+                        {
+                            "code": code,
+                            "message": directory_path_error_message(exc),
+                            "object_key": item.key,
+                            "object_type": object_type.value,
+                        }
+                    )
+        if needs_directory and target_directory_id is None:
+            errors.append(
+                {
+                    "code": ImportExportErrorCode.IMPORT_TARGET_DIRECTORY_REQUIRED,
+                    "message": oa_message("messages.canvas_directory_required", "YAML包含画布对象，必须指定目标目录"),
+                }
+            )
+        if stable_needs_directory and target_directory_id is not None and not Directory.objects.filter(id=target_directory_id).exists():
+            errors.append(
+                {
+                    "code": ImportExportErrorCode.IMPORT_DIRECTORY_MISSING,
+                    "message": directory_missing_message(),
+                }
+            )
+        return errors
+
+    @staticmethod
+    def _canvas_name_taken_error(item, object_type: ObjectType) -> dict:
+        return {
+            "code": ImportExportErrorCode.IMPORT_CANVAS_NAME_TAKEN,
+            "message": canvas_name_taken_message(item.name),
+            "object_key": item.key,
+            "object_type": object_type.value,
+        }
+
+    @classmethod
+    def _key_overwrite_identity_errors(cls, doc: YAMLDocument) -> list[dict]:
+        errors = []
+        for items, object_type, model in cls._stable_canvas_sections(doc):
+            keyed = [item for item in items if normalized_canvas_key(item)]
+            legacy = [item for item in items if not normalized_canvas_key(item)]
+            existing_by_key = {}
+            if keyed:
+                existing_by_key = {
+                    row.canvas_key: row
+                    for row in model.objects.filter(canvas_key__in=[normalized_canvas_key(item) for item in keyed])
+                }
+            pending_names = [item.name for item in keyed if normalized_canvas_key(item) not in existing_by_key]
+            taken_names = set(model.objects.filter(name__in=pending_names).values_list("name", flat=True)) if pending_names else set()
+            rename_names = [
+                item.name
+                for item in keyed
+                if (owner := existing_by_key.get(normalized_canvas_key(item))) is not None and owner.name != item.name
+            ]
+            taken_by_name = (
+                {row.name: row.pk for row in model.objects.filter(name__in=rename_names)}
+                if rename_names
+                else {}
+            )
+            for item in keyed:
+                canvas_key = normalized_canvas_key(item)
+                owner = existing_by_key.get(canvas_key)
+                if owner is None:
+                    if item.name in taken_names:
+                        errors.append(cls._canvas_name_taken_error(item, object_type))
+                    continue
+                other_pk = taken_by_name.get(item.name)
+                if other_pk is not None and other_pk != owner.pk:
+                    errors.append(cls._canvas_name_taken_error(item, object_type))
+            if legacy:
+                builtin_names = set(
+                    model.objects.filter(name__in=[item.name for item in legacy], is_build_in=True).values_list("name", flat=True)
+                )
+                for item in legacy:
+                    if item.name in builtin_names:
+                        errors.append(
+                            {
+                                "code": ImportExportErrorCode.IMPORT_BUILTIN_PROTECTED,
+                                "message": builtin_protected_message(),
+                                "object_key": item.key,
+                                "object_type": object_type.value,
+                            }
+                        )
+        return errors
+
+    @classmethod
+    def identify_conflicts(cls, doc: YAMLDocument, current_team: int | None = None, conflict_policy: str | None = None) -> list[dict]:
         """
         识别目标环境中的同名冲突
 
@@ -538,19 +733,61 @@ class PrecheckService:
         ]
 
         for canvas_list, obj_type, model in canvas_checks:
-            existing_canvases = {canvas.name: canvas for canvas in model.objects.filter(name__in=[item.name for item in canvas_list])}
+            use_stable_index = supports_user_canvas_key(obj_type) and any(normalized_canvas_key(item) for item in canvas_list)
+            if use_stable_index:
+                existing_canvases = index_existing_canvases(model, canvas_list)
+            else:
+                existing_canvases = {canvas.name: canvas for canvas in model.objects.filter(name__in=[item.name for item in canvas_list])}
+            unresolved_names = []
+            if use_stable_index:
+                unresolved_names = [
+                    item.name
+                    for item in canvas_list
+                    if normalized_canvas_key(item) and ("canvas_key", normalized_canvas_key(item)) not in existing_canvases
+                ]
+            name_owners = (
+                {row.name: row for row in model.objects.filter(name__in=unresolved_names)}
+                if unresolved_names
+                else {}
+            )
             for canvas in canvas_list:
-                existing = existing_canvases.get(canvas.name)
-                if existing:
-                    has_permission = cls._check_group_permission(existing, current_team)
-                    conflicts.append(
-                        {
-                            "object_key": canvas.key,
-                            "object_type": obj_type.value,
-                            "reason": ConflictReason.NAME_CONFLICT if has_permission else ConflictReason.NO_PERMISSION_CONFLICT,
-                            "suggested_actions": all_actions if has_permission else rename_only,
-                        }
-                    )
+                canvas_key = normalized_canvas_key(canvas) if supports_user_canvas_key(obj_type) else ""
+                if canvas_key:
+                    existing = existing_canvases.get(("canvas_key", canvas_key))
+                    if existing is None:
+                        name_owner = name_owners.get(canvas.name)
+                        if name_owner is not None and conflict_policy != ConflictPolicy.KEY_OVERWRITE.value:
+                            conflicts.append(
+                                {
+                                    "object_key": canvas.key,
+                                    "object_type": obj_type.value,
+                                    "reason": ConflictReason.NAME_CONFLICT,
+                                    "suggested_actions": rename_only,
+                                }
+                            )
+                        continue
+                else:
+                    existing = existing_canvases.get(canvas.name)
+                if not existing:
+                    continue
+                if (
+                    supports_user_canvas_key(obj_type)
+                    and getattr(existing, "is_build_in", False)
+                    and conflict_policy == ConflictPolicy.KEY_OVERWRITE.value
+                ):
+                    continue
+                has_permission = cls._check_group_permission(existing, current_team)
+                suggested_actions = all_actions if has_permission else rename_only
+                if supports_user_canvas_key(obj_type) and getattr(existing, "is_build_in", False):
+                    suggested_actions = [action for action in suggested_actions if action != ConflictAction.OVERWRITE.value]
+                conflicts.append(
+                    {
+                        "object_key": canvas.key,
+                        "object_type": obj_type.value,
+                        "reason": ConflictReason.NAME_CONFLICT if has_permission else ConflictReason.NO_PERMISSION_CONFLICT,
+                        "suggested_actions": suggested_actions,
+                    }
+                )
 
         return conflicts
 
@@ -585,6 +822,8 @@ class PrecheckService:
         target_directory_id: int | None = None,
         default_conflict_action: str = ConflictAction.RENAME.value,
         current_team: int | None = None,
+        conflict_policy: str | None = None,
+        datasource_resolve: str | None = None,
     ) -> dict:
         """
         执行完整预检流程
@@ -599,6 +838,14 @@ class PrecheckService:
         all_errors = []
         all_warnings = []
         conflicts = []
+        if datasource_resolve is not None and datasource_resolve not in {item.value for item in DatasourceResolve}:
+            all_errors.append(
+                {
+                    "code": ImportExportErrorCode.YAML_SCHEMA_INVALID,
+                    "message": oa_message("messages.import_datasource_resolve_invalid", "datasource_resolve 不支持: {value}", value=datasource_resolve),
+                }
+            )
+            return cls._build_precheck_result(False, None, conflicts, all_warnings, all_errors)
 
         # Step 1: 阈值检查
         all_errors.extend(cls.check_size_threshold(yaml_content))
@@ -642,14 +889,8 @@ class PrecheckService:
         all_errors.extend(cls.check_dependencies(doc))
         all_errors.extend(cls.check_datasource_security(doc))
 
-        # Step 7: 画布导入必须指定目录
-        if cls.has_canvas_objects(doc) and target_directory_id is None:
-            all_errors.append(
-                {
-                    "code": ImportExportErrorCode.IMPORT_TARGET_DIRECTORY_REQUIRED,
-                    "message": oa_message("messages.canvas_directory_required", "YAML包含画布对象，必须指定目标目录"),
-                }
-            )
+        # Step 7: 画布目录与仪表盘/大屏稳定键
+        all_errors.extend(cls.check_canvas_authority(doc, target_directory_id, conflict_policy))
 
         # Step 8: 敏感字段警告
         all_warnings.extend(cls.check_sensitive_placeholders(doc))
@@ -657,7 +898,7 @@ class PrecheckService:
         all_warnings.extend(cls.check_string_list_migration(doc))
 
         # Step 9: 冲突识别
-        conflicts = cls.identify_conflicts(doc, current_team)
+        conflicts = cls.identify_conflicts(doc, current_team, conflict_policy=conflict_policy)
 
         valid = len(all_errors) == 0
         return cls._build_precheck_result(valid, doc, conflicts, all_warnings, all_errors)

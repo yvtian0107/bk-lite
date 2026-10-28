@@ -13,6 +13,7 @@ from apps.operation_analysis.constants.import_export import ObjectType
 from apps.operation_analysis.models.models import Architecture, Dashboard, Directory, Report, Screen, Topology
 from apps.operation_analysis.serializers.base_serializers import BaseFormatTimeSerializer
 from apps.operation_analysis.services.builtin_i18n import apply_canvas_representation, apply_directory_representation
+from apps.operation_analysis.services.import_export.canvas_authority import allocate_canvas_key
 from apps.operation_analysis.services.import_export.view_sets import drop_architecture_rectangle_bindings, normalize_canvas_view_sets_for_storage
 from apps.operation_analysis.services.report_view_sets import normalize_report_view_sets
 from apps.operation_analysis.services.user_messages import oa_message
@@ -173,12 +174,26 @@ class CanvasObjectSerializer(DirectoryChainVisibilityMixin, BuiltinPermissionMix
         return super().create(validated_data)
 
 
-class DashboardModelSerializer(CanvasRefreshIntervalSerializerMixin, CanvasObjectSerializer):
+class UserCanvasKeyCreateMixin:
+    canvas_key_object_type = None
+
+    def create(self, validated_data):
+        validated_data["canvas_key"] = allocate_canvas_key(self.Meta.model, self.canvas_key_object_type)
+        return super().create(validated_data)
+
+
+class DashboardModelSerializer(UserCanvasKeyCreateMixin, CanvasRefreshIntervalSerializerMixin, CanvasObjectSerializer):
     permission_key = "directory.dashboard"
+    canvas_key_object_type = ObjectType.DASHBOARD
 
     class Meta(CanvasObjectSerializer.Meta):
         model = Dashboard
-        extra_kwargs = with_canvas_refresh_interval_kwargs(CanvasObjectSerializer.Meta.extra_kwargs)
+        extra_kwargs = with_canvas_refresh_interval_kwargs(
+            {
+                **CanvasObjectSerializer.Meta.extra_kwargs,
+                "canvas_key": {"read_only": True},
+            }
+        )
 
 
 class TopologyModelSerializer(CanvasRefreshIntervalSerializerMixin, CanvasObjectSerializer):
@@ -203,12 +218,18 @@ class ArchitectureModelSerializer(CanvasRefreshIntervalSerializerMixin, CanvasOb
         return attrs
 
 
-class ScreenModelSerializer(CanvasRefreshIntervalSerializerMixin, CanvasObjectSerializer):
+class ScreenModelSerializer(UserCanvasKeyCreateMixin, CanvasRefreshIntervalSerializerMixin, CanvasObjectSerializer):
     permission_key = "directory.screen"
+    canvas_key_object_type = ObjectType.SCREEN
 
     class Meta(CanvasObjectSerializer.Meta):
         model = Screen
-        extra_kwargs = with_canvas_refresh_interval_kwargs(CanvasObjectSerializer.Meta.extra_kwargs)
+        extra_kwargs = with_canvas_refresh_interval_kwargs(
+            {
+                **CanvasObjectSerializer.Meta.extra_kwargs,
+                "canvas_key": {"read_only": True},
+            }
+        )
 
     def validate(self, attrs):
         attrs = super().validate(attrs)

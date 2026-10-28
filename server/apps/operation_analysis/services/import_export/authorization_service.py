@@ -8,6 +8,13 @@ from rest_framework.exceptions import PermissionDenied
 
 from apps.core.utils.permission_utils import get_permission_rules
 from apps.operation_analysis.constants.import_export import ConflictAction, ConflictReason, ImportExportErrorCode, ObjectType
+from apps.operation_analysis.services.import_export.canvas_authority import (
+    STABLE_CANVAS_OBJECT_TYPES,
+    canvas_lookup_key,
+    index_existing_canvases,
+    normalized_canvas_key,
+    resolve_conflict_action,
+)
 from apps.operation_analysis.schemas.import_export_schema import YAMLDocument
 from apps.operation_analysis.services.user_messages import oa_message
 
@@ -254,14 +261,26 @@ class ImportExportAuthorizationService:
         return [action for action in permission_actions if action in precheck_actions]
 
     @classmethod
-    def validate_conflict_decisions(cls, conflicts: list[dict], conflict_decisions: dict[str, str]) -> list[dict]:
+    def validate_conflict_decisions(
+        cls,
+        conflicts: list[dict],
+        conflict_decisions: dict[str, str],
+        conflict_policy: str | None = None,
+        datasource_resolve: str | None = None,
+    ) -> list[dict]:
         errors = []
         for conflict in conflicts:
             allowed_actions = conflict.get("suggested_actions", [])
             if not allowed_actions:
                 continue
 
-            action = conflict_decisions.get(conflict["object_key"], ConflictAction.RENAME.value)
+            action = resolve_conflict_action(
+                object_type=ObjectType(conflict["object_type"]),
+                object_key=conflict["object_key"],
+                conflict_decisions=conflict_decisions,
+                conflict_policy=conflict_policy,
+                datasource_resolve=datasource_resolve,
+            )
             if action not in allowed_actions:
                 errors.append(
                     {
@@ -287,6 +306,8 @@ class ImportExportAuthorizationService:
         conflicts: list[dict],
         conflict_decisions: dict[str, str],
         current_team: int | None,
+        conflict_policy: str | None = None,
+        datasource_resolve: str | None = None,
     ):
         cls.validate_current_team(request, current_team)
         if getattr(request.user, "is_superuser", False):
@@ -303,7 +324,13 @@ class ImportExportAuthorizationService:
             for item in items:
                 existing = existing_map.get(cls._item_lookup_key(object_type, item))
                 conflict = conflict_map.get(item.key)
-                action = conflict_decisions.get(item.key, ConflictAction.RENAME.value)
+                action = resolve_conflict_action(
+                    object_type=object_type,
+                    object_key=item.key,
+                    conflict_decisions=conflict_decisions,
+                    conflict_policy=conflict_policy,
+                    datasource_resolve=datasource_resolve,
+                )
 
                 if conflict and action not in conflict.get("suggested_actions", []):
                     denied_permissions.append(
@@ -382,13 +409,13 @@ class ImportExportAuthorizationService:
         from apps.operation_analysis.models.models import Architecture, Dashboard, NetworkTopology, Report, Screen, Topology
 
         if object_type == ObjectType.DASHBOARD:
-            return Dashboard.objects.filter(name=item.name).first()
+            return cls._existing_stable_canvas(Dashboard, item)
+        if object_type == ObjectType.SCREEN:
+            return cls._existing_stable_canvas(Screen, item)
         if object_type == ObjectType.TOPOLOGY:
             return Topology.objects.filter(name=item.name).first()
         if object_type == ObjectType.ARCHITECTURE:
             return Architecture.objects.filter(name=item.name).first()
-        if object_type == ObjectType.SCREEN:
-            return Screen.objects.filter(name=item.name).first()
         if object_type == ObjectType.REPORT:
             return Report.objects.filter(name=item.name).first()
         if object_type == ObjectType.NETWORK_TOPOLOGY:
@@ -398,6 +425,13 @@ class ImportExportAuthorizationService:
         if object_type == ObjectType.NAMESPACE:
             return NameSpace.objects.filter(name=item.name).first()
         return None
+
+    @staticmethod
+    def _existing_stable_canvas(model, item):
+        canvas_key = normalized_canvas_key(item)
+        if canvas_key:
+            return model.objects.filter(canvas_key=canvas_key).first()
+        return model.objects.filter(name=item.name).first()
 
     @classmethod
     def get_existing_objects_batch(cls, object_type: ObjectType, items) -> dict:
@@ -428,14 +462,14 @@ class ImportExportAuthorizationService:
         model = model_map.get(object_type)
         if model is None:
             return {}
+        if object_type in STABLE_CANVAS_OBJECT_TYPES:
+            return index_existing_canvases(model, items)
         return {obj.name: obj for obj in model.objects.filter(name__in=name_set)}
 
     @staticmethod
     def _item_lookup_key(object_type: ObjectType, item):
         """返回用于 get_existing_objects_batch 结果字典的查找键。"""
-        if object_type == ObjectType.DATASOURCE:
-            return (item.name, item.rest_api)
-        return item.name
+        return canvas_lookup_key(object_type, item)
 
     @classmethod
     def can_access_existing_object(cls, request, object_type: ObjectType, existing, current_team: int | None) -> bool:

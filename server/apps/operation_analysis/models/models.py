@@ -93,6 +93,7 @@ class Dashboard(MaintainerInfo, TimeInfo, Groups):
     refresh_interval = models.PositiveIntegerField(default=0, verbose_name="刷新周期")
     is_build_in = models.BooleanField(default=False, verbose_name="是否内置")
     build_in_key = models.CharField(max_length=255, null=True, blank=True, unique=True, verbose_name="内置标识键")
+    canvas_key = models.CharField(max_length=255, null=True, blank=True, unique=True, verbose_name="用户稳定键")
 
     class Meta:
         db_table = "operation_analysis_dashboard"
@@ -153,6 +154,7 @@ class Screen(MaintainerInfo, TimeInfo, Groups):
     refresh_interval = models.PositiveIntegerField(default=0, verbose_name="刷新周期")
     is_build_in = models.BooleanField(default=False, verbose_name="是否内置")
     build_in_key = models.CharField(max_length=255, null=True, blank=True, unique=True, verbose_name="内置标识键")
+    canvas_key = models.CharField(max_length=255, null=True, blank=True, unique=True, verbose_name="用户稳定键")
 
     class Meta:
         db_table = "operation_analysis_screen"

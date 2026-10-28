@@ -12,6 +12,7 @@ from apps.operation_analysis.serializers.import_export_serializers import (
     ImportPrecheckRequestSerializer,
     ImportSubmitRequestSerializer,
 )
+from apps.operation_analysis.services.import_export.canvas_authority import import_call_options
 from apps.operation_analysis.services.import_export.authorization_service import ImportExportAuthorizationService
 from apps.operation_analysis.services.import_export.export_service import ExportService
 from apps.operation_analysis.services.import_export.import_service import ImportService
@@ -66,14 +67,16 @@ class ImportExportViewSet(ViewSet):
 
         data = serializer.validated_data
         yaml_content = data["yaml_content"]
-        target_directory_id = data.get("target_directory_id")
+        options = import_call_options(data)
 
         current_team = self._get_current_team(request)
 
         result = PrecheckService.precheck(
             yaml_content=yaml_content,
-            target_directory_id=target_directory_id,
+            target_directory_id=options["target_directory_id"],
             current_team=current_team,
+            conflict_policy=options["conflict_policy"],
+            datasource_resolve=options["datasource_resolve"],
         )
         doc = result.pop("_doc")
 
@@ -96,7 +99,7 @@ class ImportExportViewSet(ViewSet):
 
         data = serializer.validated_data
         yaml_content = data["yaml_content"]
-        target_directory_id = data.get("target_directory_id")
+        options = import_call_options(data)
         conflict_decisions_list = data.get("conflict_decisions", [])
         secret_supplements_list = data.get("secret_supplements", [])
 
@@ -104,8 +107,10 @@ class ImportExportViewSet(ViewSet):
 
         precheck_result = PrecheckService.precheck(
             yaml_content=yaml_content,
-            target_directory_id=target_directory_id,
+            target_directory_id=options["target_directory_id"],
             current_team=current_team,
+            conflict_policy=options["conflict_policy"],
+            datasource_resolve=options["datasource_resolve"],
         )
         doc = precheck_result.pop("_doc")
 
@@ -141,6 +146,8 @@ class ImportExportViewSet(ViewSet):
         invalid_decisions = ImportExportAuthorizationService.validate_conflict_decisions(
             precheck_result["conflicts"],
             conflict_decisions,
+            conflict_policy=options["conflict_policy"],
+            datasource_resolve=options["datasource_resolve"],
         )
         if invalid_decisions:
             return Response(
@@ -165,6 +172,8 @@ class ImportExportViewSet(ViewSet):
             precheck_result["conflicts"],
             conflict_decisions,
             current_team=current_team,
+            conflict_policy=options["conflict_policy"],
+            datasource_resolve=options["datasource_resolve"],
         )
 
         username = getattr(request.user, "username", "system")
@@ -172,12 +181,15 @@ class ImportExportViewSet(ViewSet):
 
         import_service = ImportService(
             doc=doc,
-            target_directory_id=target_directory_id,
+            target_directory_id=options["target_directory_id"],
             conflict_decisions=conflict_decisions,
             secret_supplements=secret_supplements,
             created_by=username,
             updated_by=username,
             groups=groups,
+            conflict_policy=options["conflict_policy"],
+            datasource_resolve=options["datasource_resolve"],
+            use_directory_path=options["use_directory_path"],
         )
 
         result = import_service.execute()

@@ -25,6 +25,12 @@ from apps.operation_analysis.constants.import_export import (
 from apps.operation_analysis.models.datasource_models import DataSourceAPIModel, NameSpace
 from apps.operation_analysis.models.models import Architecture, Dashboard, NetworkTopology, Report, Screen, Topology
 from apps.operation_analysis.schemas.import_export_schema import normalize_date_range_param_values
+from apps.operation_analysis.services.import_export.canvas_authority import (
+    STABLE_CANVAS_OBJECT_TYPES,
+    ensure_stored_canvas_key,
+    format_directory_path,
+    DirectoryPathError,
+)
 from apps.operation_analysis.services.import_export.view_sets import (
     normalize_canvas_view_sets_for_storage,
     normalize_canvas_view_sets_for_yaml,
@@ -69,7 +75,9 @@ class ExportService:
         业务键规则（Tech Plan 3.2节）：
         - namespace_key = namespace.name
         - datasource_key = name + "::" + rest_api
-        - canvas_key = "type::" + name
+        - canvas 业务键 = "type::" + 当前名称
+
+        仪表盘/大屏另有与名称解耦的用户稳定键 canvas_key，不从这里推导。
         """
         if object_type == ObjectType.NAMESPACE:
             return obj.name
@@ -272,6 +280,17 @@ class ExportService:
         if object_type in CANVAS_REFRESH_OBJECT_TYPES:
             base_data["refresh_interval"] = normalize_canvas_refresh_interval(getattr(canvas, "refresh_interval", 0))
 
+        if object_type in STABLE_CANVAS_OBJECT_TYPES:
+            canvas_key = ensure_stored_canvas_key(canvas, object_type)
+            if canvas_key:
+                base_data["canvas_key"] = canvas_key
+            try:
+                directory_path = format_directory_path(getattr(canvas, "directory", None))
+            except DirectoryPathError:
+                directory_path = ""
+            if directory_path:
+                base_data["directory_path"] = directory_path
+
         return ExportService.mask_sensitive_fields(base_data)
 
     @classmethod
@@ -351,8 +370,11 @@ class ExportService:
         ot = ObjectType(object_type)
         model = cls.MODEL_MAP[ot]
         section_name = OBJECT_TYPE_TO_SECTION[ot]
+        canvases = model.objects.filter(id__in=object_ids)
+        if ot in STABLE_CANVAS_OBJECT_TYPES:
+            canvases = canvases.select_related("directory__parent__parent")
 
-        for canvas in model.objects.filter(id__in=object_ids):
+        for canvas in canvases:
             yaml_obj = cls.convert_canvas_to_yaml(canvas, ot, ds_key_map, ns_key_map)
             export_data[section_name].append(yaml_obj)
 

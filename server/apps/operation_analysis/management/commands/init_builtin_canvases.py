@@ -537,6 +537,7 @@ class Command(BaseCommand):
                     datasource_groups=[],
                     existing_canvas_ids=existing_canvas_ids,
                     preserve_existing_canvas_groups=True,
+                    assign_user_canvas_key=False,
                 )
 
                 result = import_service.execute()
