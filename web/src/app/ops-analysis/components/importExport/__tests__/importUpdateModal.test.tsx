@@ -19,7 +19,11 @@ vi.mock('../../../api/importExport', () => ({
 describe('import update modal', () => {
   beforeEach(() => {
     importUpdateCanvas.mockReset();
-    importUpdateCanvas.mockResolvedValue({ canvas_id: 9, name: 'renamed' });
+    importUpdateCanvas.mockResolvedValue({
+      canvas_id: 9,
+      name: 'renamed',
+      desc: 'from-yaml',
+    });
   });
 
   it('asks to overwrite the current canvas and submits the uploaded yaml for that id', async () => {
@@ -58,7 +62,11 @@ describe('import update modal', () => {
       });
     });
     await waitFor(() => {
-      expect(onSuccess).toHaveBeenCalledTimes(1);
+      expect(onSuccess).toHaveBeenCalledWith({
+        canvas_id: 9,
+        name: 'renamed',
+        desc: 'from-yaml',
+      });
     });
   });
 });

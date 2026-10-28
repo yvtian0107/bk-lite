@@ -31,6 +31,8 @@ import { useDirectoryApi } from '@/app/ops-analysis/api/index';
 import { useUserInfoContext } from '@/context/userInfo';
 import { convertGroupTreeToTreeSelectData } from '@/utils/index';
 import { ExportModal, ImportModal, ImportUpdateModal } from './importExport';
+import type { ImportUpdateResponse } from '@/app/ops-analysis/api/importExport';
+import { canvasSelectionAfterImportUpdate } from '@/app/ops-analysis/utils/canvasImportUpdate';
 import CopyCanvasModal from './copyCanvasModal';
 import { ObjectType } from '@/app/ops-analysis/api/importExport';
 import { buildDefaultScreenViewSets } from '@/app/ops-analysis/(pages)/view/screen/utils/viewport';
@@ -84,7 +86,7 @@ import {
 } from '@/app/ops-analysis/utils/homepageDirectoryActions';
 
 const Sidebar = forwardRef<SidebarRef, SidebarProps>(
-  ({ onSelect, onDataUpdate, onCanvasContentReplaced }, ref) => {
+  ({ onSelect, onDataUpdate, onCanvasContentReplaced, beforeImportUpdate }, ref) => {
     const [form] = Form.useForm();
     const selectedCanvasType = Form.useWatch('canvasType', form) as
       | CanvasType
@@ -569,7 +571,10 @@ const Sidebar = forwardRef<SidebarRef, SidebarProps>(
         permission: 'EditChart',
         onClick: () => {
           if (!hasPermission(['EditChart'])) return;
-          setImportUpdateItem(item);
+          void (async () => {
+            if (beforeImportUpdate && !(await beforeImportUpdate(item))) return;
+            setImportUpdateItem(item);
+          })();
         },
       };
       const showResourceActions = shouldShowCanvasCopyAction(item);
@@ -1185,11 +1190,12 @@ const Sidebar = forwardRef<SidebarRef, SidebarProps>(
             objectId={parseInt(importUpdateItem.data_id, 10)}
             objectName={importUpdateItem.name}
             onCancel={() => setImportUpdateItem(null)}
-            onSuccess={async () => {
-              const updated = importUpdateItem;
+            onSuccess={async (result: ImportUpdateResponse) => {
+              const updated = canvasSelectionAfterImportUpdate(importUpdateItem, result);
               setImportUpdateItem(null);
-              await loadDirectories();
+              onDataUpdate?.(updated);
               onCanvasContentReplaced?.(updated);
+              await loadDirectories();
             }}
           />
         )}

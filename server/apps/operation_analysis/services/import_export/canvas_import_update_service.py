@@ -160,12 +160,14 @@ class CanvasImportUpdateService:
             return cls._failure(ready_errors, object_type)
 
         datasource_groups = list(locked.groups or [])
-        decisions = {item.key: ConflictAction.SKIP.value for item in [*doc.namespaces, *doc.datasources]}
-        decisions[canvas_item.key] = ConflictAction.OVERWRITE.value
+        decisions_by_type = {(ObjectType.NAMESPACE.value, item.key): ConflictAction.SKIP.value for item in doc.namespaces}
+        decisions_by_type.update({(ObjectType.DATASOURCE.value, item.key): ConflictAction.SKIP.value for item in doc.datasources})
+        decisions_by_type[(object_type.value, canvas_item.key)] = ConflictAction.OVERWRITE.value
         result = ImportService(
             doc=doc,
             target_directory_id=locked.directory_id,
-            conflict_decisions=decisions,
+            conflict_decisions={},
+            conflict_decisions_by_type=decisions_by_type,
             secret_supplements={},
             created_by=updated_by,
             updated_by=updated_by,
@@ -175,21 +177,7 @@ class CanvasImportUpdateService:
             preserve_existing_canvas_groups=True,
         ).execute()
         if not result.get("success"):
-            failed = [item for item in result.get("results", []) if item.get("status") == ImportStatus.FAILED.value]
-            errors = [
-                {
-                    "code": ImportExportErrorCode.IMPORT_SECRET_REQUIRED,
-                    "message": item.get("message") or oa_message("messages.precheck_failed", "预检失败，无法执行导入"),
-                    "object_key": item.get("object_key"),
-                }
-                for item in failed
-            ] or [
-                {
-                    "code": ImportExportErrorCode.IMPORT_SECRET_REQUIRED,
-                    "message": oa_message("messages.precheck_failed", "预检失败，无法执行导入"),
-                }
-            ]
-            return cls._failure(errors, object_type)
+            return cls._failure(cls._errors_from_import_results(result.get("results") or []), object_type)
 
         locked.refresh_from_db()
         return {
@@ -199,9 +187,47 @@ class CanvasImportUpdateService:
             "object_type": object_type.value,
             "canvas_id": locked.pk,
             "name": locked.name,
+            "desc": locked.desc or "",
             "summary": result.get("summary") or {},
             "results": result.get("results") or [],
         }
+
+    @staticmethod
+    def _errors_from_import_results(results: list[dict]) -> list[dict]:
+        failed = [item for item in results if item.get("status") == ImportStatus.FAILED.value]
+        errors = [CanvasImportUpdateService._error_from_import_result(item) for item in failed]
+        if errors:
+            return errors
+        return [
+            {
+                "code": ImportExportErrorCode.IMPORT_DEPENDENCY_MISSING,
+                "message": oa_message("messages.precheck_failed", "预检失败，无法执行导入"),
+            }
+        ]
+
+    @staticmethod
+    def _error_from_import_result(item: dict) -> dict:
+        code = item.get("code")
+        if not code:
+            code = (
+                ImportExportErrorCode.IMPORT_SECRET_REQUIRED
+                if CanvasImportUpdateService._message_is_missing_secret(item.get("message") or "")
+                else ImportExportErrorCode.IMPORT_DEPENDENCY_MISSING
+            )
+        return {
+            "code": code,
+            "message": item.get("message") or oa_message("messages.precheck_failed", "预检失败，无法执行导入"),
+            "object_key": item.get("object_key"),
+        }
+
+    @staticmethod
+    def _message_is_missing_secret(message: str) -> bool:
+        markers = (
+            oa_message("messages.import_namespace_password_missing", "新建命名空间缺少密码"),
+            "缺少敏感配置",
+            "missing sensitive settings",
+        )
+        return any(marker and marker in message for marker in markers)
 
     @staticmethod
     def _structural_errors(yaml_content: str) -> list[dict]:

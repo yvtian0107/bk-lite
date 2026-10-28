@@ -7,10 +7,11 @@ import yaml
 from rest_framework.test import APIClient
 
 from apps.base.models import User
-from apps.operation_analysis.constants.import_export import YAML_SCHEMA_VERSION, ImportExportErrorCode
+from apps.operation_analysis.constants.import_export import YAML_SCHEMA_VERSION, ImportExportErrorCode, ImportStatus
 from apps.operation_analysis.models.datasource_models import DataSourceAPIModel, NameSpace
 from apps.operation_analysis.models.models import Architecture, Dashboard, Directory, NetworkTopology, Report, Screen, Topology
 from apps.operation_analysis.services.import_export.canvas_import_update_service import CanvasImportUpdateService
+from apps.operation_analysis.services.import_export.import_service import ImportService
 
 CANVAS_MODELS = {
     "dashboard": Dashboard,
@@ -304,6 +305,94 @@ def test_import_update_reuses_existing_datasource_without_changing_definition():
 
 
 @pytest.mark.django_db
+def test_import_update_keeps_existing_datasource_when_object_key_matches_canvas():
+    """数据源键 name::rest_api 可能与画布键 type::name 相同，不能因此覆盖数据源。"""
+    directory = _directory(groups=[4])
+    canvas = _canvas("dashboard", groups=[4, 5], directory=directory)
+    shared_key = "dashboard::renamed-dashboard"
+    existing = DataSourceAPIModel.objects.create(
+        name="dashboard",
+        rest_api="renamed-dashboard",
+        desc="keep-desc",
+        query_config={"marker": "original"},
+        connection_config={"password": "real-secret"},
+        groups=[9],
+        created_by="owner",
+        updated_by="owner",
+    )
+    payload = _yaml(
+        {
+            "dashboards": [
+                _canvas_section(
+                    "dashboard",
+                    name="renamed-dashboard",
+                    key=shared_key,
+                    refs={"datasource_keys": [shared_key], "namespace_keys": []},
+                    view_sets=[{"i": "w1", "valueConfig": {"dataSource": shared_key}}],
+                )
+            ],
+            "datasources": [
+                _datasource_section(
+                    key=shared_key,
+                    name="dashboard",
+                    rest_api="renamed-dashboard",
+                    desc="changed-desc",
+                    query_config={"marker": "from-yaml"},
+                    connection_config={"password": "******"},
+                )
+            ],
+        }
+    )
+
+    result = CanvasImportUpdateService.apply(canvas=canvas, yaml_content=payload, updated_by="tester")
+
+    assert result["success"] is True
+    assert result["desc"] == "from-yaml"
+    existing.refresh_from_db()
+    assert existing.desc == "keep-desc"
+    assert existing.query_config == {"marker": "original"}
+    assert existing.connection_config == {"password": "real-secret"}
+    assert existing.groups == [9]
+    datasource_results = [item for item in result["results"] if item["object_type"] == "datasource"]
+    assert datasource_results[0]["status"] == ImportStatus.SKIPPED.value
+    canvas.refresh_from_db()
+    assert canvas.name == "renamed-dashboard"
+    assert canvas.view_sets[0]["valueConfig"]["dataSource"] == existing.id
+
+
+@pytest.mark.django_db
+def test_import_update_keeps_non_secret_failure_code(monkeypatch):
+    directory = _directory(groups=[1])
+    canvas = _canvas("dashboard", groups=[1], directory=directory)
+    payload = _yaml({"dashboards": [_canvas_section("dashboard", name="renamed-dashboard")]})
+
+    def failed_execute(self):
+        return {
+            "success": False,
+            "results": [
+                {
+                    "object_key": "dashboard::origin-dashboard",
+                    "object_type": "datasource",
+                    "status": ImportStatus.FAILED.value,
+                    "message": "该监控裸查询接口已退役，禁止继续使用",
+                    "code": ImportExportErrorCode.YAML_SCHEMA_INVALID,
+                }
+            ],
+            "summary": {},
+        }
+
+    monkeypatch.setattr(ImportService, "execute", failed_execute)
+
+    result = CanvasImportUpdateService.apply(canvas=canvas, yaml_content=payload, updated_by="tester")
+
+    assert result["success"] is False
+    assert ImportExportErrorCode.YAML_SCHEMA_INVALID in _error_codes(result)
+    assert ImportExportErrorCode.IMPORT_SECRET_REQUIRED not in _error_codes(result)
+    canvas.refresh_from_db()
+    assert canvas.name == "origin-dashboard"
+
+
+@pytest.mark.django_db
 def test_import_update_missing_secret_does_not_write():
     directory = _directory(groups=[1])
     canvas = _canvas("screen", groups=[1], directory=directory)
@@ -449,6 +538,7 @@ def test_import_update_api_renames_current_canvas(object_type):
     assert response.status_code == 200
     assert response.data["canvas_id"] == canvas.pk
     assert response.data["name"] == f"renamed-{object_type}"
+    assert response.data["desc"] == "from-yaml"
     canvas.refresh_from_db()
     assert canvas.name == f"renamed-{object_type}"
     assert canvas.directory_id == directory.id

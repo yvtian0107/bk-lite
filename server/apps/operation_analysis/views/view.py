@@ -366,6 +366,7 @@ def _import_update_canvas(viewset, request):
         {
             "canvas_id": instance.pk,
             "name": instance.name,
+            "desc": instance.desc or "",
             "object_type": outcome["object_type"],
             "summary": outcome.get("summary") or {},
         }

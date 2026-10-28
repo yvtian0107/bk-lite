@@ -4,7 +4,7 @@ import { InboxOutlined } from '@ant-design/icons';
 import type { UploadProps } from 'antd';
 import { useTranslation } from '@/utils/i18n';
 import type { CanvasType } from '@/app/ops-analysis/constants/canvasTypes';
-import { useImportExportApi } from '../../api/importExport';
+import { useImportExportApi, type ImportUpdateResponse } from '../../api/importExport';
 
 const { Dragger } = Upload;
 
@@ -14,7 +14,7 @@ export interface ImportUpdateModalProps {
   objectType: CanvasType;
   objectId: number;
   objectName: string;
-  onSuccess?: () => void | Promise<void>;
+  onSuccess?: (result: ImportUpdateResponse) => void | Promise<void>;
 }
 
 const ImportUpdateModal: React.FC<ImportUpdateModalProps> = ({
@@ -87,14 +87,14 @@ const ImportUpdateModal: React.FC<ImportUpdateModalProps> = ({
     setLoading(true);
     setErrorMessage('');
     try {
-      await importUpdateCanvas({
+      const result = await importUpdateCanvas({
         object_type: objectType,
         object_id: objectId,
         yaml_content: yamlContent,
       });
       message.success(t('opsAnalysisSidebar.importUpdateSuccess'));
       resetState();
-      await onSuccess?.();
+      await onSuccess?.(result);
     } catch (error) {
       const fallback = t('opsAnalysisSidebar.importUpdateFailed');
       setErrorMessage(error instanceof Error && error.message ? error.message : fallback);

@@ -96,6 +96,30 @@ const ViewPage: React.FC = () => {
     setCanvasReloadToken((token) => token + 1);
   };
 
+  const confirmBeforeImportUpdate = (item: DirItem) => {
+    if (!isCanvasType(item.type)) {
+      return Promise.resolve(true);
+    }
+    const current = selectedItemRef.current[item.type];
+    const isOpenCanvas =
+      current?.id === item.id || current?.data_id === item.data_id;
+    if (!isOpenCanvas || !checkUnsavedChanges()) {
+      return Promise.resolve(true);
+    }
+    return new Promise<boolean>((resolve) => {
+      Modal.confirm({
+        title: t('opsAnalysisSidebar.importUpdateUnsaved'),
+        content: t('opsAnalysisSidebar.importUpdateUnsavedWarning'),
+        okText: t('common.confirm'),
+        cancelText: t('common.cancel'),
+        okButtonProps: { danger: true },
+        centered: true,
+        onOk: () => resolve(true),
+        onCancel: () => resolve(false),
+      });
+    });
+  };
+
   const handleSidebarDataUpdate = (updatedItem: DirItem) => {
     if (!isCanvasType(updatedItem.type)) {
       return;
@@ -241,6 +265,7 @@ const ViewPage: React.FC = () => {
             onSelect={handleNavigation}
             onDataUpdate={handleSidebarDataUpdate}
             onCanvasContentReplaced={handleCanvasContentReplaced}
+            beforeImportUpdate={confirmBeforeImportUpdate}
           />
         </div>
         {!screenMode && (

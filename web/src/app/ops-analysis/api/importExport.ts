@@ -118,6 +118,7 @@ export interface ImportUpdateRequest {
 export interface ImportUpdateResponse {
   canvas_id: number;
   name: string;
+  desc: string;
   object_type: CanvasType;
   summary: ImportSummary;
 }

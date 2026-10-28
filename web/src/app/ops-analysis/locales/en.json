@@ -1914,6 +1914,8 @@
     "importUpdateHint": "The file updates this canvas definition and title. Directory and organization stay unchanged.",
     "importUpdateSuccess": "Updated the current canvas",
     "importUpdateFailed": "Import update failed",
+    "importUpdateUnsaved": "This canvas has unsaved changes",
+    "importUpdateUnsavedWarning": "Continuing will overwrite the current canvas and discard unsaved edits.",
     "copyTargetDirectory": "Target directory",
     "copySuccess": "Copied as {name}",
     "importYaml": "Import YAML",
