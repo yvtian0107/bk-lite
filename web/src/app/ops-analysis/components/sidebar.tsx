@@ -571,10 +571,7 @@ const Sidebar = forwardRef<SidebarRef, SidebarProps>(
         permission: 'EditChart',
         onClick: () => {
           if (!hasPermission(['EditChart'])) return;
-          void (async () => {
-            if (beforeImportUpdate && !(await beforeImportUpdate(item))) return;
-            setImportUpdateItem(item);
-          })();
+          setImportUpdateItem(item);
         },
       };
       const showResourceActions = shouldShowCanvasCopyAction(item);
@@ -1189,6 +1186,11 @@ const Sidebar = forwardRef<SidebarRef, SidebarProps>(
             objectType={importUpdateItem.type}
             objectId={parseInt(importUpdateItem.data_id, 10)}
             objectName={importUpdateItem.name}
+            beforeSubmit={
+              beforeImportUpdate
+                ? () => beforeImportUpdate(importUpdateItem)
+                : undefined
+            }
             onCancel={() => setImportUpdateItem(null)}
             onSuccess={async (result: ImportUpdateResponse) => {
               const updated = canvasSelectionAfterImportUpdate(importUpdateItem, result);

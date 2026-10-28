@@ -69,4 +69,44 @@ describe('import update modal', () => {
       });
     });
   });
+
+  it('asks again on each confirm and does not submit when the user cancels', async () => {
+    const beforeSubmit = vi.fn()
+      .mockResolvedValueOnce(false)
+      .mockResolvedValueOnce(true);
+    render(
+      <ImportUpdateModal
+        visible
+        objectType="dashboard"
+        objectId={3}
+        objectName="当前仪表盘"
+        onCancel={() => undefined}
+        beforeSubmit={beforeSubmit}
+      />,
+    );
+
+    expect(beforeSubmit).not.toHaveBeenCalled();
+    const input = document.querySelector('input[type="file"]') as HTMLInputElement;
+    fireEvent.change(input, {
+      target: {
+        files: [new File(['name: renamed\n'], 'canvas.yaml', { type: 'text/yaml' })],
+      },
+    });
+    const confirm = () => screen.getByRole('button', { name: 'common.confirm' });
+    await waitFor(() => {
+      expect((confirm() as HTMLButtonElement).disabled).toBe(false);
+    });
+
+    fireEvent.click(confirm());
+    await waitFor(() => {
+      expect(beforeSubmit).toHaveBeenCalledTimes(1);
+    });
+    expect(importUpdateCanvas).not.toHaveBeenCalled();
+
+    fireEvent.click(confirm());
+    await waitFor(() => {
+      expect(beforeSubmit).toHaveBeenCalledTimes(2);
+      expect(importUpdateCanvas).toHaveBeenCalledTimes(1);
+    });
+  });
 });

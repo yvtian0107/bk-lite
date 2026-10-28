@@ -30,6 +30,7 @@ import {
   getDisplayRecentCanvases,
   readRecentCanvases,
   recordRecentCanvas,
+  renameRecentCanvas,
   type RecentCanvasRecord,
 } from '@/app/ops-analysis/utils/recentCanvasStorage';
 import { isScreenModeEnabled } from '@/console-layout';
@@ -88,6 +89,16 @@ const ViewPage: React.FC = () => {
   const handleCanvasContentReplaced = (updatedItem: DirItem) => {
     if (!isCanvasType(updatedItem.type)) {
       return;
+    }
+    if (updatedItem.name) {
+      setRecentCanvases(
+        renameRecentCanvas(window.localStorage, {
+          id: updatedItem.id,
+          dataId: updatedItem.data_id,
+          type: updatedItem.type,
+          name: updatedItem.name,
+        }),
+      );
     }
     const current = selectedItemRef.current[updatedItem.type];
     if (current?.data_id !== updatedItem.data_id) {

@@ -14,6 +14,7 @@ export interface ImportUpdateModalProps {
   objectType: CanvasType;
   objectId: number;
   objectName: string;
+  beforeSubmit?: () => boolean | Promise<boolean>;
   onSuccess?: (result: ImportUpdateResponse) => void | Promise<void>;
 }
 
@@ -23,6 +24,7 @@ const ImportUpdateModal: React.FC<ImportUpdateModalProps> = ({
   objectType,
   objectId,
   objectName,
+  beforeSubmit,
   onSuccess,
 }) => {
   const { t } = useTranslation();
@@ -82,6 +84,9 @@ const ImportUpdateModal: React.FC<ImportUpdateModalProps> = ({
   const handleOk = async () => {
     if (!yamlContent.trim()) {
       setErrorMessage(t('opsAnalysisSidebar.importInvalidFileType'));
+      return;
+    }
+    if (beforeSubmit && !(await beforeSubmit())) {
       return;
     }
     setLoading(true);
