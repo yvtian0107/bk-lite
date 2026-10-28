@@ -156,43 +156,53 @@ def canvas_keys_occupied_by_builtin(keys: list[str]) -> set[str]:
     return occupied
 
 
+def _load_reserved_builtin_keys() -> tuple[set[str], bool]:
+    """读取 support-files 内置键。返回 (键集合, 是否完整读完)。异常由调用方决定不缓存。"""
+    from apps.operation_analysis.management.commands.init_builtin_canvases import (
+        BUILTIN_DIRECTORY_KEY,
+        MERGEABLE_SECTIONS,
+        _get_builtin_canvas_file_paths,
+        _load_source_api_document,
+    )
+
+    keys = {"__builtin__", BUILTIN_DIRECTORY_KEY}
+    documents = []
+    complete = True
+    try:
+        documents.append(_load_source_api_document())
+    except Exception:
+        complete = False
+    for file_path in _get_builtin_canvas_file_paths():
+        if not os.path.isfile(file_path):
+            continue
+        try:
+            with open(file_path, encoding="utf-8") as handle:
+                loaded = yaml.safe_load(handle)
+        except (OSError, UnicodeError, yaml.YAMLError):
+            complete = False
+            continue
+        if isinstance(loaded, dict):
+            documents.append(loaded)
+    for document in documents:
+        if not isinstance(document, dict):
+            continue
+        for section in MERGEABLE_SECTIONS:
+            for item in document.get(section) or []:
+                if isinstance(item, dict) and item.get("key"):
+                    keys.add(str(item["key"]).strip())
+    return keys, complete
+
+
 def reserved_builtin_key_catalog() -> set[str]:
     cached = getattr(reserved_builtin_key_catalog, "_cache", None)
     if cached is not None:
         return cached
-    keys = {"__builtin__"}
     try:
-        from apps.operation_analysis.management.commands.init_builtin_canvases import (
-            BUILTIN_DIRECTORY_KEY,
-            MERGEABLE_SECTIONS,
-            _get_builtin_canvas_file_paths,
-            _load_source_api_document,
-        )
-
-        keys.add(BUILTIN_DIRECTORY_KEY)
-        documents = []
-        try:
-            documents.append(_load_source_api_document())
-        except Exception:
-            documents = []
-        for file_path in _get_builtin_canvas_file_paths():
-            if not os.path.isfile(file_path):
-                continue
-            try:
-                with open(file_path, encoding="utf-8") as handle:
-                    loaded = yaml.safe_load(handle)
-            except (OSError, UnicodeError, yaml.YAMLError):
-                continue
-            if isinstance(loaded, dict):
-                documents.append(loaded)
-        for document in documents:
-            for section in MERGEABLE_SECTIONS:
-                for item in document.get(section) or []:
-                    if isinstance(item, dict) and item.get("key"):
-                        keys.add(str(item["key"]).strip())
+        keys, complete = _load_reserved_builtin_keys()
     except Exception:
-        keys = {"__builtin__"}
-    reserved_builtin_key_catalog._cache = keys
+        return {"__builtin__"}
+    if complete:
+        reserved_builtin_key_catalog._cache = keys
     return keys
 
 
@@ -305,7 +315,7 @@ def _select_directory_match(matches, path: str, *, current_team, enforce_visibil
         raise DirectoryPathError(ImportExportErrorCode.IMPORT_DIRECTORY_PATH_AMBIGUOUS, path, directory_candidates(visible))
     if matches and all(getattr(item, "is_build_in", False) for item in matches):
         raise DirectoryPathError(ImportExportErrorCode.IMPORT_DIRECTORY_BUILTIN, path, directory_candidates(matches))
-    raise DirectoryPathError(ImportExportErrorCode.IMPORT_DIRECTORY_NOT_VISIBLE, path, directory_candidates(matches))
+    raise DirectoryPathError(ImportExportErrorCode.IMPORT_DIRECTORY_NOT_VISIBLE, path)
 
 
 def ensure_directory_visible(directory: Directory | None, *, current_team: int | None, enforce_visibility: bool, is_superuser: bool):
@@ -315,8 +325,7 @@ def ensure_directory_visible(directory: Directory | None, *, current_team: int |
         return ImportExportErrorCode.IMPORT_DIRECTORY_BUILTIN, directory_builtin_message(directory.name)
     if directory_visible_to_team(directory, current_team, is_superuser=is_superuser):
         return None
-    candidates = format_directory_candidates(directory_candidates([directory]))
-    return ImportExportErrorCode.IMPORT_DIRECTORY_NOT_VISIBLE, directory_not_visible_message(directory.name, candidates)
+    return ImportExportErrorCode.IMPORT_DIRECTORY_NOT_VISIBLE, directory_not_visible_message(directory.name)
 
 
 def split_datasource_business_key(key: str) -> tuple[str, str] | None:
@@ -399,18 +408,17 @@ def directory_path_error_message(exc: DirectoryPathError) -> str:
             candidates=candidates,
         )
     if exc.code == ImportExportErrorCode.IMPORT_DIRECTORY_NOT_VISIBLE:
-        return directory_not_visible_message(exc.path, candidates)
+        return directory_not_visible_message(exc.path)
     if exc.code == ImportExportErrorCode.IMPORT_DIRECTORY_BUILTIN:
         return directory_builtin_message(exc.path)
     return oa_message("messages.import_directory_path_invalid", "directory_path 不合法: {path}", path=exc.path)
 
 
-def directory_not_visible_message(path: str, candidates: str) -> str:
+def directory_not_visible_message(path: str) -> str:
     return oa_message(
         "messages.import_directory_not_visible",
-        "directory_path 不在当前组织可见范围内: {path}（{candidates}）",
+        "directory_path 不在当前组织可见范围内: {path}",
         path=path,
-        candidates=candidates,
     )
 
 
@@ -419,7 +427,10 @@ def directory_builtin_message(path: str) -> str:
 
 
 def package_org_diverged_message() -> str:
-    return oa_message("messages.import_package_org_diverged", "同一 YAML 的仪表盘/大屏落在不同组织目录，不能共用数据源可见范围")
+    return oa_message(
+        "messages.import_package_org_diverged",
+        "同一 YAML 的仪表盘/大屏所在目录可见范围不一致，不能共用一份数据源可见范围",
+    )
 
 
 def canvas_key_taken_message() -> str:

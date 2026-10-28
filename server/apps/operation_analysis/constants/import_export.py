@@ -185,7 +185,7 @@ ERROR_MESSAGES = {
     ImportExportErrorCode.IMPORT_DIRECTORY_PATH_AMBIGUOUS: "directory_path 匹配到多个目录",
     ImportExportErrorCode.IMPORT_DIRECTORY_NOT_VISIBLE: "directory_path 不在当前组织可见范围内",
     ImportExportErrorCode.IMPORT_DIRECTORY_BUILTIN: "不能导入到内置目录",
-    ImportExportErrorCode.IMPORT_PACKAGE_ORG_DIVERGED: "同一 YAML 的仪表盘/大屏落在不同组织目录",
+    ImportExportErrorCode.IMPORT_PACKAGE_ORG_DIVERGED: "同一 YAML 的仪表盘/大屏所在目录可见范围不一致",
     ImportExportErrorCode.IMPORT_DIRECTORY_MISSING: "目标目录不存在",
     ImportExportErrorCode.IMPORT_BUILTIN_KEY_REJECTED: "用户稳定键与内置键冲突，已拒绝导入",
     ImportExportErrorCode.IMPORT_CANVAS_KEY_TAKEN: "用户稳定键已被占用",

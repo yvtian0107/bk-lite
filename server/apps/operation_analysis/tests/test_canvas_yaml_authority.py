@@ -8,7 +8,7 @@ import pytest
 import yaml
 from django.core.management import call_command
 from django.core.management.base import CommandError
-from django.db import IntegrityError, connection
+from django.db import connection
 from django.test.utils import CaptureQueriesContext
 from rest_framework import status
 from rest_framework.test import APIRequestFactory, force_authenticate
@@ -624,10 +624,14 @@ def test_http_key_overwrite_rejects_invisible_and_builtin_directories():
     )
     assert hidden_precheck["valid"] is False
     assert hidden_precheck["errors"][0]["code"] == ImportExportErrorCode.IMPORT_DIRECTORY_NOT_VISIBLE
+    assert str(hidden.id) not in hidden_precheck["errors"][0]["message"]
+    assert "groups=" not in hidden_precheck["errors"][0]["message"]
 
     result = _service(_doc(dashboards=[hidden_item]), current_team=1, enforce_directory_visibility=True).execute()
     assert result["success"] is False
     assert ImportExportErrorCode.IMPORT_DIRECTORY_NOT_VISIBLE in _codes(result)
+    assert str(hidden.id) not in _failed_messages(result)
+    assert "groups=" not in _failed_messages(result)
     existing.refresh_from_db()
     assert existing.directory_id == home.id
     assert existing.groups == [1]
@@ -639,6 +643,8 @@ def test_http_key_overwrite_rejects_invisible_and_builtin_directories():
         enforce_directory_visibility=True,
     ).execute()
     assert ImportExportErrorCode.IMPORT_DIRECTORY_NOT_VISIBLE in _codes(fallback)
+    assert str(hidden.id) not in _failed_messages(fallback)
+    assert "groups=" not in _failed_messages(fallback)
     assert not Dashboard.objects.filter(canvas_key="dashboard::fallback").exists()
 
     builtin_result = _service(
@@ -711,15 +717,33 @@ def test_same_name_directories_are_ambiguous_unless_http_team_owns_exactly_one()
         enforce_directory_visibility=True,
     )
     assert invisible["errors"][0]["code"] == ImportExportErrorCode.IMPORT_DIRECTORY_NOT_VISIBLE
-    assert str(left.id) in invisible["errors"][0]["message"]
-    assert str(right.id) in invisible["errors"][0]["message"]
+    assert str(left.id) not in invisible["errors"][0]["message"]
+    assert str(right.id) not in invisible["errors"][0]["message"]
+    assert "groups=" not in invisible["errors"][0]["message"]
     untouched = _service(
         _doc(dashboards=[ambiguous_item]),
         current_team=3,
         enforce_directory_visibility=True,
     ).execute()
     assert ImportExportErrorCode.IMPORT_DIRECTORY_NOT_VISIBLE in _codes(untouched)
+    assert str(left.id) not in _failed_messages(untouched)
+    assert str(right.id) not in _failed_messages(untouched)
+    assert "groups=" not in _failed_messages(untouched)
     assert not Dashboard.objects.filter(canvas_key="dashboard::ambiguous").exists()
+
+    extra = _directory("同名根", groups=[1])
+    crowded_item = _dashboard(name="再一块", canvas_key="dashboard::crowded", directory_path="同名根")
+    crowded = PrecheckService.precheck(
+        yaml.safe_dump(_yaml_document(dashboards=[crowded_item])),
+        conflict_policy="key_overwrite",
+        current_team=1,
+        enforce_directory_visibility=True,
+    )
+    assert crowded["errors"][0]["code"] == ImportExportErrorCode.IMPORT_DIRECTORY_PATH_AMBIGUOUS
+    crowded_message = crowded["errors"][0]["message"]
+    assert f"id={left.id}" in crowded_message
+    assert f"id={extra.id}" in crowded_message
+    assert f"id={right.id}" not in crowded_message
 
 
 @pytest.mark.django_db
@@ -804,6 +828,41 @@ def test_support_file_builtin_key_is_reserved_before_it_is_synced():
 
 
 @pytest.mark.django_db
+def test_builtin_catalog_read_failure_is_not_cached(monkeypatch):
+    from apps.operation_analysis.management.commands import init_builtin_canvases
+    from apps.operation_analysis.services.import_export import canvas_authority
+
+    if hasattr(canvas_authority.reserved_builtin_key_catalog, "_cache"):
+        del canvas_authority.reserved_builtin_key_catalog._cache
+    original_paths = init_builtin_canvases._get_builtin_canvas_file_paths
+
+    def explode():
+        raise OSError("support files unavailable")
+
+    monkeypatch.setattr(init_builtin_canvases, "_get_builtin_canvas_file_paths", explode)
+    directory = _directory("交付目录")
+    Dashboard.objects.create(
+        name="库内内置",
+        is_build_in=True,
+        build_in_key="dashboard::from-db",
+        directory=directory,
+        groups=[1],
+        created_by="system",
+    )
+    blocked = _service(
+        _doc(dashboards=[_dashboard(name="新写入", canvas_key="dashboard::from-db", directory_path="交付目录")])
+    ).execute()
+    assert ImportExportErrorCode.IMPORT_BUILTIN_KEY_REJECTED in _codes(blocked)
+    assert not hasattr(canvas_authority.reserved_builtin_key_catalog, "_cache")
+    assert "dashboard::CMDB仪表盘_内置" not in canvas_authority.reserved_builtin_key_catalog()
+
+    monkeypatch.setattr(init_builtin_canvases, "_get_builtin_canvas_file_paths", original_paths)
+    loaded = canvas_authority.reserved_builtin_key_catalog()
+    assert "dashboard::CMDB仪表盘_内置" in loaded
+    assert canvas_authority.reserved_builtin_key_catalog._cache == loaded
+
+
+@pytest.mark.django_db
 def test_key_overwrite_datasources_follow_each_directory_and_reject_cross_org_packages():
     _directory("甲", groups=[4])
     created = _service(
@@ -830,6 +889,8 @@ def test_key_overwrite_datasources_follow_each_directory_and_reject_cross_org_pa
         groups=[9],
     ).execute()
     assert ImportExportErrorCode.IMPORT_PACKAGE_ORG_DIVERGED in _codes(failed)
+    assert "可见范围" in _failed_messages(failed)
+    assert "不同组织" not in _failed_messages(failed)
     assert not DataSourceAPIModel.objects.filter(name="other-ds").exists()
     assert Dashboard.objects.filter(canvas_key__in=["dashboard::pack-a", "dashboard::pack-b"]).count() == 0
 
@@ -890,19 +951,49 @@ def test_prefer_existing_looks_up_undeclared_datasource_in_the_target_database()
 
 @pytest.mark.django_db
 def test_canvas_unique_constraint_becomes_business_error(monkeypatch):
-    _directory("交付目录")
+    directory = _directory("交付目录")
+    key_owner = Dashboard.objects.create(
+        name="已占用键",
+        canvas_key="dashboard::race",
+        directory=directory,
+        groups=[7],
+        created_by="tester",
+    )
+    name_owner = Dashboard.objects.create(
+        name="已占用名",
+        canvas_key="dashboard::other-name",
+        directory=directory,
+        groups=[7],
+        created_by="tester",
+    )
+    real_filter = Dashboard.objects.filter
 
-    def raise_key(**kwargs):
-        raise IntegrityError("UNIQUE constraint failed: operation_analysis_dashboard.canvas_key")
+    def hide_canvas_key(*args, **kwargs):
+        if kwargs.get("canvas_key") == "dashboard::race":
+            return real_filter(pk__in=[])
+        return real_filter(*args, **kwargs)
 
-    monkeypatch.setattr(Dashboard.objects, "create", raise_key)
-    raced = _service(_doc(dashboards=[_dashboard(canvas_key="dashboard::race", directory_path="交付目录")])).execute()
+    monkeypatch.setattr(Dashboard.objects, "filter", hide_canvas_key)
+    raced = _service(
+        _doc(dashboards=[_dashboard(name="新名", canvas_key="dashboard::race", directory_path="交付目录")])
+    ).execute()
     assert raced["success"] is False
     assert ImportExportErrorCode.IMPORT_CANVAS_KEY_TAKEN in _codes(raced)
+    key_owner.refresh_from_db()
+    assert key_owner.name == "已占用键"
+    assert real_filter(canvas_key="dashboard::race").count() == 1
 
-    def raise_name(**kwargs):
-        raise IntegrityError("UNIQUE constraint failed: operation_analysis_dashboard.name")
+    def hide_name(*args, **kwargs):
+        if kwargs.get("name") == "已占用名":
+            return real_filter(pk__in=[])
+        return real_filter(*args, **kwargs)
 
-    monkeypatch.setattr(Dashboard.objects, "create", raise_name)
-    named = _service(_doc(dashboards=[_dashboard(name="撞名", canvas_key="dashboard::race-name", directory_path="交付目录")])).execute()
+    monkeypatch.setattr(Dashboard.objects, "filter", hide_name)
+    named = _service(
+        _doc(dashboards=[_dashboard(name="已占用名", canvas_key="dashboard::race-name", directory_path="交付目录")])
+    ).execute()
+    assert named["success"] is False
     assert ImportExportErrorCode.IMPORT_CANVAS_NAME_TAKEN in _codes(named)
+    name_owner.refresh_from_db()
+    assert name_owner.canvas_key == "dashboard::other-name"
+    assert real_filter(name="已占用名").count() == 1
