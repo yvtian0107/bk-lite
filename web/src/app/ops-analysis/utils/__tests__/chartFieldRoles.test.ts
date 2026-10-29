@@ -89,6 +89,32 @@ test('wide line chart makes one series per value field and nulls duplicate categ
   );
 });
 
+test('wide line chart keeps points when formatted time labels collide', () => {
+  const rows = [
+    { ts: '2024-01-01 10:00:01', cpu: 1, mem: 10 },
+    { ts: '2024-01-01 10:00:40', cpu: 2, mem: 20 },
+    { ts: '2025-01-01 10:00:00', cpu: 3, mem: 30 },
+  ];
+  const sameRaw = [
+    { ts: '2024-01-01 10:00:01', cpu: 1, mem: 10 },
+    { ts: '2024-01-01 10:00:01', cpu: 9, mem: 11 },
+  ];
+  const mapping = {
+    dimensionField: 'ts',
+    valueFields: ['cpu', 'mem'],
+  };
+  const chart = ChartDataTransformer.transformToLineBarData(rows, mapping);
+  const duplicate = ChartDataTransformer.transformToLineBarData(sameRaw, mapping);
+
+  assert.equal(chart.categories?.length, 3);
+  assert.equal(chart.categories?.[0], chart.categories?.[1]);
+  assert.deepEqual(chart.series?.[0]?.data, [1, 2, 3]);
+  assert.deepEqual(chart.series?.[1]?.data, [10, 20, 30]);
+  assert.equal(duplicate.categories?.length, 1);
+  assert.deepEqual(duplicate.series?.[0]?.data, [null]);
+  assert.deepEqual(duplicate.series?.[1]?.data, [null]);
+});
+
 test('long line chart splits series by field value and leaves empty numbers null', () => {
   const rows = [
     { ts: '10:00', metric: 'cpu', value: 1 },

@@ -233,4 +233,38 @@ describe('line and bar mapping revalidates the rows already fetched', () => {
     });
     expect(testState.fetchCount).toBe(fetchesAfterPartial);
   });
+
+  it('returns to automatic detection after the mapping is cleared without fetching again', async () => {
+    testState.payload = {
+      cpu: [['10:00', 1]],
+    };
+    const view = renderLine({
+      dimensionField: 'time',
+      valueFields: ['cpu'],
+    });
+
+    await waitFor(() => {
+      expect(screen.getByText('dashboard.dataFormatMismatch')).toBeTruthy();
+    });
+    const fetchesAfterMapped = testState.fetchCount;
+
+    view.rerender(
+      <WidgetWrapper
+        dashboardId="preview"
+        widgetId="line-mapping"
+        chartType="line"
+        config={{
+          dataSource: datasource.id,
+          chartType: 'line',
+        }}
+        dataSource={datasource}
+      />,
+    );
+
+    await waitFor(() => {
+      expect(screen.getByTestId('mapped-line-bar').getAttribute('data-series')).toBe('cpu');
+    });
+    expect(screen.queryByText('dashboard.dataFormatMismatch')).toBeNull();
+    expect(testState.fetchCount).toBe(fetchesAfterMapped);
+  });
 });

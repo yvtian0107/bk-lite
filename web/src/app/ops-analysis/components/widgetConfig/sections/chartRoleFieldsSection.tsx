@@ -179,6 +179,7 @@ export const ChartRoleFieldsSection: React.FC<ChartRoleFieldsSectionProps> = ({
   const lineBar = roles.some((role) => role.optionScope === 'series');
   const dimensionValue = Form.useWatch('dimensionField', form);
   const watchedValues = Form.useWatch('valueFields', form);
+  const watchedSeries = Form.useWatch('seriesField', form);
   const dimension = trimLineBarField(
     typeof dimensionValue === 'string' ? dimensionValue : undefined,
   );
@@ -186,6 +187,9 @@ export const ChartRoleFieldsSection: React.FC<ChartRoleFieldsSectionProps> = ({
     Array.isArray(watchedValues) ? watchedValues : [],
   );
   const selectedValueKey = selectedValues.join('\0');
+  const seriesValue = trimLineBarField(
+    typeof watchedSeries === 'string' ? watchedSeries : undefined,
+  );
   const seriesLocked = selectedValues.length >= 2;
   const fieldSelectorDisabled = !selectedDataSource || loadingFields;
   const placeholder = options.length === 0
@@ -210,11 +214,7 @@ export const ChartRoleFieldsSection: React.FC<ChartRoleFieldsSectionProps> = ({
   }, [form, lineBar, numericOptions, options.length]);
 
   useEffect(() => {
-    if (!lineBar) {
-      return;
-    }
-    const series = trimLineBarField(form.getFieldValue('seriesField'));
-    if (!series) {
+    if (!lineBar || !seriesValue) {
       return;
     }
     const values = normalizeLineBarFieldList(
@@ -222,11 +222,10 @@ export const ChartRoleFieldsSection: React.FC<ChartRoleFieldsSectionProps> = ({
         ? form.getFieldValue('valueFields')
         : [],
     );
-    const category = trimLineBarField(form.getFieldValue('dimensionField'));
-    if (values.length >= 2 || values.includes(series) || series === category) {
+    if (values.length >= 2 || values.includes(seriesValue) || seriesValue === dimension) {
       form.setFieldValue('seriesField', undefined);
     }
-  }, [dimension, form, lineBar, selectedValueKey, seriesLocked]);
+  }, [dimension, form, lineBar, selectedValueKey, seriesLocked, seriesValue]);
 
   return (
     <div className="mb-4">

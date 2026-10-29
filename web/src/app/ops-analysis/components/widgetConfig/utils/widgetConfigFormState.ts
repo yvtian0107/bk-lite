@@ -365,11 +365,10 @@ export function applyOpenedValueConfigToFormValues(
     formValues.valueField = valueConfig.valueField;
   }
   const openedValueFields = normalizeLineBarFieldList(valueConfig?.valueFields);
+  // 旧配置只有 valueField。不要补成 valueFields，否则再保存会从宽松校验变成严格校验。
   if (openedValueFields.length > 0) {
     formValues.valueFields = openedValueFields;
-  } else if (valueConfig?.valueField?.trim()) {
-    formValues.valueFields = [valueConfig.valueField.trim()];
-  } else {
+  } else if (!valueConfig?.valueField?.trim()) {
     formValues.valueFields = [];
   }
   formValues.seriesField = valueConfig?.seriesField?.trim() || undefined;

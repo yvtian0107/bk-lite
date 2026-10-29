@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { Form } from 'antd';
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import React, { useEffect } from 'react';
@@ -142,6 +142,49 @@ describe('ChartRoleFieldsSection', () => {
     expect(document.querySelectorAll('.ant-select-multiple')).toHaveLength(1);
     expect(document.querySelectorAll('.ant-select-disabled')).toHaveLength(1);
     expect(formApi?.getFieldValue('seriesField')).toBeUndefined();
+  });
+
+  it('clears series after it is set to the same field as the category', async () => {
+    let formApi: ReturnType<typeof Form.useForm>[0] | undefined;
+    const Ready = () => {
+      const [form] = Form.useForm();
+      useEffect(() => {
+        formApi = form;
+      }, [form]);
+      return (
+        <Form
+          form={form}
+          initialValues={{ dimensionField: 'host', valueFields: ['cpu'] }}
+        >
+          <ChartRoleFieldsSection
+            t={(key) => key}
+            selectedDataSource={{ id: 1 } as DatasourceItem}
+            options={[
+              { label: 'host', value: 'host' },
+              { label: 'cpu', value: 'cpu' },
+            ]}
+            valueOptions={[{ label: 'cpu', value: 'cpu' }]}
+            roles={buildChartRoleFields('line', (key) => key, false)}
+            onRefreshFields={() => undefined}
+          />
+        </Form>
+      );
+    };
+    render(<Ready />);
+
+    await act(async () => {
+      formApi?.setFieldsValue({ seriesField: 'host' });
+    });
+    await waitFor(() => {
+      expect(formApi?.getFieldValue('seriesField')).toBeUndefined();
+    });
+
+    await act(async () => {
+      formApi?.setFieldsValue({ seriesField: 'cpu' });
+    });
+    await waitFor(() => {
+      expect(formApi?.getFieldValue('seriesField')).toBeUndefined();
+    });
   });
 
   it('keeps only refresh beside the data-fields title and a multi-select for values', () => {

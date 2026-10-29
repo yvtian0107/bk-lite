@@ -153,7 +153,7 @@ test('screen save drops pie dimension and value when both are cleared', () => {
   assert.equal('valueField' in saved, false);
 });
 
-test('opening a line chart fills the value list from valueField when valueFields is absent', () => {
+test('opening a legacy line chart keeps valueField and does not invent valueFields', () => {
   const reopened = applyOpenedValueConfigToFormValues(
     { name: '折线', chartType: 'line' },
     {
@@ -165,8 +165,26 @@ test('opening a line chart fills the value list from valueField when valueFields
     undefined,
   );
   assert.equal(reopened.dimensionField, 'host');
-  assert.deepEqual(reopened.valueFields, ['cpu']);
+  assert.equal(reopened.valueField, ' cpu ');
+  assert.equal(reopened.valueFields, undefined);
   assert.equal(reopened.seriesField, 'metric');
+
+  const saved = buildWidgetSubmitConfig({
+    ...baseInput,
+    selectedFields: [],
+    chartType: 'line',
+    values: {
+      name: '折线',
+      chartType: 'line',
+      dimensionField: reopened.dimensionField,
+      valueField: reopened.valueField,
+      seriesField: reopened.seriesField,
+    },
+  });
+  assert.equal(saved.error, undefined);
+  assert.equal(saved.config?.valueField, 'cpu');
+  assert.equal(saved.config?.valueFields, undefined);
+  assert.equal(saved.config?.seriesField, 'metric');
 
   const listed = applyOpenedValueConfigToFormValues(
     { name: '折线', chartType: 'line' },

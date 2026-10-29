@@ -464,8 +464,25 @@ export class ChartDataTransformer {
   }
 
   /**
+   * 格子身份用原始分类值。轴文案可以丢掉年份和秒，不能因此把不同时间收成同一个点。
+   */
+  private static rawCategoryKey(value: unknown): string {
+    if (value === null) return 'null';
+    if (value === undefined) return 'undefined';
+    const kind = typeof value;
+    if (kind === 'string' || kind === 'number' || kind === 'boolean' || kind === 'bigint') {
+      return `${kind}:${String(value)}`;
+    }
+    try {
+      return `json:${JSON.stringify(value)}`;
+    } catch {
+      return `str:${String(value)}`;
+    }
+  }
+
+  /**
    * 宽表 / 长表把行收成 (分类, 系列) 格子。
-   * 同一格子命中多行时留空，不覆盖也不求和。
+   * 同一原始分类和系列命中多行时留空，不覆盖也不求和。
    * seriesOrder 有值时按配置顺序出系列；否则按数据中第一次出现的顺序。
    */
   private static transformMappedPivotedSeries(
@@ -481,8 +498,8 @@ export class ChartDataTransformer {
     const shouldFormatAsTime = this.shouldFormatAsTimeDimension(
       rows.map((row) => row[dimensionField]),
     );
-    const categories: string[] = [];
-    const categoryRaw = new Map<string, unknown>();
+    const categorySlots: Array<{ key: string; label: string; raw: unknown }> = [];
+    const seenCategories = new Set<string>();
     const slots = seriesOrder ? seriesOrder.map((slot) => ({ ...slot })) : [];
     const slotSeen = new Set(slots.map((slot) => slot.id));
     const hits = new Map<string, Map<string, {
@@ -494,18 +511,22 @@ export class ChartDataTransformer {
 
     rows.forEach((row) => {
       const rawDimension = row[dimensionField];
-      const category = this.formatDimensionValue(rawDimension, shouldFormatAsTime);
-      if (!categoryRaw.has(category)) {
-        categoryRaw.set(category, rawDimension);
-        categories.push(category);
+      const categoryKey = this.rawCategoryKey(rawDimension);
+      if (!seenCategories.has(categoryKey)) {
+        seenCategories.add(categoryKey);
+        categorySlots.push({
+          key: categoryKey,
+          label: this.formatDimensionValue(rawDimension, shouldFormatAsTime),
+          raw: rawDimension,
+        });
       }
       readContributions(row).forEach((item) => {
         if (!slotSeen.has(item.id)) {
           slotSeen.add(item.id);
           slots.push({ id: item.id, name: item.name });
         }
-        const bySeries = hits.get(category) ?? new Map();
-        hits.set(category, bySeries);
+        const bySeries = hits.get(categoryKey) ?? new Map();
+        hits.set(categoryKey, bySeries);
         const existing = bySeries.get(item.id);
         if (!existing) {
           bySeries.set(item.id, {
@@ -521,23 +542,22 @@ export class ChartDataTransformer {
     });
 
     return {
-      categories,
+      categories: categorySlots.map((category) => category.label),
       series: slots.map((slot) => ({
         name: slot.name,
-        data: categories.map((category) => {
-          const hit = hits.get(category)?.get(slot.id);
+        data: categorySlots.map((category) => {
+          const hit = hits.get(category.key)?.get(slot.id);
           if (!hit || hit.count !== 1) {
             return null;
           }
           return hit.numeric;
         }),
-        points: categories.map((category) => {
-          const hit = hits.get(category)?.get(slot.id);
-          const rawDimension = categoryRaw.get(category);
+        points: categorySlots.map((category) => {
+          const hit = hits.get(category.key)?.get(slot.id);
           if (!hit || hit.count !== 1) {
             return this.linkPoint({
               seriesName: slot.name,
-              dimension: rawDimension,
+              dimension: category.raw,
               dimensionKey: dimensionField || undefined,
               isTime: shouldFormatAsTime,
               numeric: null,
@@ -545,7 +565,7 @@ export class ChartDataTransformer {
           }
           return this.linkPoint({
             seriesName: slot.name,
-            dimension: rawDimension,
+            dimension: category.raw,
             dimensionKey: dimensionField || undefined,
             isTime: shouldFormatAsTime,
             numeric: hit.numeric,

@@ -232,10 +232,16 @@ export const persistLineBarFormFields = (
   forPreview = false,
 ): { error: 'incomplete' | 'conflict' } | { fields: LineBarFormFields } => {
   const dimensionField = trimLineBarField(values.dimensionField);
-  const explicitList = Array.isArray(values.valueFields);
-  const valueFields = explicitList
+  // 没有 valueFields 数组时沿用旧的 valueField，并且不把列表写回去。
+  // 空数组表示用户清空了多选，不再退回 valueField。
+  const userListedValues = Array.isArray(values.valueFields);
+  const listedValues = userListedValues
     ? normalizeLineBarFieldList(values.valueFields)
-    : (trimLineBarField(values.valueField) ? [trimLineBarField(values.valueField)] : []);
+    : [];
+  const legacyValue = trimLineBarField(values.valueField);
+  const valueFields = listedValues.length > 0
+    ? listedValues
+    : (!userListedValues && legacyValue ? [legacyValue] : []);
   const rawSeries = trimLineBarField(values.seriesField);
   const seriesCollides = Boolean(
     rawSeries && (rawSeries === dimensionField || valueFields.includes(rawSeries)),
@@ -266,7 +272,7 @@ export const persistLineBarFormFields = (
     return {
       fields: {
         dimensionField: dimensionField || undefined,
-        valueFields: valueFields.length > 0 ? valueFields : undefined,
+        valueFields: userListedValues && valueFields.length > 0 ? valueFields : undefined,
         valueField: valueFields.length === 1 ? valueFields[0] : undefined,
         seriesField: seriesField || undefined,
       },
@@ -276,7 +282,7 @@ export const persistLineBarFormFields = (
   return {
     fields: {
       dimensionField,
-      valueFields,
+      valueFields: userListedValues ? valueFields : undefined,
       valueField: valueFields.length === 1 ? valueFields[0] : undefined,
       seriesField: seriesField || undefined,
     },

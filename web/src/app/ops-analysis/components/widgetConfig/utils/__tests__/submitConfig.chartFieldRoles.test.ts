@@ -60,7 +60,7 @@ test('line and bar submit persist one value field and reject a partial mapping',
   assert.equal(line.error, undefined);
   assert.equal(line.config?.dimensionField, 'src_ip');
   assert.equal(line.config?.valueField, 'value');
-  assert.deepEqual(line.config?.valueFields, ['value']);
+  assert.equal(line.config?.valueFields, undefined);
   assert.equal(line.config?.seriesField, undefined);
   assert.equal(bar.error, 'chartRoleFieldsRequired');
   assert.equal(wide.error, 'lineBarSeriesFieldConflict');
