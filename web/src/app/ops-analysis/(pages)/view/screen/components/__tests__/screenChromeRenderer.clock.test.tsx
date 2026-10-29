@@ -2,6 +2,7 @@ import { render } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 import type { ScreenClockItem } from '@/app/ops-analysis/types/screen';
 import ScreenChromeRenderer from '../screenChromeRenderer';
+import { ChromeFontDensityProvider } from '../screenChromeSkins';
 
 vi.useFakeTimers();
 vi.setSystemTime(new Date('2026-09-30T16:07:09'));
@@ -27,6 +28,14 @@ describe('screen chrome clock style', () => {
     expect(clock.classList.contains('screen-uniform-text')).toBe(true);
     expect(clock.getAttribute('data-align')).toBe('left');
     expect(clock.style.color).toBe('var(--screen-chrome-accent)');
+
+    const scaled = render(
+      <ChromeFontDensityProvider density={1.2}>
+        <ScreenChromeRenderer item={item} />
+      </ChromeFontDensityProvider>,
+    );
+    const scaledClock = scaled.container.querySelector('[data-screen-clock]') as HTMLElement;
+    expect(scaledClock.style.fontSize).toBe('34px');
     expect(clock.style.textShadow).toBe('');
     expect(clock.textContent).toContain('16:07:09');
   });

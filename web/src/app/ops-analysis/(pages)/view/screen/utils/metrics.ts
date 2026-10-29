@@ -1,3 +1,7 @@
+import type {
+  ScreenLayoutMode,
+  ScreenRenderContext,
+} from '@/app/ops-analysis/types/dashBoard';
 import type { ScreenDisplayAdapter } from '@/app/ops-analysis/types/screen';
 
 export interface ScreenFitInput {
@@ -116,5 +120,81 @@ export const calculateScreenVisualMetrics = (
     ...fit,
     screenDensity,
     screenUiScale: screenDensity / fit.fitScale,
+  };
+};
+
+export interface DesignBox {
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+}
+
+/** 呈现层几何。设计坐标不改，调用方不得把结果写回草稿。 */
+export const mapDesignBoxToViewportPixels = (
+  box: DesignBox,
+  scaleX: number,
+  scaleY: number,
+): DesignBox => {
+  const safeX = Number.isFinite(scaleX) ? scaleX : 1;
+  const safeY = Number.isFinite(scaleY) ? scaleY : 1;
+  return {
+    x: Math.round(box.x * safeX),
+    y: Math.round(box.y * safeY),
+    w: Math.max(1, Math.round(box.w * safeX)),
+    h: Math.max(1, Math.round(box.h * safeY)),
+  };
+};
+
+/** 视口像素路径的字号密度就是 fitScale，直接写成 CSS 像素。 */
+export const scalePresentedFontPx = (designPx: number, density: number) => {
+  const safeDensity = Number.isFinite(density) && density > 0 ? density : 1;
+  return Math.max(1, Math.round(designPx * safeDensity));
+};
+
+export const resolvePresentedUiScale = (
+  layoutMode: ScreenLayoutMode,
+  fitScale: number,
+  transformUiScale: number,
+) => (layoutMode === 'viewportPixels' ? fitScale : transformUiScale);
+
+/** 图表视口倍数表示外层 CSS transform。没有 transform 时为 1，避免再除一次。 */
+export const resolveWidgetViewportScale = (
+  layoutMode: ScreenLayoutMode,
+  fitScale: number,
+) => (layoutMode === 'viewportPixels' ? 1 : fitScale);
+
+export const presentScreenRenderContext = ({
+  layoutMode,
+  fitScale,
+  scaleX,
+  scaleY,
+  screenDensity,
+  transformUiScale,
+}: {
+  layoutMode: ScreenLayoutMode;
+  fitScale: number;
+  scaleX: number;
+  scaleY: number;
+  screenDensity: number;
+  transformUiScale: number;
+}): {
+  context: ScreenRenderContext;
+  widgetViewportScale: number;
+} => {
+  const uiScale = resolvePresentedUiScale(layoutMode, fitScale, transformUiScale);
+  return {
+    context: {
+      enabled: true,
+      fitScale,
+      scaleX,
+      scaleY,
+      screenDensity,
+      screenUiScale: uiScale,
+      widgetDensity: screenDensity,
+      widgetUiScale: uiScale,
+      layoutMode,
+    },
+    widgetViewportScale: resolveWidgetViewportScale(layoutMode, fitScale),
   };
 };

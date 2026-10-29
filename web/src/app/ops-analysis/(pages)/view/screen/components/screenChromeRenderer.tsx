@@ -26,8 +26,8 @@ import { screenShapeCss } from '../utils/screenShape';
 import {
   DecorationSkin,
   TitleFrameSkin,
-  screenChromeTextStyle,
   screenUniformTextProps,
+  useScaledScreenChromeTextStyle,
 } from './screenChromeSkins';
 
 const ClockSkin: React.FC<{
@@ -42,7 +42,7 @@ const ClockSkin: React.FC<{
   }, []);
 
   const parts = getScreenClockDisplayParts(now, format);
-  const style = screenChromeTextStyle(textStyle, {
+  const style = useScaledScreenChromeTextStyle(textStyle, {
     fontSize: 20,
     fontWeight: 600,
     color: 'canvas',
@@ -75,6 +75,7 @@ const ClockSkin: React.FC<{
 
 const ScreenTextBody: React.FC<{ item: ScreenTextItem }> = ({ item }) => {
   const textContent = useFilterTemplateText(item.content);
+  const textStyle = useScaledScreenChromeTextStyle(item.textStyle);
   const surface = useInteractionSurface();
   const titleConfig = item.interaction?.kind === 'title'
     ? { interaction: item.interaction }
@@ -91,7 +92,7 @@ const ScreenTextBody: React.FC<{ item: ScreenTextItem }> = ({ item }) => {
           undefined,
           'h-full w-full px-1 py-1',
         )}
-        style={screenChromeTextStyle(item.textStyle)}
+        style={textStyle}
       >
         {textContent}
       </div>
@@ -109,7 +110,7 @@ const ScreenTextBody: React.FC<{ item: ScreenTextItem }> = ({ item }) => {
       )}
       data-screen-text-link=""
       style={{
-        ...screenChromeTextStyle(item.textStyle),
+        ...textStyle,
         gap: '0.4em',
       }}
     >

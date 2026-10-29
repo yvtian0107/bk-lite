@@ -1,6 +1,7 @@
 'use client';
 
-import React, { useLayoutEffect, useRef, useState } from 'react';
+import React, { useContext, useLayoutEffect, useRef, useState } from 'react';
+import { scalePresentedFontPx } from '../utils/metrics';
 import { useFilterTemplateText } from '@/app/ops-analysis/context/filterTemplate';
 import type {
   ScreenDecorationItem,
@@ -74,7 +75,10 @@ const screenChromeTextColor = (color?: ScreenTextStyleConfig['color']) => {
   return TEXT_COLOR_VAR.canvas;
 };
 
-/** 全屏铺满时抵消横竖不同的拉伸，字只保留较小的那个倍数。 */
+/**
+ * 只在仍使用非等比 transform 的画布上抵消拉伸。
+ * 视口像素布局不加 --stretched，这段反拉不会生效，也不要靠它纠字号。
+ */
 export const screenUniformTextProps = (
   style?: ScreenTextStyleConfig,
   fallback?: Partial<ScreenTextStyleConfig>,
@@ -84,11 +88,27 @@ export const screenUniformTextProps = (
   'data-align': style?.align ?? fallback?.align ?? 'left',
 });
 
+const ChromeFontDensityContext = React.createContext(1);
+
+/** 视口像素布局传入 fitScale；设计画布保持 1，字号仍交给外层 transform。 */
+export const ChromeFontDensityProvider: React.FC<{
+  density?: number;
+  children: React.ReactNode;
+}> = ({ density = 1, children }) => (
+  <ChromeFontDensityContext.Provider value={density}>
+    {children}
+  </ChromeFontDensityContext.Provider>
+);
+
 export const screenChromeTextStyle = (
   style?: ScreenTextStyleConfig,
   fallback?: Partial<ScreenTextStyleConfig>,
+  density = 1,
 ): React.CSSProperties => ({
-  fontSize: style?.fontSize ?? fallback?.fontSize ?? 20,
+  fontSize: scalePresentedFontPx(
+    style?.fontSize ?? fallback?.fontSize ?? 20,
+    density,
+  ),
   fontWeight: style?.fontWeight ?? fallback?.fontWeight ?? 600,
   color: screenChromeTextColor(style?.color ?? fallback?.color),
   textAlign: style?.align ?? fallback?.align ?? 'left',
@@ -96,6 +116,11 @@ export const screenChromeTextStyle = (
   whiteSpace: 'pre-wrap',
   wordBreak: 'break-word',
 });
+
+export const useScaledScreenChromeTextStyle = (
+  style?: ScreenTextStyleConfig,
+  fallback?: Partial<ScreenTextStyleConfig>,
+) => screenChromeTextStyle(style, fallback, useContext(ChromeFontDensityContext));
 
 const VisionImg: React.FC<{
   src: ImageAsset;
@@ -134,7 +159,13 @@ const HeroTitle: React.FC<{
   item: ScreenTitleFrameItem;
   src: ImageAsset;
   fontSize: number;
-}> = ({ item, src, fontSize }) => (
+}> = ({ item, src, fontSize }) => {
+  const textStyle = useScaledScreenChromeTextStyle(item.textStyle, {
+    fontSize,
+    fontWeight: 700,
+    align: 'center',
+  });
+  return (
   <div className="relative h-full w-full overflow-hidden">
     <VisionImg
       src={src}
@@ -148,19 +179,21 @@ const HeroTitle: React.FC<{
           { align: 'center' },
           'max-w-[78%] truncate',
         )}
-        style={screenChromeTextStyle(item.textStyle, {
-          fontSize,
-          fontWeight: 700,
-          align: 'center',
-        })}
+        style={textStyle}
       >
         {item.content || ''}
       </span>
     </div>
   </div>
-);
+  );
+};
 
-const SectionTitle4: React.FC<{ item: ScreenTitleFrameItem }> = ({ item }) => (
+const SectionTitle4: React.FC<{ item: ScreenTitleFrameItem }> = ({ item }) => {
+  const textStyle = useScaledScreenChromeTextStyle(item.textStyle, {
+    fontSize: 18,
+    fontWeight: 700,
+  });
+  return (
   <div className="relative flex h-full min-h-[20px] w-full overflow-hidden">
     <VisionImg src={smallTitle4Left} punchBlack className="h-full w-[34px] shrink-0" />
     <div className="relative flex min-w-0 flex-1 items-center justify-between">
@@ -182,7 +215,7 @@ const SectionTitle4: React.FC<{ item: ScreenTitleFrameItem }> = ({ item }) => (
           undefined,
           'relative z-1 min-w-0 flex-1 truncate whitespace-nowrap px-3',
         )}
-        style={screenChromeTextStyle(item.textStyle, { fontSize: 18, fontWeight: 700 })}
+        style={textStyle}
       >
         {item.content || ''}
       </span>
@@ -195,9 +228,16 @@ const SectionTitle4: React.FC<{ item: ScreenTitleFrameItem }> = ({ item }) => (
       style={{ animation: 'screen-chrome-title4-scan 2.5s linear infinite' }}
     />
   </div>
-);
+  );
+};
 
-const SectionTitle8: React.FC<{ item: ScreenTitleFrameItem }> = ({ item }) => (
+const SectionTitle8: React.FC<{ item: ScreenTitleFrameItem }> = ({ item }) => {
+  const textStyle = useScaledScreenChromeTextStyle(item.textStyle, {
+    fontSize: 16,
+    fontWeight: 700,
+    align: 'center',
+  });
+  return (
   <div className="relative h-full min-h-[20px] w-full overflow-hidden">
     <div
       className="absolute inset-0 z-0"
@@ -220,20 +260,23 @@ const SectionTitle8: React.FC<{ item: ScreenTitleFrameItem }> = ({ item }) => (
           { align: 'center' },
           'min-w-0 flex-1 truncate px-2 text-center',
         )}
-        style={screenChromeTextStyle(item.textStyle, {
-          fontSize: 16,
-          fontWeight: 700,
-          align: 'center',
-        })}
+        style={textStyle}
       >
         {item.content || ''}
       </span>
       <span className="h-0.5 w-2 shrink-0 bg-(--screen-chrome-accent)" />
     </div>
   </div>
-);
+  );
+};
 
-const SectionTitle5: React.FC<{ item: ScreenTitleFrameItem }> = ({ item }) => (
+const SectionTitle5: React.FC<{ item: ScreenTitleFrameItem }> = ({ item }) => {
+  const textStyle = useScaledScreenChromeTextStyle(item.textStyle, {
+    fontSize: 16,
+    fontWeight: 700,
+    align: 'center',
+  });
+  return (
   <div className="relative h-full min-h-[20px] w-full overflow-hidden">
     <VisionImg
       src={smallTitle5Light}
@@ -248,20 +291,22 @@ const SectionTitle5: React.FC<{ item: ScreenTitleFrameItem }> = ({ item }) => (
           { align: 'center' },
           'min-w-0 flex-1 truncate px-2 text-center',
         )}
-        style={screenChromeTextStyle(item.textStyle, {
-          fontSize: 16,
-          fontWeight: 700,
-          align: 'center',
-        })}
+        style={textStyle}
       >
         {item.content || ''}
       </span>
       <span className="h-1.5 w-1.5 shrink-0 bg-(--screen-chrome-accent)" />
     </div>
   </div>
-);
+  );
+};
 
-const SectionTitle6: React.FC<{ item: ScreenTitleFrameItem }> = ({ item }) => (
+const SectionTitle6: React.FC<{ item: ScreenTitleFrameItem }> = ({ item }) => {
+  const textStyle = useScaledScreenChromeTextStyle(item.textStyle, {
+    fontSize: 16,
+    fontWeight: 700,
+  });
+  return (
   <div className="relative flex h-full min-h-[20px] w-full overflow-hidden">
     <VisionImg
       src={smallTitle6Left}
@@ -293,12 +338,13 @@ const SectionTitle6: React.FC<{ item: ScreenTitleFrameItem }> = ({ item }) => (
         undefined,
         'absolute inset-y-0 left-0 z-2 flex w-[58%] items-center truncate pl-3',
       )}
-      style={screenChromeTextStyle(item.textStyle, { fontSize: 16, fontWeight: 700 })}
+      style={textStyle}
     >
       {item.content || ''}
     </span>
   </div>
-);
+  );
+};
 
 export const TitleFrameSkin: React.FC<{
   item: Pick<ScreenTitleFrameItem, 'preset' | 'content' | 'textStyle'>;
