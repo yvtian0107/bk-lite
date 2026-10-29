@@ -45,6 +45,8 @@ import {
   isDashboardWidgetItem,
   sortDashboardLayoutItems,
 } from '@/app/ops-analysis/utils/dashboardGroups';
+import { deriveDashboardGridDisplayLayout } from '@/app/ops-analysis/utils/dashboardGroupViewVisibility';
+import { useDashboardViewAuth } from '@/app/ops-analysis/context/dashboardViewAuth';
 import {
   activateAllRuntimeWidgets,
   mergeRuntimeActivationStates,
@@ -394,13 +396,25 @@ const DashboardCanvas: React.FC<DashboardCanvasProps> = ({
     dashboardId,
   );
 
+  const viewAuth = useDashboardViewAuth();
+  const displayLayout = useMemo(() => {
+    if (isEditMode || !viewAuth) {
+      return layout;
+    }
+    return deriveDashboardGridDisplayLayout({
+      items: layout,
+      mode: 'view',
+      isWidgetUnauthorized: viewAuth.isWidgetUnauthorized,
+    });
+  }, [isEditMode, layout, viewAuth]);
+
   const gridStackLayout = useMemo(
-    () => buildDashboardGridStackLayout(layout),
-    [layout],
+    () => buildDashboardGridStackLayout(displayLayout),
+    [displayLayout],
   );
   const gridStructureKey = useMemo(
-    () => buildDashboardGridStackStructureKey(layout),
-    [layout],
+    () => buildDashboardGridStackStructureKey(displayLayout),
+    [displayLayout],
   );
   const dashboardInstanceKey = useMemo(
     () => `${dashboardId ?? 'dashboard'}:${gridStructureKey}`,
@@ -424,7 +438,14 @@ const DashboardCanvas: React.FC<DashboardCanvasProps> = ({
         .filter((node) => node.kind === 'widget')
         .map((node) => node.id)
         .concat(gridStackLayout.groupNodes.flatMap((node) => node.children.map((child) => child.id)));
-      setRuntimeStates(activateAllRuntimeWidgets(widgetIds));
+      setRuntimeStates((previous) => {
+        const previousKey = Object.keys(previous).sort().join('|');
+        const nextKey = [...widgetIds].sort().join('|');
+        if (previousKey === nextKey && widgetIds.every((widgetId) => previous[widgetId]?.active)) {
+          return previous;
+        }
+        return activateAllRuntimeWidgets(widgetIds);
+      });
       return undefined;
     }
 
@@ -902,7 +923,9 @@ const DashboardCanvas: React.FC<DashboardCanvasProps> = ({
   }, [emitLayoutChange, handleWidgetMutationStop]);
 
   useEffect(() => {
-    if (!gridRootRef.current) {
+    // 加载态不挂载 grid 根节点。若这次 effect 在 loading 时直接返回，
+    // 布局 key 不变时 loading 结束不会再进这里，查看态会一直空白。
+    if (loading || !gridRootRef.current) {
       return;
     }
 
@@ -1169,6 +1192,7 @@ const DashboardCanvas: React.FC<DashboardCanvasProps> = ({
     createWidgetShell,
     dashboardInstanceKey,
     dashboardScopeKey,
+    loading,
     scheduleScrollRestore,
     syncGroupPresentation,
   ]);

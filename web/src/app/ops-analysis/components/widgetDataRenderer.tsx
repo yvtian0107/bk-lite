@@ -77,6 +77,7 @@ import { validateEventTimelinePayload } from "@/app/ops-analysis/utils/eventTime
 import { validateCardListPayload } from "@/app/ops-analysis/utils/cardList";
 import { resolveRadarSeriesData } from "@/app/ops-analysis/utils/radarData";
 import { useOpsAnalysis } from "@/app/ops-analysis/context/common";
+import { useDashboardViewAuth } from "@/app/ops-analysis/context/dashboardViewAuth";
 import type { DashboardWidgetRenderResult } from "@/app/ops-analysis/renderContract";
 import {
   hasRenderableChartData,
@@ -252,6 +253,10 @@ const WidgetWrapper: React.FC<WidgetWrapperProps> = ({
     {},
   );
   const { canvasDataSourceLookupStatus, dataSources } = useOpsAnalysis();
+  const dashboardViewAuth = useDashboardViewAuth();
+  const scenePermissionDenied = Boolean(
+    dashboardViewAuth?.isScenePermissionDenied(widgetId),
+  );
   const runtimeScheduler = useDashboardRuntimeScheduler();
   const { getSourceDataByApiId } = useDataSourceApi();
   const optionConsumerSequenceRef = useRef(0);
@@ -1238,6 +1243,7 @@ const WidgetWrapper: React.FC<WidgetWrapperProps> = ({
           runtimeActive={runtimeActive}
           runtimePriority={runtimePriority}
           surface={surface}
+          scenePermissionDenied={scenePermissionDenied}
           onRawData={(data) => {
             onRawData?.(data, sampleTicketRef.current);
           }}
