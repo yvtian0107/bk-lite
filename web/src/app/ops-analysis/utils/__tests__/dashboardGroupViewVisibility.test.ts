@@ -11,6 +11,7 @@ import {
   omitFullyUnauthorizedDashboardGroups,
   selectDashboardTopLevelRenderBlocks,
   selectDashboardViewRenderWidgetIds,
+  shouldHoldDashboardRenderSignal,
 } from '@/app/ops-analysis/utils/dashboardGroupViewVisibility';
 
 const group = (
@@ -334,5 +335,39 @@ describe('module license canvas empty', () => {
     };
     expect(isModuleLicenseCanvasEmpty(input)).toBe(false);
     expect(selectDashboardViewRenderWidgetIds(input)).toEqual(['w-chart']);
+  });
+});
+
+describe('shouldHoldDashboardRenderSignal', () => {
+  it('holds while the dashboard is still loading, even if lookup already decided', () => {
+    expect(shouldHoldDashboardRenderSignal({
+      loading: true,
+      layoutReadyDashboardId: null,
+      dashboardId: 67,
+    })).toBe(true);
+  });
+
+  it('holds on the first paint before this canvas layout is stored', () => {
+    expect(shouldHoldDashboardRenderSignal({
+      loading: false,
+      layoutReadyDashboardId: null,
+      dashboardId: 67,
+    })).toBe(true);
+  });
+
+  it('holds when a different canvas layout is the one marked ready', () => {
+    expect(shouldHoldDashboardRenderSignal({
+      loading: false,
+      layoutReadyDashboardId: 66,
+      dashboardId: 67,
+    })).toBe(true);
+  });
+
+  it('releases after this canvas layout has loaded', () => {
+    expect(shouldHoldDashboardRenderSignal({
+      loading: false,
+      layoutReadyDashboardId: '67',
+      dashboardId: '67',
+    })).toBe(false);
   });
 });

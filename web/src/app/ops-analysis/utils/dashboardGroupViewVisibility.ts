@@ -123,6 +123,24 @@ export const isModuleLicenseCanvasEmpty = (
  * lookup 失败同样走 display layout：拓扑等不读 lookup 的场景组仍可 §5.2 omit，
  * 只等格子上仍会挂载的图表报 data-source-load-error，不按空列表发 report-ready。
  */
+/**
+ * lookup 成功会先于 setLayout 提交。那一帧组件 id 仍是 []，
+ * 不能当成整盘空态发 report-ready。加载中、或就绪标记还不是本次画布时继续等。
+ */
+export const shouldHoldDashboardRenderSignal = ({
+  loading,
+  layoutReadyDashboardId,
+  dashboardId,
+}: {
+  loading: boolean;
+  layoutReadyDashboardId: number | string | null;
+  dashboardId: number | string | null | undefined;
+}): boolean =>
+  loading
+  || layoutReadyDashboardId == null
+  || dashboardId == null
+  || layoutReadyDashboardId !== dashboardId;
+
 export const selectDashboardViewRenderWidgetIds = (
   input: ModuleLicenseCanvasEmptyInput,
 ): string[] => {

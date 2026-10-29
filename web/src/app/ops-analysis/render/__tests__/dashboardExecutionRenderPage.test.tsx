@@ -253,6 +253,10 @@ describe('DashboardExecutionRenderPageContent', () => {
       const ready = signals.find((signal) => signal.type === 'report-ready');
       expect(ready?.widgets?.map((widget) => widget.widgetId)).toEqual(['w-open']);
     });
+    expect(signals.filter((signal) => signal.type === 'report-ready')).toHaveLength(1);
+    expect(signals.some((signal) =>
+      signal.type === 'report-ready' && (signal.widgets?.length ?? 0) === 0,
+    )).toBe(false);
     expect(signals.some((signal) =>
       signal.widgets?.some((widget) => widget.widgetId === 'w-alarm'),
     )).toBe(false);

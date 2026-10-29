@@ -97,6 +97,7 @@ import {
 import {
   isModuleLicenseCanvasEmpty,
   selectDashboardViewRenderWidgetIds,
+  shouldHoldDashboardRenderSignal,
 } from '@/app/ops-analysis/utils/dashboardGroupViewVisibility';
 import { isCanvasDataSourceLookupDecided } from '@/app/ops-analysis/utils/widgetRequestVersion';
 import {
@@ -519,6 +520,13 @@ const Dashboard = forwardRef<DashboardRef, DashboardProps>(
     const flushRenderSignal = useCallback(() => {
       if (!renderMode || emittedRenderSignalRef.current) return;
       if (!viewAuthSnapshot.resourcesReady || !viewAuthSnapshot.frozen) return;
+      if (shouldHoldDashboardRenderSignal({
+        loading,
+        layoutReadyDashboardId: collapsedGroupsLayoutReadyId,
+        dashboardId: selectedDashboard?.data_id,
+      })) {
+        return;
+      }
       const dashboardId = selectedDashboard?.data_id || 'unknown';
       if (renderSignalWidgetIds.length === 0) {
         void emitPreparedRenderSignal({
@@ -539,7 +547,9 @@ const Dashboard = forwardRef<DashboardRef, DashboardProps>(
       }
       void emitPreparedRenderSignal(signal);
     }, [
+      collapsedGroupsLayoutReadyId,
       emitPreparedRenderSignal,
+      loading,
       renderMode,
       renderSignalWidgetIds,
       selectedDashboard?.data_id,

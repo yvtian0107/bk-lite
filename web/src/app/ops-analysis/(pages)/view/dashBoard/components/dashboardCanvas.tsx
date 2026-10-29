@@ -29,6 +29,7 @@ import type { DatasourceItem } from '@/app/ops-analysis/types/dataSource';
 import PermissionWrapper from '@/components/permission';
 import MoreActionsDropdown from '@/components/more-actions-dropdown';
 import { DASHBOARD_GRID_COLS } from '@/app/ops-analysis/utils/dashboardGridColumns';
+import { restoreGridStackMeasurableMinHeight } from '@/app/ops-analysis/utils/prepareDashboardPrintLayout';
 import {
   buildDashboardGridStackLayout,
   buildDashboardGridStackStructureKey,
@@ -1001,6 +1002,7 @@ const DashboardCanvas: React.FC<DashboardCanvasProps> = ({
         gridRootRef.current?.appendChild(itemElement);
       });
 
+      restoreGridStackMeasurableMinHeight(gridRootRef.current);
       const rootGrid = GridStack.init(
         {
           column: DASHBOARD_GRID_COLS,
@@ -1111,6 +1113,7 @@ const DashboardCanvas: React.FC<DashboardCanvasProps> = ({
           return;
         }
 
+        restoreGridStackMeasurableMinHeight(subGridRoot);
         const subGrid = GridStack.init(
           {
             // 手动 init 时若写 auto，GridStack 会删掉该选项并回落默认 12；
