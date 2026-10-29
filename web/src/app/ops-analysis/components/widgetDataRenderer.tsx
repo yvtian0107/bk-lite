@@ -754,6 +754,29 @@ const WidgetWrapper: React.FC<WidgetWrapperProps> = ({
     [config, dataSource, t],
   );
 
+  // 字段映射不改变请求。已取到的 rawData 要按当前配置重校验，
+  // 否则预览改完分类/数值/系列后会停在上一次的「数据格式不匹配」。
+  useEffect(() => {
+    if (!requestEnabled || isSceneWidget) {
+      return;
+    }
+    if (rawData === null || rawData === undefined) {
+      return;
+    }
+    const next = validateChartData(rawData, chartType);
+    setDataValidation((previous) => {
+      if (
+        previous
+        && previous.isValid === next.isValid
+        && previous.message === next.message
+        && previous.errorCode === undefined
+      ) {
+        return previous;
+      }
+      return next;
+    });
+  }, [chartType, isSceneWidget, rawData, requestEnabled, validateChartData]);
+
   const fetchDataRef = useRef<
     (key: string, cause: CanvasRuntimeRefreshCause) => Promise<void>
       >(undefined!);
