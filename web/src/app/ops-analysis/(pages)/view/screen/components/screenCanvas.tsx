@@ -713,10 +713,11 @@ const ScreenCanvas: React.FC<ScreenCanvasProps> = ({
     : "designTransform";
   const presentedUiScale = resolvePresentedUiScale(
     layoutMode,
-    screenMetrics.fitScale,
+    screenMetrics.screenDensity,
     screenMetrics.screenUiScale,
   );
-  const chromeFontDensity = viewportPixelLayout ? screenMetrics.fitScale : 1;
+  const chromeFontDensity = viewportPixelLayout ? screenMetrics.screenDensity : 1;
+  const chromeBorderDensity = viewportPixelLayout ? screenMetrics.fitScale : 1;
   const resolveDataSource = dataSourceResolver ?? unresolvedDataSource;
   const filterTemplateTexts = useMemo(
     () => collectScreenFilterTemplateTexts(viewSets.items),
@@ -783,7 +784,12 @@ const ScreenCanvas: React.FC<ScreenCanvasProps> = ({
           height: screenMetrics.renderedHeight,
         }}
       >
-        <ChromeFontDensityProvider density={chromeFontDensity}>
+        <ChromeFontDensityProvider
+          density={chromeFontDensity}
+          borderDensity={chromeBorderDensity}
+          geometryScaleX={viewportPixelLayout ? screenMetrics.scaleX : 1}
+          geometryScaleY={viewportPixelLayout ? screenMetrics.scaleY : 1}
+        >
         <div
           className={`screen-tech-canvas relative overflow-hidden ${
             editMode && !fullscreen ? "screen-tech-canvas--editing" : ""

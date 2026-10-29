@@ -88,17 +88,52 @@ export const screenUniformTextProps = (
   'data-align': style?.align ?? fallback?.align ?? 'left',
 });
 
-const ChromeFontDensityContext = React.createContext(1);
+export interface ScreenChromePresentation {
+  /** 字号。视口像素用 screenDensity；设计画布为 1，交给外层 transform。 */
+  fontDensity: number;
+  /** 描边。视口像素用 fitScale；设计画布为 1，交给外层 transform。 */
+  borderDensity: number;
+  /** 已映射 client 尺寸除回设计尺寸。设计画布为 1。 */
+  geometryScaleX: number;
+  geometryScaleY: number;
+}
 
-/** 视口像素布局传入 fitScale；设计画布保持 1，字号仍交给外层 transform。 */
+const DEFAULT_CHROME_PRESENTATION: ScreenChromePresentation = {
+  fontDensity: 1,
+  borderDensity: 1,
+  geometryScaleX: 1,
+  geometryScaleY: 1,
+};
+
+const ChromeFontDensityContext = React.createContext(DEFAULT_CHROME_PRESENTATION);
+
+/** 视口像素同时传入字号密度和几何倍数；设计画布保持 1。 */
 export const ChromeFontDensityProvider: React.FC<{
   density?: number;
+  borderDensity?: number;
+  geometryScaleX?: number;
+  geometryScaleY?: number;
   children: React.ReactNode;
-}> = ({ density = 1, children }) => (
-  <ChromeFontDensityContext.Provider value={density}>
+}> = ({
+  density = 1,
+  borderDensity = 1,
+  geometryScaleX = 1,
+  geometryScaleY = 1,
+  children,
+}) => (
+  <ChromeFontDensityContext.Provider
+    value={{
+      fontDensity: density,
+      borderDensity,
+      geometryScaleX,
+      geometryScaleY,
+    }}
+  >
     {children}
   </ChromeFontDensityContext.Provider>
 );
+
+export const useScreenChromePresentation = () => useContext(ChromeFontDensityContext);
 
 export const screenChromeTextStyle = (
   style?: ScreenTextStyleConfig,
@@ -120,7 +155,7 @@ export const screenChromeTextStyle = (
 export const useScaledScreenChromeTextStyle = (
   style?: ScreenTextStyleConfig,
   fallback?: Partial<ScreenTextStyleConfig>,
-) => screenChromeTextStyle(style, fallback, useContext(ChromeFontDensityContext));
+) => screenChromeTextStyle(style, fallback, useScreenChromePresentation().fontDensity);
 
 const VisionImg: React.FC<{
   src: ImageAsset;
@@ -374,6 +409,63 @@ const visionBorder21Width = (width: number, height: number) => {
 
 type BorderImageMode = 'fixed-83' | 'fixed-25' | 'fluid' | 'tech' | 'fill';
 
+const positiveScale = (value: number) =>
+  Number.isFinite(value) && value > 0 ? value : 1;
+
+export type VisionBorderSliceMode = Exclude<BorderImageMode, 'fill'>;
+
+/**
+ * 档位按设计尺寸选。视口像素的 client 已经乘过 sx/sy，先除回去，
+ * 再把设计厚度乘 fitScale。slice 仍是素材像素，不跟厚度再乘一次。
+ */
+export const resolveVisionBorderFrame = (
+  mode: VisionBorderSliceMode,
+  clientWidth: number,
+  clientHeight: number,
+  geometryScaleX = 1,
+  geometryScaleY = 1,
+  borderDensity = 1,
+) => {
+  const width = clientWidth / positiveScale(geometryScaleX);
+  const height = clientHeight / positiveScale(geometryScaleY);
+  const density = positiveScale(borderDensity);
+  const fluidTB = height > 200 ? 100 : Math.max(8, height / 2);
+  const fluidLR = width > 300 ? 150 : Math.max(8, width / 2);
+  const fixedScale = Math.min(1, width / 742, height / 381);
+  const sliceTB =
+    mode === 'tech'
+      ? Math.min(fluidTB, Math.max(8, height * 0.28))
+      : mode === 'fluid'
+        ? fluidTB
+        : mode === 'fixed-25'
+          ? Math.max(8, Math.round(100 * fixedScale))
+          : 83;
+  const sliceLR =
+    mode === 'tech'
+      ? Math.min(fluidLR, Math.max(8, width * 0.28))
+      : mode === 'fluid'
+        ? fluidLR
+        : mode === 'fixed-25'
+          ? Math.max(8, Math.round(95 * fixedScale))
+          : 83;
+  const steppedBorder = Math.min(
+    visionBorder21Width(width, height),
+    Math.max(8, Math.floor(Math.min(width, height) * 0.18)),
+  );
+  const designTB = mode === 'fixed-83' ? steppedBorder : sliceTB;
+  const designLR = mode === 'fixed-83' ? designTB : sliceLR;
+  const paint = (value: number) =>
+    density === 1 ? value : Math.max(1, Math.round(value * density));
+  return {
+    sliceTB,
+    sliceLR,
+    borderWidth:
+      mode === 'fixed-83'
+        ? `${paint(designTB)}px`
+        : `${paint(designTB)}px ${paint(designLR)}px`,
+  };
+};
+
 const PANEL_FRAME_SKIN: Record<
   ScreenPanelFramePresetId,
   { src: ImageAsset; mode: BorderImageMode }
@@ -391,9 +483,10 @@ const PANEL_FRAME_SKIN: Record<
 
 const VisionBorderImage: React.FC<{
   src: ImageAsset;
-  mode: Exclude<BorderImageMode, 'fill'>;
+  mode: VisionBorderSliceMode;
 }> = ({ src, mode }) => {
   const ref = useRef<HTMLDivElement>(null);
+  const presentation = useScreenChromePresentation();
   const [box, setBox] = useState({ width: 320, height: 180 });
 
   useLayoutEffect(() => {
@@ -408,29 +501,15 @@ const VisionBorderImage: React.FC<{
     return () => observer?.disconnect();
   }, []);
 
-  const fluidTB = box.height > 200 ? 100 : Math.max(8, box.height / 2);
-  const fluidLR = box.width > 300 ? 150 : Math.max(8, box.width / 2);
-  const fixedScale = Math.min(1, box.width / 742, box.height / 381);
-  const sliceTB =
-    mode === 'tech'
-      ? Math.min(fluidTB, Math.max(8, box.height * 0.28))
-      : mode === 'fluid'
-        ? fluidTB
-        : mode === 'fixed-25'
-          ? Math.max(8, Math.round(100 * fixedScale))
-          : 83;
-  const sliceLR =
-    mode === 'tech'
-      ? Math.min(fluidLR, Math.max(8, box.width * 0.28))
-      : mode === 'fluid'
-        ? fluidLR
-        : mode === 'fixed-25'
-          ? Math.max(8, Math.round(95 * fixedScale))
-          : 83;
-  const borderWidth =
-    mode === 'fixed-83'
-      ? `${Math.min(visionBorder21Width(box.width, box.height), Math.max(8, Math.floor(Math.min(box.width, box.height) * 0.18)))}px`
-      : `${sliceTB}px ${sliceLR}px`;
+  const frame = resolveVisionBorderFrame(
+    mode,
+    box.width,
+    box.height,
+    presentation.geometryScaleX,
+    presentation.geometryScaleY,
+    presentation.borderDensity,
+  );
+  const { sliceTB, sliceLR, borderWidth } = frame;
 
   return (
     <div ref={ref} className="h-full w-full">

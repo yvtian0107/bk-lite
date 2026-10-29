@@ -112,8 +112,8 @@ describe('calculateScreenFitMetrics adapters', () => {
 });
 
 describe('viewport pixel font scale', () => {
-  // 2304×1400 对 1920×1080：sx=1.2，sy=1400/1080，密度取 min=1.2。
-  // 旧补偿 screenDensity/fitScale 约为 1.16/1.2，再乘外层倍数会把 20px 变成另一档。
+  // 2304×1400 对 1920×1080：sx=1.2，sy=1400/1080，几何密度取 min=1.2。
+  // 字号用 screenDensity。再乘 fitScale 或沿用 screenUiScale 都会偏离屏幕结果。
   const visual = calculateScreenVisualMetrics({
     contentWidth: 2304,
     contentHeight: 1400,
@@ -128,7 +128,7 @@ describe('viewport pixel font scale', () => {
     expect(visual.fitScale).toBeCloseTo(1.2);
   });
 
-  it('sizes fullscreen fill text by fitScale once', () => {
+  it('sizes fullscreen fill text by screen density once', () => {
     const presented = presentScreenRenderContext({
       layoutMode: 'viewportPixels',
       fitScale: visual.fitScale,
@@ -140,13 +140,48 @@ describe('viewport pixel font scale', () => {
 
     expect(presented.context.layoutMode).toBe('viewportPixels');
     expect(presented.context.scaleX).toBeCloseTo(1.2);
-    expect(presented.context.widgetUiScale).toBeCloseTo(1.2);
+    expect(presented.context.widgetUiScale).toBeCloseTo(visual.screenDensity);
     expect(presented.widgetViewportScale).toBe(1);
-    expect(scaleScreenMetric(20, presented.context)).toBe(24);
-    expect(scalePresentedFontPx(20, presented.context.widgetUiScale)).toBe(24);
+    expect(scaleScreenMetric(20, presented.context)).toBe(
+      Math.round(20 * visual.screenDensity),
+    );
+    expect(scalePresentedFontPx(20, presented.context.widgetUiScale)).toBe(
+      Math.round(20 * visual.screenDensity),
+    );
     expect(scaleScreenMetric(20, presented.context)).not.toBe(19);
+    expect(scaleScreenMetric(20, presented.context)).not.toBe(24);
     expect(scaleScreenMetric(20, presented.context)).not.toBe(29);
     expect(resolveCanvasContentScale(presented.context)).toBe(1);
+  });
+
+  it('does not shrink 4K chart text down to fitScale on a 1080p viewport', () => {
+    const fitted = calculateScreenVisualMetrics({
+      contentWidth: 1920,
+      contentHeight: 1080,
+      designWidth: 3840,
+      designHeight: 2160,
+      adapter: 'fill',
+    });
+    const presented = presentScreenRenderContext({
+      layoutMode: 'viewportPixels',
+      fitScale: fitted.fitScale,
+      scaleX: fitted.scaleX,
+      scaleY: fitted.scaleY,
+      screenDensity: fitted.screenDensity,
+      transformUiScale: fitted.screenUiScale,
+    });
+
+    expect(fitted.fitScale).toBeCloseTo(0.5);
+    expect(presented.context.widgetUiScale).toBeCloseTo(fitted.screenDensity);
+    expect(presented.context.widgetUiScale).toBeGreaterThan(1);
+    expect(scaleScreenMetric(24, presented.context)).toBe(
+      Math.round(24 * fitted.screenDensity),
+    );
+    expect(scaleScreenMetric(24, presented.context)).not.toBe(12);
+    expect(scaleScreenMetric(24, presented.context)).not.toBe(24);
+    expect(scaleScreenMetric(24, presented.context)).not.toBe(
+      Math.round(24 * fitted.screenUiScale),
+    );
   });
 
   it('keeps the transform-path ui scale when layout stays on the design canvas', () => {

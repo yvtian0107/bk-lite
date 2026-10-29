@@ -146,17 +146,22 @@ export const mapDesignBoxToViewportPixels = (
   };
 };
 
-/** 视口像素路径的字号密度就是 fitScale，直接写成 CSS 像素。 */
+/** 字号密度直接写成 CSS 像素。视口像素路径的密度是 screenDensity，不是 fitScale。 */
 export const scalePresentedFontPx = (designPx: number, density: number) => {
   const safeDensity = Number.isFinite(density) && density > 0 ? density : 1;
   return Math.max(1, Math.round(designPx * safeDensity));
 };
 
+/**
+ * 视口像素没有外层 transform。
+ * 字号用 screenDensity，等于旧路径 designPx × screenUiScale × fitScale 的屏幕结果。
+ * fitScale 只描述几何：4K 设计稿缩进 1080p 时它约 0.5，字号若再跟它会比查看页小一倍。
+ */
 export const resolvePresentedUiScale = (
   layoutMode: ScreenLayoutMode,
-  fitScale: number,
+  screenDensity: number,
   transformUiScale: number,
-) => (layoutMode === 'viewportPixels' ? fitScale : transformUiScale);
+) => (layoutMode === 'viewportPixels' ? screenDensity : transformUiScale);
 
 /** 图表视口倍数表示外层 CSS transform。没有 transform 时为 1，避免再除一次。 */
 export const resolveWidgetViewportScale = (
@@ -182,7 +187,7 @@ export const presentScreenRenderContext = ({
   context: ScreenRenderContext;
   widgetViewportScale: number;
 } => {
-  const uiScale = resolvePresentedUiScale(layoutMode, fitScale, transformUiScale);
+  const uiScale = resolvePresentedUiScale(layoutMode, screenDensity, transformUiScale);
   return {
     context: {
       enabled: true,

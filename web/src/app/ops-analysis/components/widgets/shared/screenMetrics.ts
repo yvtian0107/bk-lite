@@ -4,7 +4,7 @@ export const getScreenWidgetScale = (
   screenRenderContext?: ScreenRenderContext,
 ) => {
   if (!screenRenderContext?.enabled) return 1;
-  // viewportPixels 的 uiScale 已是 fitScale。这里只乘这一次，不再假设外层还有 transform。
+  // viewportPixels 的 uiScale 已是屏幕密度。这里只乘这一次，不再假设外层还有 transform。
   return screenRenderContext.widgetUiScale || screenRenderContext.screenUiScale || 1;
 };
 

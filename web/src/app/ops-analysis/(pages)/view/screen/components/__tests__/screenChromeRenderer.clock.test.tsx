@@ -1,6 +1,7 @@
 import { render } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
-import type { ScreenClockItem } from '@/app/ops-analysis/types/screen';
+import type { ScreenClockItem, ScreenShapeItem } from '@/app/ops-analysis/types/screen';
+import { resolveScreenShapeStyle } from '../../utils/screenShape';
 import ScreenChromeRenderer from '../screenChromeRenderer';
 import { ChromeFontDensityProvider } from '../screenChromeSkins';
 
@@ -74,5 +75,31 @@ describe('screen chrome clock style', () => {
     const { container } = render(<ScreenChromeRenderer item={item} />);
     const clock = container.querySelector('[data-screen-clock]') as HTMLElement;
     expect(clock.style.color).toBe('var(--screen-title-color)');
+  });
+
+  it('keeps shape strokes at design pixels unless a border density is set', () => {
+    const item: ScreenShapeItem = {
+      id: 'shape-1',
+      kind: 'shape',
+      shape: 'rect',
+      x: 0,
+      y: 0,
+      w: 400,
+      h: 250,
+      zIndex: 1,
+      shapeStyle: resolveScreenShapeStyle({ borderWidth: 4, shadow: 0 }),
+    };
+    const design = render(<ScreenChromeRenderer item={item} />);
+    const designStroke = design.container.querySelector('.relative > div') as HTMLElement;
+    expect(designStroke.style.borderWidth).toBe('4px');
+    design.unmount();
+
+    const scaled = render(
+      <ChromeFontDensityProvider density={1.16} borderDensity={0.5}>
+        <ScreenChromeRenderer item={item} />
+      </ChromeFontDensityProvider>,
+    );
+    const scaledStroke = scaled.container.querySelector('.relative > div') as HTMLElement;
+    expect(scaledStroke.style.borderWidth).toBe('2px');
   });
 });

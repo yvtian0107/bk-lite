@@ -28,6 +28,7 @@ import {
   TitleFrameSkin,
   screenUniformTextProps,
   useScaledScreenChromeTextStyle,
+  useScreenChromePresentation,
 } from './screenChromeSkins';
 
 const ClockSkin: React.FC<{
@@ -139,6 +140,7 @@ interface ScreenChromeRendererProps {
 const ScreenChromeRenderer: React.FC<ScreenChromeRendererProps> = ({
   item,
 }) => {
+  const { borderDensity } = useScreenChromePresentation();
   let body: React.ReactNode = null;
   if (isScreenTextItem(item)) {
     body = <ScreenTextBody item={item} />;
@@ -149,7 +151,7 @@ const ScreenChromeRenderer: React.FC<ScreenChromeRendererProps> = ({
   } else if (isScreenDecorationItem(item)) {
     body = <DecorationSkin item={item} />;
   } else if (isScreenShapeItem(item)) {
-    body = <div style={screenShapeCss(item.shape, item.shapeStyle)} />;
+    body = <div style={screenShapeCss(item.shape, item.shapeStyle, borderDensity)} />;
   }
 
   return <div className="relative h-full w-full">{body}</div>;
