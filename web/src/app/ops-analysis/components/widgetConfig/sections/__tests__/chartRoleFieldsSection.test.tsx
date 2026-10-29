@@ -144,35 +144,30 @@ describe('ChartRoleFieldsSection', () => {
     expect(formApi?.getFieldValue('seriesField')).toBeUndefined();
   });
 
-  it('restores name and value when the user asks for a suggestion', () => {
-    let formApi: ReturnType<typeof Form.useForm>[0] | undefined;
-    const Ready = () => {
-      const [form] = Form.useForm();
-      useEffect(() => {
-        formApi = form;
-      }, [form]);
-      return (
-        <Form form={form}>
-          <ChartRoleFieldsSection
-            t={(key) => key}
-            selectedDataSource={{ id: 1 } as DatasourceItem}
-            options={[]}
-            schemaFields={[
-              { key: 'cpu', title: 'CPU', value_type: 'number' },
-              { key: 'name', title: '名称', value_type: 'string' },
-              { key: 'value', title: '数值', value_type: 'number' },
-            ]}
-            roles={buildChartRoleFields('line', (key) => key, false)}
-            onRefreshFields={() => undefined}
-          />
-        </Form>
-      );
-    };
-    render(<Ready />);
-    fireEvent.click(screen.getByText('dashboard.lineBarRestoreRecommended'));
-    expect(formApi?.getFieldValue('dimensionField')).toBe('name');
-    expect(formApi?.getFieldValue('valueFields')).toEqual(['value']);
-    expect(formApi?.getFieldValue('seriesField')).toBeUndefined();
+  it('keeps only refresh beside the data-fields title and a multi-select for values', () => {
+    render(
+      <Form>
+        <ChartRoleFieldsSection
+          t={(key) => key}
+          selectedDataSource={{ id: 1 } as DatasourceItem}
+          options={[
+            { label: 'time', value: 'time' },
+            { label: 'cpu', value: 'cpu' },
+            { label: 'host', value: 'host' },
+          ]}
+          valueOptions={[{ label: 'cpu', value: 'cpu' }]}
+          roles={buildChartRoleFields('line', (key) => key, false)}
+          onRefreshFields={() => undefined}
+        />
+      </Form>,
+    );
+
+    expect(screen.getByText('dashboard.dataFields')).toBeTruthy();
+    expect(screen.getAllByText('dashboard.refreshFields')).toHaveLength(1);
+    expect(screen.queryByText('dashboard.lineBarRestoreRecommended')).toBeNull();
+    expect(screen.queryByText('恢复推荐')).toBeNull();
+    expect(document.querySelectorAll('.ant-select-multiple')).toHaveLength(1);
+    expect(document.querySelectorAll('.ant-select')).toHaveLength(3);
   });
 
   it('calls refresh once for the whole group', () => {

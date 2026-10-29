@@ -1,10 +1,9 @@
 import React, { useEffect } from 'react';
-import { Button, Form, Select } from 'antd';
+import { Form, Select } from 'antd';
 import type { NamePath } from 'antd/es/form/interface';
-import type { DatasourceItem, ResponseFieldDefinition } from '@/app/ops-analysis/types/dataSource';
+import type { DatasourceItem } from '@/app/ops-analysis/types/dataSource';
 import {
   normalizeLineBarFieldList,
-  recommendLineBarFields,
   trimLineBarField,
 } from '@/app/ops-analysis/utils/lineBarFieldMapping';
 import { ConfigSectionTitle } from '../configTitles';
@@ -27,8 +26,6 @@ interface ChartRoleFieldsSectionProps {
   options: Array<{ label: React.ReactNode; value: string }>;
   /** 数值字段选项。缺省时与 options 相同。 */
   valueOptions?: Array<{ label: React.ReactNode; value: string }>;
-  schemaFields?: ResponseFieldDefinition[];
-  sample?: unknown;
   roles: ChartRoleField[];
   loadingFields?: boolean;
   onRefreshFields?: () => void;
@@ -174,8 +171,6 @@ export const ChartRoleFieldsSection: React.FC<ChartRoleFieldsSectionProps> = ({
   selectedDataSource,
   options,
   valueOptions,
-  schemaFields,
-  sample,
   roles,
   loadingFields = false,
   onRefreshFields,
@@ -233,41 +228,16 @@ export const ChartRoleFieldsSection: React.FC<ChartRoleFieldsSectionProps> = ({
     }
   }, [dimension, form, lineBar, selectedValueKey, seriesLocked]);
 
-  const restoreRecommended = () => {
-    const recommended = recommendLineBarFields(schemaFields, sample);
-    if (!recommended.dimensionField && recommended.valueFields.length === 0) {
-      return;
-    }
-    form.setFieldsValue({
-      dimensionField: recommended.dimensionField,
-      valueFields: recommended.valueFields,
-      seriesField: undefined,
-    });
-  };
-
   return (
     <div className="mb-4">
       <ConfigSectionTitle
         actions={(
-          <span className="inline-flex items-center gap-1">
-            {lineBar && (
-              <Button
-                type="text"
-                size="small"
-                onClick={restoreRecommended}
-                disabled={!selectedDataSource}
-                className="h-6 px-1.5 text-xs text-(--color-text-3) hover:text-(--color-primary)"
-              >
-                {t('dashboard.lineBarRestoreRecommended')}
-              </Button>
-            )}
-            <RefreshFieldsButton
-              label={t('dashboard.refreshFields')}
-              loading={loadingFields}
-              disabled={!selectedDataSource}
-              onClick={onRefreshFields}
-            />
-          </span>
+          <RefreshFieldsButton
+            label={t('dashboard.refreshFields')}
+            loading={loadingFields}
+            disabled={!selectedDataSource}
+            onClick={onRefreshFields}
+          />
         )}
       >
         {t('dashboard.dataFields')}

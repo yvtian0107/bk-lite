@@ -184,6 +184,7 @@ const columnLooksNumeric = (
     && present.every((value) => coerceTopNNumericValue(value) !== null);
 };
 
+/** 字段名启发式，仅供测试和内部调用。配置界面不提供「恢复推荐」。 */
 export const recommendLineBarFields = (
   fields: Array<{ key?: string; value_type?: string }> = [],
   sample?: unknown,
