@@ -85,7 +85,12 @@ import {
   validateTopologyMapWidgetData,
 } from "@/app/ops-analysis/utils/topologyMapWidgetContract";
 import { isSelfFetchSceneWidget } from "@/app/ops-analysis/types/sceneWidgetCapability";
-import { dynamicQueryParamsOf, resolveOptionsQueryParams } from "@/app/ops-analysis/utils/optionsQueryParamRefs";
+import {
+  dynamicQueryParamsOf,
+  OPTIONS_QUERY_INVALID,
+  readOptionsQueryUpstream,
+  resolveOptionsQueryParams,
+} from "@/app/ops-analysis/utils/optionsQueryParamRefs";
 
 const validateTopNData = (
   data: unknown,
@@ -340,12 +345,14 @@ const WidgetWrapper: React.FC<WidgetWrapperProps> = ({
     return resolveOptionsQueryParams(dynamicQueryParamsOf(componentSwitchParam?.inputConfig), (ref) => {
       const followed = (filterDefinitions || []).filter((definition) =>
         definition.enabled !== false
-        && definition.key === ref
         && config?.filterBindings?.[definition.id] !== false);
-      const preferred = followed.find((definition) =>
-        config?.filterBindings?.[definition.id] === true) ?? followed[0];
-      if (preferred && unifiedFilterValues && Object.prototype.hasOwnProperty.call(unifiedFilterValues, preferred.id)) {
-        return unifiedFilterValues[preferred.id];
+      const upstream = readOptionsQueryUpstream(ref, followed, (id) => (
+        unifiedFilterValues && Object.prototype.hasOwnProperty.call(unifiedFilterValues, id)
+          ? unifiedFilterValues[id]
+          : undefined
+      ));
+      if (upstream.found === true) {
+        return upstream.invalid === true ? OPTIONS_QUERY_INVALID : upstream.value;
       }
       return effectiveComponentParams.find((param) => param.name === ref)?.value;
     });
@@ -364,6 +371,7 @@ const WidgetWrapper: React.FC<WidgetWrapperProps> = ({
       getSourceDataByApiId: scheduledOptionsSourceData,
       resolvedQueryParams: componentSwitchQuery.params,
       optionsBlocked: componentSwitchQuery.blocked,
+      optionsBlockReason: componentSwitchQuery.blockReason,
     },
   );
   const rawSavedComponentSwitchValue = componentSwitchParam

@@ -22,11 +22,14 @@ import type {
 } from '@/app/ops-analysis/types/dashBoard';
 import type { InputControlConfig, InputOption } from '@/app/ops-analysis/types/dataSource';
 import {
+  areFilterValuesEqual,
   isDynamicOptionFilter,
   reconcileOptionBackedFilterValue,
 } from '@/app/ops-analysis/utils/optionBackedFilterValue';
 import {
   dynamicQueryParamsOf,
+  OPTIONS_QUERY_INVALID,
+  readOptionsQueryUpstream,
   resolveOptionsQueryParams,
   stableStringify,
 } from '@/app/ops-analysis/utils/optionsQueryParamRefs';
@@ -52,6 +55,8 @@ interface UnifiedFilterBarProps {
   onChange?: (values: Record<string, FilterValue>) => void;
   onSearch?: (values: Record<string, FilterValue>) => void;
   onReset?: (values: Record<string, FilterValue>) => void;
+  /** 选项第一次回来时把校正写入已应用初值，不触发搜索。 */
+  onApplyInitial?: (values: Record<string, FilterValue>) => void;
   prefixContent?: React.ReactNode;
   containerClassName?: string;
   appearance?: 'default' | 'embedded';
@@ -77,6 +82,7 @@ const UnifiedFilterBar: React.FC<UnifiedFilterBarProps> = ({
   onChange,
   onSearch,
   onReset,
+  onApplyInitial,
   prefixContent,
   containerClassName,
   appearance = 'default',
@@ -96,9 +102,15 @@ const UnifiedFilterBar: React.FC<UnifiedFilterBarProps> = ({
     useState<Record<string, FilterValue>>(values);
   const localValuesRef = useRef(localValues);
   const definitionsRef = useRef(definitions);
+  const valuesRef = useRef(values);
+  const onApplyInitialRef = useRef(onApplyInitial);
   const optionsByFilterRef = useRef<Map<string, InputOption[]>>(new Map());
+  const initialReconciledRef = useRef(new Set<string>());
+  const initialAppliedRef = useRef<Record<string, FilterValue> | null>(null);
   localValuesRef.current = localValues;
   definitionsRef.current = definitions;
+  valuesRef.current = values;
+  onApplyInitialRef.current = onApplyInitial;
   const organizationTreeData = useMemo(
     () => (shareMode
       ? convertGroupTreeToTreeSelectData(shareOrganization?.groupTree ?? [])
@@ -113,6 +125,13 @@ const UnifiedFilterBar: React.FC<UnifiedFilterBarProps> = ({
     .filter(isDynamicOptionFilter)
     .map((definition) => definition.id)
     .join('\0');
+  const enabledIdsKey = enabledDefinitions.map((definition) => definition.id).join('\0');
+  const enabledIdsKeyRef = useRef(enabledIdsKey);
+  if (enabledIdsKeyRef.current !== enabledIdsKey) {
+    enabledIdsKeyRef.current = enabledIdsKey;
+    initialReconciledRef.current = new Set();
+    initialAppliedRef.current = null;
+  }
 
   useEffect(() => {
     setLocalValues(values);
@@ -198,7 +217,19 @@ const UnifiedFilterBar: React.FC<UnifiedFilterBarProps> = ({
       return;
     }
     const nextValue = reconcileOptionBackedFilterValue(definition, current, options);
+    const firstResolve = !initialReconciledRef.current.has(filterId);
+    if (firstResolve) initialReconciledRef.current.add(filterId);
     if (nextValue === undefined) return;
+    if (firstResolve) {
+      const base = { ...(initialAppliedRef.current ?? valuesRef.current) };
+      if (!areFilterValuesEqual(base[filterId], nextValue)) {
+        base[filterId] = nextValue;
+        initialAppliedRef.current = base;
+        onApplyInitialRef.current?.(base);
+      } else {
+        initialAppliedRef.current = base;
+      }
+    }
     writeDraftValues({
       ...localValuesRef.current,
       [filterId]: nextValue,
@@ -330,12 +361,19 @@ const UnifiedFilterBar: React.FC<UnifiedFilterBarProps> = ({
         const queryResolution = resolveOptionsQueryParams(
           dynamicQueryParamsOf(inputConfig),
           (ref) => {
-            const upstream = enabledDefinitions.find((item) => item.key === ref);
-            return upstream ? localValues[upstream.id] : undefined;
+            const upstream = readOptionsQueryUpstream(
+              ref,
+              enabledDefinitions,
+              (id) => localValues[id],
+            );
+            if (upstream.found === false) return undefined;
+            if (upstream.invalid === true) return OPTIONS_QUERY_INVALID;
+            return upstream.value;
           },
         );
         const optionsQuerySignature = stableStringify({
           blocked: queryResolution.blocked,
+          blockReason: queryResolution.blockReason ?? null,
           params: queryResolution.params,
         });
 
@@ -364,6 +402,7 @@ const UnifiedFilterBar: React.FC<UnifiedFilterBarProps> = ({
             value={controlValue}
             resolvedQueryParams={queryResolution.params}
             optionsBlocked={queryResolution.blocked}
+            optionsBlockReason={queryResolution.blockReason}
             optionsQuerySignature={optionsQuerySignature}
             optionsNotifyKey={
               isDynamicOptionFilter(definition)

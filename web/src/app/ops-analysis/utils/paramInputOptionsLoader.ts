@@ -23,6 +23,7 @@ export type ParamInputOptionsState =
 export interface ParamInputOptionsRequest {
   resolvedParams?: Record<string, unknown>;
   blocked?: boolean;
+  blockReason?: 'empty' | 'invalid';
 }
 
 export interface ParamInputOptionsLoad {
@@ -92,8 +93,10 @@ export const buildOptionsLoadSignature = (
   config: InputControlConfig | undefined,
   request?: ParamInputOptionsRequest,
 ): string => {
-  const blocked = Boolean(request?.blocked);
-  return `${getParamInputConfigKey(config)}|${blocked ? 'blocked' : stableStringify(request?.resolvedParams ?? {})}`;
+  if (request?.blocked) {
+    return `${getParamInputConfigKey(config)}|blocked:${request.blockReason ?? 'empty'}`;
+  }
+  return `${getParamInputConfigKey(config)}|${stableStringify(request?.resolvedParams ?? {})}`;
 };
 
 const resolved = (options: InputOption[]): ParamInputOptionsState =>

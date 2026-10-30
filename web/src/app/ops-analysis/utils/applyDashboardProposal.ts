@@ -18,7 +18,11 @@ import { scaleDashboardGridHeight } from '@/app/ops-analysis/utils/dashboardGrid
 import { isDashboardGroupItem, isDashboardWidgetItem } from '@/app/ops-analysis/utils/dashboardGroups';
 import { syncFilterValuesWithDefinitions } from '@/app/ops-analysis/utils/unifiedFilterState';
 import { optionsSourceIdentity } from '@/app/ops-analysis/utils/optionsSourceIdentity';
-import { normalizeInputConfig } from '@/app/ops-analysis/utils/paramInputConfigUtils';
+import { normalizeInputConfigResult } from '@/app/ops-analysis/utils/paramInputConfigUtils';
+import {
+  dynamicQueryParamsOf,
+  validateOptionsQueryParams,
+} from '@/app/ops-analysis/utils/optionsQueryParamRefs';
 
 export const DASHBOARD_PROPOSAL_SCHEMA_VERSION = '1.0';
 
@@ -89,6 +93,7 @@ export type ApplyDashboardProposalResult =
     filterValues: Record<string, FilterValue>;
     otherConfig?: OtherConfig;
     refreshInterval?: number;
+    warnings?: string[];
   }
   | {
     ok: false;
@@ -263,10 +268,85 @@ const applyPosition = (
   description: hasOwn(proposal, 'description') ? proposal.description : item.description,
 });
 
+const stripDynamicQueryParams = (
+  inputConfig: UnifiedFilterDefinition['inputConfig'],
+): UnifiedFilterDefinition['inputConfig'] => {
+  if (!inputConfig || (inputConfig.control !== 'select' && inputConfig.control !== 'radio')) {
+    return inputConfig;
+  }
+  if (inputConfig.optionsSource.type !== 'dynamic' || !inputConfig.optionsSource.queryParams) {
+    return inputConfig;
+  }
+  const optionsSource = { ...inputConfig.optionsSource };
+  delete optionsSource.queryParams;
+  return { ...inputConfig, optionsSource };
+};
+
+const readNormalizedFilterInput = (
+  label: string,
+  raw: UnifiedFilterDefinition['inputConfig'],
+  warnings: string[],
+): UnifiedFilterDefinition['inputConfig'] => {
+  const normalized = normalizeInputConfigResult({ inputConfig: raw });
+  if (normalized.queryParamIssue) {
+    warnings.push(`filter:${label}:${normalized.queryParamIssue.code}`);
+  }
+  return normalized.config ?? raw;
+};
+
+const enforceOptionsQueryGraph = (
+  filters: UnifiedFilterDefinition[],
+  warnings: string[],
+): UnifiedFilterDefinition[] => {
+  const nodes = filters.map((filter) => ({
+    name: filter.id,
+    aliases: filter.key && filter.key !== filter.id ? [filter.key] : undefined,
+    queryParams: dynamicQueryParamsOf(filter.inputConfig),
+  }));
+  const known = filters.flatMap((filter) => [
+    { name: filter.id, type: filter.type },
+    ...(filter.key ? [{ name: filter.key, type: filter.type }] : []),
+  ]);
+  const issue = validateOptionsQueryParams(nodes, known);
+  if (!issue) return filters;
+  const involved = new Set<string>();
+  if ('path' in issue && issue.path) issue.path.forEach((name) => involved.add(name));
+  if ('name' in issue && issue.name) involved.add(issue.name);
+  warnings.push(`graph:${issue.code}`);
+  return filters.map((filter) => {
+    if (!involved.has(filter.id) && !(filter.key && involved.has(filter.key))) return filter;
+    return { ...filter, inputConfig: stripDynamicQueryParams(filter.inputConfig) };
+  });
+};
+
+const sanitizeLayoutQueryParams = (
+  layout: DashboardLayoutItem[],
+  warnings: string[],
+): DashboardLayoutItem[] => layout.map((item) => {
+  if (!isDashboardWidgetItem(item) || !item.valueConfig?.dataSourceParams?.length) return item;
+  let changed = false;
+  const dataSourceParams = item.valueConfig.dataSourceParams.map((param) => {
+    const normalized = normalizeInputConfigResult(param);
+    if (normalized.queryParamIssue) {
+      changed = true;
+      warnings.push(`param:${param.name}:${normalized.queryParamIssue.code}`);
+      return { ...param, inputConfig: normalized.config };
+    }
+    if (normalized.config && JSON.stringify(normalized.config) !== JSON.stringify(param.inputConfig ?? null)) {
+      changed = true;
+      return { ...param, inputConfig: normalized.config };
+    }
+    return param;
+  });
+  if (!changed) return item;
+  return { ...item, valueConfig: { ...item.valueConfig, dataSourceParams } };
+});
+
 const toFilterDefinition = (
   proposal: DashboardProposalFilter,
   id: string,
   order: number,
+  warnings: string[],
 ): UnifiedFilterDefinition => ({
   id,
   key: proposal.key || '',
@@ -277,7 +357,11 @@ const toFilterDefinition = (
   enabled: proposal.enabled !== false,
   inputMode: proposal.inputMode,
   options: proposal.options,
-  inputConfig: normalizeInputConfig({ inputConfig: proposal.inputConfig }) ?? proposal.inputConfig,
+  inputConfig: readNormalizedFilterInput(
+    proposal.key || id,
+    proposal.inputConfig,
+    warnings,
+  ),
 });
 
 const mergeFilters = (
@@ -285,6 +369,7 @@ const mergeFilters = (
   proposalFilters: DashboardProposalFilter[] | undefined,
   usedIds: Set<string>,
   allocateId: ApplyDashboardProposalInput['allocateId'],
+  warnings: string[],
 ) => {
   const incoming = proposalFilters || [];
   const incomingById = new Map(incoming.flatMap((item) => (item.id ? [[item.id, item] as const] : [])));
@@ -296,12 +381,15 @@ const mergeFilters = (
       kept.push({
         ...filter,
         order: readNumber(proposal.order) ?? filter.order,
-        inputConfig: normalizeInputConfig({ inputConfig: proposal.inputConfig ?? filter.inputConfig })
-          ?? filter.inputConfig,
+        inputConfig: readNormalizedFilterInput(
+          filter.key || filter.id,
+          proposal.inputConfig ?? filter.inputConfig,
+          warnings,
+        ) ?? filter.inputConfig,
       });
       return;
     }
-    kept.push(toFilterDefinition(proposal, filter.id, filter.order));
+    kept.push(toFilterDefinition(proposal, filter.id, filter.order, warnings));
   });
   const keptIds = new Set(kept.map((filter) => filter.id));
   let nextOrder = kept.reduce((maxOrder, filter) => Math.max(maxOrder, filter.order), -1) + 1;
@@ -309,7 +397,7 @@ const mergeFilters = (
     if (proposal.id && keptIds.has(proposal.id)) return;
     const id = allocateId(proposal.id, usedIds);
     usedIds.add(id);
-    kept.push(toFilterDefinition(proposal, id, nextOrder));
+    kept.push(toFilterDefinition(proposal, id, nextOrder, warnings));
     nextOrder += 1;
   });
   return kept;
@@ -422,12 +510,15 @@ export const applyDashboardProposal = (
     nextLayout.push(widget);
   });
 
-  const filters = mergeFilters(
+  const warnings: string[] = [];
+  const filters = enforceOptionsQueryGraph(mergeFilters(
     input.filters,
     Array.isArray(input.proposal.filters) ? input.proposal.filters : [],
     usedIds,
     input.allocateId,
-  );
+    warnings,
+  ), warnings);
+  const layoutWithQueryParams = sanitizeLayoutQueryParams(nextLayout, warnings);
   const otherConfig = isRecord(input.proposal.otherConfig) && Object.keys(input.proposal.otherConfig).length > 0
     ? input.proposal.otherConfig
     : undefined;
@@ -436,11 +527,12 @@ export const applyDashboardProposal = (
     : undefined;
   return {
     ok: true,
-    layout: nextLayout,
+    layout: layoutWithQueryParams,
     filters,
     filterValues: mergeFilterValues(input.filters, filters, input.filterValues),
     ...(otherConfig ? { otherConfig } : {}),
     ...(refreshInterval != null ? { refreshInterval } : {}),
+    ...(warnings.length ? { warnings } : {}),
   };
 };
 

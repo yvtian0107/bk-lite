@@ -82,6 +82,8 @@ interface ParamInputConfigEditorProps {
   componentSwitchEnabled?: boolean;
   componentSwitchOwner?: { name: string; label: string };
   editingParamName?: string;
+  /** 同名多行时，正在编辑的筛选 id。校验图用它做节点名。 */
+  editingNodeId?: string;
   queryParamRefCandidates?: QueryParamRefCandidate[];
   optionsQueryNodes?: OptionsQueryNode[];
 }
@@ -143,6 +145,7 @@ const describeQueryIssue = (
   if (issue.code === 'type') {
     return t('paramInput.dynamic.unbindableRef', undefined, { ref: issue.ref || '' });
   }
+  if (issue.code === 'ambiguous') return t('paramInput.dynamic.ambiguousRef');
   if (issue.code === 'cycle') return t('paramInput.dynamic.cycle', undefined, { path: (issue.path || []).join(' → ') });
   if (issue.code === 'depth') return t('paramInput.dynamic.depth', undefined, { path: (issue.path || []).join(' → ') });
   return t('paramInput.dynamic.invalidValue');
@@ -206,6 +209,7 @@ export const ParamInputConfigEditor: React.FC<ParamInputConfigEditorProps> = ({
   componentSwitchEnabled = false,
   componentSwitchOwner,
   editingParamName,
+  editingNodeId,
   queryParamRefCandidates = [],
   optionsQueryNodes = [],
 }) => {
@@ -563,6 +567,7 @@ export const ParamInputConfigEditor: React.FC<ParamInputConfigEditorProps> = ({
     });
     const storedParams = normalizeQueryParamsForStorage(draftParams);
     const paramName = editingParamName || 'current';
+    const nodeName = editingNodeId || paramName;
     if (isRejectedQueryParams(storedParams)) {
       const messageText = describeQueryIssue(t, storedParams.issue);
       setQueryParamError(messageText);
@@ -571,13 +576,18 @@ export const ParamInputConfigEditor: React.FC<ParamInputConfigEditorProps> = ({
     }
     const issue = validateOptionsQueryParams(
       [
-        ...optionsQueryNodes.filter((node) => node.name !== paramName),
-        { name: paramName, queryParams: storedParams.queryParams },
+        ...optionsQueryNodes.filter((node) => node.name !== nodeName),
+        {
+          name: nodeName,
+          aliases: editingNodeId && editingNodeId !== paramName ? [paramName] : undefined,
+          queryParams: storedParams.queryParams,
+        },
       ],
       [
-        paramName,
+        { name: nodeName },
+        ...(editingNodeId && editingNodeId !== paramName ? [paramName] : []),
         ...queryParamRefCandidates.map((item) => ({ name: item.name, type: item.type })),
-        ...optionsQueryNodes.map((node) => node.name),
+        ...optionsQueryNodes.flatMap((node) => [node.name, ...(node.aliases ?? [])]),
       ],
     );
     if (issue) {
@@ -913,12 +923,14 @@ export const ParamInputConfigEditor: React.FC<ParamInputConfigEditorProps> = ({
                               className="min-w-0 flex-1"
                               placeholder={t('paramInput.dynamic.reference')}
                               options={queryParamRefCandidates
-                                .filter((item) => item.name && item.name !== editingParamName)
+                                .filter((item) => (
+                                  item.name
+                                  && item.name !== editingParamName
+                                  && item.name !== editingNodeId
+                                ))
                                 .map((item) => ({
                                   value: item.name,
-                                  label: item.label && item.label !== item.name
-                                    ? `${item.label} (${item.name})`
-                                    : item.name,
+                                  label: item.label || item.name,
                                 }))}
                               onChange={(refName) => {
                                 setQueryParamRows((prev) => prev.map((item) => (

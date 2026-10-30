@@ -106,7 +106,7 @@ describe('scan unified filter params', () => {
       .toContain('monitor/get_rooms');
   });
 
-  it('keeps the legacy id on one split row when the stored identity matches none', () => {
+  it('leaves the legacy id unresolved when the stored identity matches none', () => {
     const stored: UnifiedFilterDefinition[] = [{
       id: 'device_id__string',
       key: 'device_id',
@@ -127,8 +127,12 @@ describe('scan unified filter params', () => {
         inputConfig: roomSource('monitor/devices'),
       }]),
     ], stored);
-    expect(scanned.map((item) => item.id)).toContain('device_id__string');
-    expect(scanned.filter((item) => item.id.startsWith('device_id__string__'))).toHaveLength(1);
+    const ids = scanned.map((item) => item.id);
+    expect(ids).not.toContain('device_id__string');
+    expect(ids).toHaveLength(2);
+    ids.forEach((id) => {
+      expect(id).toMatch(/^device_id__string__[0-9a-f]{8}$/);
+    });
   });
 
   it('does not merge different option sources just because they reference the same upstream', () => {

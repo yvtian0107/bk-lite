@@ -284,6 +284,165 @@ test('applies page settings only when the proposal names them', () => {
   assert.equal(untouched.refreshInterval, undefined);
 });
 
+const dynamicFilter = (
+  id: string,
+  key: string,
+  queryParams: Record<string, unknown>,
+): UnifiedFilterDefinition => ({
+  id,
+  key,
+  name: key,
+  type: 'string',
+  defaultValue: null,
+  order: 0,
+  enabled: true,
+  inputConfig: {
+    control: 'select',
+    optionsSource: {
+      type: 'dynamic',
+      sourceId: 9,
+      valueField: 'id',
+      labelField: 'name',
+      queryParams,
+    },
+  },
+});
+
+const dynamicQuery = (filter: UnifiedFilterDefinition | undefined) => {
+  const config = filter?.inputConfig;
+  if (!config || config.control !== 'select' || config.optionsSource.type !== 'dynamic') return undefined;
+  return config.optionsSource.queryParams;
+};
+
+test('drops concatenated query params and warns instead of storing them', () => {
+  const result = applyDashboardProposal({
+    layout: [{
+      i: 'card-9',
+      x: 0,
+      y: 0,
+      w: 4,
+      h: 4,
+      name: '设备',
+      valueConfig: {
+        chartType: 'single',
+        dataSource: 9,
+        dataSourceParams: [{
+          name: 'device_id',
+          alias_name: '设备',
+          type: 'string',
+          filterType: 'filter',
+          value: null,
+          inputConfig: {
+            control: 'select',
+            optionsSource: {
+              type: 'dynamic',
+              sourceId: 9,
+              valueField: 'id',
+              labelField: 'name',
+              queryParams: { room_id: 'pre-$site$' },
+            },
+          },
+        }],
+      },
+    }],
+    filters: [],
+    filterValues: {},
+    allocateId,
+    proposal: {
+      schemaVersion: '1.0',
+      layout: [{
+        i: 'card-9',
+        valueConfig: {
+          chartType: 'single',
+          dataSource: 9,
+          dataSourceParams: [{
+            name: 'device_id',
+            alias_name: '设备',
+            type: 'string',
+            filterType: 'filter',
+            value: null,
+            inputConfig: {
+              control: 'select',
+              optionsSource: {
+                type: 'dynamic',
+                sourceId: 9,
+                valueField: 'id',
+                labelField: 'name',
+                queryParams: { room_id: 'pre-$site$' },
+              },
+            },
+          }],
+        },
+      }],
+      filters: [dynamicFilter('device_id__string', 'device_id', { room_id: 'pre-$site$' })],
+    },
+  });
+
+  assert.equal(result.ok, true);
+  if (!result.ok) return;
+  assert.equal(dynamicQuery(result.filters[0]), undefined);
+  assert.ok(result.warnings?.includes('filter:device_id:concat'));
+  const card = result.layout.find((item) => item.i === 'card-9');
+  const param = card && 'valueConfig' in card
+    ? card.valueConfig?.dataSourceParams?.[0]
+    : undefined;
+  const paramConfig = param?.inputConfig;
+  assert.equal(
+    paramConfig && paramConfig.control === 'select' && paramConfig.optionsSource.type === 'dynamic'
+      ? paramConfig.optionsSource.queryParams
+      : 'kept',
+    undefined,
+  );
+  assert.ok(result.warnings?.includes('param:device_id:concat'));
+});
+
+test('drops a query-param cycle with the same validator and warns', () => {
+  const result = applyDashboardProposal({
+    layout: [],
+    filters: [],
+    filterValues: {},
+    allocateId,
+    proposal: {
+      schemaVersion: '1.0',
+      layout: [],
+      filters: [
+        dynamicFilter('device_id__string', 'device_id', { rack_id: { ref: 'rack_id' } }),
+        dynamicFilter('rack_id__string', 'rack_id', { device_id: { ref: 'device_id' } }),
+      ],
+    },
+  });
+
+  assert.equal(result.ok, true);
+  if (!result.ok) return;
+  assert.equal(dynamicQuery(result.filters[0]), undefined);
+  assert.equal(dynamicQuery(result.filters[1]), undefined);
+  assert.ok(result.warnings?.includes('graph:cycle'));
+});
+
+test('drops a query-param chain longer than three nodes and warns', () => {
+  const result = applyDashboardProposal({
+    layout: [],
+    filters: [],
+    filterValues: {},
+    allocateId,
+    proposal: {
+      schemaVersion: '1.0',
+      layout: [],
+      filters: [
+        dynamicFilter('room_id__string', 'room_id', {}),
+        dynamicFilter('device_id__string', 'device_id', { room_id: { ref: 'room_id' } }),
+        dynamicFilter('rack_id__string', 'rack_id', { device_id: { ref: 'device_id' } }),
+        dynamicFilter('port_id__string', 'port_id', { rack_id: { ref: 'rack_id' } }),
+      ],
+    },
+  });
+
+  assert.equal(result.ok, true);
+  if (!result.ok) return;
+  assert.ok(result.warnings?.includes('graph:depth'));
+  assert.equal(dynamicQuery(result.filters.find((item) => item.key === 'port_id')), undefined);
+});
+
 test('directory node id matches the open dashboard numeric id', () => {
   assert.equal(proposalTargetsDashboard('current', 426), true);
   assert.equal(proposalTargetsDashboard('dashboard_426', 426), true);

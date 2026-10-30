@@ -133,7 +133,7 @@ export const buildFiltersFromDashboardLayout = ({
         enabled: existing?.enabled ?? true,
         inputMode: existing?.inputMode,
         options: existing?.options,
-        inputConfig: existing ? existing.inputConfig : param.inputConfig,
+        inputConfig: existing?.inputConfig ?? param.inputConfig,
       };
     },
   );

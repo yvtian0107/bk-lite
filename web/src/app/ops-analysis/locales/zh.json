@@ -2046,6 +2046,9 @@
       "selfRef": "查询入参不能引用自己",
       "missingRef": "引用的参数不存在：{ref}",
       "unbindableRef": "引用的参数不能作为筛选值：{ref}",
+      "ambiguousRef": "同名筛选有多条，请按来源选择具体一项",
+      "invalidUpstream": "查询入参无法对应到唯一的上游筛选",
+      "proposalQueryIgnored": "部分查询入参无效，已忽略",
       "cycle": "查询入参存在循环：{path}",
       "depth": "查询入参依赖超过 3 级：{path}",
       "invalidValue": "查询入参值无效"

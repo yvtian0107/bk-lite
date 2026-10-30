@@ -28,6 +28,7 @@ interface ParamInputControlProps {
   optionsNotifyKey?: string;
   resolvedQueryParams?: Record<string, unknown>;
   optionsBlocked?: boolean;
+  optionsBlockReason?: 'empty' | 'invalid';
   optionsQuerySignature?: string;
 }
 
@@ -45,6 +46,7 @@ export const ParamInputControl: React.FC<ParamInputControlProps> = ({
   optionsNotifyKey = '',
   resolvedQueryParams,
   optionsBlocked = false,
+  optionsBlockReason,
   optionsQuerySignature = '',
 }) => {
   const { t } = useTranslation();
@@ -52,6 +54,7 @@ export const ParamInputControl: React.FC<ParamInputControlProps> = ({
     reloadKey: optionsNotifyKey,
     resolvedQueryParams,
     optionsBlocked,
+    optionsBlockReason,
   });
   const onOptionsResolvedRef = useRef(onOptionsResolved);
   const onOptionsFailedRef = useRef(onOptionsFailed);
@@ -133,7 +136,9 @@ export const ParamInputControl: React.FC<ParamInputControlProps> = ({
       <Select
         disabled
         value={undefined}
-        placeholder={t('paramInput.dynamic.upstreamRequired')}
+        placeholder={optionsBlockReason === 'invalid'
+          ? t('paramInput.dynamic.invalidUpstream')
+          : t('paramInput.dynamic.upstreamRequired')}
         style={{ width: '100%', ...style }}
       />
     );

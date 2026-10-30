@@ -19,9 +19,11 @@ vi.mock('@/app/ops-analysis/api/dataSource', () => ({
 
 vi.mock('@/utils/i18n', () => ({
   useTranslation: () => ({
-    t: (key: string) => (
-      key === 'paramInput.dynamic.upstreamRequired' ? '请先选择上游' : key
-    ),
+    t: (key: string) => {
+      if (key === 'paramInput.dynamic.upstreamRequired') return '请先选择上游';
+      if (key === 'paramInput.dynamic.invalidUpstream') return '查询入参无法对应到唯一的上游筛选';
+      return key;
+    },
   }),
 }));
 
@@ -68,8 +70,9 @@ describe('option query cascade', () => {
     getSourceDataByApiId.mockReset();
   });
 
-  it('reloads downstream options from the draft and does not search when the old value is cleared', async () => {
+  it('reloads downstream options from the draft and writes the first correction without searching', async () => {
     const onSearch = vi.fn();
+    const onApplyInitial = vi.fn();
     getSourceDataByApiId.mockResolvedValue({
       data: [{ id: 'dev-2', name: '设备2' }],
       warnings: [],
@@ -83,6 +86,7 @@ describe('option query cascade', () => {
           [device.id]: 'missing',
         }}
         onSearch={onSearch}
+        onApplyInitial={onApplyInitial}
       />,
     );
 
@@ -90,9 +94,10 @@ describe('option query cascade', () => {
       expect(getSourceDataByApiId).toHaveBeenCalledWith(9, { room_id: 'room-1' }, undefined);
     });
     await waitFor(() => {
-      expect(document.querySelector('.ant-spin')).toBeNull();
+      expect(onApplyInitial).toHaveBeenCalled();
     });
     expect(onSearch).not.toHaveBeenCalled();
+    expect(onApplyInitial.mock.calls.at(-1)?.[0]?.[device.id]).toBeNull();
     expect(screen.queryByText('请先选择上游')).toBeNull();
   });
 
@@ -112,5 +117,81 @@ describe('option query cascade', () => {
     expect(await screen.findByText('请先选择上游')).not.toBeNull();
     expect(getSourceDataByApiId).not.toHaveBeenCalled();
     expect(onSearch).not.toHaveBeenCalled();
+  });
+
+  it('uses the draft of the filter id when several rows share a name', async () => {
+    const roomOptions = (value: string): UnifiedFilterDefinition['inputConfig'] => ({
+      control: 'select',
+      optionsSource: { type: 'static', staticItems: [{ label: value, value }] },
+    });
+    const roomA: UnifiedFilterDefinition = {
+      ...room,
+      id: 'site_id__string__11111111',
+      name: '机房 A',
+      inputConfig: roomOptions('room-a'),
+    };
+    const roomB: UnifiedFilterDefinition = {
+      ...room,
+      id: 'site_id__string__22222222',
+      name: '机房 B',
+      order: 1,
+      inputConfig: roomOptions('room-b'),
+    };
+    const byId: UnifiedFilterDefinition = {
+      ...device,
+      inputConfig: {
+        control: 'select',
+        optionsSource: {
+          type: 'dynamic',
+          sourceId: 9,
+          valueField: 'id',
+          labelField: 'name',
+          queryParams: { room_id: { ref: roomB.id } },
+        },
+      },
+    };
+    getSourceDataByApiId.mockResolvedValue({
+      data: [{ id: 'dev-2', name: '设备2' }],
+      warnings: [],
+    });
+    render(
+      <UnifiedFilterBar
+        definitions={[roomA, roomB, byId]}
+        values={{
+          [roomA.id]: 'room-a',
+          [roomB.id]: 'room-b',
+          [byId.id]: null,
+        }}
+        onSearch={vi.fn()}
+      />,
+    );
+    await waitFor(() => {
+      expect(getSourceDataByApiId).toHaveBeenCalledWith(9, { room_id: 'room-b' }, undefined);
+    });
+  });
+
+  it('does not request options when a bare name matches more than one row', async () => {
+    const roomA: UnifiedFilterDefinition = {
+      ...room,
+      id: 'site_id__string__11111111',
+    };
+    const roomB: UnifiedFilterDefinition = {
+      ...room,
+      id: 'site_id__string__22222222',
+      order: 1,
+    };
+    render(
+      <UnifiedFilterBar
+        definitions={[roomA, roomB, device]}
+        values={{
+          [roomA.id]: 'room-a',
+          [roomB.id]: 'room-b',
+          [device.id]: 'dev-2',
+        }}
+        onSearch={vi.fn()}
+      />,
+    );
+    expect(await screen.findByText('查询入参无法对应到唯一的上游筛选')).not.toBeNull();
+    expect(getSourceDataByApiId).not.toHaveBeenCalled();
   });
 });

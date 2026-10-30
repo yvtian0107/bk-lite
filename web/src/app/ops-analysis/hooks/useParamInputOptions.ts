@@ -23,6 +23,7 @@ interface UseParamInputOptionsRuntime {
   reloadKey?: string;
   resolvedQueryParams?: Record<string, unknown>;
   optionsBlocked?: boolean;
+  optionsBlockReason?: 'empty' | 'invalid';
   getSourceDataByApiId?: (
     id: number,
     params?: unknown,
@@ -59,12 +60,14 @@ export const useParamInputOptions = (
   const enabled = runtime.enabled ?? true;
   const reloadKey = runtime.reloadKey ?? '';
   const optionsBlocked = Boolean(runtime.optionsBlocked);
+  const optionsBlockReason = runtime.optionsBlockReason;
   const resolvedQueryParams = runtime.resolvedQueryParams;
   const querySignature = stableStringify(resolvedQueryParams ?? {});
   const inputKey = getParamInputConfigKey(inputConfig);
   const loadSignature = buildOptionsLoadSignature(inputConfig, {
     resolvedParams: resolvedQueryParams,
     blocked: optionsBlocked,
+    blockReason: optionsBlockReason,
   });
   const knownSourcesKey = (loaderOptions?.knownDataSources ?? [])
     .map((item) => `${item.id}:${item.rest_api ?? ''}`)
@@ -100,6 +103,7 @@ export const useParamInputOptions = (
       const nextKey = buildOptionsLoadSignature(configRef.current, {
         resolvedParams: runtimeRef.current.resolvedQueryParams,
         blocked: runtimeRef.current.optionsBlocked,
+        blockReason: runtimeRef.current.optionsBlockReason,
       });
       reloadKeyRef.current = reloadKey;
       loaderRef.current!.dropSettledCache(nextKey);
@@ -112,6 +116,7 @@ export const useParamInputOptions = (
     const request = {
       resolvedParams: runtimeRef.current.resolvedQueryParams,
       blocked: runtimeRef.current.optionsBlocked,
+      blockReason: runtimeRef.current.optionsBlockReason,
     };
     const load = loaderRef.current!.load(configRef.current, request);
     setResolved({ key: loadSignature, state: load.initial });
@@ -123,7 +128,7 @@ export const useParamInputOptions = (
     return () => {
       active = false;
     };
-  }, [enabled, inputKey, knownSourcesKey, loadSignature, optionsBlocked, querySignature, reloadKey]);
+  }, [enabled, inputKey, knownSourcesKey, loadSignature, optionsBlockReason, optionsBlocked, querySignature, reloadKey]);
 
   const state = reloadChanged
     ? { status: 'loading' as const, options: [] as [] }

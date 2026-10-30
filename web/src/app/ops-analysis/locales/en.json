@@ -2046,6 +2046,9 @@
       "selfRef": "A query parameter cannot reference itself",
       "missingRef": "Referenced parameter does not exist: {ref}",
       "unbindableRef": "Referenced parameter cannot be used as a filter value: {ref}",
+      "ambiguousRef": "Several filters share this name. Choose one by its source.",
+      "invalidUpstream": "The query input does not match a single upstream filter",
+      "proposalQueryIgnored": "Some query parameters were invalid and were ignored",
       "cycle": "Query parameters contain a cycle: {path}",
       "depth": "Query parameter dependencies exceed 3 levels: {path}",
       "invalidValue": "Invalid query parameter value"

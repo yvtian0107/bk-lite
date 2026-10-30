@@ -43,7 +43,11 @@ import {
 } from '@/app/ops-analysis/utils/widgetDataTransform';
 import { getDateRangeTimezone } from '@/app/ops-analysis/utils/dateRange';
 import { isBindableDataSourceParamType } from '@/app/ops-analysis/utils/dataSourceParamContract';
-import { dynamicQueryParamsOf } from '@/app/ops-analysis/utils/optionsQueryParamRefs';
+import {
+  buildOptionsQueryRefChoices,
+  dynamicQueryParamsOf,
+} from '@/app/ops-analysis/utils/optionsQueryParamRefs';
+import { optionsSourceSummary } from '@/app/ops-analysis/utils/optionsSourceIdentity';
 import {
   clearComponentParamSwitch,
   findComponentSwitchParams,
@@ -158,32 +162,40 @@ const optionQueryEditorContext = (
 ) => {
   const siblings = params.filter((param) =>
     param.name !== editingName && isBindableDataSourceParamType(param.type));
-  const seen = new Set(siblings.map((param) => param.name));
   const canvas = filters.filter((definition) =>
     definition.enabled !== false
     && Boolean(definition.key)
     && definition.key !== editingName
-    && !seen.has(definition.key));
+    && definition.id !== editingName);
+  const choices = buildOptionsQueryRefChoices([
+    ...siblings.map((param) => ({
+      id: param.name,
+      key: param.name,
+      label: param.alias_name,
+      type: param.type,
+    })),
+    ...canvas.map((definition) => ({
+      id: definition.id,
+      key: definition.key,
+      label: definition.name,
+      type: definition.type,
+      sourceHint: optionsSourceSummary(definition.inputConfig),
+    })),
+  ]);
   return {
-    queryParamRefCandidates: [
-      ...siblings.map((param) => ({
-        name: param.name,
-        label: param.alias_name,
-        type: param.type,
-      })),
-      ...canvas.map((definition) => ({
-        name: definition.key,
-        label: definition.name,
-        type: definition.type,
-      })),
-    ],
+    queryParamRefCandidates: choices.map((choice) => ({
+      name: choice.ref,
+      label: choice.label,
+      type: choice.type,
+    })),
     optionsQueryNodes: [
       ...siblings.map((param) => ({
         name: param.name,
         queryParams: dynamicQueryParamsOf(param.inputConfig),
       })),
       ...canvas.map((definition) => ({
-        name: definition.key,
+        name: definition.id,
+        aliases: definition.key !== definition.id ? [definition.key] : undefined,
         queryParams: dynamicQueryParamsOf(definition.inputConfig),
       })),
     ],

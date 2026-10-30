@@ -64,7 +64,11 @@ import type {
   DatasourceItem,
   InputControlConfig,
 } from '@/app/ops-analysis/types/dataSource';
-import { dynamicQueryParamsOf } from '@/app/ops-analysis/utils/optionsQueryParamRefs';
+import {
+  buildOptionsQueryRefChoices,
+  dynamicQueryParamsOf,
+} from '@/app/ops-analysis/utils/optionsQueryParamRefs';
+import { optionsSourceSummary } from '@/app/ops-analysis/utils/optionsSourceIdentity';
 import {
   findReusableFilterDefinition,
   scanDataSourceFilterParams,
@@ -765,13 +769,27 @@ const UnifiedFilterConfigModal: React.FC<UnifiedFilterConfigModalProps> = ({
         open={inputConfigModalOpen}
         value={getEditingFilterInputConfig()}
         editingParamName={definitions.find((item) => item.id === editingFilterId)?.key}
-        queryParamRefCandidates={definitions
-          .filter((item) => item.id !== editingFilterId)
-          .map((item) => ({ name: item.key, label: item.name, type: item.type }))}
+        editingNodeId={editingFilterId ?? undefined}
+        queryParamRefCandidates={buildOptionsQueryRefChoices(
+          definitions
+            .filter((item) => item.id !== editingFilterId)
+            .map((item) => ({
+              id: item.id,
+              key: item.key,
+              label: item.name,
+              type: item.type,
+              sourceHint: optionsSourceSummary(item.inputConfig),
+            })),
+        ).map((choice) => ({
+          name: choice.ref,
+          label: choice.label,
+          type: choice.type,
+        }))}
         optionsQueryNodes={definitions
           .filter((item) => item.id !== editingFilterId)
           .map((item) => ({
-            name: item.key,
+            name: item.id,
+            aliases: item.key && item.key !== item.id ? [item.key] : undefined,
             queryParams: dynamicQueryParamsOf(item.inputConfig),
           }))}
         onConfirm={handleInputConfigConfirm}

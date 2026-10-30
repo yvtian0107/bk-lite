@@ -145,18 +145,6 @@ export const assignFilterDefinitionIds = (
     return { ...group, id, suggestedName };
   });
 
-  const legacyHost = new Map<string, number>();
-  assigned.forEach((group, index) => {
-    const bucket = `${group.key}__${group.type}`;
-    if (isBoardSharedFilterDimension(group) || legacyHost.has(bucket)) return;
-    const siblings = assigned.filter((item) => item.key === group.key && item.type === group.type);
-    if (siblings.length <= 1 || siblings.some((item) => item.id === bucket)) return;
-    if (!existing.some((item) => item.id === bucket)) return;
-    legacyHost.set(bucket, index);
-  });
-  legacyHost.forEach((index, bucket) => {
-    assigned[index] = { ...assigned[index], id: bucket };
-  });
   return assigned;
 };
 

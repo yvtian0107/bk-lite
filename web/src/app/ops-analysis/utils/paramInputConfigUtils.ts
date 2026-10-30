@@ -3,7 +3,11 @@ import type {
   InputControlConfig,
   InputOption,
 } from '@/app/ops-analysis/types/dataSource';
-import { normalizeQueryParamsForStorage } from '@/app/ops-analysis/utils/optionsQueryParamRefs';
+import {
+  isRejectedQueryParams,
+  normalizeQueryParamsForStorage,
+  type OptionsQueryValidationIssue,
+} from '@/app/ops-analysis/utils/optionsQueryParamRefs';
 
 export const ORGANIZATION_PARAM_RUNTIME_KEY = 'organization_param';
 
@@ -24,46 +28,64 @@ export const isOptionInputControl = (
 ): config is Extract<InputControlConfig, { control: 'select' | 'radio' }> =>
   config?.control === 'select' || config?.control === 'radio';
 
+export interface NormalizeInputConfigResult {
+  config?: InputControlConfig;
+  queryParamIssue?: OptionsQueryValidationIssue;
+}
+
 const normalizeStoredQueryParams = (
   config: InputControlConfig,
-): InputControlConfig => {
-  if (config.control !== 'select' && config.control !== 'radio') return config;
-  if (config.optionsSource.type !== 'dynamic' || !config.optionsSource.queryParams) return config;
+): NormalizeInputConfigResult => {
+  if (config.control !== 'select' && config.control !== 'radio') return { config };
+  if (config.optionsSource.type !== 'dynamic' || !config.optionsSource.queryParams) return { config };
   const normalized = normalizeQueryParamsForStorage(config.optionsSource.queryParams);
-  if (!normalized.ok) return config;
+  if (isRejectedQueryParams(normalized)) {
+    const optionsSource: DynamicOptionsSource = { ...config.optionsSource };
+    delete optionsSource.queryParams;
+    return {
+      config: { ...config, optionsSource },
+      queryParamIssue: normalized.issue,
+    };
+  }
   const queryParams = normalized.queryParams;
   const current = config.optionsSource.queryParams;
-  if (JSON.stringify(queryParams ?? null) === JSON.stringify(current)) return config;
+  if (JSON.stringify(queryParams ?? null) === JSON.stringify(current)) return { config };
   const optionsSource: DynamicOptionsSource = { ...config.optionsSource };
   if (queryParams) optionsSource.queryParams = queryParams;
   else delete optionsSource.queryParams;
-  return { ...config, optionsSource };
+  return { config: { ...config, optionsSource } };
 };
 
-export const normalizeInputConfig = (
+export const normalizeInputConfigResult = (
   entity?: LegacyOptionsEntity | null,
-): InputControlConfig | undefined => {
-  if (!entity) return undefined;
+): NormalizeInputConfigResult => {
+  if (!entity) return {};
   if (entity.inputConfig) {
     if (entity.inputConfig.control === 'organization') {
-      return { control: 'organization' };
+      return { config: { control: 'organization' } };
     }
     return normalizeStoredQueryParams(entity.inputConfig as InputControlConfig);
   }
   if (entity.inputMode === 'organization') {
-    return { control: 'organization' };
+    return { config: { control: 'organization' } };
   }
   if (Array.isArray(entity.options) && entity.options.length > 0) {
     return {
-      control: 'select',
-      optionsSource: {
-        type: 'static',
-        staticItems: entity.options,
+      config: {
+        control: 'select',
+        optionsSource: {
+          type: 'static',
+          staticItems: entity.options,
+        },
       },
     };
   }
-  return undefined;
+  return {};
 };
+
+export const normalizeInputConfig = (
+  entity?: LegacyOptionsEntity | null,
+): InputControlConfig | undefined => normalizeInputConfigResult(entity).config;
 
 export const isOrganizationControl = (
   entity?: LegacyOptionsEntity | null,

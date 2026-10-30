@@ -1,7 +1,15 @@
 # 运营分析 · 选项查询参数级联 — 实现方案
 
 - 最近更新：2026-10-30
-- 状态：产品已拍板，已实现（2026-10-30）
+- 状态：产品已拍板，已实现（2026-10-30）；同日按审查修订收口引用、非法入参和打开校正
+
+## 审查修订（2026-10-30）
+
+- 同名拆成多行时，查询入参 `ref` 存筛选 `id`，下拉展示来源摘要。运行时按 id 读草稿，校验图按筛 id 建边。仍只存参数名且同名多于一行时，禁止保存并提示。
+- `normalizeStoredQueryParams` 失败时丢掉非法 `queryParams`，不当成功写入。提案应用同样丢掉非法入参并给出警告；环和级数走 `validateOptionsQueryParams`。运行时 `blocked` 区分上游为空（`empty`）和入参非法（`invalid`）。
+- 选项第一次回来时，把校正写入已应用初值，不触发搜索。之后的校正只改草稿。报表打开时保留传入的动态选项值，不再先清空再套默认。
+- 存量 `key__type` 只在选项源身份与某一行完全一致时留给该行。对不上时旧 id 不挂到扫描到的第一行，新行使用摘要 id，绑定按跟随规则重建。
+- 内置 3D 机房筛（`server_room_id`）选项回来后仍会选中第一项并 `publishValues` / 搜索。这是 3D 场景的例外：场景需要立刻有一个机房。其它筛选只写草稿，并在首次校正时写入已应用初值。
 - 关联决策记忆：`docs/design/product-decisions/ops-analysis-unified-filter.md`（其中「级联下拉」原为明确后置，由本文接续）
 - 范围模块：`web/src/app/ops-analysis`
 - 实现入口包：`components/unifiedFilter/`（页面实际 import）；`components/ops-analysis-unified-filter/` 为并存旧包，改动需评估是否同步或删死引用，不以旧包为主路径
@@ -171,7 +179,10 @@ optionsSourceIdentity(inputConfig) =>
 
 1. 只写 local draft（`setLocalValues` / 等价）；  
 2. **不**调用 `onSearch`；  
-3. 与「用户点搜索」分离。
+3. 与「用户点搜索」分离；  
+4. 该筛的选项**第一次**回来时，另把校正写入已应用初值（`onApplyInitial`），仍不增加搜索版本。
+
+内置 3D 机房筛除外：空值时仍选中第一项并 `publishValues`，以便 3D 场景立刻有机房。
 
 若当前存在「打开盘时 defer 动态默认值再 reconcile 且误触发搜索」的路径，一并收口为「只同步 draft + applied 初值策略按 D2，不额外打图表请求风暴」。
 

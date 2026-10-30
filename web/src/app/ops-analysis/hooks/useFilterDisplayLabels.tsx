@@ -26,6 +26,8 @@ import { getParamInputConfigKey } from '@/app/ops-analysis/utils/paramInputOptio
 import { isDynamicOptionFilter } from '@/app/ops-analysis/utils/optionBackedFilterValue';
 import {
   dynamicQueryParamsOf,
+  OPTIONS_QUERY_INVALID,
+  readOptionsQueryUpstream,
   resolveOptionsQueryParams,
   stableStringify,
 } from '@/app/ops-analysis/utils/optionsQueryParamRefs';
@@ -93,8 +95,14 @@ const DynamicOptionLabelLoader = ({
   const queryResolution = useMemo(() => resolveOptionsQueryParams(
     dynamicQueryParamsOf(definition.inputConfig),
     (ref) => {
-      const upstream = definitions.find((item) => item.enabled !== false && item.key === ref);
-      return upstream ? values[upstream.id] : undefined;
+      const upstream = readOptionsQueryUpstream(
+        ref,
+        definitions,
+        (id) => values[id],
+      );
+      if (upstream.found === false) return undefined;
+      if (upstream.invalid === true) return OPTIONS_QUERY_INVALID;
+      return upstream.value;
     },
   ), [definition.inputConfig, definitions, values]);
   const state = useParamInputOptions(definition.inputConfig, {
@@ -104,6 +112,7 @@ const DynamicOptionLabelLoader = ({
     reloadKey,
     resolvedQueryParams: queryResolution.params,
     optionsBlocked: queryResolution.blocked,
+    optionsBlockReason: queryResolution.blockReason,
   });
 
   useEffect(() => {

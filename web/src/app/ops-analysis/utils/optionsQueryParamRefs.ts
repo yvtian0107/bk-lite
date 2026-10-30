@@ -16,6 +16,7 @@ export type OptionsQueryValidationIssue =
   | { code: 'self'; name: string }
   | { code: 'missing'; name: string; ref: string }
   | { code: 'type'; name: string; ref: string }
+  | { code: 'ambiguous'; name: string; ref: string }
   | { code: 'cycle'; path: string[] }
   | { code: 'depth'; path: string[] };
 
@@ -25,15 +26,73 @@ export interface OptionsQueryKnownName {
 }
 
 export interface OptionsQueryNode {
+  /** 图节点。同名多行时用 definition.id，唯一行可用参数名。 */
   name: string;
+  /** 参数名。多个节点共用同一个别名时，按参数名引用会被拒绝。 */
+  aliases?: string[];
   queryParams?: Record<string, unknown>;
 }
 
+export type OptionsQueryBlockReason = 'empty' | 'invalid';
+
 export interface ResolvedOptionsQuery {
   blocked: boolean;
+  blockReason?: OptionsQueryBlockReason;
   params: Record<string, unknown>;
   missingRefs: string[];
 }
+
+/** lookup 返回这个标记表示引用无法对应到唯一上游，而不是上游值为空。 */
+export const OPTIONS_QUERY_INVALID = Symbol('optionsQueryInvalid');
+
+export interface OptionsQueryRefTarget {
+  id: string;
+  key: string;
+  label?: string;
+  type?: string;
+  sourceHint?: string;
+}
+
+export interface OptionsQueryRefChoice {
+  ref: string;
+  label: string;
+  type?: string;
+}
+
+export const buildOptionsQueryRefChoices = (
+  targets: OptionsQueryRefTarget[],
+): OptionsQueryRefChoice[] => {
+  const counts = new Map<string, number>();
+  targets.forEach((target) => {
+    counts.set(target.key, (counts.get(target.key) ?? 0) + 1);
+  });
+  return targets.map((target) => {
+    const ambiguous = (counts.get(target.key) ?? 0) > 1;
+    const hint = target.sourceHint?.trim();
+    const base = target.label && target.label !== target.key
+      ? `${target.label} (${target.key})`
+      : target.key;
+    return {
+      ref: ambiguous ? target.id : target.key,
+      label: ambiguous && hint ? `${base} · ${hint}` : base,
+      type: target.type,
+    };
+  });
+};
+
+export const readOptionsQueryUpstream = (
+  ref: string,
+  definitions: Array<{ id: string; key: string; enabled?: boolean }>,
+  readValue: (id: string) => unknown,
+): { found: true; invalid: true } | { found: true; invalid: false; value: unknown } | { found: false } => {
+  const enabled = definitions.filter((item) => item.enabled !== false);
+  const byId = enabled.find((item) => item.id === ref);
+  if (byId) return { found: true, invalid: false, value: readValue(byId.id) };
+  const byKey = enabled.filter((item) => item.key === ref);
+  if (byKey.length > 1) return { found: true, invalid: true };
+  if (byKey.length === 1) return { found: true, invalid: false, value: readValue(byKey[0].id) };
+  return { found: false };
+};
 
 export const stableStringify = (value: unknown): string => {
   if (value === null || typeof value !== 'object') return JSON.stringify(value);
@@ -155,15 +214,36 @@ export const canonicalQueryParams = (
   };
 };
 
-const graphFromNodes = (nodes: OptionsQueryNode[]): Map<string, string[]> => {
+const nodesForRef = (nodes: OptionsQueryNode[], ref: string): OptionsQueryNode[] => {
+  const direct = nodes.filter((node) => node.name === ref);
+  const aliased = nodes.filter((node) => node.aliases?.includes(ref) && node.name !== ref);
+  return [...direct, ...aliased];
+};
+
+const graphFromNodes = (
+  nodes: OptionsQueryNode[],
+): { graph: Map<string, string[]>; issue: OptionsQueryValidationIssue | null } => {
   const graph = new Map<string, string[]>();
-  nodes.forEach((node) => {
-    if (!node.name) return;
-    const refs = collectQueryParamRefs(node.queryParams);
-    const merged = new Set([...(graph.get(node.name) ?? []), ...refs]);
-    graph.set(node.name, Array.from(merged));
-  });
-  return graph;
+  for (const node of nodes) {
+    if (!node.name) continue;
+    const edges = new Set(graph.get(node.name) ?? []);
+    for (const ref of collectQueryParamRefs(node.queryParams)) {
+      const targets = nodesForRef(nodes, ref);
+      if (targets.length > 1) {
+        return { graph, issue: { code: 'ambiguous', name: node.name, ref } };
+      }
+      if (targets.length === 1) {
+        if (targets[0].name === node.name) {
+          return { graph, issue: { code: 'self', name: node.name } };
+        }
+        edges.add(targets[0].name);
+        continue;
+      }
+      edges.add(ref);
+    }
+    graph.set(node.name, Array.from(edges));
+  }
+  return { graph, issue: null };
 };
 
 export const validateOptionsQueryParams = (
@@ -196,8 +276,16 @@ export const validateOptionsQueryParams = (
     for (const node of nodes) {
       for (const ref of collectQueryParamRefs(node.queryParams)) {
         if (ref === node.name) return { code: 'self', name: node.name };
-        if (!known.has(ref)) return { code: 'missing', name: node.name, ref };
-        const targetType = known.get(ref);
+        const targets = nodesForRef(nodes, ref);
+        if (targets.length > 1) return { code: 'ambiguous', name: node.name, ref };
+        if (targets.length === 1 && targets[0].name === node.name) {
+          return { code: 'self', name: node.name };
+        }
+        const knownRef = targets.length === 1 ? targets[0].name : ref;
+        if (!known.has(ref) && !known.has(knownRef) && targets.length === 0) {
+          return { code: 'missing', name: node.name, ref };
+        }
+        const targetType = known.get(ref) || known.get(knownRef);
         if (targetType && !isBindableDataSourceParamType(targetType)) {
           return { code: 'type', name: node.name, ref };
         }
@@ -205,7 +293,9 @@ export const validateOptionsQueryParams = (
     }
   }
 
-  const graph = graphFromNodes(nodes);
+  const built = graphFromNodes(nodes);
+  if (built.issue) return built.issue;
+  const graph = built.graph;
   const visit = (name: string, stack: string[]): OptionsQueryValidationIssue | null => {
     if (stack.includes(name)) return { code: 'cycle', path: [...stack, name] };
     const next = [...stack, name];
@@ -235,16 +325,23 @@ export const resolveOptionsQueryParams = (
   const missingRefs: string[] = [];
   for (const [name, raw] of Object.entries(queryParams)) {
     const normalized = normalizeOptionsQueryParamValue(raw);
-    if (isRejectedQueryParam(normalized)) return { blocked: true, params: {}, missingRefs: [] };
+    if (isRejectedQueryParam(normalized)) {
+      return { blocked: true, blockReason: 'invalid', params: {}, missingRefs: [] };
+    }
     if (isOptionsQueryParamRef(normalized.value)) {
       const upstream = lookup(normalized.value.ref);
+      if (upstream === OPTIONS_QUERY_INVALID) {
+        return { blocked: true, blockReason: 'invalid', params: {}, missingRefs: [] };
+      }
       if (isUpstreamValueEmpty(upstream)) missingRefs.push(normalized.value.ref);
       else params[name] = upstream;
     } else {
       params[name] = normalized.value;
     }
   }
-  if (missingRefs.length) return { blocked: true, params: {}, missingRefs };
+  if (missingRefs.length) {
+    return { blocked: true, blockReason: 'empty', params: {}, missingRefs };
+  }
   return { blocked: false, params, missingRefs: [] };
 };
 
