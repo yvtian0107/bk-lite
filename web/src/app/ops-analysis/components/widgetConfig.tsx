@@ -42,6 +42,8 @@ import {
   processDataSourceParams,
 } from '@/app/ops-analysis/utils/widgetDataTransform';
 import { getDateRangeTimezone } from '@/app/ops-analysis/utils/dateRange';
+import { isBindableDataSourceParamType } from '@/app/ops-analysis/utils/dataSourceParamContract';
+import { dynamicQueryParamsOf } from '@/app/ops-analysis/utils/optionsQueryParamRefs';
 import {
   clearComponentParamSwitch,
   findComponentSwitchParams,
@@ -148,6 +150,45 @@ const isInteractionFieldError = (error: unknown) => {
 const readWidgetId = (item: ViewConfigItem | null | undefined) => (
   item && 'i' in item ? String(item.i || '') : ''
 );
+
+const optionQueryEditorContext = (
+  params: ParamItem[],
+  filters: UnifiedFilterDefinition[],
+  editingName?: string,
+) => {
+  const siblings = params.filter((param) =>
+    param.name !== editingName && isBindableDataSourceParamType(param.type));
+  const seen = new Set(siblings.map((param) => param.name));
+  const canvas = filters.filter((definition) =>
+    definition.enabled !== false
+    && Boolean(definition.key)
+    && definition.key !== editingName
+    && !seen.has(definition.key));
+  return {
+    queryParamRefCandidates: [
+      ...siblings.map((param) => ({
+        name: param.name,
+        label: param.alias_name,
+        type: param.type,
+      })),
+      ...canvas.map((definition) => ({
+        name: definition.key,
+        label: definition.name,
+        type: definition.type,
+      })),
+    ],
+    optionsQueryNodes: [
+      ...siblings.map((param) => ({
+        name: param.name,
+        queryParams: dynamicQueryParamsOf(param.inputConfig),
+      })),
+      ...canvas.map((definition) => ({
+        name: definition.key,
+        queryParams: dynamicQueryParamsOf(definition.inputConfig),
+      })),
+    ],
+  };
+};
 
 interface ViewConfigPropsWithManager extends ViewConfigProps {
   dataSourceManager: ReturnType<typeof useDataSourceManager>;
@@ -1886,6 +1927,13 @@ const ViewConfig: React.FC<ViewConfigPropsWithManager> = ({
         componentSwitchEnabled={supportsComponentSwitch(chartType)}
         componentSwitchOwner={componentSwitchOwner}
         editingParamName={editingInputConfigParam?.name}
+        {...optionQueryEditorContext(
+          widgetParamOverrides.length
+            ? widgetParamOverrides
+            : selectedDataSource?.params ?? [],
+          filterDefinitions,
+          editingInputConfigParam?.name,
+        )}
       />
     </>
   );

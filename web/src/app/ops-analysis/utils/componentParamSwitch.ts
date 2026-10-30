@@ -51,18 +51,16 @@ export const reconcileComponentSwitchValue = (
   value: ParamItem['value'] | undefined,
   options?: InputOption[],
 ): ParamItem['value'] | undefined => {
-  if (!options?.length) return value;
-  const currentKey = typeof value === 'string' || typeof value === 'number'
-    ? getTypedValueKey(value)
-    : null;
-  return currentKey && options.some((option) => getTypedValueKey(option.value) === currentKey)
+  if (!options) return value;
+  if (typeof value !== 'string' && typeof value !== 'number') return null;
+  return options.some((option) => getTypedValueKey(option.value) === getTypedValueKey(value))
     ? value
-    : options[0].value;
+    : null;
 };
 
 /**
  * 通用查询参数与选项对齐：多选数组保留仍存在于选项中的值；
- * 标量仍走组件切换同源逻辑。禁止把多选数组误当成非法值落到 options[0]。
+ * 标量与组件切换一致：不在选项里则清空，不落到 options[0]。
  */
 export const reconcileComponentParamValue = (
   value: ParamItem['value'] | undefined,
@@ -152,11 +150,12 @@ export const resolveComponentSwitchRequestGate = ({
   runtimeParams,
 }: {
   hasComponentSwitchParam: boolean;
-  optionStatus: 'idle' | 'loading' | 'success' | 'error';
+  optionStatus: 'idle' | 'loading' | 'success' | 'error' | 'blocked';
   runtimeParams: Record<string, unknown>;
 }): ComponentSwitchRequestGate => {
   if (!hasComponentSwitchParam) return 'ready';
   if (optionStatus === 'idle' || optionStatus === 'loading') return 'pending';
+  if (optionStatus === 'blocked') return 'blocked';
   if (optionStatus === 'success' && Object.keys(runtimeParams).length > 0) return 'ready';
   return 'blocked';
 };

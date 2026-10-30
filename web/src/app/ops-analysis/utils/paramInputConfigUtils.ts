@@ -3,6 +3,7 @@ import type {
   InputControlConfig,
   InputOption,
 } from '@/app/ops-analysis/types/dataSource';
+import { normalizeQueryParamsForStorage } from '@/app/ops-analysis/utils/optionsQueryParamRefs';
 
 export const ORGANIZATION_PARAM_RUNTIME_KEY = 'organization_param';
 
@@ -23,6 +24,22 @@ export const isOptionInputControl = (
 ): config is Extract<InputControlConfig, { control: 'select' | 'radio' }> =>
   config?.control === 'select' || config?.control === 'radio';
 
+const normalizeStoredQueryParams = (
+  config: InputControlConfig,
+): InputControlConfig => {
+  if (config.control !== 'select' && config.control !== 'radio') return config;
+  if (config.optionsSource.type !== 'dynamic' || !config.optionsSource.queryParams) return config;
+  const normalized = normalizeQueryParamsForStorage(config.optionsSource.queryParams);
+  if (!normalized.ok) return config;
+  const queryParams = normalized.queryParams;
+  const current = config.optionsSource.queryParams;
+  if (JSON.stringify(queryParams ?? null) === JSON.stringify(current)) return config;
+  const optionsSource: DynamicOptionsSource = { ...config.optionsSource };
+  if (queryParams) optionsSource.queryParams = queryParams;
+  else delete optionsSource.queryParams;
+  return { ...config, optionsSource };
+};
+
 export const normalizeInputConfig = (
   entity?: LegacyOptionsEntity | null,
 ): InputControlConfig | undefined => {
@@ -31,7 +48,7 @@ export const normalizeInputConfig = (
     if (entity.inputConfig.control === 'organization') {
       return { control: 'organization' };
     }
-    return entity.inputConfig as InputControlConfig;
+    return normalizeStoredQueryParams(entity.inputConfig as InputControlConfig);
   }
   if (entity.inputMode === 'organization') {
     return { control: 'organization' };

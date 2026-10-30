@@ -17,6 +17,8 @@ import {
 import { scaleDashboardGridHeight } from '@/app/ops-analysis/utils/dashboardGridRows';
 import { isDashboardGroupItem, isDashboardWidgetItem } from '@/app/ops-analysis/utils/dashboardGroups';
 import { syncFilterValuesWithDefinitions } from '@/app/ops-analysis/utils/unifiedFilterState';
+import { optionsSourceIdentity } from '@/app/ops-analysis/utils/optionsSourceIdentity';
+import { normalizeInputConfig } from '@/app/ops-analysis/utils/paramInputConfigUtils';
 
 export const DASHBOARD_PROPOSAL_SCHEMA_VERSION = '1.0';
 
@@ -178,22 +180,6 @@ export const widgetContractDigest = (config: ValueConfig | undefined): string =>
 const controlOf = (filter: { inputConfig?: InputControlConfig; inputMode?: string }) =>
   filter.inputConfig?.control || filter.inputMode || 'input';
 
-const optionsSourceIdentity = (inputConfig: InputControlConfig | undefined) => {
-  if (!inputConfig || inputConfig.control === 'input' || inputConfig.control === 'organization') {
-    return null;
-  }
-  const source = inputConfig.optionsSource;
-  if (!source || source.type !== 'dynamic') {
-    return null;
-  }
-  return {
-    type: 'dynamic' as const,
-    sourceId: source.sourceId ?? null,
-    sourceRef: source.sourceRef ?? null,
-    valueField: source.valueField,
-    labelField: source.labelField,
-  };
-};
 
 export const filterContractDigest = (filter: {
   key?: string;
@@ -291,7 +277,7 @@ const toFilterDefinition = (
   enabled: proposal.enabled !== false,
   inputMode: proposal.inputMode,
   options: proposal.options,
-  inputConfig: proposal.inputConfig,
+  inputConfig: normalizeInputConfig({ inputConfig: proposal.inputConfig }) ?? proposal.inputConfig,
 });
 
 const mergeFilters = (
@@ -310,7 +296,8 @@ const mergeFilters = (
       kept.push({
         ...filter,
         order: readNumber(proposal.order) ?? filter.order,
-        inputConfig: proposal.inputConfig ?? filter.inputConfig,
+        inputConfig: normalizeInputConfig({ inputConfig: proposal.inputConfig ?? filter.inputConfig })
+          ?? filter.inputConfig,
       });
       return;
     }

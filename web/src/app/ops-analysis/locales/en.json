@@ -2031,7 +2031,24 @@
       "preview": "Preview",
       "loadDataSourceFailed": "Failed to load data sources",
       "testFailed": "Option source unavailable",
-      "incomplete": "Select a data source, value field, and label field"
+      "incomplete": "Select a data source, value field, and label field",
+      "queryParams": "Query parameters",
+      "queryParamName": "Name",
+      "queryParamValue": "Value",
+      "literal": "Literal",
+      "reference": "Reference",
+      "addQueryParam": "Add parameter",
+      "sampleValue": "Sample",
+      "previewNeedsSample": "Fill sample values before previewing references",
+      "upstreamRequired": "Select an upstream value first",
+      "componentSwitchDepends": "Local options follow this card's values and the applied global filters",
+      "concatRejected": "Query parameters must reference a whole value and cannot be concatenated",
+      "selfRef": "A query parameter cannot reference itself",
+      "missingRef": "Referenced parameter does not exist: {ref}",
+      "unbindableRef": "Referenced parameter cannot be used as a filter value: {ref}",
+      "cycle": "Query parameters contain a cycle: {path}",
+      "depth": "Query parameter dependencies exceed 3 levels: {path}",
+      "invalidValue": "Invalid query parameter value"
     }
   },
   "opsHomepage": {

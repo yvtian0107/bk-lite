@@ -24,6 +24,7 @@ import {
   getBindableFilterParams,
   preserveUnfollowedFilterBindings,
 } from "@/app/ops-analysis/utils/widgetDataTransform";
+import { findReusableFilterDefinition } from "@/app/ops-analysis/utils/scanUnifiedFilterParams";
 import { validateDateRangeValue } from "@/app/ops-analysis/utils/dateRange";
 import { getScreenWidgetDefinition } from "../constants/widgets";
 import { omitForeignChartTypeFields } from "@/app/ops-analysis/components/widgetConfig/utils/submitConfig";
@@ -123,13 +124,12 @@ export const buildFiltersFromScreenItems = ({
       return [{
         params: resolveScreenWidgetParams(item, dataSource),
         filterBindings: item.valueConfig?.filterBindings,
+        sourceLabel: dataSource?.name || dataSource?.rest_api,
       }];
     }),
+    previousDefinitions,
   );
 
-  const existingDefinitions = new Map(
-    previousDefinitions.map((definition) => [definition.id, definition]),
-  );
   const maxExistingOrder = previousDefinitions.reduce(
     (maxOrder, definition) => Math.max(maxOrder, definition.order ?? -1),
     -1,
@@ -138,12 +138,13 @@ export const buildFiltersFromScreenItems = ({
 
   const discovered = Array.from(discoveredParams.entries())
     .map(([id, param]) => {
-      const existing =
-        existingDefinitions.get(id) ||
-        previousDefinitions.find(
-          (definition) =>
-            definition.key === param.name && definition.type === param.type,
-        );
+      const existing = findReusableFilterDefinition(previousDefinitions, {
+        id,
+        key: param.name,
+        type: param.type,
+        inputConfig: param.inputConfig,
+        inputMode: param.inputMode,
+      });
 
       let defaultValue: UnifiedFilterDefinition["defaultValue"] = null;
       if (existing?.defaultValue !== undefined) {
@@ -165,13 +166,14 @@ export const buildFiltersFromScreenItems = ({
       return {
         id,
         key: param.name,
-        name: existing?.name || param.alias_name || param.name,
+        name: existing?.name || param.suggestedName || param.alias_name || param.name,
         type: param.type,
         defaultValue,
         order: existing?.order ?? nextOrder++,
         enabled: existing?.enabled ?? true,
         inputMode: existing?.inputMode,
         options: existing?.options,
+        inputConfig: existing?.inputConfig ?? param.inputConfig,
       };
     })
     .sort((a, b) => {

@@ -1,4 +1,4 @@
-import type { DatasourceItem, ParamItem } from '@/app/ops-analysis/types/dataSource';
+import type { DatasourceItem } from '@/app/ops-analysis/types/dataSource';
 import type {
   FilterBindings,
   FilterValue,
@@ -14,11 +14,10 @@ import { validateDateRangeValue } from './dateRange';
 import { buildRelativeTimeRangeFilterValue } from './filterValue';
 import { isChartTypeSupportedOnSurface } from './chartTypeSurface';
 import { normalizeStoredFilterDefinitions } from './unifiedFilterState';
+import { findReusableFilterDefinition } from './scanUnifiedFilterParams';
 import {
-  type BindableParamType,
   buildDefaultFilterBindings,
-  getBindableFilterParams,
-  getFilterDefinitionId,
+  discoverFollowedFilterParams,
 } from './widgetDataTransform';
 
 export const EMPTY_REPORT_VIEW_SETS: ReportViewSets = {
@@ -228,23 +227,17 @@ export const buildFiltersFromReportSections = (
   previousDefinitions: UnifiedFilterDefinition[],
   dataSources: DatasourceItem[],
 ): UnifiedFilterDefinition[] => {
-  const discoveredParams = new Map<string, ParamItem & { type: BindableParamType }>();
-
-  sections.forEach((section) => {
-    const dataSource = resolveSectionDataSource(section.valueConfig.dataSource, dataSources);
-    getBindableFilterParams(
-      resolveSectionBindableParams(section.valueConfig, dataSource),
-    ).forEach((param) => {
-      const id = getFilterDefinitionId(param.name, param.type);
-      if (!discoveredParams.has(id)) {
-        discoveredParams.set(id, param);
-      }
-    });
-  });
-
-  const existingDefinitions = new Map(
-    previousDefinitions.map((definition) => [definition.id, definition]),
+  const discoveredParams = discoverFollowedFilterParams(
+    sections.map((section) => {
+      const dataSource = resolveSectionDataSource(section.valueConfig.dataSource, dataSources);
+      return {
+        params: resolveSectionBindableParams(section.valueConfig, dataSource),
+        sourceLabel: dataSource?.name || dataSource?.rest_api,
+      };
+    }),
+    previousDefinitions,
   );
+
   const maxExistingOrder = previousDefinitions.reduce(
     (maxOrder, definition) => Math.max(maxOrder, definition.order ?? -1),
     -1,
@@ -253,11 +246,13 @@ export const buildFiltersFromReportSections = (
 
   return Array.from(discoveredParams.entries())
     .map(([id, param]) => {
-      const existing =
-        existingDefinitions.get(id) ||
-        previousDefinitions.find(
-          (definition) => definition.key === param.name && definition.type === param.type,
-        );
+      const existing = findReusableFilterDefinition(previousDefinitions, {
+        id,
+        key: param.name,
+        type: param.type,
+        inputConfig: param.inputConfig,
+        inputMode: param.inputMode,
+      });
 
       let defaultValue: FilterValue | undefined = existing?.defaultValue;
       if (defaultValue === undefined && param.value !== undefined && param.value !== null) {
@@ -278,13 +273,14 @@ export const buildFiltersFromReportSections = (
       return {
         id,
         key: param.name,
-        name: existing?.name || param.alias_name || param.name,
+        name: existing?.name || param.suggestedName || param.alias_name || param.name,
         type: param.type,
         defaultValue,
         order: existing?.order ?? nextOrder++,
         enabled: existing?.enabled ?? true,
         inputMode: existing?.inputMode,
         options: existing?.options,
+        inputConfig: existing?.inputConfig ?? param.inputConfig,
       };
     })
     .sort((left, right) => {

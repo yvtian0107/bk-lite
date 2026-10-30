@@ -16,6 +16,7 @@ import {
   discoverFollowedFilterParams,
   preserveUnfollowedFilterBindings,
 } from '@/app/ops-analysis/utils/widgetDataTransform';
+import { findReusableFilterDefinition } from '@/app/ops-analysis/utils/scanUnifiedFilterParams';
 import {
   buildRelativeTimeRangeFilterValue,
 } from '@/app/ops-analysis/utils/filterValue';
@@ -82,13 +83,12 @@ export const buildFiltersFromDashboardLayout = ({
       return {
         params: resolveWidgetBindableParams(item.valueConfig, dataSource),
         filterBindings: item.valueConfig?.filterBindings,
+        sourceLabel: dataSource?.name || dataSource?.rest_api,
       };
     }),
+    previousDefinitions,
   );
 
-  const existingDefinitions = new Map(
-    previousDefinitions.map((definition) => [definition.id, definition]),
-  );
   const maxExistingOrder = previousDefinitions.reduce(
     (maxOrder, definition) => Math.max(maxOrder, definition.order ?? -1),
     -1,
@@ -97,12 +97,13 @@ export const buildFiltersFromDashboardLayout = ({
 
   const rebuiltDefinitions = Array.from(discoveredParams.entries()).map(
     ([id, param]) => {
-      const existing =
-        existingDefinitions.get(id) ||
-        previousDefinitions.find(
-          (definition) =>
-            definition.key === param.name && definition.type === param.type,
-        );
+      const existing = findReusableFilterDefinition(previousDefinitions, {
+        id,
+        key: param.name,
+        type: param.type,
+        inputConfig: param.inputConfig,
+        inputMode: param.inputMode,
+      });
 
       let defaultValue: FilterValue = null;
       if (existing?.defaultValue !== undefined) {
@@ -125,7 +126,7 @@ export const buildFiltersFromDashboardLayout = ({
       return {
         id,
         key: param.name,
-        name: existing?.name || param.alias_name || param.name,
+        name: existing?.name || param.suggestedName || param.alias_name || param.name,
         type: param.type,
         defaultValue,
         order: existing?.order ?? nextOrder++,

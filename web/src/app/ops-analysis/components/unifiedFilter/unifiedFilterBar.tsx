@@ -25,6 +25,11 @@ import {
   isDynamicOptionFilter,
   reconcileOptionBackedFilterValue,
 } from '@/app/ops-analysis/utils/optionBackedFilterValue';
+import {
+  dynamicQueryParamsOf,
+  resolveOptionsQueryParams,
+  stableStringify,
+} from '@/app/ops-analysis/utils/optionsQueryParamRefs';
 import { ROOM_FILTER_PASSTHROUGH } from '@/app/ops-analysis/utils/room3DScreenFilter';
 import { resolveBuiltinCanvasFilterAppliedValue } from '@/app/ops-analysis/utils/applicationTopologyCanvasFilter';
 import type { DateRangeValue } from '@/app/ops-analysis/types/dateRange';
@@ -169,6 +174,11 @@ const UnifiedFilterBar: React.FC<UnifiedFilterBarProps> = ({
     (onSearch || onChange)?.(next);
   };
 
+  const writeDraftValues = (next: Record<string, FilterValue>) => {
+    localValuesRef.current = next;
+    setLocalValues(next);
+  };
+
   const handleSearch = () => {
     publishValues(localValuesRef.current);
   };
@@ -179,11 +189,17 @@ const UnifiedFilterBar: React.FC<UnifiedFilterBarProps> = ({
     if (!definition) return;
     const current = localValuesRef.current[filterId];
     const roomValue = resolveBuiltinCanvasFilterAppliedValue(definition, current, options);
-    const nextValue = roomValue !== ROOM_FILTER_PASSTHROUGH
-      ? roomValue
-      : reconcileOptionBackedFilterValue(definition, current, options);
+    if (roomValue !== ROOM_FILTER_PASSTHROUGH) {
+      if (roomValue === undefined) return;
+      publishValues({
+        ...localValuesRef.current,
+        [filterId]: roomValue,
+      });
+      return;
+    }
+    const nextValue = reconcileOptionBackedFilterValue(definition, current, options);
     if (nextValue === undefined) return;
-    publishValues({
+    writeDraftValues({
       ...localValuesRef.current,
       [filterId]: nextValue,
     });
@@ -311,6 +327,17 @@ const UnifiedFilterBar: React.FC<UnifiedFilterBarProps> = ({
 
         const inputConfig = getFilterInputConfig(definition);
         const isMultiple = isMultipleSelectInputConfig(inputConfig);
+        const queryResolution = resolveOptionsQueryParams(
+          dynamicQueryParamsOf(inputConfig),
+          (ref) => {
+            const upstream = enabledDefinitions.find((item) => item.key === ref);
+            return upstream ? localValues[upstream.id] : undefined;
+          },
+        );
+        const optionsQuerySignature = stableStringify({
+          blocked: queryResolution.blocked,
+          params: queryResolution.params,
+        });
 
         const fallbackInput = (
           <Input
@@ -335,6 +362,9 @@ const UnifiedFilterBar: React.FC<UnifiedFilterBarProps> = ({
             inputConfig={inputConfig}
             fallback={fallbackInput}
             value={controlValue}
+            resolvedQueryParams={queryResolution.params}
+            optionsBlocked={queryResolution.blocked}
+            optionsQuerySignature={optionsQuerySignature}
             optionsNotifyKey={
               isDynamicOptionFilter(definition)
                 ? String(labelSnapshot.revisions[definition.id] ?? 0)
