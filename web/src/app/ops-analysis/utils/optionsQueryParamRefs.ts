@@ -94,6 +94,11 @@ export const readOptionsQueryUpstream = (
   return { found: false };
 };
 
+/** 已经命中某一行时：同名裸引用返回非法标记，否则返回该行的值。 */
+export const valueOfFoundOptionsQueryUpstream = (
+  upstream: { invalid: true } | { invalid: false; value: unknown },
+): unknown => (upstream.invalid === true ? OPTIONS_QUERY_INVALID : upstream.value);
+
 export const stableStringify = (value: unknown): string => {
   if (value === null || typeof value !== 'object') return JSON.stringify(value);
   if (Array.isArray(value)) {
@@ -313,6 +318,25 @@ export const validateOptionsQueryParams = (
   }
   return null;
 };
+
+export const validateUnifiedFilterQueryGraph = (
+  definitions: Array<{
+    id: string;
+    key: string;
+    type?: string;
+    inputConfig?: { control?: string; optionsSource?: { type?: string; queryParams?: Record<string, unknown> } };
+  }>,
+): OptionsQueryValidationIssue | null => validateOptionsQueryParams(
+  definitions.map((item) => ({
+    name: item.id,
+    aliases: item.key && item.key !== item.id ? [item.key] : undefined,
+    queryParams: dynamicQueryParamsOf(item.inputConfig),
+  })),
+  definitions.flatMap((item) => [
+    { name: item.id, type: item.type },
+    ...(item.key ? [{ name: item.key, type: item.type }] : []),
+  ]),
+);
 
 export const resolveOptionsQueryParams = (
   queryParams: Record<string, unknown> | undefined,

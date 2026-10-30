@@ -4,6 +4,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import UnifiedFilterBar from '@/app/ops-analysis/components/unifiedFilter/unifiedFilterBar';
 import type { UnifiedFilterDefinition } from '@/app/ops-analysis/types/dashBoard';
+import { APPLICATION_TOPOLOGY_FILTER_ID } from '@/app/ops-analysis/utils/applicationTopologyCanvasFilter';
 
 const { getDataSourceList, getSourceDataByApiId } = vi.hoisted(() => ({
   getDataSourceList: vi.fn(),
@@ -193,5 +194,73 @@ describe('option query cascade', () => {
     );
     expect(await screen.findByText('查询入参无法对应到唯一的上游筛选')).not.toBeNull();
     expect(getSourceDataByApiId).not.toHaveBeenCalled();
+  });
+
+  it('does not search when an application system filter opens', async () => {
+    const onSearch = vi.fn();
+    const onApplyInitial = vi.fn();
+    const system: UnifiedFilterDefinition = {
+      id: APPLICATION_TOPOLOGY_FILTER_ID,
+      key: 'application_system_id',
+      name: '应用系统',
+      type: 'string',
+      defaultValue: null,
+      order: 0,
+      enabled: true,
+      inputConfig: {
+        control: 'select',
+        optionsSource: {
+          type: 'static',
+          staticItems: [{ label: '系统A', value: 'sys-a' }],
+        },
+      },
+    };
+    render(
+      <UnifiedFilterBar
+        definitions={[system]}
+        values={{ [system.id]: 'missing' }}
+        onSearch={onSearch}
+        onApplyInitial={onApplyInitial}
+      />,
+    );
+    await waitFor(() => {
+      expect(onApplyInitial).toHaveBeenCalled();
+    });
+    expect(onSearch).not.toHaveBeenCalled();
+    expect(onApplyInitial.mock.calls.at(-1)?.[0]?.[system.id]).toBeNull();
+  });
+
+  it('does not auto-search a split server_room_id row', async () => {
+    const onSearch = vi.fn();
+    const onApplyInitial = vi.fn();
+    const splitRoom: UnifiedFilterDefinition = {
+      id: 'server_room_id__string__abcd1234',
+      key: 'server_room_id',
+      name: '机房 · 监控',
+      type: 'string',
+      defaultValue: null,
+      order: 0,
+      enabled: true,
+      inputConfig: {
+        control: 'select',
+        optionsSource: {
+          type: 'static',
+          staticItems: [{ label: '二号机房', value: 'room-b' }],
+        },
+      },
+    };
+    render(
+      <UnifiedFilterBar
+        definitions={[splitRoom]}
+        values={{ [splitRoom.id]: 'missing' }}
+        onSearch={onSearch}
+        onApplyInitial={onApplyInitial}
+      />,
+    );
+    await waitFor(() => {
+      expect(onApplyInitial).toHaveBeenCalled();
+    });
+    expect(onSearch).not.toHaveBeenCalled();
+    expect(onApplyInitial.mock.calls.at(-1)?.[0]?.[splitRoom.id]).toBeNull();
   });
 });

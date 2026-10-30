@@ -26,10 +26,10 @@ import { getParamInputConfigKey } from '@/app/ops-analysis/utils/paramInputOptio
 import { isDynamicOptionFilter } from '@/app/ops-analysis/utils/optionBackedFilterValue';
 import {
   dynamicQueryParamsOf,
-  OPTIONS_QUERY_INVALID,
   readOptionsQueryUpstream,
   resolveOptionsQueryParams,
   stableStringify,
+  valueOfFoundOptionsQueryUpstream,
 } from '@/app/ops-analysis/utils/optionsQueryParamRefs';
 import { isOrganizationFilterDefinition } from '@/app/ops-analysis/utils/unifiedFilterState';
 
@@ -101,8 +101,7 @@ const DynamicOptionLabelLoader = ({
         (id) => values[id],
       );
       if (upstream.found === false) return undefined;
-      if (upstream.invalid === true) return OPTIONS_QUERY_INVALID;
-      return upstream.value;
+      return valueOfFoundOptionsQueryUpstream(upstream);
     },
   ), [definition.inputConfig, definitions, values]);
   const state = useParamInputOptions(definition.inputConfig, {

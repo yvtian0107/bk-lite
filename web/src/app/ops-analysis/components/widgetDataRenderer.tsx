@@ -87,9 +87,9 @@ import {
 import { isSelfFetchSceneWidget } from "@/app/ops-analysis/types/sceneWidgetCapability";
 import {
   dynamicQueryParamsOf,
-  OPTIONS_QUERY_INVALID,
   readOptionsQueryUpstream,
   resolveOptionsQueryParams,
+  valueOfFoundOptionsQueryUpstream,
 } from "@/app/ops-analysis/utils/optionsQueryParamRefs";
 
 const validateTopNData = (
@@ -352,7 +352,7 @@ const WidgetWrapper: React.FC<WidgetWrapperProps> = ({
           : undefined
       ));
       if (upstream.found === true) {
-        return upstream.invalid === true ? OPTIONS_QUERY_INVALID : upstream.value;
+        return valueOfFoundOptionsQueryUpstream(upstream);
       }
       return effectiveComponentParams.find((param) => param.name === ref)?.value;
     });

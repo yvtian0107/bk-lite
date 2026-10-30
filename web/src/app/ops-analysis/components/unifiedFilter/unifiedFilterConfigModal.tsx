@@ -11,11 +11,15 @@ import {
   Button,
   Select,
   Tag,
+  message,
 } from 'antd';
 import {
   HolderOutlined,
 } from '@ant-design/icons';
-import { ParamInputConfigEditor } from '@/app/ops-analysis/components/paramInputConfigEditor';
+import {
+  ParamInputConfigEditor,
+  describeQueryIssue,
+} from '@/app/ops-analysis/components/paramInputConfigEditor';
 import { ParamInputControl } from '@/app/ops-analysis/components/paramInputControl';
 import GroupTreeSelect from '@/components/group-tree-select';
 import { normalizeInputConfig, isOrganizationControl, toSingleOrganizationValue } from '@/app/ops-analysis/utils/paramInputConfigUtils';
@@ -67,6 +71,7 @@ import type {
 import {
   buildOptionsQueryRefChoices,
   dynamicQueryParamsOf,
+  validateUnifiedFilterQueryGraph,
 } from '@/app/ops-analysis/utils/optionsQueryParamRefs';
 import { optionsSourceSummary } from '@/app/ops-analysis/utils/optionsSourceIdentity';
 import {
@@ -317,6 +322,11 @@ const UnifiedFilterConfigModal: React.FC<UnifiedFilterConfigModalProps> = ({
 
   const handleConfirm = () => {
     if (hasInvalidDateRangeDefinitions(definitions)) return;
+    const queryIssue = validateUnifiedFilterQueryGraph(definitions);
+    if (queryIssue) {
+      message.error(describeQueryIssue(t, queryIssue));
+      return;
+    }
     onConfirm(definitions.map(sanitizeUnifiedFilterDefinition));
     onCancel();
   };

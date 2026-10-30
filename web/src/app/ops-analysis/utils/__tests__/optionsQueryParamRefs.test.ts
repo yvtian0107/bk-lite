@@ -11,6 +11,7 @@ import {
   readOptionsQueryUpstream,
   resolveOptionsQueryParams,
   validateOptionsQueryParams,
+  validateUnifiedFilterQueryGraph,
 } from '@/app/ops-analysis/utils/optionsQueryParamRefs';
 
 const names = ['room', 'device', 'rack', 'port'];
@@ -174,6 +175,39 @@ describe('options query param refs', () => {
       { room_id: { ref: 'site_id' } },
       () => OPTIONS_QUERY_INVALID,
     )).toMatchObject({ blocked: true, blockReason: 'invalid' });
+  });
+
+  it('rejects a bare name when the filter table is confirmed with split rows', () => {
+    const dynamic = (ref: string) => ({
+      control: 'select' as const,
+      optionsSource: {
+        type: 'dynamic' as const,
+        sourceId: 9,
+        valueField: 'id',
+        labelField: 'name',
+        queryParams: { room_id: { ref } },
+      },
+    });
+    expect(validateUnifiedFilterQueryGraph([
+      { id: 'site_id__string__11111111', key: 'site_id', type: 'string' },
+      { id: 'site_id__string__22222222', key: 'site_id', type: 'string' },
+      {
+        id: 'device_id__string',
+        key: 'device_id',
+        type: 'string',
+        inputConfig: dynamic('site_id'),
+      },
+    ])?.code).toBe('ambiguous');
+    expect(validateUnifiedFilterQueryGraph([
+      { id: 'site_id__string__11111111', key: 'site_id', type: 'string' },
+      { id: 'site_id__string__22222222', key: 'site_id', type: 'string' },
+      {
+        id: 'device_id__string',
+        key: 'device_id',
+        type: 'string',
+        inputConfig: dynamic('site_id__string__22222222'),
+      },
+    ])).toBeNull();
   });
 
   it('stores the filter id in the dropdown when several rows share a name', () => {

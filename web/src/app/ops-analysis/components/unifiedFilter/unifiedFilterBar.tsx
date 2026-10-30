@@ -28,10 +28,10 @@ import {
 } from '@/app/ops-analysis/utils/optionBackedFilterValue';
 import {
   dynamicQueryParamsOf,
-  OPTIONS_QUERY_INVALID,
   readOptionsQueryUpstream,
   resolveOptionsQueryParams,
   stableStringify,
+  valueOfFoundOptionsQueryUpstream,
 } from '@/app/ops-analysis/utils/optionsQueryParamRefs';
 import { ROOM_FILTER_PASSTHROUGH } from '@/app/ops-analysis/utils/room3DScreenFilter';
 import { resolveBuiltinCanvasFilterAppliedValue } from '@/app/ops-analysis/utils/applicationTopologyCanvasFilter';
@@ -367,8 +367,7 @@ const UnifiedFilterBar: React.FC<UnifiedFilterBarProps> = ({
               (id) => localValues[id],
             );
             if (upstream.found === false) return undefined;
-            if (upstream.invalid === true) return OPTIONS_QUERY_INVALID;
-            return upstream.value;
+            return valueOfFoundOptionsQueryUpstream(upstream);
           },
         );
         const optionsQuerySignature = stableStringify({

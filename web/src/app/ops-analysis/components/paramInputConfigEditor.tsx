@@ -133,7 +133,7 @@ const queryRowFromStored = (name: string, raw: unknown): QueryParamRow => {
   };
 };
 
-const describeQueryIssue = (
+export const describeQueryIssue = (
   t: (key: string, _default?: string, values?: Record<string, string>) => string,
   issue: { code: string; param?: string; name?: string; ref?: string; path?: string[] },
 ) => {
