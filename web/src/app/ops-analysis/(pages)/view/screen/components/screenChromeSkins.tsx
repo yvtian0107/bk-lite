@@ -89,7 +89,7 @@ export const screenUniformTextProps = (
 });
 
 export interface ScreenChromePresentation {
-  /** 字号。视口像素用 screenDensity；设计画布为 1，交给外层 transform。 */
+  /** 字号。视口像素用 fitScale；设计画布为 1，交给外层 transform。 */
   fontDensity: number;
   /** 描边。视口像素用 fitScale；设计画布为 1，交给外层 transform。 */
   borderDensity: number;

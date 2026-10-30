@@ -1,6 +1,14 @@
 import { render } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
-import type { ScreenClockItem, ScreenShapeItem } from '@/app/ops-analysis/types/screen';
+import type {
+  ScreenClockItem,
+  ScreenShapeItem,
+  ScreenTitleFrameItem,
+} from '@/app/ops-analysis/types/screen';
+import {
+  calculateScreenVisualMetrics,
+  resolveChromeFontDensity,
+} from '../../utils/metrics';
 import { resolveScreenShapeStyle } from '../../utils/screenShape';
 import ScreenChromeRenderer from '../screenChromeRenderer';
 import { ChromeFontDensityProvider } from '../screenChromeSkins';
@@ -101,5 +109,49 @@ describe('screen chrome clock style', () => {
     );
     const scaledStroke = scaled.container.querySelector('.relative > div') as HTMLElement;
     expect(scaledStroke.style.borderWidth).toBe('2px');
+  });
+
+  it('renders the hero title and clock at fitScale on a 4K screen in a 1080p viewport', () => {
+    const fitted = calculateScreenVisualMetrics({
+      contentWidth: 1920,
+      contentHeight: 1080,
+      designWidth: 3840,
+      designHeight: 2160,
+      adapter: 'fill',
+    });
+    const density = resolveChromeFontDensity('viewportPixels', fitted.fitScale);
+    const title: ScreenTitleFrameItem = {
+      id: 'legacy-title-frame',
+      kind: 'titleFrame',
+      preset: 'hero-5',
+      content: '告警运营大屏',
+      x: 915,
+      y: 12,
+      w: 1996,
+      h: 145,
+      zIndex: 20,
+      textStyle: { fontSize: 56, fontWeight: 700, align: 'right', color: '#EAF3FF' },
+    };
+    const clock: ScreenClockItem = {
+      id: 'legacy-clock',
+      kind: 'clock',
+      format: 'YYYY-MM-DD HH:mm:ss',
+      x: 3149,
+      y: 9,
+      w: 475,
+      h: 56,
+      zIndex: 21,
+      textStyle: { fontSize: 34, fontWeight: 600, color: '#EAF3FF' },
+    };
+
+    const view = render(
+      <ChromeFontDensityProvider density={density}>
+        <ScreenChromeRenderer item={title} />
+        <ScreenChromeRenderer item={clock} />
+      </ChromeFontDensityProvider>,
+    );
+    expect(view.getByText('告警运营大屏').style.fontSize).toBe('28px');
+    const renderedClock = view.container.querySelector('[data-screen-clock]') as HTMLElement;
+    expect(renderedClock.style.fontSize).toBe('17px');
   });
 });

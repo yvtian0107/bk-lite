@@ -6,6 +6,7 @@ import {
   calculateScreenVisualMetrics,
   mapDesignBoxToViewportPixels,
   presentScreenRenderContext,
+  resolveChromeFontDensity,
   scalePresentedFontPx,
 } from '../metrics';
 
@@ -198,6 +199,43 @@ describe('viewport pixel font scale', () => {
     expect(presented.context.widgetUiScale).toBeCloseTo(visual.screenUiScale);
     expect(presented.widgetViewportScale).toBeCloseTo(visual.fitScale);
     expect(resolveCanvasContentScale(presented.context)).toBeCloseTo(1.2);
+  });
+});
+
+describe('viewport pixel chrome title and clock', () => {
+  it('scales the hero title and clock by fitScale, not screenDensity', () => {
+    const fitted = calculateScreenVisualMetrics({
+      contentWidth: 1920,
+      contentHeight: 1080,
+      designWidth: 3840,
+      designHeight: 2160,
+      adapter: 'fill',
+    });
+    const density = resolveChromeFontDensity('viewportPixels', fitted.fitScale);
+    const chart = presentScreenRenderContext({
+      layoutMode: 'viewportPixels',
+      fitScale: fitted.fitScale,
+      scaleX: fitted.scaleX,
+      scaleY: fitted.scaleY,
+      screenDensity: fitted.screenDensity,
+      transformUiScale: fitted.screenUiScale,
+    });
+
+    expect(density).toBeCloseTo(0.5);
+    expect(scalePresentedFontPx(56, density)).toBe(28);
+    expect(scalePresentedFontPx(34, density)).toBe(17);
+    expect(scalePresentedFontPx(56, density)).not.toBe(56);
+    expect(scalePresentedFontPx(56, density)).not.toBe(
+      scalePresentedFontPx(56, fitted.screenDensity),
+    );
+    expect(chart.context.widgetUiScale).toBeCloseTo(fitted.screenDensity);
+    expect(scaleScreenMetric(24, chart.context)).not.toBe(scalePresentedFontPx(24, density));
+  });
+
+  it('leaves edit, view, and PDF chrome fonts at design pixels', () => {
+    expect(resolveChromeFontDensity('designTransform', 0.5)).toBe(1);
+    expect(scalePresentedFontPx(56, resolveChromeFontDensity('designTransform', 0.5))).toBe(56);
+    expect(scalePresentedFontPx(34, resolveChromeFontDensity('designTransform', 1.2))).toBe(34);
   });
 });
 

@@ -33,6 +33,7 @@ import {
 import {
   calculateScreenVisualMetrics,
   mapDesignBoxToViewportPixels,
+  resolveChromeFontDensity,
   resolvePresentedUiScale,
 } from "../utils/metrics";
 import { resolveScreenCanvasBackgroundStyle } from "../utils/screenBackground";
@@ -716,7 +717,10 @@ const ScreenCanvas: React.FC<ScreenCanvasProps> = ({
     screenMetrics.screenDensity,
     screenMetrics.screenUiScale,
   );
-  const chromeFontDensity = viewportPixelLayout ? screenMetrics.screenDensity : 1;
+  const chromeFontDensity = resolveChromeFontDensity(
+    layoutMode,
+    screenMetrics.fitScale,
+  );
   const chromeBorderDensity = viewportPixelLayout ? screenMetrics.fitScale : 1;
   const resolveDataSource = dataSourceResolver ?? unresolvedDataSource;
   const filterTemplateTexts = useMemo(
