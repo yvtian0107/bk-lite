@@ -1684,6 +1684,8 @@ const ViewConfig: React.FC<ViewConfigPropsWithManager> = ({
             hasUnifiedFilterBindings={hasUnifiedFilterBindings}
             previewFilterDefinitions={previewFilterDefinitions}
             filterBindings={filterBindings}
+            globalFilters={filterDefinitions}
+            globalFilterValues={unifiedFilterValues}
             onFilterBindingsChange={setFilterBindings}
             onEditInputConfig={handleEditInputConfig}
             onParamOptionsResolved={(param, options) =>
@@ -1922,9 +1924,7 @@ const ViewConfig: React.FC<ViewConfigPropsWithManager> = ({
         componentSwitchOwner={componentSwitchOwner}
         editingParamName={editingInputConfigParam?.name}
         {...optionQueryEditorContext(
-          widgetParamOverrides.length
-            ? widgetParamOverrides
-            : selectedDataSource?.params ?? [],
+          effectiveDataSource?.params ?? [],
           filterDefinitions,
           editingInputConfigParam?.name,
         )}
