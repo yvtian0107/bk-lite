@@ -17,6 +17,11 @@ REST_METRICS_B = f"demo/{PATH_METRICS_B}"
 REST_CASCADE_CHART = f"demo/{PATH_CASCADE_CHART}"
 
 ACCEPTANCE_MARK = "仅本地验收"
+DEFAULT_NAMESPACE_NAME = "默认命名空间"
+TAG_MONITOR = "monitor"
+TAG_OTHER = "other"
+ACCEPTANCE_TAG_IDS = (TAG_MONITOR, TAG_OTHER)
+CHART_TYPES = ["line", "bar", "table", "single", "multiValue"]
 
 _OPTION_FIELDS = [
     {"key": "id", "title": "值", "value_type": "string"},
@@ -170,7 +175,7 @@ def _filter_param(name, alias_name, rest_api, query_params=None):
     }
 
 
-def _spec(name, rest_api, desc, params, chart_type, field_schema):
+def _spec(name, rest_api, desc, params, chart_type, field_schema, tag_ids=ACCEPTANCE_TAG_IDS):
     return {
         "name": name,
         "rest_api": rest_api,
@@ -178,6 +183,7 @@ def _spec(name, rest_api, desc, params, chart_type, field_schema):
         "params": params,
         "chart_type": chart_type,
         "field_schema": field_schema,
+        "tag_ids": tuple(tag_ids),
     }
 
 
@@ -240,7 +246,7 @@ ACCEPTANCE_DATASOURCE_SPECS = (
                 },
             ),
         ],
-        ["line", "table", "single"],
+        list(CHART_TYPES),
         _CHART_FIELDS,
     ),
 )

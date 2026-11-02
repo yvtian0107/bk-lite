@@ -1,11 +1,11 @@
 import copy
 
-from django.core.management.base import BaseCommand
+from django.core.management.base import BaseCommand, CommandError
 from django.db import transaction
 
 from apps.core.logger import operation_analysis_logger as logger
-from apps.operation_analysis.common.demo_source import ACCEPTANCE_DATASOURCE_SPECS
-from apps.operation_analysis.models.datasource_models import DataSourceAPIModel
+from apps.operation_analysis.common.demo_source import ACCEPTANCE_DATASOURCE_SPECS, DEFAULT_NAMESPACE_NAME
+from apps.operation_analysis.models.datasource_models import DataSourceAPIModel, DataSourceTag, NameSpace
 
 
 def _default_group_ids():
@@ -27,14 +27,37 @@ def _claim_existing(rest_api, name):
     return None
 
 
+def _require_default_namespace():
+    namespace = NameSpace.objects.filter(name=DEFAULT_NAMESPACE_NAME).order_by("id").first()
+    if namespace is None:
+        raise CommandError("未找到「默认命名空间」，请先执行 init_default_namespace")
+    return namespace
+
+
+def _require_tags(tag_ids):
+    tags = list(DataSourceTag.objects.filter(tag_id__in=tag_ids))
+    found = {tag.tag_id: tag for tag in tags}
+    missing = [tag_id for tag_id in tag_ids if tag_id not in found]
+    if missing:
+        raise CommandError("未找到数据源标签: %s。请先执行 init_source_api_data" % ", ".join(missing))
+    return [found[tag_id] for tag_id in tag_ids]
+
+
 def upsert_acceptance_datasources(group_ids=None):
     """按 rest_api 幂等写入验收数据源。返回 (created_count, updated_count)。"""
     explicit_groups = group_ids is not None
     resolved_groups = list(group_ids) if explicit_groups else _default_group_ids()
     created_count = 0
     updated_count = 0
+    needed_tag_ids = []
+    for spec in ACCEPTANCE_DATASOURCE_SPECS:
+        for tag_id in spec["tag_ids"]:
+            if tag_id not in needed_tag_ids:
+                needed_tag_ids.append(tag_id)
 
     with transaction.atomic():
+        namespace = _require_default_namespace()
+        tags_by_id = {tag.tag_id: tag for tag in _require_tags(needed_tag_ids)}
         for spec in ACCEPTANCE_DATASOURCE_SPECS:
             obj = _claim_existing(spec["rest_api"], spec["name"])
             created = obj is None
@@ -62,6 +85,8 @@ def upsert_acceptance_datasources(group_ids=None):
             elif not obj.groups and resolved_groups:
                 obj.groups = list(resolved_groups)
             obj.save()
+            obj.namespaces.set([namespace])
+            obj.tag.set([tags_by_id[tag_id] for tag_id in spec["tag_ids"]])
             if created:
                 created_count += 1
             else:

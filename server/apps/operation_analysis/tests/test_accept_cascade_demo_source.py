@@ -6,9 +6,14 @@ from django.core.management import call_command
 from rest_framework import status
 from rest_framework.test import APIRequestFactory, force_authenticate
 
+from django.core.management.base import CommandError
+
 from apps.operation_analysis.common.demo_source import (
     ACCEPTANCE_DATASOURCE_SPECS,
     ACCEPTANCE_MARK,
+    ACCEPTANCE_TAG_IDS,
+    CHART_TYPES,
+    DEFAULT_NAMESPACE_NAME,
     REST_CASCADE_CHART,
     REST_INSTANCES,
     REST_METRICS,
@@ -16,7 +21,7 @@ from apps.operation_analysis.common.demo_source import (
     REST_MONITOR_OBJECTS,
     get_demo_source_data,
 )
-from apps.operation_analysis.models.datasource_models import DataSourceAPIModel
+from apps.operation_analysis.models.datasource_models import DataSourceAPIModel, DataSourceTag, NameSpace
 from apps.operation_analysis.views import datasource_view
 
 
@@ -130,7 +135,12 @@ def test_seed_specs_use_chinese_names_and_point_chart_filters_at_demo_rest_apis(
 
     chart = by_rest[REST_CASCADE_CHART]
     assert chart["name"] == "验收·级联指标图"
-    assert chart["chart_type"] == ["line", "table", "single"]
+    assert chart["chart_type"] == CHART_TYPES
+    assert {"line", "bar", "table", "single", "multiValue"} <= set(chart["chart_type"])
+    for rest_api in (REST_MONITOR_OBJECTS, REST_METRICS, REST_INSTANCES, REST_METRICS_B):
+        assert by_rest[rest_api]["chart_type"] == []
+        assert by_rest[rest_api]["tag_ids"] == ACCEPTANCE_TAG_IDS
+    assert chart["tag_ids"] == ACCEPTANCE_TAG_IDS
     params = {item["name"]: item for item in chart["params"]}
     assert list(params) == ["object_id", "metric_id", "instance_id"]
     for name, rest_api in (
@@ -239,10 +249,52 @@ def test_get_source_data_unknown_demo_path_is_not_found(authenticated_user, monk
     assert payload["message"] == "演示数据源不存在"
 
 
+def _seed_namespace_and_tags():
+    namespace = NameSpace.objects.create(
+        name=DEFAULT_NAMESPACE_NAME,
+        account="admin",
+        password="secret",
+        domain="127.0.0.1:4222",
+        created_by="system",
+        updated_by="system",
+    )
+    tags = [
+        DataSourceTag.objects.create(
+            tag_id=tag_id,
+            name={"monitor": "监控", "other": "其他"}[tag_id],
+            build_in=True,
+            created_by="system",
+            updated_by="system",
+        )
+        for tag_id in ACCEPTANCE_TAG_IDS
+    ]
+    return namespace, tags
+
+
+@pytest.mark.django_db
+def test_seed_command_requires_default_namespace_and_tags():
+    with pytest.raises(CommandError, match="默认命名空间"):
+        call_command("seed_accept_cascade_option_datasources")
+    assert DataSourceAPIModel.objects.filter(rest_api__startswith="demo/accept_").count() == 0
+
+    NameSpace.objects.create(
+        name=DEFAULT_NAMESPACE_NAME,
+        account="admin",
+        password="secret",
+        domain="127.0.0.1:4222",
+        created_by="system",
+        updated_by="system",
+    )
+    with pytest.raises(CommandError, match="monitor"):
+        call_command("seed_accept_cascade_option_datasources")
+    assert DataSourceAPIModel.objects.filter(rest_api__startswith="demo/accept_").count() == 0
+
+
 @pytest.mark.django_db
 def test_seed_command_is_idempotent_and_not_builtin():
     from apps.system_mgmt.models.user import Group
 
+    namespace, _tags = _seed_namespace_and_tags()
     call_command("seed_accept_cascade_option_datasources")
     first_ids = set(DataSourceAPIModel.objects.filter(rest_api__startswith="demo/accept_").values_list("id", flat=True))
     assert len(first_ids) == len(ACCEPTANCE_DATASOURCE_SPECS)
@@ -270,6 +322,20 @@ def test_seed_command_is_idempotent_and_not_builtin():
         assert row.is_build_in is False
         assert row.build_in_key is None
         assert row.groups == [7]
+        assert list(row.namespaces.values_list("name", flat=True)) == [DEFAULT_NAMESPACE_NAME]
+        assert list(row.tag.order_by("tag_id").values_list("tag_id", flat=True)) == sorted(ACCEPTANCE_TAG_IDS)
+
+    chart = by_rest[REST_CASCADE_CHART]
+    assert set(chart.chart_type) >= {"line", "bar", "table", "single", "multiValue"}
+    for rest_api in (REST_MONITOR_OBJECTS, REST_METRICS, REST_INSTANCES, REST_METRICS_B):
+        assert by_rest[rest_api].chart_type == []
+
+    chart.namespaces.clear()
+    chart.tag.clear()
+    call_command("seed_accept_cascade_option_datasources")
+    chart.refresh_from_db()
+    assert list(chart.namespaces.values_list("id", flat=True)) == [namespace.id]
+    assert set(chart.tag.values_list("tag_id", flat=True)) == set(ACCEPTANCE_TAG_IDS)
 
     call_command("seed_accept_cascade_option_datasources")
     kept = DataSourceAPIModel.objects.get(rest_api=REST_CASCADE_CHART)
