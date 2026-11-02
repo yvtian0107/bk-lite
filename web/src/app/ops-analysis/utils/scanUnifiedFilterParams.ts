@@ -13,6 +13,7 @@ import {
 } from '@/app/ops-analysis/utils/dataSourceParamContract';
 import { normalizeInputConfig } from '@/app/ops-analysis/utils/paramInputConfigUtils';
 import {
+  optionsSourceCoreKey,
   optionsSourceIdentity,
   optionsSourceIdentityKey,
   optionsSourceSummary,
@@ -161,12 +162,51 @@ export const findReusableFilterDefinition = <T extends ReusableFilterDefinition>
     optionsSourceIdentityKey(optionsSourceIdentity(normalizeInputConfig(item))) === scannedKey);
 };
 
+const sameNameDefinitions = <T extends { key: string; type: string }>(
+  definitions: T[],
+  param: { name: string; type?: string },
+): T[] => definitions.filter((definition) =>
+  definition.key === param.name && definition.type === param.type);
+
+/**
+ * 同名多条时只在能唯一对上时返回。
+ * 先比完整 identity，再比选项宇宙（忽略 queryParams 写法）。并列则视为真歧义。
+ */
+interface MatchableFilterDefinition {
+  id: string;
+  key: string;
+  type: string;
+  inputConfig?: InputControlConfig;
+  inputMode?: string;
+}
+
+export const pickMatchingFilterDefinition = <T extends MatchableFilterDefinition>(
+  definitions: T[],
+  param: Pick<ParamItem, 'name' | 'type' | 'inputConfig' | 'inputMode'>,
+): T | undefined => {
+  const same = sameNameDefinitions(definitions, param);
+  if (same.length <= 1) return same[0];
+  if (isBoardSharedFilterDimension(param) || same.every((item) => isBoardSharedFilterDimension(item))) {
+    return same[0];
+  }
+  const paramKey = optionsSourceIdentityKey(optionsSourceIdentity(normalizeInputConfig(param)));
+  const exact = same.filter((definition) =>
+    optionsSourceIdentityKey(optionsSourceIdentity(normalizeInputConfig(definition))) === paramKey);
+  if (exact.length === 1) return exact[0];
+  if (exact.length > 1) return undefined;
+  const paramCore = optionsSourceCoreKey(normalizeInputConfig(param));
+  const core = same.filter((definition) =>
+    optionsSourceCoreKey(normalizeInputConfig(definition)) === paramCore);
+  return core.length === 1 ? core[0] : undefined;
+};
+
 export const matchFilterDefinitionForParam = (
   definitions: UnifiedFilterDefinition[],
   param: Pick<ParamItem, 'name' | 'type' | 'inputConfig' | 'inputMode'>,
 ): UnifiedFilterDefinition | undefined => {
-  const same = definitions.filter((definition) =>
-    definition.key === param.name && definition.type === param.type);
+  const picked = pickMatchingFilterDefinition(definitions, param);
+  if (picked) return picked;
+  const same = sameNameDefinitions(definitions, param);
   if (same.length <= 1) return same[0];
   if (isBoardSharedFilterDimension(param) || same.every((item) => isBoardSharedFilterDimension(item))) {
     return same[0];

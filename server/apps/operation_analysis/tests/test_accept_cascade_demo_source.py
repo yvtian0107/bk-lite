@@ -3,10 +3,9 @@ from types import SimpleNamespace
 
 import pytest
 from django.core.management import call_command
+from django.core.management.base import CommandError
 from rest_framework import status
 from rest_framework.test import APIRequestFactory, force_authenticate
-
-from django.core.management.base import CommandError
 
 from apps.operation_analysis.common.demo_source import (
     ACCEPTANCE_DATASOURCE_SPECS,
@@ -155,11 +154,7 @@ def test_seed_specs_use_chinese_names_and_point_chart_filters_at_demo_rest_apis(
         assert source["sourceRef"] == {"type": "rest_api", "value": rest_api}
         assert source["valueField"] == "id"
         assert source["labelField"] == "name"
-    assert params["metric_id"]["inputConfig"]["optionsSource"]["queryParams"] == {"object_id": {"ref": "object_id"}}
-    assert params["instance_id"]["inputConfig"]["optionsSource"]["queryParams"] == {
-        "object_id": {"ref": "object_id"},
-        "metric_id": {"ref": "metric_id"},
-    }
+        assert "queryParams" not in source
 
 
 def _post(user, data):

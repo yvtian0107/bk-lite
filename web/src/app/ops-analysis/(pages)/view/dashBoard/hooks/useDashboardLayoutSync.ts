@@ -12,6 +12,7 @@ import type { DatasourceItem } from '@/app/ops-analysis/types/dataSource';
 import type { DateRangeValue } from '@/app/ops-analysis/types/dateRange';
 import { validateDateRangeValue } from '@/app/ops-analysis/utils/dateRange';
 import {
+  bindDiscoveredQueryRefs,
   buildDefaultFilterBindings,
   discoverFollowedFilterParams,
   preserveUnfollowedFilterBindings,
@@ -80,10 +81,15 @@ export const buildFiltersFromDashboardLayout = ({
       const dataSource = dataSources.find(
         (source) => source.id === normalizedId,
       );
+      const resolvedSourceId = typeof normalizedId === 'number' && Number.isFinite(normalizedId)
+        ? normalizedId
+        : undefined;
       return {
         params: resolveWidgetBindableParams(item.valueConfig, dataSource),
         filterBindings: item.valueConfig?.filterBindings,
         sourceLabel: dataSource?.name || dataSource?.rest_api,
+        dataSourceId: resolvedSourceId,
+        catalogParams: dataSource?.params,
       };
     }),
     previousDefinitions,
@@ -138,14 +144,17 @@ export const buildFiltersFromDashboardLayout = ({
     },
   );
 
-  return ensureApplicationTopologyCanvasFilter(
-    rebuiltDefinitions.sort((a, b) => {
-      const orderDiff = (a.order ?? 0) - (b.order ?? 0);
-      if (orderDiff !== 0) return orderDiff;
-      return a.id.localeCompare(b.id);
-    }),
-    layout as Parameters<typeof ensureApplicationTopologyCanvasFilter>[1],
-    previousDefinitions,
+  return bindDiscoveredQueryRefs(
+    ensureApplicationTopologyCanvasFilter(
+      rebuiltDefinitions.sort((a, b) => {
+        const orderDiff = (a.order ?? 0) - (b.order ?? 0);
+        if (orderDiff !== 0) return orderDiff;
+        return a.id.localeCompare(b.id);
+      }),
+      layout as Parameters<typeof ensureApplicationTopologyCanvasFilter>[1],
+      previousDefinitions,
+    ),
+    discoveredParams,
   );
 };
 

@@ -142,6 +142,8 @@ const resolveParamOptionsQuery = ({
         name: param.name,
         type: param.type,
         filterType: param.filterType,
+        inputConfig: param.inputConfig,
+        inputMode: param.inputMode,
         value: formParamValue(formParams, param.name, param.value),
       })),
       definitions: globalFilters ?? [],

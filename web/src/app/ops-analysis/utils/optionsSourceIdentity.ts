@@ -53,6 +53,22 @@ export const optionsSourceIdentity = (
 export const optionsSourceIdentityKey = (identity: OptionsSourceIdentity): string =>
   identity === null ? 'none' : stableStringify(identity);
 
+/** 选项宇宙本身。queryParams 的写法差异不参与比较。 */
+export const optionsSourceCoreKey = (
+  inputConfig?: Parameters<typeof optionsSourceIdentity>[0],
+): string => {
+  const identity = optionsSourceIdentity(inputConfig);
+  if (!identity) return 'none';
+  if (identity.type === 'static') return optionsSourceIdentityKey(identity);
+  return stableStringify({
+    type: identity.type,
+    sourceId: identity.sourceId,
+    sourceRef: identity.sourceRef,
+    valueField: identity.valueField,
+    labelField: identity.labelField,
+  });
+};
+
 export const shortOptionsSourceDigest = (identity: OptionsSourceIdentity): string => {
   const text = optionsSourceIdentityKey(identity);
   let hash = 2166136261;

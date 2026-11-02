@@ -16,6 +16,7 @@ import { isChartTypeSupportedOnSurface } from './chartTypeSurface';
 import { normalizeStoredFilterDefinitions } from './unifiedFilterState';
 import { findReusableFilterDefinition } from './scanUnifiedFilterParams';
 import {
+  bindDiscoveredQueryRefs,
   buildDefaultFilterBindings,
   discoverFollowedFilterParams,
 } from './widgetDataTransform';
@@ -230,9 +231,16 @@ export const buildFiltersFromReportSections = (
   const discoveredParams = discoverFollowedFilterParams(
     sections.map((section) => {
       const dataSource = resolveSectionDataSource(section.valueConfig.dataSource, dataSources);
+      const rawId = section.valueConfig.dataSource;
+      const normalizedId = typeof rawId === 'string' ? parseInt(rawId, 10) : rawId;
+      const dataSourceId = typeof normalizedId === 'number' && Number.isFinite(normalizedId)
+        ? normalizedId
+        : undefined;
       return {
         params: resolveSectionBindableParams(section.valueConfig, dataSource),
         sourceLabel: dataSource?.name || dataSource?.rest_api,
+        dataSourceId,
+        catalogParams: dataSource?.params,
       };
     }),
     previousDefinitions,
@@ -244,7 +252,7 @@ export const buildFiltersFromReportSections = (
   );
   let nextOrder = maxExistingOrder + 1;
 
-  return Array.from(discoveredParams.entries())
+  return bindDiscoveredQueryRefs(Array.from(discoveredParams.entries())
     .map(([id, param]) => {
       const existing = findReusableFilterDefinition(previousDefinitions, {
         id,
@@ -287,7 +295,7 @@ export const buildFiltersFromReportSections = (
       const orderDiff = (left.order ?? 0) - (right.order ?? 0);
       if (orderDiff !== 0) return orderDiff;
       return left.id.localeCompare(right.id);
-    });
+    }), discoveredParams);
 };
 
 export const syncReportFiltersFromSections = (

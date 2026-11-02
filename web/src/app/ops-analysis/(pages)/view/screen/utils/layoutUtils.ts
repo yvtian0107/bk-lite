@@ -19,6 +19,7 @@ import { isScreenWidgetItem } from "./screenItems";
 import type { DateRangeValue } from "@/app/ops-analysis/types/dateRange";
 import { buildRelativeTimeRangeFilterValue } from "@/app/ops-analysis/utils/filterValue";
 import {
+  bindDiscoveredQueryRefs,
   buildDefaultFilterBindings,
   discoverFollowedFilterParams,
   getBindableFilterParams,
@@ -121,10 +122,17 @@ export const buildFiltersFromScreenItems = ({
     viewSets.items.flatMap((item) => {
       if (!isScreenWidgetItem(item)) return [];
       const dataSource = resolveScreenItemDataSource(item, dataSources);
+      const rawId = item.valueConfig?.dataSource;
+      const normalizedId = typeof rawId === "string" ? parseInt(rawId, 10) : rawId;
+      const dataSourceId = typeof normalizedId === "number" && Number.isFinite(normalizedId)
+        ? normalizedId
+        : dataSource?.id;
       return [{
         params: resolveScreenWidgetParams(item, dataSource),
         filterBindings: item.valueConfig?.filterBindings,
         sourceLabel: dataSource?.name || dataSource?.rest_api,
+        dataSourceId,
+        catalogParams: dataSource?.params,
       }];
     }),
     previousDefinitions,
@@ -182,14 +190,17 @@ export const buildFiltersFromScreenItems = ({
       return a.id.localeCompare(b.id);
     });
 
-  return ensureApplicationTopologyCanvasFilter(
-    ensureRoom3DCanvasFilter(
-      discovered,
-      viewSets.items,
+  return bindDiscoveredQueryRefs(
+    ensureApplicationTopologyCanvasFilter(
+      ensureRoom3DCanvasFilter(
+        discovered,
+        viewSets.items,
+        previousDefinitions,
+      ),
+      viewSets.items as Parameters<typeof ensureApplicationTopologyCanvasFilter>[1],
       previousDefinitions,
     ),
-    viewSets.items as Parameters<typeof ensureApplicationTopologyCanvasFilter>[1],
-    previousDefinitions,
+    discoveredParams,
   );
 };
 

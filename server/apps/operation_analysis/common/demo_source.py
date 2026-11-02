@@ -153,15 +153,8 @@ def _request_param(name, alias_name):
     }
 
 
-def _filter_param(name, alias_name, rest_api, query_params=None):
-    options_source = {
-        "type": "dynamic",
-        "sourceRef": {"type": "rest_api", "value": rest_api},
-        "valueField": "id",
-        "labelField": "name",
-    }
-    if query_params:
-        options_source["queryParams"] = query_params
+def _filter_param(name, alias_name, rest_api):
+    # 图表壳只声明选项源。上游引用由总表配置写入，不预置 {ref}。
     return {
         "name": name,
         "type": "string",
@@ -170,7 +163,12 @@ def _filter_param(name, alias_name, rest_api, query_params=None):
         "filterType": "filter",
         "inputConfig": {
             "control": "select",
-            "optionsSource": options_source,
+            "optionsSource": {
+                "type": "dynamic",
+                "sourceRef": {"type": "rest_api", "value": rest_api},
+                "valueField": "id",
+                "labelField": "name",
+            },
         },
     }
 
@@ -230,21 +228,8 @@ ACCEPTANCE_DATASOURCE_SPECS = (
         "图表壳。三个筛选分别指向监控对象、指标列表、实例列表；取数固定返回一行示意。",
         [
             _filter_param("object_id", "监控对象", REST_MONITOR_OBJECTS),
-            _filter_param(
-                "metric_id",
-                "指标",
-                REST_METRICS,
-                {"object_id": {"ref": "object_id"}},
-            ),
-            _filter_param(
-                "instance_id",
-                "实例",
-                REST_INSTANCES,
-                {
-                    "object_id": {"ref": "object_id"},
-                    "metric_id": {"ref": "metric_id"},
-                },
-            ),
+            _filter_param("metric_id", "指标", REST_METRICS),
+            _filter_param("instance_id", "实例", REST_INSTANCES),
         ],
         list(CHART_TYPES),
         _CHART_FIELDS,

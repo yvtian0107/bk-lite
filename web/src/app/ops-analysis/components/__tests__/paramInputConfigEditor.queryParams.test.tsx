@@ -204,7 +204,7 @@ describe('param input query params', () => {
     expect(onConfirm).toHaveBeenCalledWith(expect.objectContaining({
       optionsSource: expect.objectContaining({
         queryParams: {
-          room_id: { ref: 'site_id' },
+          room_id: { ref: 'site_id__string' },
           zone_id: 7,
           area_code: 'saved',
         },
@@ -380,7 +380,7 @@ describe('param input query params', () => {
     await waitFor(() => expect(onConfirm).toHaveBeenCalled());
     const saved = onConfirm.mock.calls[0]?.[0];
     expect(saved.componentSwitch).toBeUndefined();
-    expect(saved.optionsSource.queryParams.room_id).toEqual({ ref: 'site_id' });
+    expect(saved.optionsSource.queryParams.room_id).toEqual({ ref: 'site_id__string' });
   });
 
   it('auto previews when all query params are filled fixed values', async () => {

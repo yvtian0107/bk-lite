@@ -4,6 +4,7 @@ import type { DateRangeValue } from '@/app/ops-analysis/types/dateRange';
 import type { LayoutItem, UnifiedFilterDefinition, FilterValue } from '@/app/ops-analysis/types/dashBoard';
 import type { ViewConfigFormValues } from '@/app/ops-analysis/types/topology';
 import {
+  bindDiscoveredQueryRefs,
   discoverFollowedFilterParams,
 } from '@/app/ops-analysis/utils/widgetDataTransform';
 import { findReusableFilterDefinition } from '@/app/ops-analysis/utils/scanUnifiedFilterParams';
@@ -134,17 +135,22 @@ export const buildFiltersFromNodes = (
       const params = nodeData?.valueConfig?.dataSourceParams?.length
         ? nodeData.valueConfig.dataSourceParams
         : dataSource?.params;
+      const resolvedSourceId = typeof normalizedId === 'number' && Number.isFinite(normalizedId)
+        ? normalizedId
+        : undefined;
 
       return [{
         params,
         filterBindings: nodeData?.valueConfig?.filterBindings,
         sourceLabel: dataSource?.name || dataSource?.rest_api,
+        dataSourceId: resolvedSourceId,
+        catalogParams: dataSource?.params,
       }];
     }),
     previousDefinitions,
   );
 
-  return Array.from(discoveredParams.entries()).map(([id, param], index) => {
+  return bindDiscoveredQueryRefs(Array.from(discoveredParams.entries()).map(([id, param], index) => {
     const existing = findReusableFilterDefinition(previousDefinitions, {
       id,
       key: param.name,
@@ -183,7 +189,7 @@ export const buildFiltersFromNodes = (
       options: existing?.options,
       inputConfig: existing?.inputConfig ?? param.inputConfig,
     };
-  });
+  }), discoveredParams);
 };
 
 const VALUE_FORMAT_CHART_TYPES = new Set([

@@ -53,6 +53,7 @@ import {
 } from '@/app/ops-analysis/utils/optionsQueryParamRefs';
 import {
   formatOptionsQueryCandidateLabel,
+  canonicalizeOptionsQueryRef,
   listOptionsQueryCandidates,
   type OptionsQueryEditorContext,
 } from '@/app/ops-analysis/utils/optionsQueryCandidates';
@@ -709,7 +710,9 @@ export const ParamInputConfigEditor: React.FC<ParamInputConfigEditorProps> = ({
       const name = row.name.trim();
       if (!name) return;
       if (row.mode === 'ref') {
-        draftParams[name] = { ref: row.refName.trim() };
+        draftParams[name] = {
+          ref: canonicalizeOptionsQueryRef(row.refName.trim(), optionsQueryContext),
+        };
         return;
       }
       const literal = rowLiteralPayload(row);
@@ -1140,9 +1143,12 @@ export const ParamInputConfigEditor: React.FC<ParamInputConfigEditorProps> = ({
                               )),
                             });
                             if (row.mode === 'ref') {
+                              const sameKey = choices.filter((choice) => choice.key === row.refName);
+                              const selected = choices.find((choice) => choice.ref === row.refName)
+                                ?? (sameKey.length === 1 ? sameKey[0] : undefined);
                               return (
                                 <Select
-                                  value={row.refName || undefined}
+                                  value={selected?.ref ?? (row.refName || undefined)}
                                   style={{ width: '100%' }}
                                   placeholder={t('paramInput.dynamic.selectUpstream')}
                                   options={choices.map((choice) => ({

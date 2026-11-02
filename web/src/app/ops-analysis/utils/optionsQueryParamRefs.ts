@@ -1,4 +1,8 @@
-import type { OptionsQueryParamValue } from '@/app/ops-analysis/types/dataSource';
+import type {
+  DynamicOptionsSource,
+  InputControlConfig,
+  OptionsQueryParamValue,
+} from '@/app/ops-analysis/types/dataSource';
 import { isBindableDataSourceParamType } from '@/app/ops-analysis/utils/dataSourceParamContract';
 
 /** 依赖链最多 3 个参数（A→B→C）。A→B→C→D 拒绝。 */
@@ -92,6 +96,67 @@ export const readOptionsQueryUpstream = (
   if (byKey.length > 1) return { found: true, invalid: true };
   if (byKey.length === 1) return { found: true, invalid: false, value: readValue(byKey[0].id) };
   return { found: false };
+};
+
+/**
+ * 裸参数名在保存或布局同步时收成筛选 id。
+ * 同名只有一条时用那条；多条时只接受与引用方同一数据源的那条。对不上就保持原样。
+ */
+export const resolveBareFilterRef = <T extends { id: string; key: string; enabled?: boolean }>(
+  ref: string,
+  ownerId: string,
+  definitions: T[],
+  origins: ReadonlyMap<string, readonly number[]> = new Map(),
+): string => {
+  const trimmed = ref.trim();
+  if (!trimmed) return trimmed;
+  if (definitions.some((item) => item.enabled !== false && item.id === trimmed)) return trimmed;
+  const hits = definitions.filter((item) =>
+    item.enabled !== false && item.id !== ownerId && item.key === trimmed);
+  if (hits.length === 1) return hits[0].id;
+  if (hits.length < 2) return trimmed;
+  const ownerSources = origins.get(ownerId) ?? [];
+  if (!ownerSources.length) return trimmed;
+  const linked = hits.filter((item) =>
+    (origins.get(item.id) ?? []).some((id) => ownerSources.includes(id)));
+  return linked.length === 1 ? linked[0].id : trimmed;
+};
+
+const dynamicOptionsOf = (
+  inputConfig: InputControlConfig | undefined,
+): DynamicOptionsSource | undefined => {
+  if (!inputConfig || (inputConfig.control !== 'select' && inputConfig.control !== 'radio')) {
+    return undefined;
+  }
+  return inputConfig.optionsSource.type === 'dynamic' ? inputConfig.optionsSource : undefined;
+};
+
+/** 把定义上的裸名引用收成筛选 id。没有变化时返回原数组。 */
+export const rewriteBareQueryRefsToDefinitionIds = <T extends {
+  id: string; key: string; enabled?: boolean; inputConfig?: InputControlConfig;
+}>(definitions: T[], origins: ReadonlyMap<string, readonly number[]> = new Map()): T[] => {
+  let changed = false;
+  const next = definitions.map((definition) => {
+    const source = dynamicOptionsOf(definition.inputConfig);
+    if (!source?.queryParams || !definition.inputConfig) return definition;
+    let queryChanged = false;
+    const queryParams = { ...source.queryParams };
+    Object.entries(source.queryParams).forEach(([name, raw]) => {
+      if (!isOptionsQueryParamRef(raw)) return;
+      const resolved = resolveBareFilterRef(raw.ref, definition.id, definitions, origins);
+      if (resolved === raw.ref) return;
+      queryParams[name] = { ref: resolved };
+      queryChanged = true;
+    });
+    if (!queryChanged) return definition;
+    changed = true;
+    const inputConfig = {
+      ...definition.inputConfig,
+      optionsSource: { ...source, queryParams },
+    } as InputControlConfig;
+    return { ...definition, inputConfig };
+  });
+  return changed ? next : definitions;
 };
 
 /** 已经命中某一行时：同名裸引用返回非法标记，否则返回该行的值。 */

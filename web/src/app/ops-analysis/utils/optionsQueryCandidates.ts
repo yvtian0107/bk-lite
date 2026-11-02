@@ -6,7 +6,7 @@ import {
   MAX_OPTIONS_QUERY_CHAIN_NODES,
   OPTIONS_QUERY_INVALID,
 } from '@/app/ops-analysis/utils/optionsQueryParamRefs';
-import { matchFilterDefinitionForParam } from '@/app/ops-analysis/utils/scanUnifiedFilterParams';
+import { pickMatchingFilterDefinition } from '@/app/ops-analysis/utils/scanUnifiedFilterParams';
 
 export type OptionsQueryCandidateOrigin = 'globalFilter' | 'componentParam';
 
@@ -155,16 +155,6 @@ export const listOptionsQueryCandidates = ({
     && typeMatches(param.type, expectedType)
     && !rejectsEdge(selfName, param.name, nodes, siblingRefs)
   ));
-  const keyCount = new Map<string, number>();
-  eligibleFilters.forEach((filter) => {
-    keyCount.set(filter.key, (keyCount.get(filter.key) ?? 0) + 1);
-  });
-  const reservedNames = new Set<string>();
-  if (context.scope === 'component') {
-    if (context.self.key) reservedNames.add(context.self.key);
-    params.forEach((param) => reservedNames.add(param.name));
-  }
-
   const choices: OptionsQueryCandidateChoice[] = [
     ...eligibleParams.map((param) => ({
       ref: param.name,
@@ -174,9 +164,7 @@ export const listOptionsQueryCandidates = ({
       type: param.type,
     })),
     ...eligibleFilters.map((filter) => ({
-      ref: (keyCount.get(filter.key) ?? 0) > 1 || reservedNames.has(filter.key)
-        ? filter.id
-        : filter.key,
+      ref: filter.id,
       origin: 'globalFilter' as const,
       displayName: filter.label?.trim() || filter.key,
       key: filter.key,
@@ -227,6 +215,35 @@ export const formatOptionsQueryCandidateLabel = (
   });
 };
 
+/** 保存时：同名当时唯一，或能按选项身份对上的那条，写成 definition.id。 */
+export const canonicalizeOptionsQueryRef = (
+  ref: string,
+  context?: OptionsQueryEditorContext,
+): string => {
+  const trimmed = ref.trim();
+  if (!trimmed) return trimmed;
+  const filters = (context?.globalFilters ?? []).filter((filter) => filter.enabled !== false && filter.id);
+  if (filters.some((filter) => filter.id === trimmed)) return trimmed;
+  const byKey = filters.filter((filter) => filter.key === trimmed);
+  if (byKey.length === 1) return byKey[0].id;
+  if (byKey.length > 1) {
+    const param = context?.componentParams?.find((item) => item.name === trimmed);
+    if (param) {
+      const picked = pickMatchingFilterDefinition(
+        byKey.map(toFilterDefinition),
+        {
+          name: param.name,
+          type: param.type,
+          inputConfig: param.inputConfig,
+          inputMode: param.inputMode,
+        },
+      );
+      if (picked) return picked.id;
+    }
+  }
+  return trimmed;
+};
+
 const toFilterDefinition = (
   filter: OptionsQueryCandidateFilter,
 ): UnifiedFilterDefinition => ({
@@ -270,7 +287,7 @@ export const readComponentOptionsQueryUpstream = ({
       const active = matched.filter((filter) => bindings[filter.id] !== false);
       if (active.length === 1) return readFilterValue(active[0].id);
       if (active.length > 1) {
-        const picked = matchFilterDefinitionForParam(
+        const picked = pickMatchingFilterDefinition(
           active.map(toFilterDefinition),
           param,
         );

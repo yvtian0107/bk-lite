@@ -50,7 +50,7 @@ describe('options query candidates', () => {
     expect(choices.map((item) => item.ref)).toEqual([
       'site_id',
       'zone_id',
-      'org',
+      'org__string',
       'site_id__string',
     ]);
     expect(choices.map((item) => item.origin)).toEqual([
@@ -184,5 +184,70 @@ describe('options query candidates', () => {
       filterBindings: {},
       readFilterValue,
     })).toBe(OPTIONS_QUERY_INVALID);
+  });
+
+  it('resolves a bare name to the followed filter whose options identity matches', () => {
+    const cmdb = {
+      control: 'select' as const,
+      optionsSource: {
+        type: 'dynamic' as const,
+        sourceRef: { type: 'rest_api' as const, value: 'cmdb/rooms' },
+        valueField: 'id',
+        labelField: 'name',
+      },
+    };
+    const monitor = {
+      control: 'select' as const,
+      optionsSource: {
+        type: 'dynamic' as const,
+        sourceRef: { type: 'rest_api' as const, value: 'monitor/rooms' },
+        valueField: 'id',
+        labelField: 'name',
+      },
+    };
+    const drifted = {
+      ...cmdb,
+      optionsSource: {
+        ...cmdb.optionsSource,
+        queryParams: { zone_id: { ref: 'zone_id' } },
+      },
+    };
+    const definitions = [
+      { id: 'site_id__string', key: 'site_id', type: 'string', inputConfig: drifted },
+      { id: 'site_id__string__bbbbbbbb', key: 'site_id', type: 'string', inputConfig: monitor },
+    ];
+    const readFilterValue = (id: string) => (id === 'site_id__string' ? 'room-a' : 'room-b');
+    expect(readComponentOptionsQueryUpstream({
+      ref: 'site_id',
+      componentParams: [{
+        name: 'site_id',
+        type: 'string',
+        filterType: 'filter',
+        inputConfig: cmdb,
+        value: 'local-room',
+      }],
+      definitions,
+      filterBindings: {
+        site_id__string: true,
+        'site_id__string__bbbbbbbb': true,
+      },
+      readFilterValue,
+    })).toBe('room-a');
+    expect(readComponentOptionsQueryUpstream({
+      ref: 'site_id',
+      componentParams: [{
+        name: 'site_id',
+        type: 'string',
+        filterType: 'filter',
+        inputConfig: cmdb,
+        value: 'local-room',
+      }],
+      definitions,
+      filterBindings: {
+        site_id__string: false,
+        'site_id__string__bbbbbbbb': true,
+      },
+      readFilterValue,
+    })).toBe('room-b');
   });
 });
