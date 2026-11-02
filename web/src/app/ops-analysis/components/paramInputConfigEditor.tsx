@@ -1052,6 +1052,17 @@ export const ParamInputConfigEditor: React.FC<ParamInputConfigEditorProps> = ({
                       dataSource={queryParamRows}
                       columns={[
                         {
+                          title: t('paramInput.dynamic.queryParamTechnicalName'),
+                          dataIndex: 'name',
+                          width: 112,
+                          ellipsis: true,
+                          render: (name: string) => (
+                            <span className="block truncate font-mono text-xs" title={name}>
+                              {name}
+                            </span>
+                          ),
+                        },
+                        {
                           title: t('paramInput.dynamic.queryParamAlias'),
                           dataIndex: 'alias',
                           width: 112,
@@ -1064,17 +1075,6 @@ export const ParamInputConfigEditor: React.FC<ParamInputConfigEditorProps> = ({
                               </span>
                             );
                           },
-                        },
-                        {
-                          title: t('paramInput.dynamic.queryParamTechnicalName'),
-                          dataIndex: 'name',
-                          width: 168,
-                          ellipsis: true,
-                          render: (name: string) => (
-                            <span className="block truncate font-mono text-xs" title={name}>
-                              {name}
-                            </span>
-                          ),
                         },
                         {
                           title: t('paramInput.dynamic.valueMode'),
