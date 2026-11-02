@@ -927,33 +927,36 @@ export const ParamInputConfigEditor: React.FC<ParamInputConfigEditorProps> = ({
                 </Form.Item>
                 {queryParamRows.length > 0 ? (
                   <Form.Item label={t('paramInput.dynamic.queryParams')} className="mb-3">
-                    <div className="flex flex-col gap-2">
-                      <div className="flex items-center gap-2 text-xs text-(--color-text-3)">
-                        <span className="w-36 shrink-0">{t('paramInput.dynamic.queryParamName')}</span>
-                        <span className="w-28 shrink-0">{t('paramInput.dynamic.valueMode')}</span>
-                        <span className="min-w-0 flex-1">{t('paramInput.dynamic.valueOrRef')}</span>
-                      </div>
-                      {queryParamRows.map((row) => {
-                        const choices = listOptionsQueryCandidates({
-                          context: optionsQueryContext,
-                          expectedType: row.type,
-                          siblingRefs: queryParamRows.flatMap((item) => (
-                            item.uid !== row.uid && item.mode === 'ref' && item.refName.trim()
-                              ? [item.refName.trim()]
-                              : []
-                          )),
-                        });
-                        return (
-                          <div key={row.uid} className="flex items-center gap-2">
-                            <div
-                              className="w-36 shrink-0 truncate font-mono text-xs"
+                    <Table<QueryParamRow>
+                      className="w-full"
+                      size="small"
+                      pagination={false}
+                      tableLayout="fixed"
+                      rowKey="uid"
+                      dataSource={queryParamRows}
+                      columns={[
+                        {
+                          title: t('paramInput.dynamic.queryParamName'),
+                          dataIndex: 'name',
+                          width: 168,
+                          ellipsis: true,
+                          render: (_value: string, row) => (
+                            <span
+                              className="block truncate font-mono text-xs"
                               title={row.alias && row.alias !== row.name ? `${row.name} ${row.alias}` : row.name}
                             >
                               {row.name}
-                            </div>
+                            </span>
+                          ),
+                        },
+                        {
+                          title: t('paramInput.dynamic.valueMode'),
+                          dataIndex: 'mode',
+                          width: 112,
+                          render: (_value: QueryParamRow['mode'], row) => (
                             <Select
                               value={row.mode}
-                              className="w-28 shrink-0"
+                              style={{ width: '100%' }}
                               popupMatchSelectWidth={false}
                               options={[
                                 { value: 'literal', label: t('paramInput.dynamic.fixedValue') },
@@ -965,11 +968,26 @@ export const ParamInputConfigEditor: React.FC<ParamInputConfigEditorProps> = ({
                                 )));
                               }}
                             />
-                            <div className="min-w-0 flex-1">
-                              {row.mode === 'ref' ? (
+                          ),
+                        },
+                        {
+                          title: t('paramInput.dynamic.valueOrRef'),
+                          dataIndex: 'literalText',
+                          render: (_value: string, row) => {
+                            const choices = listOptionsQueryCandidates({
+                              context: optionsQueryContext,
+                              expectedType: row.type,
+                              siblingRefs: queryParamRows.flatMap((item) => (
+                                item.uid !== row.uid && item.mode === 'ref' && item.refName.trim()
+                                  ? [item.refName.trim()]
+                                  : []
+                              )),
+                            });
+                            if (row.mode === 'ref') {
+                              return (
                                 <Select
                                   value={row.refName || undefined}
-                                  className="w-full"
+                                  style={{ width: '100%' }}
                                   placeholder={t('paramInput.dynamic.selectUpstream')}
                                   options={choices.map((choice) => ({
                                     value: choice.ref,
@@ -987,38 +1005,39 @@ export const ParamInputConfigEditor: React.FC<ParamInputConfigEditorProps> = ({
                                     )));
                                   }}
                                 />
-                              ) : (
-                                <Input
-                                  value={row.literalText}
-                                  placeholder={t('paramInput.dynamic.queryParamValue')}
-                                  onChange={(event) => {
-                                    const literalText = event.target.value;
-                                    setQueryParamRows((prev) => prev.map((item) => (
-                                      item.uid === row.uid
-                                        ? { ...item, literalText, literalRaw: undefined }
-                                        : item
-                                    )));
-                                  }}
-                                />
-                              )}
-                            </div>
-                          </div>
-                        );
-                      })}
-                      {previewBlockedByRef ? (
-                        <div className="text-xs text-(--color-text-3)">
-                          {t('paramInput.dynamic.previewSkippedForRef')}
-                        </div>
-                      ) : null}
-                      {queryParamError ? (
-                        <div className="text-xs text-(--color-error)">{queryParamError}</div>
-                      ) : null}
-                      {componentSwitch && queryParamRows.some((row) => row.mode === 'ref' && row.refName) ? (
-                        <div className="text-xs text-(--color-text-3)">
-                          {t('paramInput.dynamic.componentSwitchDepends')}
-                        </div>
-                      ) : null}
-                    </div>
+                              );
+                            }
+                            return (
+                              <Input
+                                value={row.literalText}
+                                placeholder={t('paramInput.dynamic.queryParamValue')}
+                                onChange={(event) => {
+                                  const literalText = event.target.value;
+                                  setQueryParamRows((prev) => prev.map((item) => (
+                                    item.uid === row.uid
+                                      ? { ...item, literalText, literalRaw: undefined }
+                                      : item
+                                  )));
+                                }}
+                              />
+                            );
+                          },
+                        },
+                      ]}
+                    />
+                    {previewBlockedByRef ? (
+                      <div className="mt-2 text-xs text-(--color-text-3)">
+                        {t('paramInput.dynamic.previewSkippedForRef')}
+                      </div>
+                    ) : null}
+                    {queryParamError ? (
+                      <div className="mt-2 text-xs text-(--color-error)">{queryParamError}</div>
+                    ) : null}
+                    {componentSwitch && queryParamRows.some((row) => row.mode === 'ref' && row.refName) ? (
+                      <div className="mt-2 text-xs text-(--color-text-3)">
+                        {t('paramInput.dynamic.componentSwitchDepends')}
+                      </div>
+                    ) : null}
                   </Form.Item>
                 ) : null}
                 <Form.Item label={t('paramInput.dynamic.preview')} className="mb-0">

@@ -111,9 +111,13 @@ describe('param input query params', () => {
     const dialog = await screen.findByRole('dialog');
     expect(await within(dialog).findByText('zone_id')).not.toBeNull();
     expect(within(dialog).getByText('room_id')).not.toBeNull();
-    expect(within(dialog).getByText('入参名')).not.toBeNull();
-    expect(within(dialog).getByText('取值方式')).not.toBeNull();
-    expect(within(dialog).getByText('值/引用')).not.toBeNull();
+    const modeHeader = within(dialog).getByRole('columnheader', { name: '取值方式' });
+    const queryTable = modeHeader.closest('table');
+    expect(queryTable?.style.tableLayout).toBe('fixed');
+    const widths = Array.from(queryTable?.querySelectorAll('col') ?? []).map((col) => col.style.width);
+    expect(widths).toEqual(['168px', '112px']);
+    expect(within(dialog).getByRole('columnheader', { name: '入参名' })).not.toBeNull();
+    expect(within(dialog).getByRole('columnheader', { name: '值/引用' })).not.toBeNull();
     expect(within(dialog).queryByText('示例值')).toBeNull();
     expect(within(dialog).queryByPlaceholderText('示例值')).toBeNull();
     expect(within(dialog).getByText('引用入参需运行时上游值，配置态不预览')).not.toBeNull();
