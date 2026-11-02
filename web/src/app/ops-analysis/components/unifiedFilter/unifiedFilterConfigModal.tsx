@@ -69,7 +69,6 @@ import type {
   InputControlConfig,
 } from '@/app/ops-analysis/types/dataSource';
 import {
-  buildOptionsQueryRefChoices,
   dynamicQueryParamsOf,
   validateUnifiedFilterQueryGraph,
 } from '@/app/ops-analysis/utils/optionsQueryParamRefs';
@@ -770,28 +769,25 @@ const UnifiedFilterConfigModal: React.FC<UnifiedFilterConfigModalProps> = ({
         value={getEditingFilterInputConfig()}
         editingParamName={definitions.find((item) => item.id === editingFilterId)?.key}
         editingNodeId={editingFilterId ?? undefined}
-        queryParamRefCandidates={buildOptionsQueryRefChoices(
-          definitions
+        optionsQueryContext={{
+          scope: 'globalFilter',
+          self: {
+            id: editingFilterId ?? undefined,
+            key: definitions.find((item) => item.id === editingFilterId)?.key || '',
+          },
+          globalFilters: definitions
             .filter((item) => item.id !== editingFilterId)
             .map((item) => ({
               id: item.id,
               key: item.key,
               label: item.name,
               type: item.type,
+              enabled: item.enabled,
               sourceHint: optionsSourceSummary(item.inputConfig),
+              queryParams: dynamicQueryParamsOf(item.inputConfig),
+              inputConfig: item.inputConfig,
             })),
-        ).map((choice) => ({
-          name: choice.ref,
-          label: choice.label,
-          type: choice.type,
-        }))}
-        optionsQueryNodes={definitions
-          .filter((item) => item.id !== editingFilterId)
-          .map((item) => ({
-            name: item.id,
-            aliases: item.key && item.key !== item.id ? [item.key] : undefined,
-            queryParams: dynamicQueryParamsOf(item.inputConfig),
-          }))}
+        }}
         onConfirm={handleInputConfigConfirm}
         onCancel={() => {
           setInputConfigModalOpen(false);

@@ -49,28 +49,27 @@ import {
   isRejectedQueryParams,
   normalizeQueryParamsForStorage,
   validateOptionsQueryParams,
-  type OptionsQueryNode,
 } from '@/app/ops-analysis/utils/optionsQueryParamRefs';
+import {
+  formatOptionsQueryCandidateLabel,
+  listOptionsQueryCandidates,
+  type OptionsQueryEditorContext,
+} from '@/app/ops-analysis/utils/optionsQueryCandidates';
 import { useTranslation } from '@/utils/i18n';
 
 interface StaticRow extends InputOption {
   uid: string;
 }
 
-interface QueryParamRefCandidate {
-  name: string;
-  label?: string;
-  type?: string;
-}
-
 interface QueryParamRow {
   uid: string;
   name: string;
+  alias?: string;
+  type?: string;
   mode: 'literal' | 'ref';
   literalText: string;
   literalRaw?: string | number | boolean | null;
   refName: string;
-  sample: string;
 }
 
 interface ParamInputConfigEditorProps {
@@ -84,8 +83,7 @@ interface ParamInputConfigEditorProps {
   editingParamName?: string;
   /** 同名多行时，正在编辑的筛选 id。校验图用它做节点名。 */
   editingNodeId?: string;
-  queryParamRefCandidates?: QueryParamRefCandidate[];
-  optionsQueryNodes?: OptionsQueryNode[];
+  optionsQueryContext?: OptionsQueryEditorContext;
 }
 
 interface SortableStaticRowProps {
@@ -100,15 +98,6 @@ interface SortableStaticRowProps {
 
 const newId = () => Math.random().toString(36).slice(2);
 const createRow = (): StaticRow => ({ uid: newId(), label: '', value: '' });
-const createQueryRow = (): QueryParamRow => ({
-  uid: newId(),
-  name: '',
-  mode: 'literal',
-  literalText: '',
-  refName: '',
-  sample: '',
-});
-
 const queryRowFromStored = (name: string, raw: unknown): QueryParamRow => {
   const normalized = normalizeOptionsQueryParamValue(raw);
   if (normalized.ok && isOptionsQueryParamRef(normalized.value)) {
@@ -118,7 +107,6 @@ const queryRowFromStored = (name: string, raw: unknown): QueryParamRow => {
       mode: 'ref',
       literalText: '',
       refName: normalized.value.ref,
-      sample: '',
     };
   }
   const literal = normalized.ok ? normalized.value : '';
@@ -129,7 +117,6 @@ const queryRowFromStored = (name: string, raw: unknown): QueryParamRow => {
     literalText: literal == null ? '' : String(literal),
     literalRaw: normalized.ok && !isOptionsQueryParamRef(normalized.value) ? normalized.value : undefined,
     refName: '',
-    sample: '',
   };
 };
 
@@ -210,8 +197,7 @@ export const ParamInputConfigEditor: React.FC<ParamInputConfigEditorProps> = ({
   componentSwitchOwner,
   editingParamName,
   editingNodeId,
-  queryParamRefCandidates = [],
-  optionsQueryNodes = [],
+  optionsQueryContext,
 }) => {
   const { t } = useTranslation();
   const { getDataSourceList, getSourceDataByApiId } = useDataSourceApi();
@@ -327,6 +313,27 @@ export const ParamInputConfigEditor: React.FC<ParamInputConfigEditorProps> = ({
     () => dataSourceList.find((item) => item.id === dynamicSourceId),
     [dataSourceList, dynamicSourceId],
   );
+
+  useEffect(() => {
+    if (!open || sourceType !== 'dynamic' || !selectedDataSource) return;
+    if (!Array.isArray(selectedDataSource.params)) return;
+    const declared = selectedDataSource.params.filter((param) => param.name);
+    setQueryParamRows((prev) => declared.map((param) => {
+      const existing = prev.find((row) => row.name === param.name);
+      if (existing) {
+        return { ...existing, alias: param.alias_name, type: param.type };
+      }
+      return {
+        uid: newId(),
+        name: param.name,
+        alias: param.alias_name,
+        type: param.type,
+        mode: 'literal' as const,
+        literalText: '',
+        refName: '',
+      };
+    }));
+  }, [open, selectedDataSource, sourceType]);
 
   const availableFields = useMemo(() => {
     const first = dynamicPreview[0];
@@ -553,6 +560,12 @@ export const ParamInputConfigEditor: React.FC<ParamInputConfigEditorProps> = ({
     const sourceRef = selectedSource?.rest_api
       ? { type: 'rest_api' as const, value: selectedSource.rest_api }
       : undefined;
+    if (queryParamRows.some((row) => row.name.trim() && row.mode === 'ref' && !row.refName.trim())) {
+      const messageText = t('paramInput.dynamic.refRequired');
+      setQueryParamError(messageText);
+      message.error(messageText);
+      return;
+    }
     const draftParams: Record<string, unknown> = {};
     queryParamRows.forEach((row) => {
       const name = row.name.trim();
@@ -561,33 +574,55 @@ export const ParamInputConfigEditor: React.FC<ParamInputConfigEditorProps> = ({
         draftParams[name] = { ref: row.refName.trim() };
         return;
       }
+      if (row.literalText === '' && row.literalRaw === undefined) return;
       draftParams[name] = row.literalRaw !== undefined && String(row.literalRaw ?? '') === row.literalText
         ? row.literalRaw
         : row.literalText;
     });
     const storedParams = normalizeQueryParamsForStorage(draftParams);
-    const paramName = editingParamName || 'current';
-    const nodeName = editingNodeId || paramName;
+    const scope = optionsQueryContext?.scope ?? 'component';
+    const paramName = editingParamName || optionsQueryContext?.self.key || 'current';
+    const nodeName = scope === 'globalFilter'
+      ? (optionsQueryContext?.self.id || editingNodeId || paramName)
+      : (editingParamName || optionsQueryContext?.self.key || 'current');
+    const selfAlias = scope === 'globalFilter' ? (optionsQueryContext?.self.key || paramName) : undefined;
     if (isRejectedQueryParams(storedParams)) {
       const messageText = describeQueryIssue(t, storedParams.issue);
       setQueryParamError(messageText);
       message.error(messageText);
       return;
     }
+    const otherFilters = (optionsQueryContext?.globalFilters ?? []).filter((filter) => (
+      filter.id && filter.id !== nodeName && filter.id !== optionsQueryContext?.self.id
+    ));
+    const otherParams = scope === 'component'
+      ? (optionsQueryContext?.componentParams ?? []).filter((param) => param.name && param.name !== nodeName)
+      : [];
     const issue = validateOptionsQueryParams(
       [
-        ...optionsQueryNodes.filter((node) => node.name !== nodeName),
+        ...otherFilters.map((filter) => ({
+          name: filter.id,
+          aliases: filter.key && filter.key !== filter.id ? [filter.key] : undefined,
+          queryParams: filter.queryParams,
+        })),
+        ...otherParams.map((param) => ({
+          name: param.name,
+          queryParams: param.queryParams,
+        })),
         {
           name: nodeName,
-          aliases: editingNodeId && editingNodeId !== paramName ? [paramName] : undefined,
+          aliases: selfAlias && selfAlias !== nodeName ? [selfAlias] : undefined,
           queryParams: storedParams.queryParams,
         },
       ],
       [
         { name: nodeName },
-        ...(editingNodeId && editingNodeId !== paramName ? [paramName] : []),
-        ...queryParamRefCandidates.map((item) => ({ name: item.name, type: item.type })),
-        ...optionsQueryNodes.flatMap((node) => [node.name, ...(node.aliases ?? [])]),
+        ...(selfAlias && selfAlias !== nodeName ? [{ name: selfAlias }] : []),
+        ...otherFilters.flatMap((filter) => [
+          { name: filter.id, type: filter.type },
+          ...(filter.key ? [{ name: filter.key, type: filter.type }] : []),
+        ]),
+        ...otherParams.map((param) => ({ name: param.name, type: param.type })),
       ],
     );
     if (issue) {
@@ -615,6 +650,8 @@ export const ParamInputConfigEditor: React.FC<ParamInputConfigEditorProps> = ({
       optionsSource,
     });
   };
+
+  const previewBlockedByRef = queryParamRows.some((row) => row.mode === 'ref');
 
   return (
     <Modal
@@ -825,21 +862,21 @@ export const ParamInputConfigEditor: React.FC<ParamInputConfigEditorProps> = ({
                   </Form.Item>
                   <Button
                     icon={<ReloadOutlined />}
-                    disabled={!dynamicSourceId || queryParamRows.some((row) => (
-                      row.name.trim() && row.mode === 'ref' && !row.sample.trim()
-                    ))}
+                    disabled={!dynamicSourceId || previewBlockedByRef}
                     loading={dynamicPreviewLoading}
-                    title={queryParamRows.some((row) => row.name.trim() && row.mode === 'ref' && !row.sample.trim())
-                      ? t('paramInput.dynamic.previewNeedsSample')
+                    title={previewBlockedByRef
+                      ? t('paramInput.dynamic.previewSkippedForRef')
                       : t('paramInput.dynamic.preview')}
                     className="mt-[30px]"
                     onClick={() => {
-                      if (!dynamicSourceId) return;
+                      if (!dynamicSourceId || previewBlockedByRef) return;
                       const params: Record<string, unknown> = {};
                       queryParamRows.forEach((row) => {
                         const name = row.name.trim();
-                        if (!name) return;
-                        params[name] = row.mode === 'ref' ? row.sample : row.literalText;
+                        if (!name || row.mode === 'ref') return;
+                        params[name] = row.literalRaw !== undefined && String(row.literalRaw ?? '') === row.literalText
+                          ? row.literalRaw
+                          : row.literalText;
                       });
                       void fetchDynamicPreview(dynamicSourceId, params);
                     }}
@@ -888,110 +925,102 @@ export const ParamInputConfigEditor: React.FC<ParamInputConfigEditorProps> = ({
                     }}
                   />
                 </Form.Item>
-                <Form.Item label={t('paramInput.dynamic.queryParams')} className="mb-3">
-                  <div className="flex flex-col gap-2">
-                    {queryParamRows.map((row) => (
-                      <div key={row.uid} className="flex items-center gap-2">
-                        <Input
-                          value={row.name}
-                          placeholder={t('paramInput.dynamic.queryParamName')}
-                          className="w-28"
-                          onChange={(event) => {
-                            const name = event.target.value;
-                            setQueryParamRows((prev) => prev.map((item) => (
-                              item.uid === row.uid ? { ...item, name } : item
-                            )));
-                          }}
-                        />
-                        <Select
-                          value={row.mode}
-                          className="w-28"
-                          options={[
-                            { value: 'literal', label: t('paramInput.dynamic.literal') },
-                            { value: 'ref', label: t('paramInput.dynamic.reference') },
-                          ]}
-                          onChange={(mode: 'literal' | 'ref') => {
-                            setQueryParamRows((prev) => prev.map((item) => (
-                              item.uid === row.uid ? { ...item, mode } : item
-                            )));
-                          }}
-                        />
-                        {row.mode === 'ref' ? (
-                          <>
+                {queryParamRows.length > 0 ? (
+                  <Form.Item label={t('paramInput.dynamic.queryParams')} className="mb-3">
+                    <div className="flex flex-col gap-2">
+                      <div className="flex items-center gap-2 text-xs text-(--color-text-3)">
+                        <span className="w-36 shrink-0">{t('paramInput.dynamic.queryParamName')}</span>
+                        <span className="w-28 shrink-0">{t('paramInput.dynamic.valueMode')}</span>
+                        <span className="min-w-0 flex-1">{t('paramInput.dynamic.valueOrRef')}</span>
+                      </div>
+                      {queryParamRows.map((row) => {
+                        const choices = listOptionsQueryCandidates({
+                          context: optionsQueryContext,
+                          expectedType: row.type,
+                          siblingRefs: queryParamRows.flatMap((item) => (
+                            item.uid !== row.uid && item.mode === 'ref' && item.refName.trim()
+                              ? [item.refName.trim()]
+                              : []
+                          )),
+                        });
+                        return (
+                          <div key={row.uid} className="flex items-center gap-2">
+                            <div
+                              className="w-36 shrink-0 truncate font-mono text-xs"
+                              title={row.alias && row.alias !== row.name ? `${row.name} ${row.alias}` : row.name}
+                            >
+                              {row.name}
+                            </div>
                             <Select
-                              value={row.refName || undefined}
-                              className="min-w-0 flex-1"
-                              placeholder={t('paramInput.dynamic.reference')}
-                              options={queryParamRefCandidates
-                                .filter((item) => (
-                                  item.name
-                                  && item.name !== editingParamName
-                                  && item.name !== editingNodeId
-                                ))
-                                .map((item) => ({
-                                  value: item.name,
-                                  label: item.label || item.name,
-                                }))}
-                              onChange={(refName) => {
+                              value={row.mode}
+                              className="w-28 shrink-0"
+                              popupMatchSelectWidth={false}
+                              options={[
+                                { value: 'literal', label: t('paramInput.dynamic.fixedValue') },
+                                { value: 'ref', label: t('paramInput.dynamic.dollarRef') },
+                              ]}
+                              onChange={(mode: 'literal' | 'ref') => {
                                 setQueryParamRows((prev) => prev.map((item) => (
-                                  item.uid === row.uid ? { ...item, refName } : item
+                                  item.uid === row.uid ? { ...item, mode } : item
                                 )));
                               }}
                             />
-                            <Input
-                              value={row.sample}
-                              placeholder={t('paramInput.dynamic.sampleValue')}
-                              className="w-28"
-                              onChange={(event) => {
-                                const sample = event.target.value;
-                                setQueryParamRows((prev) => prev.map((item) => (
-                                  item.uid === row.uid ? { ...item, sample } : item
-                                )));
-                              }}
-                            />
-                          </>
-                        ) : (
-                          <Input
-                            value={row.literalText}
-                            placeholder={t('paramInput.dynamic.queryParamValue')}
-                            className="min-w-0 flex-1"
-                            onChange={(event) => {
-                              const literalText = event.target.value;
-                              setQueryParamRows((prev) => prev.map((item) => (
-                                item.uid === row.uid
-                                  ? { ...item, literalText, literalRaw: undefined }
-                                  : item
-                              )));
-                            }}
-                          />
-                        )}
-                        <MinusOutlined
-                          className="cursor-pointer text-(--color-primary)"
-                          onClick={() => {
-                            setQueryParamRows((prev) => prev.filter((item) => item.uid !== row.uid));
-                          }}
-                        />
-                      </div>
-                    ))}
-                    <Button
-                      type="dashed"
-                      size="small"
-                      icon={<PlusOutlined />}
-                      className="self-start"
-                      onClick={() => setQueryParamRows((prev) => [...prev, createQueryRow()])}
-                    >
-                      {t('paramInput.dynamic.addQueryParam')}
-                    </Button>
-                    {queryParamError ? (
-                      <div className="text-xs text-(--color-error)">{queryParamError}</div>
-                    ) : null}
-                    {componentSwitch && queryParamRows.some((row) => row.mode === 'ref' && row.refName) ? (
-                      <div className="text-xs text-(--color-text-3)">
-                        {t('paramInput.dynamic.componentSwitchDepends')}
-                      </div>
-                    ) : null}
-                  </div>
-                </Form.Item>
+                            <div className="min-w-0 flex-1">
+                              {row.mode === 'ref' ? (
+                                <Select
+                                  value={row.refName || undefined}
+                                  className="w-full"
+                                  placeholder={t('paramInput.dynamic.selectUpstream')}
+                                  options={choices.map((choice) => ({
+                                    value: choice.ref,
+                                    label: formatOptionsQueryCandidateLabel(choice, choices, t),
+                                  }))}
+                                  notFoundContent={(
+                                    <Empty
+                                      image={Empty.PRESENTED_IMAGE_SIMPLE}
+                                      description={t('paramInput.dynamic.noRefCandidates')}
+                                    />
+                                  )}
+                                  onChange={(refName) => {
+                                    setQueryParamRows((prev) => prev.map((item) => (
+                                      item.uid === row.uid ? { ...item, refName } : item
+                                    )));
+                                  }}
+                                />
+                              ) : (
+                                <Input
+                                  value={row.literalText}
+                                  placeholder={t('paramInput.dynamic.queryParamValue')}
+                                  onChange={(event) => {
+                                    const literalText = event.target.value;
+                                    setQueryParamRows((prev) => prev.map((item) => (
+                                      item.uid === row.uid
+                                        ? { ...item, literalText, literalRaw: undefined }
+                                        : item
+                                    )));
+                                  }}
+                                />
+                              )}
+                            </div>
+                          </div>
+                        );
+                      })}
+                      {previewBlockedByRef ? (
+                        <div className="text-xs text-(--color-text-3)">
+                          {t('paramInput.dynamic.previewSkippedForRef')}
+                        </div>
+                      ) : null}
+                      {queryParamError ? (
+                        <div className="text-xs text-(--color-error)">{queryParamError}</div>
+                      ) : null}
+                      {componentSwitch && queryParamRows.some((row) => row.mode === 'ref' && row.refName) ? (
+                        <div className="text-xs text-(--color-text-3)">
+                          {t('paramInput.dynamic.componentSwitchDepends')}
+                        </div>
+                      ) : null}
+                    </div>
+                  </Form.Item>
+                ) : null}
                 <Form.Item label={t('paramInput.dynamic.preview')} className="mb-0">
                   <Table
                     bordered

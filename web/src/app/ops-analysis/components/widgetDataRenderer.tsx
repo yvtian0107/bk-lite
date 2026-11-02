@@ -87,10 +87,9 @@ import {
 import { isSelfFetchSceneWidget } from "@/app/ops-analysis/types/sceneWidgetCapability";
 import {
   dynamicQueryParamsOf,
-  readOptionsQueryUpstream,
   resolveOptionsQueryParams,
-  valueOfFoundOptionsQueryUpstream,
 } from "@/app/ops-analysis/utils/optionsQueryParamRefs";
+import { readComponentOptionsQueryUpstream } from "@/app/ops-analysis/utils/optionsQueryCandidates";
 
 const validateTopNData = (
   data: unknown,
@@ -342,20 +341,19 @@ const WidgetWrapper: React.FC<WidgetWrapperProps> = ({
     ],
   );
   const componentSwitchQuery = useMemo(() => {
-    return resolveOptionsQueryParams(dynamicQueryParamsOf(componentSwitchParam?.inputConfig), (ref) => {
-      const followed = (filterDefinitions || []).filter((definition) =>
-        definition.enabled !== false
-        && config?.filterBindings?.[definition.id] !== false);
-      const upstream = readOptionsQueryUpstream(ref, followed, (id) => (
-        unifiedFilterValues && Object.prototype.hasOwnProperty.call(unifiedFilterValues, id)
-          ? unifiedFilterValues[id]
-          : undefined
-      ));
-      if (upstream.found === true) {
-        return valueOfFoundOptionsQueryUpstream(upstream);
-      }
-      return effectiveComponentParams.find((param) => param.name === ref)?.value;
-    });
+    return resolveOptionsQueryParams(dynamicQueryParamsOf(componentSwitchParam?.inputConfig), (ref) => (
+      readComponentOptionsQueryUpstream({
+        ref,
+        componentParams: effectiveComponentParams,
+        definitions: filterDefinitions || [],
+        filterBindings: config?.filterBindings,
+        readFilterValue: (id) => (
+          unifiedFilterValues && Object.prototype.hasOwnProperty.call(unifiedFilterValues, id)
+            ? unifiedFilterValues[id]
+            : undefined
+        ),
+      })
+    ));
   }, [
     componentSwitchParam,
     config?.filterBindings,

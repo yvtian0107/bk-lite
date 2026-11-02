@@ -42,11 +42,8 @@ import {
   processDataSourceParams,
 } from '@/app/ops-analysis/utils/widgetDataTransform';
 import { getDateRangeTimezone } from '@/app/ops-analysis/utils/dateRange';
-import { isBindableDataSourceParamType } from '@/app/ops-analysis/utils/dataSourceParamContract';
-import {
-  buildOptionsQueryRefChoices,
-  dynamicQueryParamsOf,
-} from '@/app/ops-analysis/utils/optionsQueryParamRefs';
+import { dynamicQueryParamsOf } from '@/app/ops-analysis/utils/optionsQueryParamRefs';
+import type { OptionsQueryEditorContext } from '@/app/ops-analysis/utils/optionsQueryCandidates';
 import { optionsSourceSummary } from '@/app/ops-analysis/utils/optionsSourceIdentity';
 import {
   clearComponentParamSwitch,
@@ -160,46 +157,31 @@ const optionQueryEditorContext = (
   filters: UnifiedFilterDefinition[],
   editingName?: string,
 ) => {
-  const siblings = params.filter((param) =>
-    param.name !== editingName && isBindableDataSourceParamType(param.type));
-  const canvas = filters.filter((definition) =>
-    definition.enabled !== false
-    && Boolean(definition.key)
-    && definition.key !== editingName
-    && definition.id !== editingName);
-  const choices = buildOptionsQueryRefChoices([
-    ...siblings.map((param) => ({
-      id: param.name,
-      key: param.name,
-      label: param.alias_name,
+  const context: OptionsQueryEditorContext = {
+    scope: 'component',
+    self: { key: editingName || '' },
+    componentParams: params.filter((param) => param.name).map((param) => ({
+      name: param.name,
+      label: param.alias_name || param.name,
       type: param.type,
+      filterType: param.filterType,
+      value: param.value,
+      inputConfig: param.inputConfig,
+      inputMode: param.inputMode,
+      queryParams: dynamicQueryParamsOf(param.inputConfig),
     })),
-    ...canvas.map((definition) => ({
+    globalFilters: filters.filter((definition) => Boolean(definition.key)).map((definition) => ({
       id: definition.id,
       key: definition.key,
       label: definition.name,
       type: definition.type,
+      enabled: definition.enabled,
       sourceHint: optionsSourceSummary(definition.inputConfig),
+      queryParams: dynamicQueryParamsOf(definition.inputConfig),
+      inputConfig: definition.inputConfig,
     })),
-  ]);
-  return {
-    queryParamRefCandidates: choices.map((choice) => ({
-      name: choice.ref,
-      label: choice.label,
-      type: choice.type,
-    })),
-    optionsQueryNodes: [
-      ...siblings.map((param) => ({
-        name: param.name,
-        queryParams: dynamicQueryParamsOf(param.inputConfig),
-      })),
-      ...canvas.map((definition) => ({
-        name: definition.id,
-        aliases: definition.key !== definition.id ? [definition.key] : undefined,
-        queryParams: dynamicQueryParamsOf(definition.inputConfig),
-      })),
-    ],
   };
+  return { optionsQueryContext: context };
 };
 
 interface ViewConfigPropsWithManager extends ViewConfigProps {

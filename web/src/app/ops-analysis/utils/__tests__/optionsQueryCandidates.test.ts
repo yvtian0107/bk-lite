@@ -1,0 +1,174 @@
+import { describe, expect, it } from 'vitest';
+
+import { OPTIONS_QUERY_INVALID } from '@/app/ops-analysis/utils/optionsQueryParamRefs';
+import {
+  formatOptionsQueryCandidateLabel,
+  listOptionsQueryCandidates,
+  readComponentOptionsQueryUpstream,
+  type OptionsQueryCandidateChoice,
+  type OptionsQueryEditorContext,
+} from '@/app/ops-analysis/utils/optionsQueryCandidates';
+
+const translate = (key: string, _fallback?: string, values?: Record<string, string>) => {
+  const text: Record<string, string> = {
+    'paramInput.dynamic.originGlobalFilter': '全局筛选',
+    'paramInput.dynamic.originComponentParam': '组件参数',
+    'paramInput.dynamic.refChoice': '{origin} · {name}',
+    'paramInput.dynamic.refChoiceWithKey': '{origin} · {name} ({key})',
+    'paramInput.dynamic.refChoiceWithHint': '{origin} · {name} · {hint}',
+  };
+  return (text[key] || key).replace(/\{(\w+)\}/g, (_, name) => values?.[name] ?? '');
+};
+
+const labelOf = (choice: OptionsQueryCandidateChoice, choices: OptionsQueryCandidateChoice[]) => (
+  formatOptionsQueryCandidateLabel(choice, choices, translate)
+);
+
+describe('options query candidates', () => {
+  const componentContext = (): OptionsQueryEditorContext => ({
+    scope: 'component',
+    self: { key: 'device_id' },
+    componentParams: [
+      { name: 'device_id', label: '设备', type: 'string', filterType: 'params' },
+      { name: 'zone_id', label: '区域', type: 'string', filterType: 'params' },
+      { name: 'site_id', label: '机房', type: 'string', filterType: 'filter', value: 'local-room' },
+      { name: 'limit', label: '条数', type: 'number', filterType: 'fixed' },
+    ],
+    globalFilters: [
+      { id: 'org__string', key: 'org', label: '组织', type: 'string', enabled: true },
+      { id: 'site_id__string', key: 'site_id', label: '监控对象', type: 'string', enabled: true },
+      { id: 'closed__string', key: 'closed', label: '停用', type: 'string', enabled: false },
+      { id: 'window__timeRange', key: 'window', label: '时间', type: 'timeRange', enabled: true },
+    ],
+  });
+
+  it('lets a component param reference this card and canvas filters, not itself or the wrong type', () => {
+    const choices = listOptionsQueryCandidates({
+      context: componentContext(),
+      expectedType: 'string',
+    });
+    expect(choices.map((item) => item.ref)).toEqual([
+      'site_id',
+      'zone_id',
+      'org',
+      'site_id__string',
+    ]);
+    expect(choices.map((item) => item.origin)).toEqual([
+      'componentParam',
+      'componentParam',
+      'globalFilter',
+      'globalFilter',
+    ]);
+    expect(choices.find((item) => item.ref === 'site_id__string')?.displayName).toBe('监控对象');
+    expect(labelOf(choices.find((item) => item.ref === 'site_id__string')!, choices)).toBe('全局筛选 · 监控对象');
+    expect(labelOf(choices.find((item) => item.ref === 'zone_id')!, choices)).toBe('组件参数 · 区域');
+  });
+
+  it('does not follow the order the filters were passed in', () => {
+    const context = componentContext();
+    context.globalFilters = [...(context.globalFilters ?? [])].reverse();
+    context.componentParams = [...(context.componentParams ?? [])].reverse();
+    const choices = listOptionsQueryCandidates({ context, expectedType: 'string' });
+    expect(choices.map((item) => item.key)).toEqual(['site_id', 'zone_id', 'org', 'site_id']);
+  });
+
+  it('keeps global filters inside the canvas and ignores component params', () => {
+    const choices = listOptionsQueryCandidates({
+      context: {
+        scope: 'globalFilter',
+        self: { id: 'device_id__string', key: 'device_id' },
+        componentParams: [
+          { name: 'secret', label: '别的组件', type: 'string', filterType: 'params' },
+        ],
+        globalFilters: [
+          { id: 'device_id__string', key: 'device_id', label: '设备', type: 'string' },
+          { id: 'site_id__string__bbbbbbbb', key: 'site_id', label: '机房', type: 'string', sourceHint: 'monitor/rooms' },
+          { id: 'site_id__string__aaaaaaaa', key: 'site_id', label: '机房', type: 'string', sourceHint: 'cmdb/rooms' },
+          { id: 'count__number', key: 'count', label: '数量', type: 'number' },
+        ],
+      },
+      expectedType: 'string',
+    });
+    expect(choices.map((item) => ({ ref: item.ref, key: item.key }))).toEqual([
+      { ref: 'site_id__string__aaaaaaaa', key: 'site_id' },
+      { ref: 'site_id__string__bbbbbbbb', key: 'site_id' },
+    ]);
+    expect(labelOf(choices[0], choices)).toBe('全局筛选 · 机房 · cmdb/rooms');
+    expect(choices.some((item) => item.ref === 'secret' || item.key === 'device_id')).toBe(false);
+  });
+
+  it('drops a candidate that would cycle or exceed three parameters', () => {
+    const choices = listOptionsQueryCandidates({
+      context: {
+        scope: 'globalFilter',
+        self: { id: 'b', key: 'b' },
+        globalFilters: [
+          { id: 'a', key: 'a', label: '甲', type: 'string', queryParams: { x: { ref: 'b' } } },
+          { id: 'c', key: 'c', label: '丙', type: 'string' },
+          { id: 'd', key: 'd', label: '丁', type: 'string', queryParams: { x: { ref: 'e' } } },
+          { id: 'e', key: 'e', label: '戊', type: 'string', queryParams: { x: { ref: 'f' } } },
+          { id: 'f', key: 'f', label: '己', type: 'string' },
+        ],
+      },
+      expectedType: 'string',
+    });
+    expect(choices.map((item) => item.ref)).toEqual(['c', 'e', 'f']);
+  });
+
+  it('reads the bound global filter value when a component param is referenced', () => {
+    const definitions = [
+      { id: 'site_id__string', key: 'site_id', type: 'string', enabled: true },
+      { id: 'org__string', key: 'org', type: 'string', enabled: true },
+    ];
+    const componentParams = [
+      { name: 'site_id', type: 'string', filterType: 'filter', value: 'local-room' },
+      { name: 'zone_id', type: 'string', filterType: 'params', value: 'zone-a' },
+    ];
+    const readFilterValue = (id: string) => (id === 'site_id__string' ? 'canvas-room' : 'org-1');
+    expect(readComponentOptionsQueryUpstream({
+      ref: 'site_id',
+      componentParams,
+      definitions,
+      filterBindings: { site_id__string: true },
+      readFilterValue,
+    })).toBe('canvas-room');
+    expect(readComponentOptionsQueryUpstream({
+      ref: 'zone_id',
+      componentParams,
+      definitions,
+      filterBindings: { site_id__string: true },
+      readFilterValue,
+    })).toBe('zone-a');
+    expect(readComponentOptionsQueryUpstream({
+      ref: 'site_id__string',
+      componentParams,
+      definitions,
+      filterBindings: { site_id__string: true },
+      readFilterValue,
+    })).toBe('canvas-room');
+    expect(readComponentOptionsQueryUpstream({
+      ref: 'site_id',
+      componentParams,
+      definitions,
+      filterBindings: { site_id__string: false },
+      readFilterValue,
+    })).toBeUndefined();
+    expect(readComponentOptionsQueryUpstream({
+      ref: 'org',
+      componentParams,
+      definitions,
+      filterBindings: {},
+      readFilterValue,
+    })).toBe('org-1');
+    expect(readComponentOptionsQueryUpstream({
+      ref: 'site_id',
+      componentParams: [],
+      definitions: [
+        { id: 'site_id__string__aaaaaaaa', key: 'site_id', type: 'string' },
+        { id: 'site_id__string__bbbbbbbb', key: 'site_id', type: 'string' },
+      ],
+      filterBindings: {},
+      readFilterValue,
+    })).toBe(OPTIONS_QUERY_INVALID);
+  });
+});
