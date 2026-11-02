@@ -120,6 +120,99 @@ const queryRowFromStored = (name: string, raw: unknown): QueryParamRow => {
   };
 };
 
+/** 只预填可保存的字面量。数组和日期范围不是查询入参字面量，留空让用户另填。 */
+const declaredParamLiteral = (
+  value: unknown,
+): { literalText: string; literalRaw?: string | number | boolean } => {
+  if (typeof value === 'number' || typeof value === 'boolean') {
+    return { literalText: String(value), literalRaw: value };
+  }
+  if (typeof value === 'string' && value !== '') {
+    return { literalText: value, literalRaw: value };
+  }
+  return { literalText: '' };
+};
+
+const rowLiteralPayload = (row: QueryParamRow): string | number | boolean | null | undefined => {
+  if (row.literalText === '' && row.literalRaw === undefined) return undefined;
+  if (row.literalRaw !== undefined && String(row.literalRaw ?? '') === row.literalText) {
+    return row.literalRaw;
+  }
+  return row.literalText;
+};
+
+const queryParamDisplayName = (row: QueryParamRow) => {
+  const alias = row.alias?.trim();
+  if (alias && alias !== row.name) return alias;
+  return row.name;
+};
+
+const queryParamTitle = (row: QueryParamRow) => {
+  const alias = row.alias?.trim();
+  if (alias && alias !== row.name) return `${alias}（${row.name}）`;
+  return row.name;
+};
+
+interface FieldOption {
+  label: string;
+  value: string;
+}
+
+const DynamicFieldSelect: React.FC<{
+  id?: string;
+  value?: string;
+  onChange?: (value: string) => void;
+  options: FieldOption[];
+  allowCustom: boolean;
+  placeholder: string;
+}> = ({
+  value,
+  onChange,
+  options,
+  allowCustom,
+  placeholder,
+  ...rest
+}) => {
+  const [search, setSearch] = useState('');
+  const typed = search.trim();
+  const selectOptions = allowCustom && typed && !options.some((item) => item.value === typed)
+    ? [{ label: typed, value: typed }, ...options]
+    : options;
+
+  return (
+    <Select
+      {...rest}
+      showSearch={allowCustom}
+      value={value}
+      placeholder={placeholder}
+      options={selectOptions}
+      optionFilterProp="label"
+      filterOption={allowCustom
+        ? (input, option) => {
+          const needle = input.trim().toLowerCase();
+          if (!needle) return true;
+          const label = String(option?.label ?? '').toLowerCase();
+          const optionValue = String(option?.value ?? '').toLowerCase();
+          return label.includes(needle) || optionValue.includes(needle);
+        }
+        : undefined}
+      onSearch={allowCustom ? setSearch : undefined}
+      onInputKeyDown={(event) => {
+        if (!allowCustom || event.key !== 'Enter') return;
+        const typedValue = search.trim();
+        if (!typedValue) return;
+        event.preventDefault();
+        setSearch('');
+        onChange?.(typedValue);
+      }}
+      onChange={(next: string) => {
+        setSearch('');
+        onChange?.(next);
+      }}
+    />
+  );
+};
+
 export const describeQueryIssue = (
   t: (key: string, _default?: string, values?: Record<string, string>) => string,
   issue: { code: string; param?: string; name?: string; ref?: string; path?: string[] },
@@ -215,6 +308,7 @@ export const ParamInputConfigEditor: React.FC<ParamInputConfigEditorProps> = ({
   const [dynamicValueField, setDynamicValueField] = useState<string | undefined>();
   const [dynamicLabelField, setDynamicLabelField] = useState<string | undefined>();
   const [dynamicPreview, setDynamicPreview] = useState<Record<string, unknown>[]>([]);
+  const [previewFieldKeys, setPreviewFieldKeys] = useState<string[]>([]);
   const [dynamicPreviewLoading, setDynamicPreviewLoading] = useState(false);
   const [queryParamRows, setQueryParamRows] = useState<QueryParamRow[]>([]);
   const [queryParamError, setQueryParamError] = useState('');
@@ -239,6 +333,7 @@ export const ParamInputConfigEditor: React.FC<ParamInputConfigEditorProps> = ({
       setDynamicValueField(undefined);
       setDynamicLabelField(undefined);
       setDynamicPreview([]);
+      setPreviewFieldKeys([]);
       setQueryParamRows([]);
       setQueryParamError('');
       form.resetFields(['dynamicSourceId', 'dynamicValueField', 'dynamicLabelField']);
@@ -262,6 +357,7 @@ export const ParamInputConfigEditor: React.FC<ParamInputConfigEditorProps> = ({
       setDynamicValueField(undefined);
       setDynamicLabelField(undefined);
       setDynamicPreview([]);
+      setPreviewFieldKeys([]);
       setQueryParamRows([]);
       setQueryParamError('');
       form.resetFields(['dynamicSourceId', 'dynamicValueField', 'dynamicLabelField']);
@@ -279,6 +375,7 @@ export const ParamInputConfigEditor: React.FC<ParamInputConfigEditorProps> = ({
       setDynamicValueField(undefined);
       setDynamicLabelField(undefined);
       setDynamicPreview([]);
+      setPreviewFieldKeys([]);
       setQueryParamRows([]);
       setQueryParamError('');
       form.resetFields(['dynamicSourceId', 'dynamicValueField', 'dynamicLabelField']);
@@ -297,6 +394,7 @@ export const ParamInputConfigEditor: React.FC<ParamInputConfigEditorProps> = ({
     );
     setQueryParamError('');
     setDynamicPreview([]);
+    setPreviewFieldKeys([]);
     form.setFieldsValue({
       dynamicSourceId: initialSourceId,
       dynamicValueField: value.optionsSource.valueField,
@@ -323,34 +421,44 @@ export const ParamInputConfigEditor: React.FC<ParamInputConfigEditorProps> = ({
       if (existing) {
         return { ...existing, alias: param.alias_name, type: param.type };
       }
+      const literal = declaredParamLiteral(param.value);
       return {
         uid: newId(),
         name: param.name,
         alias: param.alias_name,
         type: param.type,
         mode: 'literal' as const,
-        literalText: '',
+        literalText: literal.literalText,
+        literalRaw: literal.literalRaw,
         refName: '',
       };
     }));
   }, [open, selectedDataSource, sourceType]);
 
+  const hasFieldSchema = (selectedDataSource?.field_schema?.length ?? 0) > 0;
+
   const availableFields = useMemo(() => {
-    const first = dynamicPreview[0];
-    if (!first) {
-      return (selectedDataSource?.field_schema || []).map((field) => ({
-        label: field.title ? `${field.title}（${field.key}）` : field.key,
-        value: field.key,
-      }));
-    }
-    return Object.keys(first).map((key) => ({ label: key, value: key }));
-  }, [dynamicPreview, selectedDataSource?.field_schema]);
+    const options: FieldOption[] = [];
+    const seen = new Set<string>();
+    const push = (fieldValue: string, label: string) => {
+      if (!fieldValue || seen.has(fieldValue)) return;
+      seen.add(fieldValue);
+      options.push({ label, value: fieldValue });
+    };
+    (selectedDataSource?.field_schema || []).forEach((field) => {
+      push(field.key, field.title ? `${field.title}（${field.key}）` : field.key);
+    });
+    previewFieldKeys.forEach((key) => push(key, key));
+    if (dynamicValueField) push(dynamicValueField, dynamicValueField);
+    if (dynamicLabelField) push(dynamicLabelField, dynamicLabelField);
+    return options;
+  }, [dynamicLabelField, dynamicValueField, previewFieldKeys, selectedDataSource?.field_schema]);
 
   const dynamicPreviewColumns = useMemo(() => {
     const first = dynamicPreview[0];
     const fieldKeys = first
       ? Object.keys(first)
-      : availableFields.map((field) => String(field.value));
+      : (selectedDataSource?.field_schema || []).map((field) => field.key);
     const uniqueFieldKeys = Array.from(new Set(fieldKeys));
 
     return uniqueFieldKeys.map((fieldKey) => ({
@@ -363,7 +471,7 @@ export const ParamInputConfigEditor: React.FC<ParamInputConfigEditorProps> = ({
       ellipsis: true,
       render: (text: unknown) => String(text ?? ''),
     }));
-  }, [availableFields, dynamicPreview]);
+  }, [availableFields, dynamicPreview, selectedDataSource?.field_schema]);
 
   const staticRowIds = useMemo(
     () => staticRows.map((row) => row.uid),
@@ -417,10 +525,20 @@ export const ParamInputConfigEditor: React.FC<ParamInputConfigEditorProps> = ({
     return getSourceDataByApiId(sourceId, params)
       .then(({ data }) => {
         if (requestId !== previewRequestIdRef.current) return;
+        const items = extractDataSourceItems(data).slice(0, 5);
         setDynamicPreview(extractDataSourceItems(data).slice(0, 5));
+        setPreviewFieldKeys((prev) => {
+          const next = new Set(prev);
+          items.forEach((item) => {
+            if (!item || typeof item !== 'object' || Array.isArray(item)) return;
+            Object.keys(item).forEach((key) => next.add(key));
+          });
+          return Array.from(next);
+        });
       })
       .catch((error: any) => {
         if (requestId !== previewRequestIdRef.current) return;
+        // 失败只收起样本。已选字段和已发现列名保留。
         setDynamicPreview([]);
         message.error(
           error?.response?.data?.message ||
@@ -437,10 +555,13 @@ export const ParamInputConfigEditor: React.FC<ParamInputConfigEditorProps> = ({
     if (!open || !isOptionsControl || sourceType !== 'dynamic' || !dynamicSourceId) {
       return;
     }
-    if (queryParamRows.length > 0) return;
+    if (!selectedDataSource || selectedDataSource.id !== dynamicSourceId) return;
+    const hasDeclaredParams = Array.isArray(selectedDataSource.params)
+      && selectedDataSource.params.some((param) => Boolean(param.name));
+    if (hasDeclaredParams) return;
 
-    void fetchDynamicPreview(dynamicSourceId, {});
-  }, [control, dynamicSourceId, fetchDynamicPreview, open, queryParamRows.length, sourceType]);
+    void fetchDynamicPreview(dynamicSourceId);
+  }, [dynamicSourceId, fetchDynamicPreview, isOptionsControl, open, selectedDataSource, sourceType]);
 
   const handleStaticChange = (
     uid: string,
@@ -574,10 +695,9 @@ export const ParamInputConfigEditor: React.FC<ParamInputConfigEditorProps> = ({
         draftParams[name] = { ref: row.refName.trim() };
         return;
       }
-      if (row.literalText === '' && row.literalRaw === undefined) return;
-      draftParams[name] = row.literalRaw !== undefined && String(row.literalRaw ?? '') === row.literalText
-        ? row.literalRaw
-        : row.literalText;
+      const literal = rowLiteralPayload(row);
+      if (literal === undefined) return;
+      draftParams[name] = literal;
     });
     const storedParams = normalizeQueryParamsForStorage(draftParams);
     const scope = optionsQueryContext?.scope ?? 'component';
@@ -651,7 +771,7 @@ export const ParamInputConfigEditor: React.FC<ParamInputConfigEditorProps> = ({
     });
   };
 
-  const previewBlockedByRef = queryParamRows.some((row) => row.mode === 'ref');
+  const hasRefQueryParam = queryParamRows.some((row) => row.mode === 'ref');
 
   return (
     <Modal
@@ -684,6 +804,7 @@ export const ParamInputConfigEditor: React.FC<ParamInputConfigEditorProps> = ({
                 setDynamicValueField(undefined);
                 setDynamicLabelField(undefined);
                 setDynamicPreview([]);
+                setPreviewFieldKeys([]);
                 form.resetFields(['dynamicSourceId', 'dynamicValueField', 'dynamicLabelField']);
               }
             }}
@@ -779,6 +900,7 @@ export const ParamInputConfigEditor: React.FC<ParamInputConfigEditorProps> = ({
                   setDynamicValueField(undefined);
                   setDynamicLabelField(undefined);
                   setDynamicPreview([]);
+                  setPreviewFieldKeys([]);
                   form.resetFields(['dynamicSourceId', 'dynamicValueField', 'dynamicLabelField']);
                 }}
                 options={[
@@ -847,6 +969,7 @@ export const ParamInputConfigEditor: React.FC<ParamInputConfigEditorProps> = ({
                         setDynamicValueField(undefined);
                         setDynamicLabelField(undefined);
                         setDynamicPreview([]);
+                        setPreviewFieldKeys([]);
                         form.setFieldsValue({
                           dynamicSourceId: sourceId,
                           dynamicValueField: undefined,
@@ -862,21 +985,20 @@ export const ParamInputConfigEditor: React.FC<ParamInputConfigEditorProps> = ({
                   </Form.Item>
                   <Button
                     icon={<ReloadOutlined />}
-                    disabled={!dynamicSourceId || previewBlockedByRef}
+                    aria-label={t('paramInput.dynamic.preview')}
+                    disabled={!dynamicSourceId}
                     loading={dynamicPreviewLoading}
-                    title={previewBlockedByRef
-                      ? t('paramInput.dynamic.previewSkippedForRef')
-                      : t('paramInput.dynamic.preview')}
+                    title={t('paramInput.dynamic.preview')}
                     className="mt-[30px]"
                     onClick={() => {
-                      if (!dynamicSourceId || previewBlockedByRef) return;
+                      if (!dynamicSourceId) return;
                       const params: Record<string, unknown> = {};
                       queryParamRows.forEach((row) => {
                         const name = row.name.trim();
                         if (!name || row.mode === 'ref') return;
-                        params[name] = row.literalRaw !== undefined && String(row.literalRaw ?? '') === row.literalText
-                          ? row.literalRaw
-                          : row.literalText;
+                        const literal = rowLiteralPayload(row);
+                        if (literal === undefined || literal === null || literal === '') return;
+                        params[name] = literal;
                       });
                       void fetchDynamicPreview(dynamicSourceId, params);
                     }}
@@ -894,11 +1016,13 @@ export const ParamInputConfigEditor: React.FC<ParamInputConfigEditorProps> = ({
                     },
                   ]}
                 >
-                  <Select
+                  <DynamicFieldSelect
                     value={dynamicValueField}
-                    placeholder={t('paramInput.dynamic.valueFieldPlaceholder')}
-                    disabled={availableFields.length === 0}
+                    placeholder={hasFieldSchema
+                      ? t('paramInput.dynamic.valueFieldPlaceholder')
+                      : t('paramInput.dynamic.fieldNamePlaceholder')}
                     options={availableFields}
+                    allowCustom={!hasFieldSchema}
                     onChange={(field) => {
                       setDynamicValueField(field);
                     }}
@@ -915,11 +1039,13 @@ export const ParamInputConfigEditor: React.FC<ParamInputConfigEditorProps> = ({
                     },
                   ]}
                 >
-                  <Select
+                  <DynamicFieldSelect
                     value={dynamicLabelField}
-                    placeholder={t('paramInput.dynamic.labelFieldPlaceholder')}
-                    disabled={availableFields.length === 0}
+                    placeholder={hasFieldSchema
+                      ? t('paramInput.dynamic.labelFieldPlaceholder')
+                      : t('paramInput.dynamic.fieldNamePlaceholder')}
                     options={availableFields}
+                    allowCustom={!hasFieldSchema}
                     onChange={(field) => {
                       setDynamicLabelField(field);
                     }}
@@ -943,9 +1069,9 @@ export const ParamInputConfigEditor: React.FC<ParamInputConfigEditorProps> = ({
                           render: (_value: string, row) => (
                             <span
                               className="block truncate font-mono text-xs"
-                              title={row.alias && row.alias !== row.name ? `${row.name} ${row.alias}` : row.name}
+                              title={queryParamTitle(row)}
                             >
-                              {row.name}
+                              {queryParamDisplayName(row)}
                             </span>
                           ),
                         },
@@ -1025,9 +1151,9 @@ export const ParamInputConfigEditor: React.FC<ParamInputConfigEditorProps> = ({
                         },
                       ]}
                     />
-                    {previewBlockedByRef ? (
+                    {hasRefQueryParam ? (
                       <div className="mt-2 text-xs text-(--color-text-3)">
-                        {t('paramInput.dynamic.previewSkippedForRef')}
+                        {t('paramInput.dynamic.previewFixedOnly')}
                       </div>
                     ) : null}
                     {queryParamError ? (
