@@ -1,4 +1,5 @@
 import type { InputOption, ParamItem } from '@/app/ops-analysis/types/dataSource';
+import { hasOptionsQueryRef } from '@/app/ops-analysis/utils/optionsQueryParamRefs';
 import { isOptionInputControl } from '@/app/ops-analysis/utils/paramInputConfigUtils';
 
 type SwitchableInputConfig = NonNullable<ParamItem['inputConfig']> & {
@@ -18,7 +19,8 @@ export const isComponentSwitchCandidate = (param: ParamItem): boolean => {
   return param.filterType === 'params'
     && param.type === 'string'
     && (inputConfig?.control === 'select' || inputConfig?.control === 'radio')
-    && inputConfig.componentSwitch === true;
+    && inputConfig.componentSwitch === true
+    && hasOptionsQueryRef(inputConfig) === false;
 };
 
 export const getComponentSwitchCandidates = (params?: ParamItem[]): ParamItem[] =>

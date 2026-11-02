@@ -443,6 +443,135 @@ test('drops a query-param chain longer than three nodes and warns', () => {
   assert.equal(dynamicQuery(result.filters.find((item) => item.key === 'port_id')), undefined);
 });
 
+const selectParam = (
+  name: string,
+  queryParams: Record<string, unknown> | undefined,
+  componentSwitch?: boolean,
+) => ({
+  name,
+  alias_name: name,
+  type: 'string',
+  filterType: 'params' as const,
+  value: null,
+  inputConfig: {
+    control: 'select' as const,
+    ...(componentSwitch ? { componentSwitch: true } : {}),
+    optionsSource: {
+      type: 'dynamic' as const,
+      sourceId: 9,
+      valueField: 'id',
+      labelField: 'name',
+      ...(queryParams ? { queryParams } : {}),
+    },
+  },
+});
+
+const proposalWidget = (id: string, params: ReturnType<typeof selectParam>[]) => ({
+  i: id,
+  valueConfig: {
+    chartType: 'line',
+    dataSource: 9,
+    dataSourceParams: params,
+  },
+});
+
+const widgetParamQuery = (
+  layoutItems: DashboardLayoutItem[],
+  widgetId: string,
+  name: string,
+) => {
+  const card = layoutItems.find((item) => item.i === widgetId);
+  if (!card || !('valueConfig' in card)) return 'missing-widget';
+  const param = card.valueConfig?.dataSourceParams?.find((item) => item.name === name);
+  const config = param?.inputConfig;
+  if (!config || config.control !== 'select' || config.optionsSource.type !== 'dynamic') return undefined;
+  return config.optionsSource.queryParams;
+};
+
+test('drops illegal component-param query graphs and keeps a three-node chain', () => {
+  const result = applyDashboardProposal({
+    layout: [],
+    filters: [],
+    filterValues: {},
+    allocateId,
+    proposal: {
+      schemaVersion: '1.0',
+      layout: [
+        proposalWidget('deep', [
+          selectParam('room', undefined),
+          selectParam('device', { room: { ref: 'room' } }),
+          selectParam('rack', { device: { ref: 'device' } }),
+          selectParam('port', { rack: { ref: 'rack' } }),
+          selectParam('note', { label: 'kept' }),
+        ]),
+        proposalWidget('cycle', [
+          selectParam('left', { peer: { ref: 'right' } }),
+          selectParam('right', { peer: { ref: 'left' } }),
+        ]),
+        proposalWidget('ok', [
+          selectParam('room', undefined),
+          selectParam('device', { room: { ref: 'room' } }),
+          selectParam('rack', { device: { ref: 'device' } }),
+        ]),
+        proposalWidget('foreign', [
+          selectParam('device', { secret: { ref: 'secret' } }),
+        ]),
+      ],
+      filters: [dynamicFilter('flag__boolean', 'flag', {})],
+    },
+  });
+
+  assert.equal(result.ok, true);
+  if (!result.ok) return;
+  assert.equal(widgetParamQuery(result.layout, 'deep', 'port'), undefined);
+  assert.equal(widgetParamQuery(result.layout, 'deep', 'note')?.label, 'kept');
+  assert.equal(widgetParamQuery(result.layout, 'cycle', 'left'), undefined);
+  assert.equal(widgetParamQuery(result.layout, 'cycle', 'right'), undefined);
+  assert.deepEqual(widgetParamQuery(result.layout, 'ok', 'rack'), { device: { ref: 'device' } });
+  assert.equal(widgetParamQuery(result.layout, 'foreign', 'device'), undefined);
+  assert.ok(result.warnings?.includes('param:port:depth'));
+  assert.ok(result.warnings?.includes('param:left:cycle'));
+  assert.ok(result.warnings?.includes('param:device:missing'));
+});
+
+test('drops a component-param reference to an unbindable type and turns off component switch', () => {
+  const flag = dynamicFilter('flag__boolean', 'flag', {});
+  flag.type = 'boolean' as UnifiedFilterDefinition['type'];
+  const result = applyDashboardProposal({
+    layout: [],
+    filters: [],
+    filterValues: {},
+    allocateId,
+    proposal: {
+      schemaVersion: '1.0',
+      layout: [
+        proposalWidget('typed', [
+          selectParam('device', { flag: { ref: 'flag' } }, true),
+        ]),
+        proposalWidget('switch', [
+          selectParam('device', { room_id: { ref: 'room_id' } }, true),
+        ]),
+      ],
+      filters: [
+        flag,
+        dynamicFilter('room_id__string', 'room_id', {}),
+      ],
+    },
+  });
+
+  assert.equal(result.ok, true);
+  if (!result.ok) return;
+  assert.equal(widgetParamQuery(result.layout, 'typed', 'device'), undefined);
+  assert.ok(result.warnings?.includes('param:device:type'));
+  assert.deepEqual(widgetParamQuery(result.layout, 'switch', 'device'), { room_id: { ref: 'room_id' } });
+  const card = result.layout.find((item) => item.i === 'switch');
+  const param = card && 'valueConfig' in card
+    ? card.valueConfig?.dataSourceParams?.find((item) => item.name === 'device')
+    : undefined;
+  const config = param?.inputConfig;
+  assert.equal(config && config.control === 'select' ? config.componentSwitch : 'missing-config', undefined);
+});
+
 test('directory node id matches the open dashboard numeric id', () => {
   assert.equal(proposalTargetsDashboard('current', 426), true);
   assert.equal(proposalTargetsDashboard('dashboard_426', 426), true);

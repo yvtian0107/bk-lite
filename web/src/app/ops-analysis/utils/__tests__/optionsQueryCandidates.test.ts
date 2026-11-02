@@ -152,7 +152,21 @@ describe('options query candidates', () => {
       definitions,
       filterBindings: { site_id__string: false },
       readFilterValue,
-    })).toBeUndefined();
+    })).toBe('local-room');
+    expect(readComponentOptionsQueryUpstream({
+      ref: 'site_id',
+      componentParams,
+      definitions,
+      filterBindings: {},
+      readFilterValue,
+    })).toBe('canvas-room');
+    expect(readComponentOptionsQueryUpstream({
+      ref: 'site_id',
+      componentParams,
+      definitions,
+      filterBindings: undefined,
+      readFilterValue,
+    })).toBe('canvas-room');
     expect(readComponentOptionsQueryUpstream({
       ref: 'org',
       componentParams,

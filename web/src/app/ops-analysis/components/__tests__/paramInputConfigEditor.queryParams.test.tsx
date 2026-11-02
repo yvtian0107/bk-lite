@@ -46,6 +46,8 @@ vi.mock('@/utils/i18n', () => ({
         'paramInput.dynamic.testFailed': '选项源不可用',
         'common.confirm': '确认',
         'common.cancel': '取消',
+        'dashboard.componentSwitch': '组件内切换',
+        'dashboard.componentSwitchDisabledByQueryRef': '查询入参含有引用时不能开启组件内切换',
       };
       return (text[key] || key).replace(/\{(\w+)\}/g, (_, name) => values?.[name] ?? '');
     },
@@ -338,5 +340,46 @@ describe('param input query params', () => {
     await waitFor(() => {
       expect(valueCombo.closest('.ant-select')?.querySelector('.ant-select-selection-item')?.textContent).toBe('device_name');
     });
+  });
+
+  it('turns component switch off when a query parameter uses a reference', async () => {
+    const user = userEvent.setup();
+    const onConfirm = vi.fn();
+    getDataSourceList.mockResolvedValue([deviceSource]);
+    render(
+      <ParamInputConfigEditor
+        open
+        componentSwitchEnabled
+        onCancel={vi.fn()}
+        onConfirm={onConfirm}
+        value={{
+          control: 'select',
+          componentSwitch: true,
+          optionsSource: {
+            type: 'dynamic',
+            sourceId: 9,
+            valueField: 'id',
+            labelField: 'name',
+            queryParams: { room_id: { ref: 'site_id' } },
+          },
+        }}
+        optionsQueryContext={globalFilterContext}
+      />,
+    );
+
+    const dialog = await screen.findByRole('dialog');
+    expect(await within(dialog).findByText('机房')).not.toBeNull();
+    const label = within(dialog).getByText('组件内切换');
+    const item = label.closest('.ant-form-item');
+    const toggle = within(item as HTMLElement).getByRole('switch');
+    expect((toggle as HTMLButtonElement).disabled).toBe(true);
+    expect(toggle.getAttribute('aria-checked')).toBe('false');
+    expect(within(dialog).queryByText('局部选项依赖本卡其它局部值和已应用的全局筛选')).toBeNull();
+
+    await user.click(within(dialog).getByRole('button', { name: /确\s*认/ }));
+    await waitFor(() => expect(onConfirm).toHaveBeenCalled());
+    const saved = onConfirm.mock.calls[0]?.[0];
+    expect(saved.componentSwitch).toBeUndefined();
+    expect(saved.optionsSource.queryParams.room_id).toEqual({ ref: 'site_id' });
   });
 });

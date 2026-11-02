@@ -379,3 +379,8 @@ export const dynamicQueryParamsOf = (
   if (!source || source.type !== 'dynamic') return undefined;
   return source.queryParams;
 };
+
+/** 选项查询里只要有引用，组件内切换就不能开。 */
+export const hasOptionsQueryRef = (
+  inputConfig: { control?: string; optionsSource?: { type?: string; queryParams?: Record<string, unknown> } } | undefined,
+): boolean => collectQueryParamRefs(dynamicQueryParamsOf(inputConfig)).length > 0;

@@ -12,7 +12,8 @@
 - `normalizeStoredQueryParams` 失败时丢掉非法 `queryParams`，不当成功写入。提案应用同样丢掉非法入参并给出警告；环和级数走 `validateOptionsQueryParams`。运行时 `blocked` 区分上游为空（`empty`）和入参非法（`invalid`）。
 - 选项第一次回来时，把校正写入已应用初值，不触发搜索。之后的校正只改草稿。报表打开时保留传入的动态选项值，不再先清空再套默认。
 - 存量 `key__type` 只在选项源身份与某一行完全一致时留给该行。对不上时旧 id 不挂到扫描到的第一行，新行使用摘要 id，绑定按跟随规则重建。
-- 自动 `publishValues` / 搜索只保留内置 3D 机房筛，判定是固定 id `server_room_id__string`。同名拆行的摘要 id，以及应用系统筛，都走普通校正：首次写入已应用初值，之后只改草稿，不搜索。
+- 自动搜索只保留内置 3D 机房筛，判定是固定 id `server_room_id__string`。空值时只把机房自身写入已应用并搜索，不把其它筛的草稿一并提交。同名拆行的摘要 id，以及应用系统筛，都走普通校正：首次写入已应用初值，之后只改草稿，不搜索。
+- 2026-11-02：存在 `queryParams` 引用时禁用并关掉 `componentSwitch`。`filterBindings` 缺键视为跟随，显式 `false` 才读局部值。提案写入组件参数时与筛定义一样做环、不超过 3 级和类型校验，非法则丢掉并警告。
 
 ---
 
@@ -54,7 +55,7 @@
 2. 硬顶约 **3** 级依赖；配置期校验：整值引用、禁拼接、环检测、级数。  
 3. 上游变化 → **立刻重载**下游候选项；上游空 → **不请求**下游；旧值在列表保留，不在则**清空且不自动第一项**；只改草稿，**不**触发搜索；点搜索才应用刷图。  
 4. 收紧全局筛合并：同名 + 同类型 + 同选项源 identity +（若有）同一组上游引用 → 一行；否则拆行并区分显示。**例外**：时间范围、组织等盘级共用维度继续仅同名同类型合并。  
-5. 组件内切换：失效清空不选；**有依赖不禁开**；局部选项依赖 = 本卡局部值 + **已应用**全局筛。  
+5. 组件内切换：失效清空不选；存在 `queryParams` 引用时禁用并关掉；没有引用时，局部选项依赖 = 本卡局部值 + **已应用**全局筛。  
 6. AI 搭盘 / YAML 与配置 UI 读写同一份 `inputConfig`。
 
 ### 2.2 非目标
@@ -75,7 +76,7 @@
 | D2 | 打开 | `defaultValue`（+ URL / 报表传入）→ 按新候选项校验 |
 | D3 | 上游变 | 立刻重载下游选项；上游空不请求；旧值在则保留、不在则清空不选第一项；只动草稿不搜；点搜索才应用 |
 | D4 | 合并 | 同名+同类型+同 `optionsSourceIdentity`+（若有）同一组上游引用 → 并一行；否则拆并区分显示。**例外**：`timeRange` / `dateRange`、组织控件继续仅同名同类型并。异源但 optionsSource 相同（如 `screen_11` 的 `server_room_id`）仍并一条。配置表一行 = 运行时栏一个控件；并着则一套配置，要分配置先拆 |
-| D5 | 组件内切换 | 失效清空不选；有依赖不禁；局部选项跟本卡局部值 + 已应用全局筛 |
+| D5 | 组件内切换 | 失效清空不选；存在 `queryParams` 引用时禁用并关掉。没有引用时，局部选项跟本卡局部值 + 已应用全局筛 |
 | D6 | 配置入口 | 上游引用配在参数「配置」里的选项查询入参；**不是**全局筛总表另开「上游」列 |
 
 ---
@@ -182,7 +183,7 @@ optionsSourceIdentity(inputConfig) =>
 3. 与「用户点搜索」分离；  
 4. 该筛的选项**第一次**回来时，另把校正写入已应用初值（`onApplyInitial`），仍不增加搜索版本。
 
-自动搜索只留给内置 3D 机房筛，且只认固定 id `server_room_id__string`。空值时选中第一项并 `publishValues`，以便 3D 场景立刻有机房。`key === server_room_id` 的拆行摘要 id 不走这条路径。应用系统筛同样走普通校正，不选第一项、不搜索。
+自动搜索只留给内置 3D 机房筛，且只认固定 id `server_room_id__string`。空值时选中第一项，但只把机房自身交出去搜索，已应用值里的其它筛保持原样，不带走栏上还没搜索的草稿。`key === server_room_id` 的拆行摘要 id 不走这条路径。应用系统筛同样走普通校正，不选第一项、不搜索。
 
 若当前存在「打开盘时 defer 动态默认值再 reconcile 且误触发搜索」的路径，一并收口为「只同步 draft + applied 初值策略按 D2，不额外打图表请求风暴」。
 
@@ -277,14 +278,14 @@ mergeKey =
 
 ### 7.3 组件内切换配置
 
-- 仍允许对有 `queryParams.ref` 的参数开 `componentSwitch`（D5）。  
-- 校验文案可提示：局部选项依赖本卡其它局部值 + 已应用全局筛。
+- 存在 `queryParams` 引用时禁用并关掉 `componentSwitch`。不再提示「有依赖仍可开」。  
+- 没有引用时，局部选项依赖本卡其它局部值 + 已应用全局筛。
 
 ---
 
 ## 8. AI 搭盘 / YAML
 
-- Proposal / YAML 中筛与参数的 `inputConfig.optionsSource` 直接带 `queryParams`。  
+- Proposal / YAML 中筛与参数的 `inputConfig.optionsSource` 直接带 `queryParams`。组件参数与筛定义一样做环、不超过 3 级和类型相容校验；非法则丢掉该参数的 `queryParams` 并警告，不原样留下。引用仍合法时，同时关掉 `componentSwitch`。  
 - `filterContractDigest` 使用抽出后的 `optionsSourceIdentity`（含 refs + literals），避免 AI 合并时丢掉级联合同。  
 - `applyDashboardProposal.ts`：按 id / digest 对齐筛定义；拆行后的新 id 允许 proposal 显式给出。  
 - 导入导出：旧盘无 `queryParams` 视为 `{}`，行为与现网一致。  
@@ -385,6 +386,6 @@ mergeKey =
 
 ## 12. 决策来源
 
-- 用户 grill（2026-10-30）：打开策略、失效不搜、合并收紧与时间/组织例外、`screen_11` 仍一条、配置表并一行合理性、分别配置=先拆、组件内失效改清空、有依赖不禁切换、上游配在参数「配置」而非总表列。  
+- 用户 grill（2026-10-30）：打开策略、失效不搜、合并收紧与时间/组织例外、`screen_11` 仍一条、配置表并一行合理性、分别配置=先拆、组件内失效改清空、上游配在参数「配置」而非总表列。2026-11-02 改为：有查询入参引用时关掉组件内切换。  
 - 代码现状：`ParamInputConfigEditor`、`DynamicOptionsSource`、`paramInputOptionsLoader`（`{}`）、`filterTemplate`（仅展示）、`UnifiedFilterBar` draft+Search、`` key__type `` 合并、`reconcileComponentSwitchValue`、`optionBackedFilterValue`、`applyDashboardProposal.optionsSourceIdentity`。  
 - 前序后置声明：`docs/design/product-decisions/ops-analysis-unified-filter.md` §明确后置「级联下拉」。

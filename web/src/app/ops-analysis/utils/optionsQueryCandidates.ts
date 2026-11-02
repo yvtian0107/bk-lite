@@ -239,7 +239,10 @@ const toFilterDefinition = (
   inputConfig: filter.inputConfig,
 });
 
-/** 组件参数若已绑定全局筛选，引用读筛选当前值；否则读参数自身的值。 */
+/**
+ * 组件参数若可跟随全局筛选，引用读筛选当前值。
+ * 绑定缺键与绑定面板一样视为跟随；只有显式 false 才读参数自身的值。
+ */
 export const readComponentOptionsQueryUpstream = ({
   ref,
   componentParams,
@@ -259,22 +262,21 @@ export const readComponentOptionsQueryUpstream = ({
 
   const param = componentParams.find((item) => item.name === ref);
   if (param) {
-    if (param.filterType === 'filter' && filterBindings) {
-      const listed = enabled.filter((filter) => (
-        filter.key === param.name
-        && filter.type === param.type
-        && Object.prototype.hasOwnProperty.call(filterBindings, filter.id)
+    if (param.filterType === 'filter') {
+      const bindings = filterBindings ?? {};
+      const matched = enabled.filter((filter) => (
+        filter.key === param.name && filter.type === param.type
       ));
-      const active = listed.filter((filter) => filterBindings[filter.id] !== false);
+      const active = matched.filter((filter) => bindings[filter.id] !== false);
       if (active.length === 1) return readFilterValue(active[0].id);
       if (active.length > 1) {
-        const matched = matchFilterDefinitionForParam(
+        const picked = matchFilterDefinitionForParam(
           active.map(toFilterDefinition),
           param,
         );
-        return matched ? readFilterValue(matched.id) : OPTIONS_QUERY_INVALID;
+        return picked ? readFilterValue(picked.id) : OPTIONS_QUERY_INVALID;
       }
-      if (listed.length > 0) return undefined;
+      if (matched.length > 0) return param.value;
     }
     return param.value;
   }

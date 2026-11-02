@@ -46,6 +46,7 @@ import {
 import {
   isOptionsQueryParamRef,
   normalizeOptionsQueryParamValue,
+  hasOptionsQueryRef,
   isRejectedQueryParams,
   normalizeQueryParamsForStorage,
   validateOptionsQueryParams,
@@ -333,9 +334,9 @@ export const ParamInputConfigEditor: React.FC<ParamInputConfigEditorProps> = ({
     setControl(value.control);
     setPicker(value.control === 'select' && value.picker === 'table' ? 'table' : 'dropdown');
     setComponentSwitch(
-      value.control === 'select' || value.control === 'radio'
-        ? Boolean(value.componentSwitch)
-        : false,
+      (value.control === 'select' || value.control === 'radio')
+        && Boolean(value.componentSwitch)
+        && hasOptionsQueryRef(value) === false,
     );
     setMultiple(
       value.control === 'select' ? Boolean(value.multiple) : false,
@@ -609,6 +610,8 @@ export const ParamInputConfigEditor: React.FC<ParamInputConfigEditorProps> = ({
     };
   };
 
+  const queryRefDisablesSwitch = queryParamRows.some((row) => row.mode === 'ref' && row.refName.trim());
+
   const handleConfirm = async () => {
     if (control === 'input') {
       onConfirm({ control: 'input' });
@@ -638,7 +641,7 @@ export const ParamInputConfigEditor: React.FC<ParamInputConfigEditorProps> = ({
       onConfirm(
         {
           control,
-          componentSwitch: componentSwitch || undefined,
+          componentSwitch: componentSwitch ? true : undefined,
           ...buildOptionControlExtras(),
           optionsSource: {
             type: 'static',
@@ -755,7 +758,7 @@ export const ParamInputConfigEditor: React.FC<ParamInputConfigEditorProps> = ({
 
     onConfirm({
       control,
-      componentSwitch: componentSwitch || undefined,
+      componentSwitch: queryRefDisablesSwitch ? undefined : (componentSwitch ? true : undefined),
       ...buildOptionControlExtras(),
       optionsSource,
     });
@@ -860,16 +863,19 @@ export const ParamInputConfigEditor: React.FC<ParamInputConfigEditorProps> = ({
                       })
                       : multiple
                         ? t('dashboard.componentSwitchDisabledByMultiple')
-                        : undefined
+                        : queryRefDisablesSwitch
+                          ? t('dashboard.componentSwitchDisabledByQueryRef')
+                          : undefined
                   }
                 >
                   <Switch
                     size='small'
-                    checked={componentSwitch}
+                    checked={componentSwitch && queryRefDisablesSwitch === false}
                     disabled={Boolean(
                       (componentSwitchOwner &&
                         componentSwitchOwner.name !== editingParamName) ||
-                      multiple,
+                      multiple ||
+                      queryRefDisablesSwitch,
                     )}
                     onChange={(checked) => {
                       setComponentSwitch(checked);
@@ -1159,11 +1165,6 @@ export const ParamInputConfigEditor: React.FC<ParamInputConfigEditorProps> = ({
                     ) : null}
                     {queryParamError ? (
                       <div className="mt-2 text-xs text-(--color-error)">{queryParamError}</div>
-                    ) : null}
-                    {componentSwitch && queryParamRows.some((row) => row.mode === 'ref' && row.refName) ? (
-                      <div className="mt-2 text-xs text-(--color-text-3)">
-                        {t('paramInput.dynamic.componentSwitchDepends')}
-                      </div>
                     ) : null}
                   </Form.Item>
                 ) : null}

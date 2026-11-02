@@ -21,7 +21,10 @@ import { optionsSourceIdentity } from '@/app/ops-analysis/utils/optionsSourceIde
 import { normalizeInputConfigResult } from '@/app/ops-analysis/utils/paramInputConfigUtils';
 import {
   dynamicQueryParamsOf,
+  hasOptionsQueryRef,
   validateOptionsQueryParams,
+  type OptionsQueryNode,
+  type OptionsQueryValidationIssue,
 } from '@/app/ops-analysis/utils/optionsQueryParamRefs';
 
 export const DASHBOARD_PROPOSAL_SCHEMA_VERSION = '1.0';
@@ -294,6 +297,13 @@ const readNormalizedFilterInput = (
   return normalized.config ?? raw;
 };
 
+const involvedQueryNames = (issue: OptionsQueryValidationIssue) => {
+  const involved = new Set<string>();
+  if ('path' in issue && issue.path) issue.path.forEach((name) => involved.add(name));
+  if ('name' in issue && issue.name) involved.add(issue.name);
+  return involved;
+};
+
 const enforceOptionsQueryGraph = (
   filters: UnifiedFilterDefinition[],
   warnings: string[],
@@ -309,9 +319,7 @@ const enforceOptionsQueryGraph = (
   ]);
   const issue = validateOptionsQueryParams(nodes, known);
   if (!issue) return filters;
-  const involved = new Set<string>();
-  if ('path' in issue && issue.path) issue.path.forEach((name) => involved.add(name));
-  if ('name' in issue && issue.name) involved.add(issue.name);
+  const involved = involvedQueryNames(issue);
   warnings.push(`graph:${issue.code}`);
   return filters.map((filter) => {
     if (!involved.has(filter.id) && !(filter.key && involved.has(filter.key))) return filter;
@@ -319,13 +327,67 @@ const enforceOptionsQueryGraph = (
   });
 };
 
+const clearComponentSwitchWhenQueryRef = (param: ParamItem): ParamItem => {
+  const inputConfig = param.inputConfig;
+  if (!inputConfig || hasOptionsQueryRef(inputConfig) === false || !('componentSwitch' in inputConfig)) {
+    return param;
+  }
+  if (inputConfig.componentSwitch !== true) return param;
+  const nextInputConfig = { ...inputConfig };
+  delete nextInputConfig.componentSwitch;
+  return { ...param, inputConfig: nextInputConfig };
+};
+
+/** 组件参数和筛定义共用同一套环、级数、类型校验。非法引用从该参数上丢掉。 */
+const enforceComponentOptionsQueryGraph = (
+  params: ParamItem[],
+  filters: UnifiedFilterDefinition[],
+  warnings: string[],
+): ParamItem[] => {
+  const paramNodes: OptionsQueryNode[] = params.flatMap((param) => (
+    param.name ? [{
+      name: param.name,
+      queryParams: dynamicQueryParamsOf(param.inputConfig),
+    }] : []
+  ));
+  if (!paramNodes.some((node) => node.queryParams && Object.keys(node.queryParams).length > 0)) {
+    return params;
+  }
+  const filterNodes: OptionsQueryNode[] = filters.map((filter) => ({
+    name: filter.id,
+    aliases: filter.key && filter.key !== filter.id ? [filter.key] : undefined,
+    queryParams: dynamicQueryParamsOf(filter.inputConfig),
+  }));
+  const issue = validateOptionsQueryParams(
+    [...filterNodes, ...paramNodes],
+    [
+      ...filters.flatMap((filter) => [
+        { name: filter.id, type: filter.type },
+        ...(filter.key ? [{ name: filter.key, type: filter.type }] : []),
+      ]),
+      ...params.flatMap((param) => (param.name ? [{ name: param.name, type: param.type }] : [])),
+    ],
+  );
+  if (!issue) return params;
+  const involved = involvedQueryNames(issue);
+  let changed = false;
+  const next = params.map((param) => {
+    if (!param.name || !involved.has(param.name) || !dynamicQueryParamsOf(param.inputConfig)) return param;
+    changed = true;
+    warnings.push(`param:${param.name}:${issue.code}`);
+    return { ...param, inputConfig: stripDynamicQueryParams(param.inputConfig) };
+  });
+  return changed ? next : params;
+};
+
 const sanitizeLayoutQueryParams = (
   layout: DashboardLayoutItem[],
+  filters: UnifiedFilterDefinition[],
   warnings: string[],
 ): DashboardLayoutItem[] => layout.map((item) => {
   if (!isDashboardWidgetItem(item) || !item.valueConfig?.dataSourceParams?.length) return item;
   let changed = false;
-  const dataSourceParams = item.valueConfig.dataSourceParams.map((param) => {
+  let dataSourceParams = item.valueConfig.dataSourceParams.map((param) => {
     const normalized = normalizeInputConfigResult(param);
     if (normalized.queryParamIssue) {
       changed = true;
@@ -338,8 +400,18 @@ const sanitizeLayoutQueryParams = (
     }
     return param;
   });
+  const graphed = enforceComponentOptionsQueryGraph(dataSourceParams, filters, warnings);
+  if (graphed !== dataSourceParams) {
+    changed = true;
+    dataSourceParams = graphed;
+  }
+  const withoutSwitch = dataSourceParams.map((param) => {
+    const next = clearComponentSwitchWhenQueryRef(param);
+    if (next !== param) changed = true;
+    return next;
+  });
   if (!changed) return item;
-  return { ...item, valueConfig: { ...item.valueConfig, dataSourceParams } };
+  return { ...item, valueConfig: { ...item.valueConfig, dataSourceParams: withoutSwitch } };
 });
 
 const toFilterDefinition = (
@@ -518,7 +590,7 @@ export const applyDashboardProposal = (
     input.allocateId,
     warnings,
   ), warnings);
-  const layoutWithQueryParams = sanitizeLayoutQueryParams(nextLayout, warnings);
+  const layoutWithQueryParams = sanitizeLayoutQueryParams(nextLayout, filters, warnings);
   const otherConfig = isRecord(input.proposal.otherConfig) && Object.keys(input.proposal.otherConfig).length > 0
     ? input.proposal.otherConfig
     : undefined;
