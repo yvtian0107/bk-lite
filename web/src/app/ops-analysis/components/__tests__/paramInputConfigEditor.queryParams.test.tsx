@@ -34,7 +34,7 @@ vi.mock('@/utils/i18n', () => ({
         'paramInput.dynamic.valueMode': '取值方式',
         'paramInput.dynamic.valueOrRef': '值/引用',
         'paramInput.dynamic.fixedValue': '固定值',
-        'paramInput.dynamic.dollarRef': '$引用',
+        'paramInput.dynamic.dollarRef': '引用参数',
         'paramInput.dynamic.selectUpstream': '选择上游筛选',
         'paramInput.dynamic.noRefCandidates': '暂无其它可引用的筛选',
         'paramInput.dynamic.originGlobalFilter': '全局筛选',
@@ -131,6 +131,7 @@ describe('param input query params', () => {
     const roomCells = Array.from((roomRow as HTMLElement).querySelectorAll('td')).map((cell) => cell.textContent);
     expect(roomCells[0]).toBe('room_id');
     expect(roomCells[1]).toBe('机房');
+    expect(roomCells[2]).toContain('引用参数');
     expect(within(dialog).getByText('zone_id').closest('tr')?.textContent).toContain('区域');
     const rawRow = within(dialog).getByText('raw_only').closest('tr');
     expect(within(rawRow as HTMLElement).getByText('—')).not.toBeNull();

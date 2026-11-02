@@ -2040,7 +2040,7 @@
       "valueMode": "取值方式",
       "valueOrRef": "值/引用",
       "fixedValue": "固定值",
-      "dollarRef": "$引用",
+      "dollarRef": "引用参数",
       "selectUpstream": "选择上游筛选",
       "noRefCandidates": "暂无其它可引用的筛选",
       "originGlobalFilter": "全局筛选",

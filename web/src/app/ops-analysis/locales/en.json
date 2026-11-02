@@ -2040,7 +2040,7 @@
       "valueMode": "Value mode",
       "valueOrRef": "Value / reference",
       "fixedValue": "Fixed",
-      "dollarRef": "$ reference",
+      "dollarRef": "Reference",
       "selectUpstream": "Select an upstream filter",
       "noRefCandidates": "No other filters to reference",
       "originGlobalFilter": "Global filter",
