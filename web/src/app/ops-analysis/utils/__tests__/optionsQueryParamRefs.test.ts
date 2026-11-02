@@ -5,6 +5,7 @@ import {
 } from '@/app/ops-analysis/utils/paramInputConfigUtils';
 import {
   buildOptionsQueryRefChoices,
+  collectOptionsQueryParamIssues,
   MAX_OPTIONS_QUERY_CHAIN_NODES,
   normalizeQueryParamsForStorage,
   OPTIONS_QUERY_INVALID,
@@ -48,8 +49,46 @@ describe('options query param refs', () => {
     expect(validateOptionsQueryParams([
       { name: 'device', queryParams: { room_id: { ref: 'room' } } },
       { name: 'rack', queryParams: { device_id: { ref: 'device' } } },
-      { name: 'port', queryParams: { rack_id: { ref: 'rack' } } },
+      { name: 'port', queryParams: { rack_id: { ref: 'rack' }, site: { ref: 'room' } } },
     ], names)?.code).toBe('depth');
+    const issues = collectOptionsQueryParamIssues([
+      { name: 'device', queryParams: { room_id: { ref: 'room' } } },
+      { name: 'rack', queryParams: { device_id: { ref: 'device' } } },
+      { name: 'port', queryParams: { rack_id: { ref: 'rack' }, site: { ref: 'room' } } },
+    ], names);
+    expect(issues).toEqual([
+      expect.objectContaining({ code: 'depth', name: 'port', param: 'rack_id' }),
+    ]);
+    const longer = collectOptionsQueryParamIssues([
+      { name: 'site', queryParams: { parent: { ref: 'root' } } },
+      { name: 'room', queryParams: { site_id: { ref: 'site' } } },
+      { name: 'device', queryParams: { room_id: { ref: 'room' } } },
+      { name: 'rack', queryParams: { device_id: { ref: 'device' } } },
+      { name: 'port', queryParams: { rack_id: { ref: 'rack' } } },
+    ], ['root', 'site', 'room', 'device', 'rack', 'port']);
+    expect(longer.map((issue) => issue.param).sort()).toEqual(['device_id', 'rack_id', 'room_id']);
+  });
+
+  it('reports a cycle, an over-long edge, and a bad type in one pass', () => {
+    const issues = collectOptionsQueryParamIssues([
+      { name: 'left', queryParams: { peer: { ref: 'right' } } },
+      { name: 'right', queryParams: { peer: { ref: 'left' } } },
+      { name: 'device', queryParams: { room_id: { ref: 'room' } } },
+      { name: 'rack', queryParams: { device_id: { ref: 'device' } } },
+      { name: 'port', queryParams: { rack_id: { ref: 'rack' } } },
+      { name: 'typed', queryParams: { raw: { ref: 'payload' } } },
+    ], [
+      ...names,
+      'left',
+      'right',
+      'typed',
+      { name: 'payload', type: 'object' },
+    ]);
+    expect(issues.map((issue) => issue.code).sort()).toEqual(['cycle', 'cycle', 'depth', 'type']);
+    expect(issues.filter((issue) => issue.code === 'depth').map((issue) => (
+      'param' in issue ? issue.param : ''
+    ))).toEqual(['rack_id']);
+    expect(issues.some((issue) => issue.code === 'type' && 'param' in issue && issue.param === 'raw')).toBe(true);
   });
 
   it('rejects a reference to a parameter that cannot be passed as a filter', () => {

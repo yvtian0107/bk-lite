@@ -11,14 +11,14 @@ export interface OptionsQueryParamRef {
 }
 
 export type OptionsQueryValidationIssue =
-  | { code: 'concat'; param: string }
-  | { code: 'invalid'; param: string }
-  | { code: 'self'; name: string }
-  | { code: 'missing'; name: string; ref: string }
-  | { code: 'type'; name: string; ref: string }
-  | { code: 'ambiguous'; name: string; ref: string }
-  | { code: 'cycle'; path: string[] }
-  | { code: 'depth'; path: string[] };
+  | { code: 'concat'; param: string; name?: string }
+  | { code: 'invalid'; param: string; name?: string }
+  | { code: 'self'; name: string; ref?: string; param?: string }
+  | { code: 'missing'; name: string; ref: string; param?: string }
+  | { code: 'type'; name: string; ref: string; param?: string }
+  | { code: 'ambiguous'; name: string; ref: string; param?: string }
+  | { code: 'cycle'; path: string[]; name: string; ref: string; param: string }
+  | { code: 'depth'; path: string[]; name: string; ref: string; param: string };
 
 export interface OptionsQueryKnownName {
   name: string;
@@ -225,47 +225,14 @@ const nodesForRef = (nodes: OptionsQueryNode[], ref: string): OptionsQueryNode[]
   return [...direct, ...aliased];
 };
 
-const graphFromNodes = (
-  nodes: OptionsQueryNode[],
-): { graph: Map<string, string[]>; issue: OptionsQueryValidationIssue | null } => {
-  const graph = new Map<string, string[]>();
-  for (const node of nodes) {
-    if (!node.name) continue;
-    const edges = new Set(graph.get(node.name) ?? []);
-    for (const ref of collectQueryParamRefs(node.queryParams)) {
-      const targets = nodesForRef(nodes, ref);
-      if (targets.length > 1) {
-        return { graph, issue: { code: 'ambiguous', name: node.name, ref } };
-      }
-      if (targets.length === 1) {
-        if (targets[0].name === node.name) {
-          return { graph, issue: { code: 'self', name: node.name } };
-        }
-        edges.add(targets[0].name);
-        continue;
-      }
-      edges.add(ref);
-    }
-    graph.set(node.name, Array.from(edges));
-  }
-  return { graph, issue: null };
-};
+interface QueryGraphEdge {
+  from: string;
+  to: string;
+  ref: string;
+  param: string;
+}
 
-export const validateOptionsQueryParams = (
-  nodes: OptionsQueryNode[],
-  knownNames: Array<string | OptionsQueryKnownName>,
-): OptionsQueryValidationIssue | null => {
-  for (const node of nodes) {
-    if (!node.queryParams) continue;
-    for (const [param, raw] of Object.entries(node.queryParams)) {
-      const normalized = normalizeOptionsQueryParamValue(raw);
-      if (isRejectedQueryParam(normalized)) return { code: normalized.reason, param };
-      if (isOptionsQueryParamRef(normalized.value) && normalized.value.ref === node.name) {
-        return { code: 'self', name: node.name };
-      }
-    }
-  }
-
+const knownNameMap = (knownNames: Array<string | OptionsQueryKnownName>) => {
   const known = new Map<string, string | undefined>();
   knownNames.forEach((entry) => {
     if (!entry) return;
@@ -277,46 +244,228 @@ export const validateOptionsQueryParams = (
     const previous = known.get(entry.name);
     known.set(entry.name, entry.type || previous);
   });
-  if (known.size > 0) {
-    for (const node of nodes) {
-      for (const ref of collectQueryParamRefs(node.queryParams)) {
-        if (ref === node.name) return { code: 'self', name: node.name };
-        const targets = nodesForRef(nodes, ref);
-        if (targets.length > 1) return { code: 'ambiguous', name: node.name, ref };
-        if (targets.length === 1 && targets[0].name === node.name) {
-          return { code: 'self', name: node.name };
-        }
-        const knownRef = targets.length === 1 ? targets[0].name : ref;
-        if (!known.has(ref) && !known.has(knownRef) && targets.length === 0) {
-          return { code: 'missing', name: node.name, ref };
-        }
-        const targetType = known.get(ref) || known.get(knownRef);
-        if (targetType && !isBindableDataSourceParamType(targetType)) {
-          return { code: 'type', name: node.name, ref };
-        }
-      }
-    }
-  }
+  return known;
+};
 
-  const built = graphFromNodes(nodes);
-  if (built.issue) return built.issue;
-  const graph = built.graph;
-  const visit = (name: string, stack: string[]): OptionsQueryValidationIssue | null => {
-    if (stack.includes(name)) return { code: 'cycle', path: [...stack, name] };
-    const next = [...stack, name];
-    if (next.length > MAX_OPTIONS_QUERY_CHAIN_NODES) return { code: 'depth', path: next };
-    for (const ref of graph.get(name) ?? []) {
-      const issue = visit(ref, next);
-      if (issue) return issue;
+/** 有向图的强连通分量。多于一个节点的分量里的边构成环。 */
+const stronglyConnectedComponents = (
+  names: string[],
+  adjacent: Map<string, string[]>,
+): string[][] => {
+  let index = 0;
+  const indices = new Map<string, number>();
+  const low = new Map<string, number>();
+  const stack: string[] = [];
+  const onStack = new Set<string>();
+  const components: string[][] = [];
+  const visit = (name: string) => {
+    indices.set(name, index);
+    low.set(name, index);
+    index += 1;
+    stack.push(name);
+    onStack.add(name);
+    (adjacent.get(name) ?? []).forEach((next) => {
+      if (!indices.has(next)) {
+        visit(next);
+        low.set(name, Math.min(low.get(name) ?? 0, low.get(next) ?? 0));
+        return;
+      }
+      if (onStack.has(next)) {
+        low.set(name, Math.min(low.get(name) ?? 0, indices.get(next) ?? 0));
+      }
+    });
+    if (low.get(name) !== indices.get(name)) return;
+    const component: string[] = [];
+    let member = '';
+    do {
+      member = stack.pop() ?? '';
+      onStack.delete(member);
+      component.push(member);
+    } while (member !== name);
+    components.push(component);
+  };
+  names.forEach((name) => {
+    if (!indices.has(name)) visit(name);
+  });
+  return components;
+};
+
+const longestDependencyPath = (
+  name: string,
+  adjacent: Map<string, string[]>,
+): string[] => {
+  const children = adjacent.get(name) ?? [];
+  let best: string[] = [];
+  children.forEach((child) => {
+    const path = longestDependencyPath(child, adjacent);
+    if (path.length > best.length) best = path;
+  });
+  return [name, ...best];
+};
+
+/**
+ * 一次扫完全部引用问题。超长链只标出超出 3 级的那条边，不把仍合法的前缀算进去。
+ * 环上的边单独标出，不顺着环继续算级数。
+ */
+export const collectOptionsQueryParamIssues = (
+  nodes: OptionsQueryNode[],
+  knownNames: Array<string | OptionsQueryKnownName>,
+): OptionsQueryValidationIssue[] => {
+  const known = knownNameMap(knownNames);
+  const issues: OptionsQueryValidationIssue[] = [];
+  const edges: QueryGraphEdge[] = [];
+
+  nodes.forEach((node) => {
+    if (!node.name || !node.queryParams) return;
+    Object.entries(node.queryParams).forEach(([param, raw]) => {
+      const normalized = normalizeOptionsQueryParamValue(raw);
+      if (isRejectedQueryParam(normalized)) {
+        issues.push({ code: normalized.reason, param, name: node.name });
+        return;
+      }
+      if (!isOptionsQueryParamRef(normalized.value)) return;
+      const ref = normalized.value.ref;
+      if (ref === node.name) {
+        issues.push({ code: 'self', name: node.name, ref, param });
+        return;
+      }
+      const targets = nodesForRef(nodes, ref);
+      if (targets.length > 1) {
+        issues.push({ code: 'ambiguous', name: node.name, ref, param });
+        return;
+      }
+      if (targets.length === 1 && targets[0].name === node.name) {
+        issues.push({ code: 'self', name: node.name, ref, param });
+        return;
+      }
+      const resolved = targets.length === 1 ? targets[0].name : ref;
+      if (known.size > 0 && !known.has(ref) && !known.has(resolved) && targets.length === 0) {
+        issues.push({ code: 'missing', name: node.name, ref, param });
+        return;
+      }
+      const targetType = known.get(ref) || known.get(resolved);
+      if (targetType && !isBindableDataSourceParamType(targetType)) {
+        issues.push({ code: 'type', name: node.name, ref, param });
+        return;
+      }
+      edges.push({ from: node.name, to: resolved, ref, param });
+    });
+  });
+
+  const names = Array.from(new Set([
+    ...nodes.flatMap((node) => (node.name ? [node.name] : [])),
+    ...edges.flatMap((edge) => [edge.from, edge.to]),
+  ]));
+  const adjacent = new Map<string, string[]>();
+  edges.forEach((edge) => {
+    const next = adjacent.get(edge.from) ?? [];
+    next.push(edge.to);
+    adjacent.set(edge.from, next);
+  });
+  const components = stronglyConnectedComponents(names, adjacent);
+  const componentOf = new Map<string, number>();
+  components.forEach((component, index) => {
+    if (component.length <= 1) return;
+    component.forEach((name) => componentOf.set(name, index));
+  });
+
+  const dag = new Map<string, string[]>();
+  edges.forEach((edge) => {
+    const group = componentOf.get(edge.from);
+    if (group !== undefined && group === componentOf.get(edge.to)) {
+      const component = components[group] ?? [];
+      issues.push({
+        code: 'cycle',
+        name: edge.from,
+        ref: edge.ref,
+        param: edge.param,
+        path: component.length ? [...component, component[0]] : [edge.from, edge.to, edge.from],
+      });
+      return;
     }
-    return null;
+    const next = dag.get(edge.from) ?? [];
+    next.push(edge.to);
+    dag.set(edge.from, next);
+  });
+
+  const chainLength = new Map<string, number>();
+  const measure = (name: string): number => {
+    const cached = chainLength.get(name);
+    if (cached !== undefined) return cached;
+    chainLength.set(name, 1);
+    const longest = (dag.get(name) ?? []).reduce(
+      (max, child) => Math.max(max, 1 + measure(child)),
+      1,
+    );
+    chainLength.set(name, longest);
+    return longest;
   };
 
-  for (const name of graph.keys()) {
-    const issue = visit(name, []);
-    if (issue) return issue;
-  }
-  return null;
+  edges.forEach((edge) => {
+    const group = componentOf.get(edge.from);
+    if (group !== undefined && group === componentOf.get(edge.to)) return;
+    if (1 + measure(edge.to) <= MAX_OPTIONS_QUERY_CHAIN_NODES) return;
+    issues.push({
+      code: 'depth',
+      name: edge.from,
+      ref: edge.ref,
+      param: edge.param,
+      path: [edge.from, ...longestDependencyPath(edge.to, dag)],
+    });
+  });
+  return issues;
+};
+
+export const validateOptionsQueryParams = (
+  nodes: OptionsQueryNode[],
+  knownNames: Array<string | OptionsQueryKnownName>,
+): OptionsQueryValidationIssue | null => collectOptionsQueryParamIssues(nodes, knownNames)[0] ?? null;
+
+/** 丢掉被点名的查询入参键，其余字面量和仍合法的引用留下。 */
+export const withoutRejectedQueryParams = (
+  queryParams: Record<string, unknown> | undefined,
+  rejectedParams: Set<string>,
+): Record<string, OptionsQueryParamValue> | undefined => {
+  if (!queryParams) return undefined;
+  const next: Record<string, OptionsQueryParamValue> = {};
+  Object.entries(queryParams).forEach(([key, raw]) => {
+    if (rejectedParams.has(key)) return;
+    const normalized = normalizeOptionsQueryParamValue(raw);
+    if (isRejectedQueryParam(normalized)) return;
+    next[key] = normalized.value;
+  });
+  return Object.keys(next).length ? next : undefined;
+};
+
+const filterQueryGraph = (
+  definitions: Array<{
+    id: string;
+    key: string;
+    type?: string;
+    inputConfig?: { control?: string; optionsSource?: { type?: string; queryParams?: Record<string, unknown> } };
+  }>,
+) => ({
+  nodes: definitions.map((item) => ({
+    name: item.id,
+    aliases: item.key && item.key !== item.id ? [item.key] : undefined,
+    queryParams: dynamicQueryParamsOf(item.inputConfig),
+  })),
+  known: definitions.flatMap((item) => [
+    { name: item.id, type: item.type },
+    ...(item.key ? [{ name: item.key, type: item.type }] : []),
+  ]),
+});
+
+export const collectUnifiedFilterQueryIssues = (
+  definitions: Array<{
+    id: string;
+    key: string;
+    type?: string;
+    inputConfig?: { control?: string; optionsSource?: { type?: string; queryParams?: Record<string, unknown> } };
+  }>,
+): OptionsQueryValidationIssue[] => {
+  const graph = filterQueryGraph(definitions);
+  return collectOptionsQueryParamIssues(graph.nodes, graph.known);
 };
 
 export const validateUnifiedFilterQueryGraph = (
@@ -326,17 +475,7 @@ export const validateUnifiedFilterQueryGraph = (
     type?: string;
     inputConfig?: { control?: string; optionsSource?: { type?: string; queryParams?: Record<string, unknown> } };
   }>,
-): OptionsQueryValidationIssue | null => validateOptionsQueryParams(
-  definitions.map((item) => ({
-    name: item.id,
-    aliases: item.key && item.key !== item.id ? [item.key] : undefined,
-    queryParams: dynamicQueryParamsOf(item.inputConfig),
-  })),
-  definitions.flatMap((item) => [
-    { name: item.id, type: item.type },
-    ...(item.key ? [{ name: item.key, type: item.type }] : []),
-  ]),
-);
+): OptionsQueryValidationIssue | null => collectUnifiedFilterQueryIssues(definitions)[0] ?? null;
 
 export const resolveOptionsQueryParams = (
   queryParams: Record<string, unknown> | undefined,

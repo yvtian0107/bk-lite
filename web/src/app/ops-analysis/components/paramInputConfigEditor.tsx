@@ -46,10 +46,10 @@ import {
 import {
   isOptionsQueryParamRef,
   normalizeOptionsQueryParamValue,
+  collectOptionsQueryParamIssues,
   hasOptionsQueryRef,
   isRejectedQueryParams,
   normalizeQueryParamsForStorage,
-  validateOptionsQueryParams,
 } from '@/app/ops-analysis/utils/optionsQueryParamRefs';
 import {
   formatOptionsQueryCandidateLabel,
@@ -699,19 +699,13 @@ export const ParamInputConfigEditor: React.FC<ParamInputConfigEditorProps> = ({
       ? (optionsQueryContext?.self.id || editingNodeId || paramName)
       : (editingParamName || optionsQueryContext?.self.key || 'current');
     const selfAlias = scope === 'globalFilter' ? (optionsQueryContext?.self.key || paramName) : undefined;
-    if (isRejectedQueryParams(storedParams)) {
-      const messageText = describeQueryIssue(t, storedParams.issue);
-      setQueryParamError(messageText);
-      message.error(messageText);
-      return;
-    }
     const otherFilters = (optionsQueryContext?.globalFilters ?? []).filter((filter) => (
       filter.id && filter.id !== nodeName && filter.id !== optionsQueryContext?.self.id
     ));
     const otherParams = scope === 'component'
       ? (optionsQueryContext?.componentParams ?? []).filter((param) => param.name && param.name !== nodeName)
       : [];
-    const issue = validateOptionsQueryParams(
+    const issues = collectOptionsQueryParamIssues(
       [
         ...otherFilters.map((filter) => ({
           name: filter.id,
@@ -725,7 +719,7 @@ export const ParamInputConfigEditor: React.FC<ParamInputConfigEditorProps> = ({
         {
           name: nodeName,
           aliases: selfAlias && selfAlias !== nodeName ? [selfAlias] : undefined,
-          queryParams: storedParams.queryParams,
+          queryParams: draftParams,
         },
       ],
       [
@@ -738,8 +732,13 @@ export const ParamInputConfigEditor: React.FC<ParamInputConfigEditorProps> = ({
         ...otherParams.map((param) => ({ name: param.name, type: param.type })),
       ],
     );
-    if (issue) {
-      const messageText = describeQueryIssue(t, issue);
+    if (issues.length > 0 || isRejectedQueryParams(storedParams)) {
+      const parts = issues.map((issue) => describeQueryIssue(t, issue));
+      if (isRejectedQueryParams(storedParams)) {
+        const storedText = describeQueryIssue(t, storedParams.issue);
+        if (!parts.includes(storedText)) parts.unshift(storedText);
+      }
+      const messageText = parts.join('；');
       setQueryParamError(messageText);
       message.error(messageText);
       return;

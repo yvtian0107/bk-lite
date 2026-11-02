@@ -69,8 +69,8 @@ import type {
   InputControlConfig,
 } from '@/app/ops-analysis/types/dataSource';
 import {
+  collectUnifiedFilterQueryIssues,
   dynamicQueryParamsOf,
-  validateUnifiedFilterQueryGraph,
 } from '@/app/ops-analysis/utils/optionsQueryParamRefs';
 import { optionsSourceSummary } from '@/app/ops-analysis/utils/optionsSourceIdentity';
 import {
@@ -321,9 +321,9 @@ const UnifiedFilterConfigModal: React.FC<UnifiedFilterConfigModalProps> = ({
 
   const handleConfirm = () => {
     if (hasInvalidDateRangeDefinitions(definitions)) return;
-    const queryIssue = validateUnifiedFilterQueryGraph(definitions);
-    if (queryIssue) {
-      message.error(describeQueryIssue(t, queryIssue));
+    const queryIssues = collectUnifiedFilterQueryIssues(definitions);
+    if (queryIssues.length > 0) {
+      message.error(queryIssues.map((issue) => describeQueryIssue(t, issue)).join('；'));
       return;
     }
     onConfirm(definitions.map(sanitizeUnifiedFilterDefinition));

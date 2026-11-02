@@ -20,9 +20,10 @@ import { syncFilterValuesWithDefinitions } from '@/app/ops-analysis/utils/unifie
 import { optionsSourceIdentity } from '@/app/ops-analysis/utils/optionsSourceIdentity';
 import { normalizeInputConfigResult } from '@/app/ops-analysis/utils/paramInputConfigUtils';
 import {
+  collectOptionsQueryParamIssues,
   dynamicQueryParamsOf,
   hasOptionsQueryRef,
-  validateOptionsQueryParams,
+  withoutRejectedQueryParams,
   type OptionsQueryNode,
   type OptionsQueryValidationIssue,
 } from '@/app/ops-analysis/utils/optionsQueryParamRefs';
@@ -271,20 +272,6 @@ const applyPosition = (
   description: hasOwn(proposal, 'description') ? proposal.description : item.description,
 });
 
-const stripDynamicQueryParams = (
-  inputConfig: UnifiedFilterDefinition['inputConfig'],
-): UnifiedFilterDefinition['inputConfig'] => {
-  if (!inputConfig || (inputConfig.control !== 'select' && inputConfig.control !== 'radio')) {
-    return inputConfig;
-  }
-  if (inputConfig.optionsSource.type !== 'dynamic' || !inputConfig.optionsSource.queryParams) {
-    return inputConfig;
-  }
-  const optionsSource = { ...inputConfig.optionsSource };
-  delete optionsSource.queryParams;
-  return { ...inputConfig, optionsSource };
-};
-
 const readNormalizedFilterInput = (
   label: string,
   raw: UnifiedFilterDefinition['inputConfig'],
@@ -293,15 +280,31 @@ const readNormalizedFilterInput = (
   const normalized = normalizeInputConfigResult({ inputConfig: raw });
   if (normalized.queryParamIssue) {
     warnings.push(`filter:${label}:${normalized.queryParamIssue.code}`);
+    return raw;
   }
   return normalized.config ?? raw;
 };
 
-const involvedQueryNames = (issue: OptionsQueryValidationIssue) => {
-  const involved = new Set<string>();
-  if ('path' in issue && issue.path) issue.path.forEach((name) => involved.add(name));
-  if ('name' in issue && issue.name) involved.add(issue.name);
-  return involved;
+const isGraphQueryIssue = (code: string) => code !== 'concat' && code !== 'invalid';
+
+const rejectedQueryParamKey = (issue: OptionsQueryValidationIssue): string | undefined => (
+  'param' in issue ? issue.param : undefined
+);
+
+const applyRemainingQueryParams = (
+  inputConfig: UnifiedFilterDefinition['inputConfig'],
+  rejected: Set<string>,
+): UnifiedFilterDefinition['inputConfig'] => {
+  if (!rejected.size) return inputConfig;
+  if (!inputConfig || (inputConfig.control !== 'select' && inputConfig.control !== 'radio')) {
+    return inputConfig;
+  }
+  if (inputConfig.optionsSource.type !== 'dynamic') return inputConfig;
+  const queryParams = withoutRejectedQueryParams(inputConfig.optionsSource.queryParams, rejected);
+  const optionsSource = { ...inputConfig.optionsSource };
+  if (queryParams) optionsSource.queryParams = queryParams;
+  else delete optionsSource.queryParams;
+  return { ...inputConfig, optionsSource };
 };
 
 const enforceOptionsQueryGraph = (
@@ -317,13 +320,22 @@ const enforceOptionsQueryGraph = (
     { name: filter.id, type: filter.type },
     ...(filter.key ? [{ name: filter.key, type: filter.type }] : []),
   ]);
-  const issue = validateOptionsQueryParams(nodes, known);
-  if (!issue) return filters;
-  const involved = involvedQueryNames(issue);
-  warnings.push(`graph:${issue.code}`);
+  const issues = collectOptionsQueryParamIssues(nodes, known);
+  if (!issues.length) return filters;
+  const warned = new Set<string>();
+  issues.forEach((issue) => {
+    if (!isGraphQueryIssue(issue.code) || warned.has(issue.code)) return;
+    warned.add(issue.code);
+    warnings.push(`graph:${issue.code}`);
+  });
   return filters.map((filter) => {
-    if (!involved.has(filter.id) && !(filter.key && involved.has(filter.key))) return filter;
-    return { ...filter, inputConfig: stripDynamicQueryParams(filter.inputConfig) };
+    const rejected = new Set(issues.flatMap((issue) => (
+      issue.name === filter.id && rejectedQueryParamKey(issue)
+        ? [rejectedQueryParamKey(issue) as string]
+        : []
+    )));
+    if (!rejected.size) return filter;
+    return { ...filter, inputConfig: applyRemainingQueryParams(filter.inputConfig, rejected) };
   });
 };
 
@@ -358,7 +370,7 @@ const enforceComponentOptionsQueryGraph = (
     aliases: filter.key && filter.key !== filter.id ? [filter.key] : undefined,
     queryParams: dynamicQueryParamsOf(filter.inputConfig),
   }));
-  const issue = validateOptionsQueryParams(
+  const issues = collectOptionsQueryParamIssues(
     [...filterNodes, ...paramNodes],
     [
       ...filters.flatMap((filter) => [
@@ -368,14 +380,26 @@ const enforceComponentOptionsQueryGraph = (
       ...params.flatMap((param) => (param.name ? [{ name: param.name, type: param.type }] : [])),
     ],
   );
-  if (!issue) return params;
-  const involved = involvedQueryNames(issue);
+  const paramNames = new Set(paramNodes.map((node) => node.name));
+  const relevant = issues.filter((issue) => issue.name && paramNames.has(issue.name));
+  if (!relevant.length) return params;
+  const warned = new Set<string>();
   let changed = false;
   const next = params.map((param) => {
-    if (!param.name || !involved.has(param.name) || !dynamicQueryParamsOf(param.inputConfig)) return param;
+    const rejected = new Set(relevant.flatMap((issue) => {
+      if (issue.name !== param.name) return [];
+      const key = rejectedQueryParamKey(issue);
+      if (!key) return [];
+      const token = `${param.name}:${issue.code}`;
+      if (isGraphQueryIssue(issue.code) && !warned.has(token)) {
+        warned.add(token);
+        warnings.push(`param:${token}`);
+      }
+      return [key];
+    }));
+    if (!rejected.size) return param;
     changed = true;
-    warnings.push(`param:${param.name}:${issue.code}`);
-    return { ...param, inputConfig: stripDynamicQueryParams(param.inputConfig) };
+    return { ...param, inputConfig: applyRemainingQueryParams(param.inputConfig, rejected) };
   });
   return changed ? next : params;
 };
@@ -392,7 +416,7 @@ const sanitizeLayoutQueryParams = (
     if (normalized.queryParamIssue) {
       changed = true;
       warnings.push(`param:${param.name}:${normalized.queryParamIssue.code}`);
-      return { ...param, inputConfig: normalized.config };
+      return param;
     }
     if (normalized.config && JSON.stringify(normalized.config) !== JSON.stringify(param.inputConfig ?? null)) {
       changed = true;

@@ -440,7 +440,58 @@ test('drops a query-param chain longer than three nodes and warns', () => {
   assert.equal(result.ok, true);
   if (!result.ok) return;
   assert.ok(result.warnings?.includes('graph:depth'));
+  assert.deepEqual(dynamicQuery(result.filters.find((item) => item.key === 'device_id')), {
+    room_id: { ref: 'room_id' },
+  });
+  assert.deepEqual(dynamicQuery(result.filters.find((item) => item.key === 'rack_id')), {
+    device_id: { ref: 'device_id' },
+  });
   assert.equal(dynamicQuery(result.filters.find((item) => item.key === 'port_id')), undefined);
+});
+
+test('keeps legal filter prefixes and reports every graph problem', () => {
+  const flag = dynamicFilter('flag__boolean', 'flag', {});
+  flag.type = 'boolean' as UnifiedFilterDefinition['type'];
+  const result = applyDashboardProposal({
+    layout: [],
+    filters: [],
+    filterValues: {},
+    allocateId,
+    proposal: {
+      schemaVersion: '1.0',
+      layout: [],
+      filters: [
+        dynamicFilter('room_id__string', 'room_id', {}),
+        dynamicFilter('device_id__string', 'device_id', { room_id: { ref: 'room_id' } }),
+        dynamicFilter('rack_id__string', 'rack_id', { device_id: { ref: 'device_id' } }),
+        dynamicFilter('port_id__string', 'port_id', {
+          rack_id: { ref: 'rack_id' },
+          note: 'stay',
+          room_id: { ref: 'room_id' },
+        }),
+        dynamicFilter('left__string', 'left', { peer: { ref: 'right' } }),
+        dynamicFilter('right__string', 'right', { peer: { ref: 'left' }, fixed: 1 }),
+        dynamicFilter('typed__string', 'typed', { flag: { ref: 'flag' }, kept: 'yes' }),
+        flag,
+      ],
+    },
+  });
+
+  assert.equal(result.ok, true);
+  if (!result.ok) return;
+  assert.deepEqual(dynamicQuery(result.filters.find((item) => item.key === 'rack_id')), {
+    device_id: { ref: 'device_id' },
+  });
+  assert.deepEqual(dynamicQuery(result.filters.find((item) => item.key === 'port_id')), {
+    note: 'stay',
+    room_id: { ref: 'room_id' },
+  });
+  assert.equal(dynamicQuery(result.filters.find((item) => item.key === 'left')), undefined);
+  assert.deepEqual(dynamicQuery(result.filters.find((item) => item.key === 'right')), { fixed: 1 });
+  assert.deepEqual(dynamicQuery(result.filters.find((item) => item.key === 'typed')), { kept: 'yes' });
+  assert.ok(result.warnings?.includes('graph:depth'));
+  assert.ok(result.warnings?.includes('graph:cycle'));
+  assert.ok(result.warnings?.includes('graph:type'));
 });
 
 const selectParam = (
@@ -524,6 +575,8 @@ test('drops illegal component-param query graphs and keeps a three-node chain', 
   assert.equal(result.ok, true);
   if (!result.ok) return;
   assert.equal(widgetParamQuery(result.layout, 'deep', 'port'), undefined);
+  assert.deepEqual(widgetParamQuery(result.layout, 'deep', 'device'), { room: { ref: 'room' } });
+  assert.deepEqual(widgetParamQuery(result.layout, 'deep', 'rack'), { device: { ref: 'device' } });
   assert.equal(widgetParamQuery(result.layout, 'deep', 'note')?.label, 'kept');
   assert.equal(widgetParamQuery(result.layout, 'cycle', 'left'), undefined);
   assert.equal(widgetParamQuery(result.layout, 'cycle', 'right'), undefined);
@@ -532,6 +585,48 @@ test('drops illegal component-param query graphs and keeps a three-node chain', 
   assert.ok(result.warnings?.includes('param:port:depth'));
   assert.ok(result.warnings?.includes('param:left:cycle'));
   assert.ok(result.warnings?.includes('param:device:missing'));
+});
+
+test('keeps a component prefix and reports every problem on the same widget', () => {
+  const flag = dynamicFilter('flag__boolean', 'flag', {});
+  flag.type = 'boolean' as UnifiedFilterDefinition['type'];
+  const result = applyDashboardProposal({
+    layout: [],
+    filters: [],
+    filterValues: {},
+    allocateId,
+    proposal: {
+      schemaVersion: '1.0',
+      layout: [
+        proposalWidget('mixed', [
+          selectParam('room', undefined),
+          selectParam('device', { room: { ref: 'room' } }),
+          selectParam('rack', { device: { ref: 'device' } }),
+          selectParam('port', { rack: { ref: 'rack' }, note: 'stay', room: { ref: 'room' } }),
+          selectParam('left', { peer: { ref: 'right' } }),
+          selectParam('right', { peer: { ref: 'left' }, fixed: 1 }),
+          selectParam('typed', { flag: { ref: 'flag' }, kept: 'yes' }),
+        ]),
+      ],
+      filters: [flag],
+    },
+  });
+
+  assert.equal(result.ok, true);
+  if (!result.ok) return;
+  assert.deepEqual(widgetParamQuery(result.layout, 'mixed', 'device'), { room: { ref: 'room' } });
+  assert.deepEqual(widgetParamQuery(result.layout, 'mixed', 'rack'), { device: { ref: 'device' } });
+  assert.deepEqual(widgetParamQuery(result.layout, 'mixed', 'port'), {
+    note: 'stay',
+    room: { ref: 'room' },
+  });
+  assert.equal(widgetParamQuery(result.layout, 'mixed', 'left'), undefined);
+  assert.deepEqual(widgetParamQuery(result.layout, 'mixed', 'right'), { fixed: 1 });
+  assert.deepEqual(widgetParamQuery(result.layout, 'mixed', 'typed'), { kept: 'yes' });
+  assert.ok(result.warnings?.includes('param:port:depth'));
+  assert.ok(result.warnings?.includes('param:left:cycle'));
+  assert.ok(result.warnings?.includes('param:right:cycle'));
+  assert.ok(result.warnings?.includes('param:typed:type'));
 });
 
 test('drops a component-param reference to an unbindable type and turns off component switch', () => {
