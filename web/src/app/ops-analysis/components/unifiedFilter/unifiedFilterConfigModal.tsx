@@ -453,26 +453,16 @@ const UnifiedFilterConfigModal: React.FC<UnifiedFilterConfigModalProps> = ({
       title: t('dashboard.filterKey'),
       dataIndex: 'key',
       width: 170,
-      render: (value: string, record: UnifiedFilterDefinition) => {
-        const hint = scannedParams.find((param) => param.id === record.id)?.sourceHint;
-        return (
-          <div className="min-w-0">
-            <div className="flex min-w-0 flex-wrap items-center gap-1">
-              <span className="font-mono text-xs">{value}</span>
-              <Tag className="m-0 px-1.5 text-[11px] leading-[18px]">
-                {PARAM_TYPE_LABEL_KEYS.has(record.type)
-                  ? t(`dataSource.paramTypes.${record.type}`)
-                  : record.type}
-              </Tag>
-            </div>
-            {hint ? (
-              <div className="mt-0.5 truncate text-[11px] leading-4 text-(--color-text-3)">
-                {hint}
-              </div>
-            ) : null}
-          </div>
-        );
-      },
+      render: (value: string, record: UnifiedFilterDefinition) => (
+        <div className="flex min-w-0 flex-wrap items-center gap-1">
+          <span className="font-mono text-xs">{value}</span>
+          <Tag className="m-0 px-1.5 text-[11px] leading-[18px]">
+            {PARAM_TYPE_LABEL_KEYS.has(record.type)
+              ? t(`dataSource.paramTypes.${record.type}`)
+              : record.type}
+          </Tag>
+        </div>
+      ),
     },
     {
       title: t('dashboard.filterName'),
