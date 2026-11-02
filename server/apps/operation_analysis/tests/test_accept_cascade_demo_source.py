@@ -14,6 +14,9 @@ from apps.operation_analysis.common.demo_source import (
     CHART_TYPES,
     DEFAULT_NAMESPACE_NAME,
     REST_CASCADE_CHART,
+    REST_CASCADE_CHART_B,
+    REST_CASCADE_CHART_PARAMS,
+    REST_DETAILS,
     REST_INSTANCES,
     REST_METRICS,
     REST_METRICS_B,
@@ -95,6 +98,23 @@ def test_instances_filter_by_object_and_metric():
     assert _ids(get_demo_source_data("accept_instances", {"object_id": "obj-b", "metric_id": "m3"})) == ["inst-b3"]
 
 
+@pytest.mark.parametrize(
+    "params",
+    [{}, {"instance_id": ""}, {"instance_id": "   "}, {"instance_id": None}, {"instance_id": []}],
+)
+def test_details_empty_instance_id_returns_empty_list(params):
+    assert _ids(get_demo_source_data("accept_details", params)) == []
+
+
+def test_details_filter_by_instance():
+    assert _items(get_demo_source_data("accept_details", {"instance_id": "inst-a1"})) == [
+        {"id": "d-a1-1", "name": "明细A1-1"},
+        {"id": "d-a1-2", "name": "明细A1-2"},
+    ]
+    assert _ids(get_demo_source_data("accept_details", {"instance_id": " inst-a2 "})) == ["d-a2"]
+    assert _ids(get_demo_source_data("accept_details", {"instance_id": "missing"})) == []
+
+
 def test_cascade_chart_returns_one_illustrative_row():
     items = _items(
         get_demo_source_data(
@@ -112,6 +132,24 @@ def test_cascade_chart_returns_one_illustrative_row():
         }
     ]
     assert len(_items(get_demo_source_data("accept_cascade_chart", {}))) == 1
+    assert _items(get_demo_source_data("accept_cascade_chart_b", {"metric_id": "mb1"})) == [
+        {
+            "name": "级联示意",
+            "value": 1,
+            "object_id": "",
+            "metric_id": "mb1",
+            "instance_id": "",
+        }
+    ]
+    assert _items(get_demo_source_data("accept_cascade_chart_params", {"detail_id": "d-a1-1"})) == [
+        {
+            "name": "级联示意",
+            "value": 1,
+            "object_id": "",
+            "metric_id": "",
+            "instance_id": "",
+        }
+    ]
 
 
 def test_unknown_demo_path_returns_none():
@@ -130,13 +168,15 @@ def test_seed_specs_use_chinese_names_and_point_chart_filters_at_demo_rest_apis(
     assert [item["name"] for item in by_rest[REST_METRICS]["params"]] == ["object_id"]
     assert [item["name"] for item in by_rest[REST_INSTANCES]["params"]] == ["object_id", "metric_id"]
     assert [item["name"] for item in by_rest[REST_METRICS_B]["params"]] == ["object_id"]
+    assert [item["name"] for item in by_rest[REST_DETAILS]["params"]] == ["instance_id"]
+    assert by_rest[REST_DETAILS]["name"] == "验收·明细列表（选项）"
     assert all(item["desc"].startswith(ACCEPTANCE_MARK) for item in ACCEPTANCE_DATASOURCE_SPECS)
 
     chart = by_rest[REST_CASCADE_CHART]
     assert chart["name"] == "验收·级联指标图"
     assert chart["chart_type"] == CHART_TYPES
     assert {"line", "bar", "table", "single", "multiValue"} <= set(chart["chart_type"])
-    for rest_api in (REST_MONITOR_OBJECTS, REST_METRICS, REST_INSTANCES, REST_METRICS_B):
+    for rest_api in (REST_MONITOR_OBJECTS, REST_METRICS, REST_INSTANCES, REST_METRICS_B, REST_DETAILS):
         assert by_rest[rest_api]["chart_type"] == []
         assert by_rest[rest_api]["tag_ids"] == ACCEPTANCE_TAG_IDS
     assert chart["tag_ids"] == ACCEPTANCE_TAG_IDS
@@ -150,6 +190,47 @@ def test_seed_specs_use_chinese_names_and_point_chart_filters_at_demo_rest_apis(
         param = params[name]
         assert param["type"] == "string"
         assert param["filterType"] == "filter"
+        source = param["inputConfig"]["optionsSource"]
+        assert source["sourceRef"] == {"type": "rest_api", "value": rest_api}
+        assert source["valueField"] == "id"
+        assert source["labelField"] == "name"
+        assert "queryParams" not in source
+
+    chart_b = by_rest[REST_CASCADE_CHART_B]
+    assert chart_b["name"] == "验收·级联指标图 B"
+    assert chart_b["chart_type"] == CHART_TYPES
+    assert chart_b["tag_ids"] == ACCEPTANCE_TAG_IDS
+    params_b = {item["name"]: item for item in chart_b["params"]}
+    assert list(params_b) == ["object_id", "metric_id", "instance_id"]
+    for name, rest_api in (
+        ("object_id", REST_MONITOR_OBJECTS),
+        ("metric_id", REST_METRICS_B),
+        ("instance_id", REST_INSTANCES),
+    ):
+        param = params_b[name]
+        assert param["type"] == "string"
+        assert param["filterType"] == "filter"
+        source = param["inputConfig"]["optionsSource"]
+        assert source["sourceRef"] == {"type": "rest_api", "value": rest_api}
+        assert source["valueField"] == "id"
+        assert source["labelField"] == "name"
+        assert "queryParams" not in source
+
+    chart_params = by_rest[REST_CASCADE_CHART_PARAMS]
+    assert chart_params["name"] == "验收·级联指标图（组件参）"
+    assert chart_params["chart_type"] == CHART_TYPES
+    assert chart_params["tag_ids"] == ACCEPTANCE_TAG_IDS
+    component_params = {item["name"]: item for item in chart_params["params"]}
+    assert list(component_params) == ["object_id", "metric_id", "instance_id", "detail_id"]
+    for name, rest_api in (
+        ("object_id", REST_MONITOR_OBJECTS),
+        ("metric_id", REST_METRICS),
+        ("instance_id", REST_INSTANCES),
+        ("detail_id", REST_DETAILS),
+    ):
+        param = component_params[name]
+        assert param["type"] == "string"
+        assert param["filterType"] == "params"
         source = param["inputConfig"]["optionsSource"]
         assert source["sourceRef"] == {"type": "rest_api", "value": rest_api}
         assert source["valueField"] == "id"
@@ -322,7 +403,7 @@ def test_seed_command_is_idempotent_and_not_builtin():
 
     chart = by_rest[REST_CASCADE_CHART]
     assert set(chart.chart_type) >= {"line", "bar", "table", "single", "multiValue"}
-    for rest_api in (REST_MONITOR_OBJECTS, REST_METRICS, REST_INSTANCES, REST_METRICS_B):
+    for rest_api in (REST_MONITOR_OBJECTS, REST_METRICS, REST_INSTANCES, REST_METRICS_B, REST_DETAILS):
         assert by_rest[rest_api].chart_type == []
 
     chart.namespaces.clear()
