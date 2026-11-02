@@ -549,10 +549,34 @@ export const ParamInputConfigEditor: React.FC<ParamInputConfigEditorProps> = ({
     if (!selectedDataSource || selectedDataSource.id !== dynamicSourceId) return;
     const hasDeclaredParams = Array.isArray(selectedDataSource.params)
       && selectedDataSource.params.some((param) => Boolean(param.name));
-    if (hasDeclaredParams) return;
+    
+    if (!hasDeclaredParams) {
+      void fetchDynamicPreview(dynamicSourceId);
+      return;
+    }
 
-    void fetchDynamicPreview(dynamicSourceId);
-  }, [dynamicSourceId, fetchDynamicPreview, isOptionsControl, open, selectedDataSource, sourceType]);
+    if (queryParamRows.length === 0) return;
+
+    const allLiteral = queryParamRows.every((row) => row.mode === 'literal');
+    const allFilledLiterals = queryParamRows.every((row) => {
+      if (row.mode !== 'literal') return false;
+      const literal = rowLiteralPayload(row);
+      return literal !== undefined && literal !== null && literal !== '';
+    });
+
+    if (allLiteral && allFilledLiterals) {
+      const params: Record<string, unknown> = {};
+      queryParamRows.forEach((row) => {
+        const name = row.name.trim();
+        if (!name) return;
+        const literal = rowLiteralPayload(row);
+        if (literal !== undefined && literal !== null && literal !== '') {
+          params[name] = literal;
+        }
+      });
+      void fetchDynamicPreview(dynamicSourceId, params);
+    }
+  }, [dynamicSourceId, fetchDynamicPreview, isOptionsControl, open, queryParamRows, selectedDataSource, sourceType]);
 
   const handleStaticChange = (
     uid: string,

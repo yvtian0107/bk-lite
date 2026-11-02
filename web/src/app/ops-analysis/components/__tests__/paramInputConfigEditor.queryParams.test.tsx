@@ -40,7 +40,7 @@ vi.mock('@/utils/i18n', () => ({
         'paramInput.dynamic.originGlobalFilter': '全局筛选',
         'paramInput.dynamic.originComponentParam': '组件参数',
         'paramInput.dynamic.refChoice': '{origin} · {name}',
-        'paramInput.dynamic.previewFixedOnly': '预览只提交已填写的固定值，引用参数留到运行时',
+        'paramInput.dynamic.previewFixedOnly': '引用参数在运行时生效，预览仅使用已填固定值',
         'paramInput.dynamic.queryParamValue': '填写固定值',
         'paramInput.dynamic.preview': '预览',
         'paramInput.dynamic.testFailed': '选项源不可用',
@@ -150,7 +150,7 @@ describe('param input query params', () => {
     expect(within(dialog).getByRole('columnheader', { name: '值/引用' })).not.toBeNull();
     expect(within(dialog).queryByText('示例值')).toBeNull();
     expect(within(dialog).queryByPlaceholderText('示例值')).toBeNull();
-    expect(within(dialog).getByText('预览只提交已填写的固定值，引用参数留到运行时')).not.toBeNull();
+    expect(within(dialog).getByText('引用参数在运行时生效，预览仅使用已填固定值')).not.toBeNull();
     expect((within(dialog).getByRole('button', { name: '预览' }) as HTMLButtonElement).disabled).toBe(false);
     expect(within(dialog).getByText('全局筛选 · 监控对象')).not.toBeNull();
     expect(getSourceDataByApiId).not.toHaveBeenCalled();
@@ -381,5 +381,97 @@ describe('param input query params', () => {
     const saved = onConfirm.mock.calls[0]?.[0];
     expect(saved.componentSwitch).toBeUndefined();
     expect(saved.optionsSource.queryParams.room_id).toEqual({ ref: 'site_id' });
+  });
+
+  it('auto previews when all query params are filled fixed values', async () => {
+    getDataSourceList.mockResolvedValue([deviceSource]);
+    getSourceDataByApiId.mockResolvedValue({ data: [{ id: 1, name: 'auto' }] });
+    render(
+      <ParamInputConfigEditor
+        open
+        onCancel={vi.fn()}
+        onConfirm={vi.fn()}
+        value={{
+          control: 'select',
+          optionsSource: {
+            type: 'dynamic',
+            sourceId: 9,
+            valueField: 'id',
+            labelField: 'name',
+            queryParams: {
+              zone_id: 7,
+              area_code: 'from-source',
+              note: 'custom',
+            },
+          },
+        }}
+      />,
+    );
+
+    await waitFor(() => expect(getSourceDataByApiId).toHaveBeenCalledTimes(1));
+    expect(getSourceDataByApiId).toHaveBeenCalledWith(9, {
+      zone_id: 7,
+      area_code: 'from-source',
+      note: 'custom',
+    });
+  });
+
+  it('does not auto preview when a query param is a reference', async () => {
+    getDataSourceList.mockResolvedValue([deviceSource]);
+    getSourceDataByApiId.mockResolvedValue({ data: [{ id: 1, name: 'no-auto' }] });
+    render(
+      <ParamInputConfigEditor
+        open
+        onCancel={vi.fn()}
+        onConfirm={vi.fn()}
+        value={{
+          control: 'select',
+          optionsSource: {
+            type: 'dynamic',
+            sourceId: 9,
+            valueField: 'id',
+            labelField: 'name',
+            queryParams: {
+              room_id: { ref: 'site_id' },
+              zone_id: 7,
+            },
+          },
+        }}
+        optionsQueryContext={globalFilterContext}
+      />,
+    );
+
+    const dialog = await screen.findByRole('dialog');
+    await waitFor(() => expect(within(dialog).findByText('机房')).resolves.not.toBeNull());
+    expect(getSourceDataByApiId).not.toHaveBeenCalled();
+  });
+
+  it('does not auto preview when a fixed value is empty', async () => {
+    getDataSourceList.mockResolvedValue([deviceSource]);
+    getSourceDataByApiId.mockResolvedValue({ data: [{ id: 1, name: 'no-auto' }] });
+    render(
+      <ParamInputConfigEditor
+        open
+        onCancel={vi.fn()}
+        onConfirm={vi.fn()}
+        value={{
+          control: 'select',
+          optionsSource: {
+            type: 'dynamic',
+            sourceId: 9,
+            valueField: 'id',
+            labelField: 'name',
+            queryParams: {
+              zone_id: 7,
+              area_code: '',
+            },
+          },
+        }}
+      />,
+    );
+
+    const dialog = await screen.findByRole('dialog');
+    await waitFor(() => expect(within(dialog).findByDisplayValue('7')).resolves.not.toBeNull());
+    expect(getSourceDataByApiId).not.toHaveBeenCalled();
   });
 });

@@ -2049,7 +2049,7 @@
       "refChoice": "{origin} · {name}",
       "refChoiceWithKey": "{origin} · {name} ({key})",
       "refChoiceWithHint": "{origin} · {name} · {hint}",
-      "previewFixedOnly": "Preview sends filled fixed values only. References are resolved at runtime.",
+      "previewFixedOnly": "References apply at runtime; preview uses filled fixed values only.",
       "refRequired": "Select an upstream filter",
       "upstreamRequired": "Select an upstream value first",
       "concatRejected": "Query parameters must reference a whole value and cannot be concatenated",

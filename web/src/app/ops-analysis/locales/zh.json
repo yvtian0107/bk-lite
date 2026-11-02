@@ -2049,7 +2049,7 @@
       "refChoice": "{origin} · {name}",
       "refChoiceWithKey": "{origin} · {name} ({key})",
       "refChoiceWithHint": "{origin} · {name} · {hint}",
-      "previewFixedOnly": "预览只提交已填写的固定值，引用参数留到运行时",
+      "previewFixedOnly": "引用参数在运行时生效，预览仅使用已填固定值",
       "refRequired": "请选择上游筛选",
       "upstreamRequired": "请先选择上游",
       "concatRejected": "查询入参只能整段引用，不能和字面量拼接",
