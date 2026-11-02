@@ -29,7 +29,8 @@ vi.mock('@/utils/i18n', () => ({
         'paramInput.dynamic.labelFieldPlaceholder': '请选择展示字段',
         'paramInput.dynamic.fieldNamePlaceholder': '输入或选择字段名',
         'paramInput.dynamic.queryParams': '选项查询参数',
-        'paramInput.dynamic.queryParamName': '入参名',
+        'paramInput.dynamic.queryParamAlias': '别名',
+        'paramInput.dynamic.queryParamTechnicalName': '参数名',
         'paramInput.dynamic.valueMode': '取值方式',
         'paramInput.dynamic.valueOrRef': '值/引用',
         'paramInput.dynamic.fixedValue': '固定值',
@@ -76,6 +77,7 @@ const deviceSource = {
     { name: 'zone_id', type: 'number', alias_name: '区域', value: 7 },
     { name: 'area_code', type: 'string', alias_name: '片区', value: 'from-source' },
     { name: 'note', type: 'string', alias_name: '备注', value: null },
+    { name: 'raw_only', type: 'string', alias_name: '', value: '' },
   ],
   field_schema: [
     { key: 'id', title: '编号', value_type: 'string' },
@@ -124,20 +126,22 @@ describe('param input query params', () => {
     );
 
     const dialog = await screen.findByRole('dialog');
-    const room = await within(dialog).findByText('机房');
-    const zone = within(dialog).getByText('区域');
-    expect(room.getAttribute('title')).toBe('机房（room_id）');
-    expect(zone.getAttribute('title')).toBe('区域（zone_id）');
-    expect(within(dialog).queryByText('room_id')).toBeNull();
-    expect(within(dialog).queryByText('zone_id')).toBeNull();
+    expect(await within(dialog).findByText('机房')).not.toBeNull();
+    const roomRow = within(dialog).getByText('room_id').closest('tr');
+    expect(within(roomRow as HTMLElement).getByText('机房')).not.toBeNull();
+    expect(within(dialog).getByText('zone_id').closest('tr')?.textContent).toContain('区域');
+    const rawRow = within(dialog).getByText('raw_only').closest('tr');
+    expect(within(rawRow as HTMLElement).getByText('—')).not.toBeNull();
     const modeHeader = within(dialog).getByRole('columnheader', { name: '取值方式' });
     const queryTable = modeHeader.closest('table');
     expect(queryTable?.style.tableLayout).toBe('fixed');
     const widths = Array.from(queryTable?.querySelectorAll('col') ?? []).map((col) => col.style.width);
-    expect(widths).toEqual(['168px', '112px']);
+    expect(widths).toEqual(['112px', '168px', '112px']);
     expect(queryTable?.closest('.ant-table-bordered')).toBeNull();
     expect(dialog.querySelector('.ant-table-bordered')).not.toBeNull();
-    expect(within(dialog).getByRole('columnheader', { name: '入参名' })).not.toBeNull();
+    expect(within(dialog).getByRole('columnheader', { name: '别名' })).not.toBeNull();
+    expect(within(dialog).getByRole('columnheader', { name: '参数名' })).not.toBeNull();
+    expect(within(dialog).queryByRole('columnheader', { name: '入参名' })).toBeNull();
     expect(within(dialog).getByRole('columnheader', { name: '值/引用' })).not.toBeNull();
     expect(within(dialog).queryByText('示例值')).toBeNull();
     expect(within(dialog).queryByPlaceholderText('示例值')).toBeNull();

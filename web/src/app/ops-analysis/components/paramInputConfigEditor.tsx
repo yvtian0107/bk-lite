@@ -141,17 +141,7 @@ const rowLiteralPayload = (row: QueryParamRow): string | number | boolean | null
   return row.literalText;
 };
 
-const queryParamDisplayName = (row: QueryParamRow) => {
-  const alias = row.alias?.trim();
-  if (alias && alias !== row.name) return alias;
-  return row.name;
-};
-
-const queryParamTitle = (row: QueryParamRow) => {
-  const alias = row.alias?.trim();
-  if (alias && alias !== row.name) return `${alias}（${row.name}）`;
-  return row.name;
-};
+const queryParamAliasText = (alias?: string) => alias?.trim() || '—';
 
 interface FieldOption {
   label: string;
@@ -1062,16 +1052,27 @@ export const ParamInputConfigEditor: React.FC<ParamInputConfigEditorProps> = ({
                       dataSource={queryParamRows}
                       columns={[
                         {
-                          title: t('paramInput.dynamic.queryParamName'),
+                          title: t('paramInput.dynamic.queryParamAlias'),
+                          dataIndex: 'alias',
+                          width: 112,
+                          ellipsis: true,
+                          render: (_value: string | undefined, row) => {
+                            const alias = row.alias?.trim();
+                            return (
+                              <span className="block truncate text-xs" title={alias || undefined}>
+                                {queryParamAliasText(row.alias)}
+                              </span>
+                            );
+                          },
+                        },
+                        {
+                          title: t('paramInput.dynamic.queryParamTechnicalName'),
                           dataIndex: 'name',
                           width: 168,
                           ellipsis: true,
-                          render: (_value: string, row) => (
-                            <span
-                              className="block truncate font-mono text-xs"
-                              title={queryParamTitle(row)}
-                            >
-                              {queryParamDisplayName(row)}
+                          render: (name: string) => (
+                            <span className="block truncate font-mono text-xs" title={name}>
+                              {name}
                             </span>
                           ),
                         },
