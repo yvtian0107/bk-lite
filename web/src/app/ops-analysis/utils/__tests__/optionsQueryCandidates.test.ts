@@ -97,7 +97,7 @@ describe('options query candidates', () => {
     expect(choices.some((item) => item.ref === 'secret' || item.key === 'device_id')).toBe(false);
   });
 
-  it('drops a candidate that would cycle or exceed three parameters', () => {
+  it('still lists a candidate that would cycle or exceed three parameters', () => {
     const choices = listOptionsQueryCandidates({
       context: {
         scope: 'globalFilter',
@@ -112,7 +112,35 @@ describe('options query candidates', () => {
       },
       expectedType: 'string',
     });
-    expect(choices.map((item) => item.ref)).toEqual(['c', 'e', 'f']);
+    expect(choices.map((item) => item.ref)).toEqual(['a', 'c', 'd', 'e', 'f']);
+  });
+
+  it('lists the instance a detail param can reference after object, metric, and instance', () => {
+    const choices = listOptionsQueryCandidates({
+      context: {
+        scope: 'component',
+        self: { key: 'detail_id' },
+        componentParams: [
+          { name: 'object_id', label: '对象', type: 'string' },
+          {
+            name: 'metric_id',
+            label: '指标',
+            type: 'string',
+            queryParams: { object_id: { ref: 'object_id' } },
+          },
+          {
+            name: 'instance_id',
+            label: '实例',
+            type: 'string',
+            queryParams: { metric_id: { ref: 'metric_id' } },
+          },
+          { name: 'detail_id', label: '明细', type: 'string' },
+        ],
+      },
+      expectedType: 'string',
+    });
+    expect(choices.map((item) => item.ref)).toEqual(['instance_id', 'metric_id', 'object_id']);
+    expect(choices.some((item) => item.ref === 'detail_id')).toBe(false);
   });
 
   it('reads the bound global filter value when a component param is referenced', () => {

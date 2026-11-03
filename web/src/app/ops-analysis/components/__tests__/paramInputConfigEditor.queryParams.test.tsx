@@ -40,6 +40,8 @@ vi.mock('@/utils/i18n', () => ({
         'paramInput.dynamic.originGlobalFilter': '全局筛选',
         'paramInput.dynamic.originComponentParam': '组件参数',
         'paramInput.dynamic.refChoice': '{origin} · {name}',
+        'paramInput.dynamic.cycle': '查询入参存在循环：{path}',
+        'paramInput.dynamic.depth': '查询入参依赖超过 3 级：{path}',
         'paramInput.dynamic.previewFixedOnly': '引用参数在运行时生效，预览仅使用已填固定值',
         'paramInput.dynamic.queryParamValue': '填写固定值',
         'paramInput.dynamic.preview': '预览',
@@ -444,6 +446,74 @@ describe('param input query params', () => {
     const dialog = await screen.findByRole('dialog');
     await waitFor(() => expect(within(dialog).findByText('机房')).resolves.not.toBeNull());
     expect(getSourceDataByApiId).not.toHaveBeenCalled();
+  });
+
+  it('keeps an over-long instance ref in the dropdown and rejects it on confirm', async () => {
+    const user = userEvent.setup();
+    const onConfirm = vi.fn();
+    getDataSourceList.mockResolvedValue([
+      {
+        id: 11,
+        name: '明细列表',
+        params: [{ name: 'instance_id', type: 'string', alias_name: '实例' }],
+        field_schema: [
+          { key: 'id', title: '编号', value_type: 'string' },
+          { key: 'name', title: '名称', value_type: 'string' },
+        ],
+      },
+    ]);
+    render(
+      <ParamInputConfigEditor
+        open
+        editingParamName="detail_id"
+        onCancel={vi.fn()}
+        onConfirm={onConfirm}
+        value={{
+          control: 'select',
+          optionsSource: {
+            type: 'dynamic',
+            sourceId: 11,
+            valueField: 'id',
+            labelField: 'name',
+            queryParams: { instance_id: { ref: 'instance_id' } },
+          },
+        }}
+        optionsQueryContext={{
+          scope: 'component',
+          self: { key: 'detail_id' },
+          componentParams: [
+            { name: 'object_id', label: '对象', type: 'string', filterType: 'params' },
+            {
+              name: 'metric_id',
+              label: '指标',
+              type: 'string',
+              filterType: 'params',
+              queryParams: { object_id: { ref: 'object_id' } },
+            },
+            {
+              name: 'instance_id',
+              label: '实例',
+              type: 'string',
+              filterType: 'params',
+              queryParams: { metric_id: { ref: 'metric_id' } },
+            },
+            { name: 'detail_id', label: '明细', type: 'string', filterType: 'params' },
+          ],
+        }}
+      />,
+    );
+
+    const dialog = await screen.findByRole('dialog');
+    expect(await within(dialog).findByText('组件参数 · 实例')).not.toBeNull();
+    await user.click(within(dialog).getByText('组件参数 · 实例'));
+    expect(await screen.findByText('组件参数 · 对象')).not.toBeNull();
+    expect(screen.getByText('组件参数 · 指标')).not.toBeNull();
+
+    await user.click(within(dialog).getByRole('button', { name: /确\s*认/ }));
+    const depthMessage = '查询入参依赖超过 3 级：detail_id → instance_id → metric_id → object_id';
+    expect(await within(dialog).findByText(depthMessage)).not.toBeNull();
+    expect(onConfirm).not.toHaveBeenCalled();
+    expect(within(dialog).getByText('组件参数 · 实例')).not.toBeNull();
   });
 
   it('does not auto preview when a fixed value is empty', async () => {

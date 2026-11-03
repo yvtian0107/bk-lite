@@ -1136,11 +1136,6 @@ export const ParamInputConfigEditor: React.FC<ParamInputConfigEditorProps> = ({
                             const choices = listOptionsQueryCandidates({
                               context: optionsQueryContext,
                               expectedType: row.type,
-                              siblingRefs: queryParamRows.flatMap((item) => (
-                                item.uid !== row.uid && item.mode === 'ref' && item.refName.trim()
-                                  ? [item.refName.trim()]
-                                  : []
-                              )),
                             });
                             if (row.mode === 'ref') {
                               const sameKey = choices.filter((choice) => choice.key === row.refName);

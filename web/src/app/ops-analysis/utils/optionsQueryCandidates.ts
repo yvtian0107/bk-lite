@@ -1,11 +1,7 @@
 import type { InputControlConfig } from '@/app/ops-analysis/types/dataSource';
 import type { UnifiedFilterDefinition } from '@/app/ops-analysis/types/dashBoard';
 import { isBindableDataSourceParamType } from '@/app/ops-analysis/utils/dataSourceParamContract';
-import {
-  collectQueryParamRefs,
-  MAX_OPTIONS_QUERY_CHAIN_NODES,
-  OPTIONS_QUERY_INVALID,
-} from '@/app/ops-analysis/utils/optionsQueryParamRefs';
+import { OPTIONS_QUERY_INVALID } from '@/app/ops-analysis/utils/optionsQueryParamRefs';
 import { pickMatchingFilterDefinition } from '@/app/ops-analysis/utils/scanUnifiedFilterParams';
 
 export type OptionsQueryCandidateOrigin = 'globalFilter' | 'componentParam';
@@ -48,65 +44,19 @@ export interface OptionsQueryCandidateChoice {
   sourceHint?: string;
 }
 
-interface QueryNode {
-  name: string;
-  aliases: string[];
-  refs: string[];
-}
-
 const typeMatches = (candidateType: string | undefined, expectedType?: string) => {
   if (candidateType && !isBindableDataSourceParamType(candidateType)) return false;
   if (!expectedType) return !candidateType || isBindableDataSourceParamType(candidateType);
   return candidateType === expectedType;
 };
 
-const resolveNode = (nodes: QueryNode[], ref: string): string | null => {
-  const byName = nodes.filter((node) => node.name === ref);
-  if (byName.length > 1) return null;
-  if (byName.length === 1) return byName[0].name;
-  const byAlias = nodes.filter((node) => node.aliases.includes(ref));
-  return byAlias.length === 1 ? byAlias[0].name : null;
-};
-
-const rejectsEdge = (
-  selfName: string,
-  targetName: string,
-  nodes: QueryNode[],
-  siblingRefs: string[],
-) => {
-  if (!selfName || !targetName || selfName === targetName) return true;
-  const edges = new Map<string, string[]>();
-  nodes.forEach((node) => {
-    edges.set(node.name, node.refs.flatMap((ref) => {
-      const resolved = resolveNode(nodes, ref);
-      return resolved ? [resolved] : [];
-    }));
-  });
-  const fromSelf = new Set(edges.get(selfName) ?? []);
-  siblingRefs.forEach((ref) => {
-    const resolved = resolveNode(nodes, ref);
-    if (resolved) fromSelf.add(resolved);
-  });
-  fromSelf.add(targetName);
-  edges.set(selfName, Array.from(fromSelf));
-
-  const visit = (name: string, stack: string[]): boolean => {
-    if (stack.includes(name)) return true;
-    const next = [...stack, name];
-    if (next.length > MAX_OPTIONS_QUERY_CHAIN_NODES) return true;
-    return (edges.get(name) ?? []).some((ref) => visit(ref, next));
-  };
-  return visit(selfName, []);
-};
-
+/** 下拉只排除自身、类型和 scope。成环、超过 3 级留到保存时校验。 */
 export const listOptionsQueryCandidates = ({
   context,
   expectedType,
-  siblingRefs = [],
 }: {
   context?: OptionsQueryEditorContext;
   expectedType?: string;
-  siblingRefs?: string[];
 }): OptionsQueryCandidateChoice[] => {
   if (!context?.self.key && !context?.self.id) return [];
   const selfName = context.scope === 'globalFilter'
@@ -116,44 +66,16 @@ export const listOptionsQueryCandidates = ({
   const params = context.scope === 'component'
     ? (context.componentParams ?? []).filter((param) => param.name)
     : [];
-  const nodes: QueryNode[] = [];
-  if (selfName) {
-    nodes.push({
-      name: selfName,
-      aliases: context.scope === 'globalFilter' && context.self.key && context.self.key !== selfName
-        ? [context.self.key]
-        : [],
-      refs: [],
-    });
-  }
-  filters.forEach((filter) => {
-    if (filter.id === selfName || filter.id === context.self.id) return;
-    nodes.push({
-      name: filter.id,
-      aliases: filter.key !== filter.id ? [filter.key] : [],
-      refs: collectQueryParamRefs(filter.queryParams),
-    });
-  });
-  params.forEach((param) => {
-    if (param.name === selfName) return;
-    nodes.push({
-      name: param.name,
-      aliases: [],
-      refs: collectQueryParamRefs(param.queryParams),
-    });
-  });
 
   const eligibleFilters = filters.filter((filter) => (
     filter.enabled !== false
     && filter.id !== context.self.id
     && filter.id !== selfName
     && typeMatches(filter.type, expectedType)
-    && !rejectsEdge(selfName, filter.id, nodes, siblingRefs)
   ));
   const eligibleParams = params.filter((param) => (
     param.name !== selfName
     && typeMatches(param.type, expectedType)
-    && !rejectsEdge(selfName, param.name, nodes, siblingRefs)
   ));
   const choices: OptionsQueryCandidateChoice[] = [
     ...eligibleParams.map((param) => ({
