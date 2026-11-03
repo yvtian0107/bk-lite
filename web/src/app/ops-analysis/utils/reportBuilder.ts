@@ -20,6 +20,7 @@ import {
   buildDefaultFilterBindings,
   discoverFollowedFilterParams,
 } from './widgetDataTransform';
+import { rewriteParamQueryRefs } from './optionsQueryParamRefs';
 
 export const EMPTY_REPORT_VIEW_SETS: ReportViewSets = {
   schema_version: 1,
@@ -309,6 +310,8 @@ export const syncReportFiltersFromSections = (
   );
   const allowedIds = new Set(filters.map((definition) => definition.id));
   const sections = viewSets.sections.map((section) => {
+    const rewrittenParams = rewriteParamQueryRefs(section.valueConfig.dataSourceParams, allowedIds);
+    const paramsChanged = rewrittenParams !== section.valueConfig.dataSourceParams;
     const dataSource = resolveSectionDataSource(section.valueConfig.dataSource, dataSources);
     const params = resolveSectionBindableParams(section.valueConfig, dataSource);
     const nextBindings = Object.entries(
@@ -321,7 +324,8 @@ export const syncReportFiltersFromSections = (
     }, {});
     const filterBindings = Object.keys(nextBindings).length ? nextBindings : undefined;
     if (
-      JSON.stringify(section.valueConfig.filterBindings ?? {}) ===
+      !paramsChanged
+      && JSON.stringify(section.valueConfig.filterBindings ?? {}) ===
       JSON.stringify(filterBindings ?? {})
     ) {
       return section;
@@ -330,6 +334,7 @@ export const syncReportFiltersFromSections = (
       ...section,
       valueConfig: {
         ...section.valueConfig,
+        ...(paramsChanged ? { dataSourceParams: rewrittenParams } : {}),
         filterBindings,
       },
     };

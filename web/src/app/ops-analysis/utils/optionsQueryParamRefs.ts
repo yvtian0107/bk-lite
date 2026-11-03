@@ -49,41 +49,6 @@ export interface ResolvedOptionsQuery {
 /** lookup 返回这个标记表示引用无法对应到唯一上游，而不是上游值为空。 */
 export const OPTIONS_QUERY_INVALID = Symbol('optionsQueryInvalid');
 
-export interface OptionsQueryRefTarget {
-  id: string;
-  key: string;
-  label?: string;
-  type?: string;
-  sourceHint?: string;
-}
-
-export interface OptionsQueryRefChoice {
-  ref: string;
-  label: string;
-  type?: string;
-}
-
-export const buildOptionsQueryRefChoices = (
-  targets: OptionsQueryRefTarget[],
-): OptionsQueryRefChoice[] => {
-  const counts = new Map<string, number>();
-  targets.forEach((target) => {
-    counts.set(target.key, (counts.get(target.key) ?? 0) + 1);
-  });
-  return targets.map((target) => {
-    const ambiguous = (counts.get(target.key) ?? 0) > 1;
-    const hint = target.sourceHint?.trim();
-    const base = target.label && target.label !== target.key
-      ? `${target.label} (${target.key})`
-      : target.key;
-    return {
-      ref: ambiguous ? target.id : target.key,
-      label: ambiguous && hint ? `${base} · ${hint}` : base,
-      type: target.type,
-    };
-  });
-};
-
 export const readOptionsQueryUpstream = (
   ref: string,
   definitions: Array<{ id: string; key: string; enabled?: boolean }>,
@@ -129,6 +94,84 @@ const dynamicOptionsOf = (
     return undefined;
   }
   return inputConfig.optionsSource.type === 'dynamic' ? inputConfig.optionsSource : undefined;
+};
+
+const RETIRED_SUMMARY_REF = /^(.+)__[0-9a-f]{8}$/;
+
+/**
+ * 拆行期摘要 id（`name__type` 再加 8 位摘要）在并回一行后不再存在。
+ * 新定义里已经有 `name__type`、且旧 id 不在时，把引用改到这一行。旧 id 仍在则保持。
+ */
+export const redirectRetiredSummaryRef = (
+  ref: string,
+  liveIds: ReadonlySet<string>,
+): string => {
+  if (liveIds.has(ref)) return ref;
+  const match = RETIRED_SUMMARY_REF.exec(ref);
+  if (!match) return ref;
+  const canonical = match[1];
+  return liveIds.has(canonical) ? canonical : ref;
+};
+
+const rewriteQueryParamRecord = (
+  queryParams: Record<string, unknown>,
+  liveIds: ReadonlySet<string>,
+): Record<string, unknown> => {
+  let changed = false;
+  const next: Record<string, unknown> = { ...queryParams };
+  Object.entries(queryParams).forEach(([name, raw]) => {
+    if (!isOptionsQueryParamRef(raw)) return;
+    const redirected = redirectRetiredSummaryRef(raw.ref, liveIds);
+    if (redirected === raw.ref) return;
+    next[name] = { ref: redirected };
+    changed = true;
+  });
+  return changed ? next : queryParams;
+};
+
+export const rewriteInputConfigRetiredSummaryRefs = <T extends InputControlConfig | undefined>(
+  inputConfig: T,
+  liveIds: ReadonlySet<string>,
+): T => {
+  if (!inputConfig || liveIds.size === 0) return inputConfig;
+  const source = dynamicOptionsOf(inputConfig);
+  if (!source?.queryParams) return inputConfig;
+  const queryParams = rewriteQueryParamRecord(source.queryParams, liveIds);
+  if (queryParams === source.queryParams) return inputConfig;
+  return {
+    ...inputConfig,
+    optionsSource: { ...source, queryParams },
+  } as T;
+};
+
+export const rewriteDefinitionQueryRefs = <T extends { inputConfig?: InputControlConfig }>(
+  definitions: T[],
+  liveIds: ReadonlySet<string>,
+): T[] => {
+  if (!definitions.length || liveIds.size === 0) return definitions;
+  let changed = false;
+  const next = definitions.map((definition) => {
+    const inputConfig = rewriteInputConfigRetiredSummaryRefs(definition.inputConfig, liveIds);
+    if (inputConfig === definition.inputConfig) return definition;
+    changed = true;
+    return { ...definition, inputConfig };
+  });
+  return changed ? next : definitions;
+};
+
+export const rewriteParamQueryRefs = <T extends { inputConfig?: InputControlConfig }>(
+  params: T[] | undefined,
+  liveIds: ReadonlySet<string>,
+): T[] | undefined => {
+  if (!params?.length || liveIds.size === 0) return params;
+  let changed = false;
+  const next = params.map((param) => {
+    const inputConfig = rewriteInputConfigRetiredSummaryRefs(param.inputConfig, liveIds);
+    if (inputConfig === param.inputConfig) return param;
+    changed = true;
+    return { ...param, inputConfig };
+  });
+  return changed ? next : params;
 };
 
 /** 把定义上的裸名引用收成筛选 id。没有变化时返回原数组。 */

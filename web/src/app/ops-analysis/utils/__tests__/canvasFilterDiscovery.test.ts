@@ -394,4 +394,69 @@ describe('same data source filter discovery', () => {
       expect(Object.keys(bindings || {}).some((id) => id.includes('__string__'))).toBe(false);
     });
   });
+
+  it('rewrites query refs that still point at a retired summary id', () => {
+    const object = filterParam('object_id', '监控对象', dynamicSource('cmdb/objects'));
+    const metric = filterParam(
+      'metric_id',
+      '指标',
+      dynamicSource('cmdb/metrics', { object_id: { ref: 'object_id__string__abcd1234' } }),
+    );
+    const source = chartSource(1, 'cmdb/chart', [object, metric]);
+    const previous: UnifiedFilterDefinition[] = [
+      {
+        id: 'object_id__string__abcd1234',
+        key: 'object_id',
+        name: '监控对象',
+        type: 'string',
+        defaultValue: null,
+        order: 0,
+        enabled: true,
+        inputConfig: object.inputConfig,
+      },
+      {
+        id: 'metric_id__string__bbbbbbbb',
+        key: 'metric_id',
+        name: '指标',
+        type: 'string',
+        defaultValue: null,
+        order: 1,
+        enabled: true,
+        inputConfig: metric.inputConfig,
+      },
+    ];
+    const filters = buildFiltersFromDashboardLayout({
+      layout: chartLayout([{ dataSource: 1, params: source.params }]),
+      previousDefinitions: previous,
+      dataSources: [source],
+    });
+    expect(filters.map((item) => item.id).sort()).toEqual([
+      'metric_id__string',
+      'object_id__string',
+    ]);
+    expect(queryRef(filters.find((item) => item.key === 'metric_id'), 'object_id'))
+      .toBe('object_id__string');
+
+    const componentParam: ParamItem = {
+      name: 'zone_id',
+      alias_name: '可用区',
+      type: 'string',
+      filterType: 'params',
+      value: 'zone-old',
+      inputConfig: dynamicSource('cmdb/zones', { object_id: { ref: 'object_id__string__abcd1234' } }),
+    };
+    const layout = chartLayout([{ dataSource: 1, params: [object, metric, componentParam] }]);
+    const synced = syncDashboardLayoutFilterBindings(layout, filters, [source]);
+    const card = synced[0];
+    const stored = card.valueConfig && 'dataSourceParams' in card.valueConfig
+      ? card.valueConfig.dataSourceParams?.find((item) => item.name === 'zone_id')
+      : undefined;
+    const storedConfig = stored?.inputConfig;
+    const storedRef = storedConfig
+      && storedConfig.control === 'select'
+      && storedConfig.optionsSource.type === 'dynamic'
+      ? storedConfig.optionsSource.queryParams?.object_id
+      : undefined;
+    expect(storedRef).toEqual({ ref: 'object_id__string' });
+  });
 });

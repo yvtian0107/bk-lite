@@ -69,16 +69,6 @@ export const optionsSourceCoreKey = (
   });
 };
 
-export const shortOptionsSourceDigest = (identity: OptionsSourceIdentity): string => {
-  const text = optionsSourceIdentityKey(identity);
-  let hash = 2166136261;
-  for (let index = 0; index < text.length; index += 1) {
-    hash ^= text.charCodeAt(index);
-    hash = Math.imul(hash, 16777619);
-  }
-  return (hash >>> 0).toString(16).padStart(8, '0').slice(0, 8);
-};
-
 export const optionsSourceSummary = (
   inputConfig?: InputControlConfig,
 ): string => {

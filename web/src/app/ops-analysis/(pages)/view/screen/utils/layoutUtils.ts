@@ -26,6 +26,7 @@ import {
   preserveUnfollowedFilterBindings,
 } from "@/app/ops-analysis/utils/widgetDataTransform";
 import { findReusableFilterDefinition } from "@/app/ops-analysis/utils/scanUnifiedFilterParams";
+import { rewriteParamQueryRefs } from "@/app/ops-analysis/utils/optionsQueryParamRefs";
 import { validateDateRangeValue } from "@/app/ops-analysis/utils/dateRange";
 import { getScreenWidgetDefinition } from "../constants/widgets";
 import { omitForeignChartTypeFields } from "@/app/ops-analysis/components/widgetConfig/utils/submitConfig";
@@ -242,6 +243,9 @@ export const syncScreenFilterBindings = (
   filters: definitions,
   items: viewSets.items.map((item) => {
     if (!isScreenWidgetItem(item)) return item;
+    const liveIds = new Set(definitions.map((definition) => definition.id));
+    const rewrittenParams = rewriteParamQueryRefs(item.valueConfig?.dataSourceParams, liveIds);
+    const paramsChanged = rewrittenParams !== item.valueConfig?.dataSourceParams;
     const dataSource = resolveScreenItemDataSource(item, dataSources);
     const params = resolveScreenWidgetParams(item, dataSource);
     const nextBindings = preserveUnfollowedFilterBindings(
@@ -268,7 +272,8 @@ export const syncScreenFilterBindings = (
     );
 
     if (
-      JSON.stringify(nextBindings ?? {}) ===
+      !paramsChanged
+      && JSON.stringify(nextBindings ?? {}) ===
       JSON.stringify(item.valueConfig?.filterBindings ?? {})
     ) {
       return item;
@@ -278,6 +283,7 @@ export const syncScreenFilterBindings = (
       ...item,
       valueConfig: {
         ...item.valueConfig,
+        ...(paramsChanged ? { dataSourceParams: rewrittenParams } : {}),
         filterBindings: nextBindings,
       },
     };

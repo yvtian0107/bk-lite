@@ -17,6 +17,7 @@ import {
   discoverFollowedFilterParams,
   preserveUnfollowedFilterBindings,
 } from '@/app/ops-analysis/utils/widgetDataTransform';
+import { rewriteParamQueryRefs } from '@/app/ops-analysis/utils/optionsQueryParamRefs';
 import { findReusableFilterDefinition } from '@/app/ops-analysis/utils/scanUnifiedFilterParams';
 import {
   buildRelativeTimeRangeFilterValue,
@@ -172,6 +173,11 @@ export const syncDashboardLayoutFilterBindings = (
       return item;
     }
 
+    const rewrittenParams = rewriteParamQueryRefs(
+      item.valueConfig?.dataSourceParams,
+      allowedIds,
+    );
+    const paramsChanged = rewrittenParams !== item.valueConfig?.dataSourceParams;
     const existingBindings = item.valueConfig?.filterBindings;
     const dataSourceId = item.valueConfig?.dataSource;
     const normalizedId =
@@ -198,13 +204,17 @@ export const syncDashboardLayoutFilterBindings = (
         currentParams,
         undefined,
       );
-      if (JSON.stringify(existingBindings ?? undefined) === JSON.stringify(preserved)) {
+      if (
+        !paramsChanged
+        && JSON.stringify(existingBindings ?? undefined) === JSON.stringify(preserved)
+      ) {
         return item;
       }
       return {
         ...item,
         valueConfig: {
           ...item.valueConfig,
+          ...(paramsChanged ? { dataSourceParams: rewrittenParams } : {}),
           filterBindings: preserved,
         },
       };
@@ -235,7 +245,10 @@ export const syncDashboardLayoutFilterBindings = (
         : undefined,
     );
 
-    if (JSON.stringify(existingBindings ?? undefined) === JSON.stringify(newBindings)) {
+    if (
+      !paramsChanged
+      && JSON.stringify(existingBindings ?? undefined) === JSON.stringify(newBindings)
+    ) {
       return item;
     }
 
@@ -243,6 +256,7 @@ export const syncDashboardLayoutFilterBindings = (
       ...item,
       valueConfig: {
         ...item.valueConfig,
+        ...(paramsChanged ? { dataSourceParams: rewrittenParams } : {}),
         filterBindings: newBindings,
       },
     };

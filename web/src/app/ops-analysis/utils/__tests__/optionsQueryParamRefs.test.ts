@@ -4,12 +4,12 @@ import {
   normalizeInputConfigResult,
 } from '@/app/ops-analysis/utils/paramInputConfigUtils';
 import {
-  buildOptionsQueryRefChoices,
   collectOptionsQueryParamIssues,
   MAX_OPTIONS_QUERY_CHAIN_NODES,
   normalizeQueryParamsForStorage,
   OPTIONS_QUERY_INVALID,
   readOptionsQueryUpstream,
+  redirectRetiredSummaryRef,
   resolveOptionsQueryParams,
   validateOptionsQueryParams,
   validateUnifiedFilterQueryGraph,
@@ -249,15 +249,13 @@ describe('options query param refs', () => {
     ])).toBeNull();
   });
 
-  it('stores the filter id in the dropdown when several rows share a name', () => {
-    expect(buildOptionsQueryRefChoices([
-      { id: 'site_id__string__11111111', key: 'site_id', label: '机房', type: 'string', sourceHint: 'cmdb/rooms' },
-      { id: 'site_id__string__22222222', key: 'site_id', label: '机房', type: 'string', sourceHint: 'monitor/rooms' },
-      { id: 'device_id__string', key: 'device_id', label: '设备', type: 'string' },
-    ])).toEqual([
-      { ref: 'site_id__string__11111111', label: '机房 (site_id) · cmdb/rooms', type: 'string' },
-      { ref: 'site_id__string__22222222', label: '机房 (site_id) · monitor/rooms', type: 'string' },
-      { ref: 'device_id', label: '设备 (device_id)', type: 'string' },
-    ]);
+  it('redirects a retired summary id only after that row is gone', () => {
+    const live = new Set(['object_id__string', 'metric_id__string']);
+    expect(redirectRetiredSummaryRef('object_id__string__abcd1234', live)).toBe('object_id__string');
+    expect(redirectRetiredSummaryRef('object_id__string', live)).toBe('object_id__string');
+    expect(redirectRetiredSummaryRef('object_id', live)).toBe('object_id');
+    const stillSplit = new Set(['object_id__string__abcd1234', 'object_id__string__bbbbbbbb']);
+    expect(redirectRetiredSummaryRef('object_id__string__abcd1234', stillSplit))
+      .toBe('object_id__string__abcd1234');
   });
 });

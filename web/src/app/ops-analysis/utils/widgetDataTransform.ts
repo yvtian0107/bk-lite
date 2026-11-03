@@ -26,7 +26,10 @@ import {
   isOrganizationControl,
   ORGANIZATION_PARAM_RUNTIME_KEY,
 } from '@/app/ops-analysis/utils/paramInputConfigUtils';
-import { rewriteBareQueryRefsToDefinitionIds } from '@/app/ops-analysis/utils/optionsQueryParamRefs';
+import {
+  rewriteBareQueryRefsToDefinitionIds,
+  rewriteDefinitionQueryRefs,
+} from '@/app/ops-analysis/utils/optionsQueryParamRefs';
 import {
   assignFilterDefinitionIds,
   filterMergeKey,
@@ -298,7 +301,7 @@ export const discoverFollowedFilterParams = (
   return discovered;
 };
 
-/** 布局同步产出的筛定义：能唯一对应的裸名引用写成 definition.id。 */
+/** 布局同步产出的筛定义：摘要 id 先收成 name__type，再把能唯一对应的裸名写成 definition.id。 */
 export const bindDiscoveredQueryRefs = <T extends UnifiedFilterDefinition>(
   definitions: T[],
   discovered: Map<string, { dataSourceIds?: number[] }>,
@@ -307,7 +310,11 @@ export const bindDiscoveredQueryRefs = <T extends UnifiedFilterDefinition>(
   discovered.forEach((param, id) => {
     if (param.dataSourceIds?.length) origins.set(id, param.dataSourceIds);
   });
-  return rewriteBareQueryRefsToDefinitionIds(definitions, origins);
+  const liveIds = new Set(definitions.map((definition) => definition.id));
+  return rewriteBareQueryRefsToDefinitionIds(
+    rewriteDefinitionQueryRefs(definitions, liveIds),
+    origins,
+  );
 };
 
 /**
