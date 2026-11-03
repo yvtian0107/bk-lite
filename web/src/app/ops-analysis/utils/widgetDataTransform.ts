@@ -188,8 +188,8 @@ const sourceParamKey = (dataSourceId: number, name: string, type: string) =>
 
 /**
  * 筛选项芯片只在仍有组件跟随时出现。
- * 同一数据源上的同名同类型筛，以目录 params 为准合并，不因组件快照里的
- * optionsSource / queryParams 差异拆成多行。目录缺失时用该数据源第一次见到的配置。
+ * 同画布同名同类型并成一行。同一数据源仍用目录 params 锁定身份，避免快照漂移变成先到的那份配置。
+ * 已有定义的 inputConfig 在分配 id 时优先于这次扫描。
  */
 export const discoverFollowedFilterParams = (
   widgets: Array<{

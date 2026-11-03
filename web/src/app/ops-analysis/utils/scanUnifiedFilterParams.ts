@@ -17,7 +17,6 @@ import {
   optionsSourceIdentity,
   optionsSourceIdentityKey,
   optionsSourceSummary,
-  shortOptionsSourceDigest,
   type OptionsSourceIdentity,
 } from '@/app/ops-analysis/utils/optionsSourceIdentity';
 import { migrateParamItemsFromStringList } from '@/app/ops-analysis/utils/stringParamMultipleMigrate';
@@ -64,12 +63,9 @@ export const isBoardSharedFilterDimension = (input: {
   return normalizeInputConfig(input)?.control === 'organization';
 };
 
-export const filterMergeKey = (input: FilterParamScanInput): string => {
-  const plain = `${input.name}__${input.type}`;
-  if (isBoardSharedFilterDimension(input)) return plain;
-  const identity = optionsSourceIdentity(normalizeInputConfig(input));
-  return `${plain}__${optionsSourceIdentityKey(identity)}`;
-};
+/** 同画布同名同类型只并一行，与 getFilterDefinitionId 一致，不因 optionsSource 拆开。 */
+export const filterMergeKey = (input: FilterParamScanInput): string =>
+  `${input.name}__${input.type}`;
 
 const pushLabel = (labels: string[], label?: string) => {
   const next = label?.trim();
@@ -87,6 +83,7 @@ export const groupFilterParams = (params: FilterParamScanInput[]): ScannedFilter
       pushLabel(existing.dataSourceLabels, param.dataSourceLabel);
       existing.sourceHint = existing.dataSourceLabels.join(' / ')
         || optionsSourceSummary(existing.sampleInputConfig);
+      // 先扫到的 inputConfig 留下。后挂图的异源选项不覆盖。
       return;
     }
     const labels: string[] = [];
@@ -110,44 +107,17 @@ export const groupFilterParams = (params: FilterParamScanInput[]): ScannedFilter
 export const assignFilterDefinitionIds = (
   groups: ScannedFilterGroup[],
   existing: ReusableFilterDefinition[] = [],
-): AssignedFilterGroup[] => {
-  const siblingsOf = new Map<string, ScannedFilterGroup[]>();
-  groups.forEach((group) => {
-    const bucket = `${group.key}__${group.type}`;
-    const list = siblingsOf.get(bucket) ?? [];
-    list.push(group);
-    siblingsOf.set(bucket, list);
-  });
-  const usedIds = new Set<string>();
-  const assigned = groups.map((group) => {
-    const bucket = `${group.key}__${group.type}`;
-    const siblings = siblingsOf.get(bucket) ?? [group];
-    const shared = isBoardSharedFilterDimension(group);
-    let id = bucket;
-    if (!shared && siblings.length > 1) {
-      const legacy = existing.find((item) => item.id === bucket);
-      const legacyKey = legacy
-        ? optionsSourceIdentityKey(optionsSourceIdentity(normalizeInputConfig(legacy)))
-        : null;
-      const groupKey = optionsSourceIdentityKey(group.identity);
-      if (legacyKey == null || legacyKey !== groupKey) {
-        id = `${bucket}__${shortOptionsSourceDigest(group.identity)}`;
-      }
-    }
-    if (usedIds.has(id)) {
-      id = `${bucket}__${shortOptionsSourceDigest(group.identity)}`;
-    }
-    usedIds.add(id);
-    const conflict = !shared && siblings.length > 1;
-    const distinguisher = group.dataSourceLabels[0] || group.sourceHint;
-    const suggestedName = conflict && distinguisher
-      ? `${group.sampleAlias} · ${distinguisher}`
-      : group.sampleAlias;
-    return { ...group, id, suggestedName };
-  });
-
-  return assigned;
-};
+): AssignedFilterGroup[] => groups.map((group) => {
+  const id = `${group.key}__${group.type}`;
+  const stored = existing.find((item) => item.id === id)
+    ?? existing.find((item) => item.key === group.key && item.type === group.type);
+  return {
+    ...group,
+    id,
+    suggestedName: group.sampleAlias,
+    sampleInputConfig: stored?.inputConfig ?? group.sampleInputConfig,
+  };
+});
 
 export const findReusableFilterDefinition = <T extends ReusableFilterDefinition>(
   existing: T[],

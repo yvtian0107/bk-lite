@@ -1,7 +1,7 @@
 # 运营分析 · 选项查询参数级联 — 实现方案
 
-- 最近更新：2026-10-30
-- 状态：产品已拍板，已实现（2026-10-30）；同日按审查修订收口引用、非法入参和打开校正
+- 最近更新：2026-11-03
+- 状态：产品已拍板，已实现（2026-10-30）；2026-11-03 修订 D4：同名同类型始终并成一行
 - 关联决策记忆：`docs/design/product-decisions/ops-analysis-unified-filter.md`（其中「级联下拉」原为明确后置，由本文接续）
 - 范围模块：`web/src/app/ops-analysis`
 - 实现入口包：`components/unifiedFilter/`（页面实际 import）；`components/ops-analysis-unified-filter/` 为并存旧包，改动需评估是否同步或删死引用，不以旧包为主路径
@@ -14,6 +14,7 @@
 - 存量 `key__type` 只在选项源身份与某一行完全一致时留给该行。对不上时旧 id 不挂到扫描到的第一行，新行使用摘要 id，绑定按跟随规则重建。
 - 自动搜索只保留内置 3D 机房筛，判定是固定 id `server_room_id__string`。空值时只把机房自身写入已应用并搜索，不把其它筛的草稿一并提交。同名拆行的摘要 id，以及应用系统筛，都走普通校正：首次写入已应用初值，之后只改草稿，不搜索。
 - 2026-11-02：存在 `queryParams` 引用时禁用并关掉 `componentSwitch`。`filterBindings` 缺键视为跟随，显式 `false` 才读局部值。提案写入组件参数时与筛定义一样做环、不超过 3 级和类型校验，非法则丢掉并警告。超长链只丢掉超出 3 级的那一节，仍合法的前缀保留。同一张卡上的环、超长和类型问题一次扫完，分别警告。
+- 2026-11-03：D4 改回级联前语义。同一画布是同一场景，同名同类型全局筛始终一行，异源同名也并，不再因 `optionsSource` 拆行，显示名也不再拼「· 数据源」。并一行后的 `inputConfig` 以先到或已有定义为准；后挂图的另一套选项宇宙被盖掉，是接受的取舍。已存的摘要 id 若仍在配置里，引用解析继续认；新扫描不再生成第二行。
 
 ---
 
@@ -41,8 +42,8 @@
 ### 1.2 产品痛点（由 grill 确认）
 
 1. 下游选项查询无法带上游值 → 级联做不成。  
-2. 异源同名硬并成一行时，一套 `inputConfig` 盖不住两套选项宇宙 → 级联语义错。  
-3. 时间 / 组织等盘级共用维度若按选项源拆，栏上会冒出一堆控件 → 不合理（`screen_11` 机房相反：异源但同 `cmdb/get_room_list`，应仍一条）。  
+2. 同一画布不会出现「一个组件用这套同名筛、另一个组件用另一套同名筛」。异源同名硬并成一行，后挂图的选项宇宙让位于先到或已有配置。  
+3. 时间 / 组织等盘级共用维度按名和类型并，与普通筛相同（`screen_11` 机房仍是一条）。  
 4. 组件内切换失效选第一项，与全局筛「失效清空」不一致。
 
 ---
@@ -54,7 +55,7 @@
 1. 在参数「配置」的选项查询上，支持**结构化引用**其它可筛参数作为请求入参（Grafana / 观测云型）。  
 2. 硬顶约 **3** 级依赖；配置期校验：整值引用、禁拼接、环检测、级数。  
 3. 上游变化 → **立刻重载**下游候选项；上游空 → **不请求**下游；旧值在列表保留，不在则**清空且不自动第一项**；只改草稿，**不**触发搜索；点搜索才应用刷图。  
-4. 收紧全局筛合并：同名 + 同类型 + 同选项源 identity +（若有）同一组上游引用 → 一行；否则拆行并区分显示。**例外**：时间范围、组织等盘级共用维度继续仅同名同类型合并。  
+4. 全局筛合并恢复为仅同名 + 同类型一行。时间范围、组织等盘级维度同样按名和类型并。异 `optionsSource` 不拆行。  
 5. 组件内切换：失效清空不选；存在 `queryParams` 引用时禁用并关掉；没有引用时，局部选项依赖 = 本卡局部值 + **已应用**全局筛。  
 6. AI 搭盘 / YAML 与配置 UI 读写同一份 `inputConfig`。
 
@@ -68,14 +69,16 @@
 
 ---
 
-## 3. 产品决策表（已拍板，实现不得改）
+## 3. 产品决策表（已拍板）
+
+D4 于 2026-11-03 按产品拍板修订。其余行仍按表实现。
 
 | # | 决策 | 说明 |
 | --- | --- | --- |
 | D1 | 模型 | Grafana / 观测云型选项查询入参 `$` 引用；硬顶约 3 级；非 Cascader；不做记住上次搜索 |
 | D2 | 打开 | `defaultValue`（+ URL / 报表传入）→ 按新候选项校验 |
 | D3 | 上游变 | 立刻重载下游选项；上游空不请求；旧值在则保留、不在则清空不选第一项；只动草稿不搜；点搜索才应用 |
-| D4 | 合并 | 同名+同类型+同 `optionsSourceIdentity`+（若有）同一组上游引用 → 并一行；否则拆并区分显示。**例外**：`timeRange` / `dateRange`、组织控件继续仅同名同类型并。异源但 optionsSource 相同（如 `screen_11` 的 `server_room_id`）仍并一条。配置表一行 = 运行时栏一个控件；并着则一套配置，要分配置先拆 |
+| D4 | 合并 | 同名同类型始终并成一行（`getFilterDefinitionId` = `` `${name}__${type}` ``），异源同名也并。不因 `optionsSource` 或上游引用不同拆行，显示名不拼「· 数据源」。`timeRange` / `dateRange`、组织控件同样只按名和类型并。配置以先到或已有定义为准，后挂图的另一套选项宇宙被盖掉。配置表一行 = 运行时栏一个控件。存量摘要 id 只在配置里真有多行时继续参与引用解析；新扫描不再生出第二行 |
 | D5 | 组件内切换 | 失效清空不选；存在 `queryParams` 引用时禁用并关掉。没有引用时，局部选项跟本卡局部值 + 已应用全局筛 |
 | D6 | 配置入口 | 上游引用配在参数「配置」里的选项查询入参；**不是**全局筛总表另开「上游」列 |
 
@@ -111,7 +114,9 @@ export interface DynamicOptionsSource {
 - **YAML / 展示友好**：允许整值写成 `"$server_room_id$"` 或 `"$server_room_id:string$"`，读写时归一成 `{ ref }`；**禁止** `"prefix-$id$"` 这类拼接（配置保存与运行解析均拒绝）。  
 - 落点：筛定义的 `UnifiedFilterDefinition.inputConfig`；组件参数的 `ParamItem.inputConfig`（组件内切换同源）。全局筛总表不新增「上游」列。
 
-### 4.2 `optionsSourceIdentity`（合并与 AI digest 共用）
+### 4.2 `optionsSourceIdentity`（AI digest 与存量多行消歧）
+
+全局筛合并不再使用这份 identity。它继续描述选项合同，供 AI 摘要和「配置里真有多行」时的引用匹配。同名同类型在扫描时仍然并成一行。
 
 从 `applyDashboardProposal.ts` 私有函数抽出到 `utils/paramInputConfigUtils.ts`（或新建 `utils/optionsSourceIdentity.ts`），并扩展：
 
@@ -128,7 +133,7 @@ optionsSourceIdentity(inputConfig) =>
     }
 ```
 
-静态源：用 staticItems 稳定序列化进 identity（避免两套静态列表同名硬并）。
+静态源：用 staticItems 稳定序列化进 identity，供合同比较。同名静态列表不同也不会在栏上拆成两行。
 
 ### 4.3 引用校验（配置期 + 可选运行期断言）
 
@@ -143,15 +148,13 @@ optionsSourceIdentity(inputConfig) =>
 
 校验函数建议：`utils/optionsQueryParamRefs.ts`（纯函数 + 单测）。
 
-### 4.4 筛选 id（拆行时）
+### 4.4 筛选 id
 
-现状 id = `` `${key}__${type}` ``。收紧后同名同类型可能多行：
+id 固定为 `` `${key}__${type}` ``，与级联前 `getFilterDefinitionId` 一致。同名同类型不再生成 `` `${key}__${type}__${shortDigest}` ``。
 
-- **可并（含时间/组织例外）**：继续 `` `${key}__${type}` ``，兼容存量绑定。  
-- **必须拆**：`` `${key}__${type}__${shortDigest}` ``，`shortDigest` 来自 `optionsSourceIdentity` 稳定 hash 前 8 位（或 base32）。  
-- 绑定面板、`FilterBindings`、运行时传参仍按 **definition.id**；传给数据源的参数名仍是 **key**（各组件跟随自己绑定的那条 id）。
-
-存量盘：打开配置时按新算法重扫；若原 id 仍匹配「可并」集合则保留；仅当同 key+type 出现多个 identity 时才生成带 digest 的新 id，并尽量把旧 bindings 挂到「与旧 inputConfig identity 最接近」的那条（迁移见 §9）。
+- 绑定面板、`FilterBindings`、运行时传参仍按 **definition.id**；传给数据源的参数名仍是 **key**。同一画布上跟随该名的组件读同一条 id。  
+- 存量配置里若已经有摘要 id，引用解析仍按 id 命中那一行；裸名在只剩一行时解析到 `` `${key}__${type}` ``。新的布局扫描和配置表扫描不再制造第二行。  
+- 打开配置或布局同步时，已有 `` `${key}__${type}` `` 的 `inputConfig` 优先保留；没有已有定义时用先扫到的那份。后出现的异源 `optionsSource` 不写回这一行。
 
 ---
 
@@ -220,38 +223,31 @@ optionsSourceIdentity(inputConfig) =>
 ### 6.1 合并键
 
 ```
-isBoardSharedDimension(param|definition):
-  type ∈ { timeRange, dateRange }
-  OR inputConfig.control === 'organization'
-  OR 归一后的 organization 旁路
-
-mergeKey =
-  if isBoardSharedDimension:
-    `${name}__${type}`                    # 仅名+类型；不因 optionsSource 拆
-  else:
-    `${name}__${type}__${stableHash(optionsSourceIdentity(inputConfig))}`
-    # 无 options / identity 为 null 时 hash 用 'none'，与「同名纯输入」互并
+mergeKey = `${name}__${type}`
 ```
 
-扫描时：同一 `mergeKey` 只建一条 `ScannedParam`，累加 `componentCount`；`sampleInputConfig` 取首次（已并意味着 identity 相同，内容一致）。
+普通筛、`timeRange` / `dateRange`、组织控件都用这一条。`optionsSourceIdentity` 不再参与合并键，只留给 AI 合同摘要，以及配置里确实还存着多行时的引用消歧。
+
+扫描时：同一 `mergeKey` 只建一条，累加 `componentCount`。`sampleInputConfig` 取先扫到的那份；若已有同 id（或同名同类型）定义，用那份 `inputConfig`，不用后挂图覆盖。
 
 ### 6.2 行为表
 
 | 场景 | 配置表行数 | 查看态栏 |
 | --- | --- | --- |
 | 三图同一数据源、同名同配置 | 1 | 1 个控件 |
-| 异源、同名，但 `optionsSourceIdentity` 相同（`screen_11` 机房） | 1 | 1 |
-| 异源、同名，identity 不同（即使后来配了同一组 ref） | N，显示名/副文案区分 | N 个控件 |
-| 同名同 identity，且 `queryParams` refs 相同 | 1 | 1 |
-| 多数据源各绑 `time` / 组织 | 1（例外） | 1 |
+| 异源、同名，`optionsSource` 相同（`screen_11` 机房） | 1 | 1 |
+| 异源、同名，`optionsSource` 不同（如 `accept_metrics` 与 `accept_metrics_b`） | 1，显示名仍是别名 | 1 个控件 |
+| 同名且上游引用相同或不同 | 1 | 1 |
+| 多数据源各绑 `time` / 组织 | 1 | 1 |
 
-「配了同一个上游引用也不会合并」——仅当 **optionsSource 仍不同**；引用相同不能盖过选项宇宙不同（D4）。
+后挂图的选项宇宙被先到或已有定义盖住。同一画布不提供两套同名筛。
 
-### 6.3 并着与拆开
+### 6.3 并着之后
 
 - 并成一行 = 盘级唯一 `inputConfig` / 默认值 / 显示名；点「配置」改的是这一套。  
-- 要分别配：改某一侧数据源参数的 options 或 `queryParams` 使 identity 不同 → 下次打开配置表自动拆行；或后续可加「拆分为独立筛」显式动作（非本期必做）。  
-- **禁止**一行内嵌多套配置。
+- 显示名用别名或用户已保存的名称，不追加「· 数据源」。  
+- 已配好的查询入参留在已有定义上。后挂的图继续跟随这一行，不另起一套级联。  
+- **禁止**一行内嵌多套配置，也禁止为了保住第二套选项宇宙再拆行。
 
 ---
 
@@ -260,9 +256,8 @@ mergeKey =
 ### 7.1 全局筛选配置表（不新增「上游」列）
 
 - 列保持：参数名、显示名、类型、控件、默认值、启用、配置、…  
-- **拆行区分**（D4）：  
-  - 显示名默认：`alias`；冲突时自动建议 `alias · 数据源名`（可改）。  
-- 点「配置」打开现有 `ParamInputConfigEditor`，在动态源区编辑 `queryParams`。
+- 显示名默认是 `alias` 或已保存的名称。同名不再建议 `alias · 数据源名`。  
+- 点「配置」打开现有 `ParamInputConfigEditor`，在动态源区编辑 `queryParams`。改的是并成的那一行。
 
 ### 7.2 参数配置 · 引用拾取
 
@@ -287,7 +282,7 @@ mergeKey =
 
 - Proposal / YAML 中筛与参数的 `inputConfig.optionsSource` 直接带 `queryParams`。组件参数与筛定义一样做环、不超过 3 级和类型相容校验；非法则丢掉该参数的 `queryParams` 并警告，不原样留下。引用仍合法时，同时关掉 `componentSwitch`。  
 - `filterContractDigest` 使用抽出后的 `optionsSourceIdentity`（含 refs + literals），避免 AI 合并时丢掉级联合同。  
-- `applyDashboardProposal.ts`：按 id / digest 对齐筛定义；拆行后的新 id 允许 proposal 显式给出。  
+- `applyDashboardProposal.ts`：按筛选 id 对齐筛定义。提案若仍带历史摘要 id，按该 id 对齐；布局扫描不会因为选项源不同再写出一个新 id。  
 - 导入导出：旧盘无 `queryParams` 视为 `{}`，行为与现网一致。  
 - 文档化给搭盘提示词：级联用 `queryParams.{ name: { ref } }`，禁止拼接字符串。
 
@@ -298,8 +293,8 @@ mergeKey =
 | 项 | 策略 |
 | --- | --- |
 | 无 `queryParams` 的旧配置 | 等价空；选项请求仍可传 `{}` |
-| 仅 `key__type` 的旧 filter id | 若新算法仍并成一条，id 不变；bindings 不动 |
-| 同 key+type 多 identity（旧盘被错误硬并） | 打开配置重扫拆成多行；旧 id 优先留给「与已存 definition.inputConfig identity 匹配」的那条；其余新建带 digest 的 id；bindings 中仅旧 id 保留，新行默认按「同名同类型参数所在组件」自动跟随规则重建（与现网扫参启用逻辑一致），需单测锁定 |
+| 仅 `key__type` 的旧 filter id | id 不变；bindings 不动。再挂异源同名图仍是这一行 |
+| 同 key+type 已拆成摘要 id 的旧盘 | 新扫描只产出 `` `${key}__${type}` ``。已有该 id 时沿用它的 `inputConfig` 和显示名；没有该 id 时用已有同名定义里的第一份。摘要 id 不再新生成。引用解析仍能按 id 读到配置中还在的摘要行；并回一行后，裸名和 `` `${key}__${type}` `` 都指向这唯一一行 |
 | `reconcileComponentSwitchValue` → 清空 | 行为变更：原先失效变第一项；接受为对齐全局筛；changelog 一句说明 |
 | 旧包 `ops-analysis-unified-filter` | 若测试仍引用，抽公共 scan/identity 后两边共用，避免两套合并键 |
 
@@ -311,9 +306,9 @@ mergeKey =
 
 1. **`screen_11`（3D 机房）**：多组件、多数据源、同名 `server_room_id`、同 `cmdb/get_room_list` → 配置表 1 行、栏上 1 个机房筛；跟随与现网一致。  
 2. **三图同一数据源同名参数**：配置表 1 行、栏 1 控件；改配置一处生效。  
-3. **异源 + 异 optionsSource 同名**：配置表多行且可区分；栏上多控件；各值只喂绑定到自己 id 的图。  
-4. **异源 + 同 optionsSource + 同 refs**：仍 1 行。  
-5. **异源 + 异 optionsSource + 人为配了相同 refs**：仍多行（引用不能盖过 options 宇宙）。  
+3. **异源 + 异 optionsSource 同名**（如指标图 A 的 `accept_metrics` 与图 B 的 `accept_metrics_b`）：配置表和栏上仍各 1 行。显示名不带数据源。已配的对象→指标→实例引用留在先到的定义上，加 B 不拆 `metric_id`，栏上不因同名多条变成「请先选择上游」。  
+4. **异源 + 同 optionsSource + 同 refs**：1 行。  
+5. **异源 + 异 optionsSource + 相同或不同 refs**：仍 1 行。后挂图的选项宇宙不另起控件。  
 6. **多数据源各绑 timeRange / 组织**：栏上仍各 1 个，不拆。  
 7. **级联两级**：机房 → 设备；改机房草稿立刻换设备选项；设备旧值失效则清空；图不变直至点搜索。  
 8. **上游空**：清空机房 → 设备不请求、选项空、设备值清空（草稿）。  
@@ -386,6 +381,6 @@ mergeKey =
 
 ## 12. 决策来源
 
-- 用户 grill（2026-10-30）：打开策略、失效不搜、合并收紧与时间/组织例外、`screen_11` 仍一条、配置表并一行合理性、分别配置=先拆、组件内失效改清空、上游配在参数「配置」而非总表列。2026-11-02 改为：有查询入参引用时关掉组件内切换。  
+- 用户 grill（2026-10-30）：打开策略、失效不搜、合并收紧与时间/组织例外、`screen_11` 仍一条、配置表并一行合理性、分别配置=先拆、组件内失效改清空、上游配在参数「配置」而非总表列。2026-11-02 改为：有查询入参引用时关掉组件内切换。2026-11-03 拍板收回「异 optionsSource 必须拆」：同一画布同名同类型始终一行，异源硬并，配置以先到或已有定义为准。  
 - 代码现状：`ParamInputConfigEditor`、`DynamicOptionsSource`、`paramInputOptionsLoader`（`{}`）、`filterTemplate`（仅展示）、`UnifiedFilterBar` draft+Search、`` key__type `` 合并、`reconcileComponentSwitchValue`、`optionBackedFilterValue`、`applyDashboardProposal.optionsSourceIdentity`。  
 - 前序后置声明：`docs/design/product-decisions/ops-analysis-unified-filter.md` §明确后置「级联下拉」。

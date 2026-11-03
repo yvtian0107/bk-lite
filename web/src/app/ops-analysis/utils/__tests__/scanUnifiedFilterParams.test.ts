@@ -66,7 +66,8 @@ describe('scan unified filter params', () => {
     expect(scanned[0]?.componentCount).toBe(3);
   });
 
-  it('splits same-name params whose option universes differ, and keeps the legacy id on the stored match', () => {
+  it('merges different option universes into the name and type row and keeps the stored config', () => {
+    const storedConfig = roomSource();
     const stored: UnifiedFilterDefinition[] = [{
       id: 'server_room_id__string',
       key: 'server_room_id',
@@ -75,67 +76,53 @@ describe('scan unified filter params', () => {
       defaultValue: null,
       order: 0,
       enabled: true,
-      inputConfig: roomSource(),
+      inputConfig: storedConfig,
     }];
     const scanned = scanDataSourceFilterParams(layout([1, 2]), [
-      source(1, 'cmdb/get_room_list', [{
+      source(1, '验收·级联指标图', [{
         name: 'server_room_id',
         alias_name: '机房',
         type: 'string',
         filterType: 'filter',
         value: null,
-        inputConfig: roomSource(),
+        inputConfig: roomSource('demo/accept_metrics'),
       }]),
-      source(2, 'monitor/get_rooms', [{
+      source(2, 'demo/accept_metrics_b', [{
         name: 'server_room_id',
         alias_name: '机房',
         type: 'string',
         filterType: 'filter',
         value: null,
-        inputConfig: roomSource('monitor/get_rooms'),
+        inputConfig: roomSource('demo/accept_metrics_b'),
       }]),
     ], stored);
 
-    const ids = scanned.map((item) => item.id);
-    expect(ids).toContain('server_room_id__string');
-    const splitId = ids.find((id) => id !== 'server_room_id__string');
-    expect(splitId).toMatch(/^server_room_id__string__[0-9a-f]{8}$/);
-    expect(scanned.find((item) => item.id === 'server_room_id__string')?.sourceHint)
-      .toContain('cmdb/get_room_list');
-    expect(scanned.find((item) => item.id !== 'server_room_id__string')?.suggestedName)
-      .toContain('monitor/get_rooms');
+    expect(scanned).toHaveLength(1);
+    expect(scanned[0]?.id).toBe('server_room_id__string');
+    expect(scanned[0]?.componentCount).toBe(2);
+    expect(scanned[0]?.suggestedName).toBe('机房');
+    expect(scanned[0]?.suggestedName).not.toContain('·');
+    expect(scanned[0]?.sampleInputConfig).toEqual(storedConfig);
   });
 
-  it('leaves the legacy id unresolved when the stored identity matches none', () => {
-    const stored: UnifiedFilterDefinition[] = [{
-      id: 'device_id__string',
-      key: 'device_id',
-      name: '设备',
-      type: 'string',
-      defaultValue: null,
-      order: 0,
-      enabled: true,
-      inputConfig: roomSource('retired/api'),
-    }];
+  it('keeps the first scanned config when no definition is stored yet', () => {
+    const first = roomSource('cmdb/devices');
     const scanned = scanDataSourceFilterParams(layout([1, 2]), [
       source(1, 'cmdb/devices', [{
         name: 'device_id', alias_name: '设备', type: 'string', filterType: 'filter', value: null,
-        inputConfig: roomSource('cmdb/devices'),
+        inputConfig: first,
       }]),
       source(2, 'monitor/devices', [{
         name: 'device_id', alias_name: '设备', type: 'string', filterType: 'filter', value: null,
         inputConfig: roomSource('monitor/devices'),
       }]),
-    ], stored);
-    const ids = scanned.map((item) => item.id);
-    expect(ids).not.toContain('device_id__string');
-    expect(ids).toHaveLength(2);
-    ids.forEach((id) => {
-      expect(id).toMatch(/^device_id__string__[0-9a-f]{8}$/);
-    });
+    ]);
+    expect(scanned.map((item) => item.id)).toEqual(['device_id__string']);
+    expect(scanned[0]?.sampleInputConfig).toEqual(first);
+    expect(scanned[0]?.suggestedName).toBe('设备');
   });
 
-  it('does not merge different option sources just because they reference the same upstream', () => {
+  it('still merges different option sources that reference the same upstream', () => {
     const withRef = (restApi: string): InputControlConfig => ({
       control: 'select',
       optionsSource: {
@@ -156,7 +143,12 @@ describe('scan unified filter params', () => {
         inputConfig: withRef('monitor/devices'),
       }]),
     ]);
-    expect(scanned).toHaveLength(2);
+    expect(scanned).toHaveLength(1);
+    expect(scanned[0]?.id).toBe('device_id__string');
+    const kept = scanned[0]?.sampleInputConfig;
+    expect(kept && kept.control === 'select' && kept.optionsSource.type === 'dynamic'
+      ? kept.optionsSource.sourceRef?.value
+      : undefined).toBe('cmdb/devices');
   });
 
   it('still merges time range and organization by name and type only', () => {

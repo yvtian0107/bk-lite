@@ -56,7 +56,7 @@ _METRICS = {
     "obj-b": ({"id": "m3", "name": "指标3"},),
 }
 
-# 指标宇宙 B：入参仍是 object_id，候选项与 A 不重叠，用来验收异源拆行。
+# 指标宇宙 B：入参仍是 object_id，候选项与 A 不重叠。同画布同名筛选仍并成一行。
 _METRICS_B = {
     "obj-a": (
         {"id": "mb1", "name": "指标B1"},
@@ -252,7 +252,7 @@ ACCEPTANCE_DATASOURCE_SPECS = (
     _spec(
         "验收·指标列表 B（选项）",
         REST_METRICS_B,
-        "入参与指标列表相同，候选项是另一套宇宙，用来验收异源同名拆行。本身不出图。",
+        "入参与指标列表相同，候选项是另一套宇宙。同画布同名筛选并成一行，配置以先到的定义为准。本身不出图。",
         [_request_param("object_id", "监控对象")],
         [],
         _OPTION_FIELDS,
