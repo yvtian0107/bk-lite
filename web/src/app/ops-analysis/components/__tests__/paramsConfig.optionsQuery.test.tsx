@@ -256,4 +256,45 @@ describe('DataSourceParamsConfig options query', () => {
     expect(screen.queryByText('新的')).toBeNull();
     expect(screen.queryByText('保留')).toBeNull();
   });
+
+  it('keeps a stale value while options are loading and clears it when the list is empty', async () => {
+    let finish: (value: { data: unknown[]; warnings: string[] }) => void = () => undefined;
+    getSourceDataByApiId.mockImplementation(() => new Promise((resolve) => {
+      finish = resolve;
+    }));
+    render(
+      <QueryForm
+        source={dataSource}
+        initialParams={{ cloud_region_ids: 'east', zone_id: 'zone-stale' }}
+        globalFilters={[]}
+        reconcile
+      />,
+    );
+
+    const readZone = () => JSON.parse(screen.getByTestId('form-params').textContent || '{}') as Record<string, unknown>;
+    expect(readZone().zone_id).toBe('zone-stale');
+
+    finish({ data: [], warnings: [] });
+    await waitFor(() => {
+      expect(readZone().zone_id).toBeNull();
+    });
+  });
+
+  it('clears a stale value when the upstream is empty', async () => {
+    render(
+      <QueryForm
+        source={dataSource}
+        initialParams={{ cloud_region_ids: null, zone_id: 'zone-stale' }}
+        globalFilters={[]}
+        reconcile
+      />,
+    );
+
+    expect(await screen.findByText('请先选择上游')).not.toBeNull();
+    await waitFor(() => {
+      const params = JSON.parse(screen.getByTestId('form-params').textContent || '{}') as Record<string, unknown>;
+      expect(params.zone_id).toBeNull();
+    });
+    expect(getSourceDataByApiId).not.toHaveBeenCalled();
+  });
 });

@@ -29,6 +29,14 @@ describe('reconcileComponentParamValue multiple', () => {
     expect(reconcileComponentSwitchValue('1', [])).toBeNull();
   });
 
+  test('选项还没回来时保留现值，已经是空列表时清空失效值', () => {
+    expect(reconcileComponentParamValue('saved', undefined)).toBe('saved');
+    expect(reconcileComponentParamValue(['saved'], undefined)).toEqual(['saved']);
+    expect(reconcileComponentParamValue('saved', [])).toBeNull();
+    expect(reconcileComponentParamValue(['saved', 'kept'], [])).toEqual([]);
+    expect(reconcileComponentParamValue(null, [])).toBeNull();
+  });
+
   test('确认提交链路：多选查询参数经选项对齐后请求仍为完整数组', () => {
     const formValue = ['1', '2'];
     const reconciled = reconcileComponentParamValue(formValue, OPTIONS);

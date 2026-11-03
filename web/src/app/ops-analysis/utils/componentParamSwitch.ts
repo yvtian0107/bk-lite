@@ -63,12 +63,13 @@ export const reconcileComponentSwitchValue = (
 /**
  * 通用查询参数与选项对齐：多选数组保留仍存在于选项中的值；
  * 标量与组件切换一致：不在选项里则清空，不落到 options[0]。
+ * `options` 未传入表示还在加载，保留现值；空数组表示上游为空或已经没有候选项，清空失效值。
  */
 export const reconcileComponentParamValue = (
   value: ParamItem['value'] | undefined,
   options?: InputOption[],
 ): ParamItem['value'] | undefined => {
-  if (!options?.length) return value;
+  if (options == null) return value;
   if (Array.isArray(value)) {
     const optionKeys = new Set(
       options.map((option) => getTypedValueKey(option.value)),

@@ -1074,7 +1074,6 @@ const ViewConfig: React.FC<ViewConfigPropsWithManager> = ({
 
   const reconcileParamWithOptions = useCallback(
     (paramName: string, options: InputOption[]) => {
-      if (options.length === 0) return;
       resolvedParamOptionsRef.current.set(paramName, options);
       const currentParams = form.getFieldValue('params') || {};
       const nextValue = reconcileComponentParamValue(currentParams[paramName], options);
@@ -1215,7 +1214,7 @@ const ViewConfig: React.FC<ViewConfigPropsWithManager> = ({
         const reconciledFormParams = { ...formParams };
         effectiveDataSource.params.forEach((param) => {
           const optionsForParam = resolvedParamOptionsRef.current.get(param.name);
-          if (!optionsForParam?.length) return;
+          if (optionsForParam == null) return;
           reconciledFormParams[param.name] = reconcileComponentParamValue(
             reconciledFormParams[param.name],
             optionsForParam,
