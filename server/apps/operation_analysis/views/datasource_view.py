@@ -724,20 +724,6 @@ class DataSourceAPIModelViewSet(AuthViewSet):
         else:
             namespace, path = instance.rest_api.split("/", 1)
 
-        # 仅本地验收：rest_api 为 demo/<path> 时短路，不访问 NATS。
-        # REST/Excel 不吃声明参，验收 mock 必须留在这条 NATS 路径上。
-        # 成功体仍包成与下游成功路径相同的 {data, warnings}。
-        if namespace == "demo":
-            from apps.operation_analysis.common.demo_source import get_demo_source_data
-
-            demo_data = get_demo_source_data(path, params)
-            if not isinstance(demo_data, dict) or demo_data.get("result") is not True:
-                return _build_error_response("演示数据源不存在", status.HTTP_404_NOT_FOUND)
-            payload = demo_data.get("data")
-            if payload is None and isinstance(demo_data.get("items"), list):
-                payload = {"items": demo_data["items"]}
-            return Response({"data": payload, "warnings": []})
-
         param_specs = instance.params if isinstance(instance.params, list) else []
         client = GetNatsData(
             namespace=namespace,
@@ -1213,10 +1199,7 @@ class DataSourceAPIModelViewSet(AuthViewSet):
         return super(DataSourceAPIModelViewSet, self).retrieve(request, *args, **kwargs)
 
     def _list_canvas_referenced_datasources(self, request, raw_ids):
-        from apps.operation_analysis.services.canvas_datasource_lookup import (
-            build_canvas_datasource_payloads,
-            normalize_canvas_datasource_ids,
-        )
+        from apps.operation_analysis.services.canvas_datasource_lookup import build_canvas_datasource_payloads, normalize_canvas_datasource_ids
 
         ordered_ids = normalize_canvas_datasource_ids(raw_ids)
         if not ordered_ids:
