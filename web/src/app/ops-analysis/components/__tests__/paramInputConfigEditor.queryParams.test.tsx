@@ -1,6 +1,7 @@
 import React from 'react';
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import { message } from 'antd';
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 
 import { ParamInputConfigEditor } from '@/app/ops-analysis/components/paramInputConfigEditor';
@@ -40,6 +41,8 @@ vi.mock('@/utils/i18n', () => ({
         'paramInput.dynamic.originGlobalFilter': '全局筛选',
         'paramInput.dynamic.originComponentParam': '组件参数',
         'paramInput.dynamic.refChoice': '{origin} · {name}',
+        'paramInput.dynamic.refChoiceWithKey': '{origin} · {name} ({key})',
+        'paramInput.dynamic.refChoiceWithHint': '{origin} · {name} · {hint}',
         'paramInput.dynamic.cycle': '查询入参存在循环：{path}',
         'paramInput.dynamic.depth': '查询入参依赖超过 3 级：{path}',
         'paramInput.dynamic.previewFixedOnly': '引用参数在运行时生效，预览仅使用已填固定值',
@@ -451,6 +454,7 @@ describe('param input query params', () => {
   it('keeps an over-long instance ref in the dropdown and rejects it on confirm', async () => {
     const user = userEvent.setup();
     const onConfirm = vi.fn();
+    const errorSpy = vi.spyOn(message, 'error').mockImplementation(() => ({}) as never);
     getDataSourceList.mockResolvedValue([
       {
         id: 11,
@@ -475,45 +479,105 @@ describe('param input query params', () => {
             sourceId: 11,
             valueField: 'id',
             labelField: 'name',
-            queryParams: { instance_id: { ref: 'instance_id' } },
+            queryParams: { instance_id: { ref: 'instance_id__string' } },
           },
         }}
         optionsQueryContext={{
           scope: 'component',
-          self: { key: 'detail_id' },
+          self: { key: 'detail_id', label: '明细' },
           componentParams: [
-            { name: 'object_id', label: '对象', type: 'string', filterType: 'params' },
+            { name: 'detail_id', label: '明细', type: 'string', filterType: 'params' },
+          ],
+          globalFilters: [
+            { id: 'object_id__string', key: 'object_id', label: '监控对象', type: 'string' },
             {
-              name: 'metric_id',
+              id: 'metric_id__string',
+              key: 'metric_id',
               label: '指标',
               type: 'string',
-              filterType: 'params',
-              queryParams: { object_id: { ref: 'object_id' } },
+              queryParams: { object_id: { ref: 'object_id__string' } },
             },
             {
-              name: 'instance_id',
+              id: 'instance_id__string',
+              key: 'instance_id',
               label: '实例',
               type: 'string',
-              filterType: 'params',
-              queryParams: { metric_id: { ref: 'metric_id' } },
+              queryParams: { metric_id: { ref: 'metric_id__string' } },
             },
-            { name: 'detail_id', label: '明细', type: 'string', filterType: 'params' },
           ],
         }}
       />,
     );
 
     const dialog = await screen.findByRole('dialog');
-    expect(await within(dialog).findByText('组件参数 · 实例')).not.toBeNull();
-    await user.click(within(dialog).getByText('组件参数 · 实例'));
-    expect(await screen.findByText('组件参数 · 对象')).not.toBeNull();
-    expect(screen.getByText('组件参数 · 指标')).not.toBeNull();
+    expect(await within(dialog).findByText('全局筛选 · 实例')).not.toBeNull();
+    await user.click(within(dialog).getByText('全局筛选 · 实例'));
+    expect(await screen.findByText('全局筛选 · 监控对象')).not.toBeNull();
+    expect(screen.getByText('全局筛选 · 指标')).not.toBeNull();
 
     await user.click(within(dialog).getByRole('button', { name: /确\s*认/ }));
-    const depthMessage = '查询入参依赖超过 3 级：detail_id → instance_id → metric_id → object_id';
-    expect(await within(dialog).findByText(depthMessage)).not.toBeNull();
+    const depthMessage = '查询入参依赖超过 3 级：明细 → 实例 → 指标 → 监控对象';
+    await waitFor(() => expect(errorSpy).toHaveBeenCalledWith(depthMessage));
     expect(onConfirm).not.toHaveBeenCalled();
-    expect(within(dialog).getByText('组件参数 · 实例')).not.toBeNull();
+    expect(within(dialog).queryByText(/查询入参依赖超过/)).toBeNull();
+    expect(within(dialog).queryByText(/__string/)).toBeNull();
+    expect(within(dialog).getByText('全局筛选 · 实例')).not.toBeNull();
+    errorSpy.mockRestore();
+  });
+
+  it('scrolls the reference dropdown instead of growing with every option', async () => {
+    const user = userEvent.setup();
+    getDataSourceList.mockResolvedValue([
+      {
+        id: 11,
+        name: '明细列表',
+        params: [{ name: 'instance_id', type: 'string', alias_name: '实例' }],
+        field_schema: [
+          { key: 'id', title: '编号', value_type: 'string' },
+          { key: 'name', title: '名称', value_type: 'string' },
+        ],
+      },
+    ]);
+    render(
+      <ParamInputConfigEditor
+        open
+        editingParamName="detail_id"
+        onCancel={vi.fn()}
+        onConfirm={vi.fn()}
+        value={{
+          control: 'select',
+          optionsSource: {
+            type: 'dynamic',
+            sourceId: 11,
+            valueField: 'id',
+            labelField: 'name',
+            queryParams: { instance_id: { ref: 'upstream_0' } },
+          },
+        }}
+        optionsQueryContext={{
+          scope: 'component',
+          self: { key: 'detail_id', label: '明细' },
+          componentParams: [
+            { name: 'detail_id', label: '明细', type: 'string' },
+            ...Array.from({ length: 12 }, (_, index) => ({
+              name: `upstream_${index}`,
+              label: `上游${index}`,
+              type: 'string',
+            })),
+          ],
+        }}
+      />,
+    );
+
+    const dialog = await screen.findByRole('dialog');
+    await user.click(await within(dialog).findByText('组件参数 · 上游0'));
+    const holder = await waitFor(() => {
+      const node = document.querySelector('.rc-virtual-list-holder');
+      expect(node).not.toBeNull();
+      return node as HTMLElement;
+    });
+    expect(holder.style.maxHeight).toBe('256px');
+    expect(holder.style.overflowY === 'auto' || holder.style.overflowY === 'hidden').toBe(true);
   });
 
   it('does not auto preview when a fixed value is empty', async () => {

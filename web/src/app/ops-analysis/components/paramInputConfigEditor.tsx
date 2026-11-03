@@ -205,21 +205,68 @@ const DynamicFieldSelect: React.FC<{
   );
 };
 
+const TECHNICAL_QUERY_NODE_ID = /__(?:string|number|boolean|timeRange|dateRange|organization)(?:__[0-9a-z]+)?$/i;
+
+/** 引用下拉弹出层高度。选项多时在层内滚动，不把表单撑高。 */
+const OPTIONS_QUERY_REF_LIST_HEIGHT = 256;
+
+const readableQueryToken = (token: string, labels?: ReadonlyMap<string, string>) => {
+  const named = labels?.get(token)?.trim();
+  if (named) return named;
+  return token.replace(TECHNICAL_QUERY_NODE_ID, '') || token;
+};
+
+const readableQueryPath = (path: string[] | undefined, labels?: ReadonlyMap<string, string>) => (
+  (path || []).map((token) => readableQueryToken(token, labels)).join(' → ')
+);
+
+/** 校验提示用显示名。没有显示名时去掉 `__string` 和摘要 id，避免把内部 id 链直接给用户。 */
+export const optionsQueryIssueLabels = (
+  context?: OptionsQueryEditorContext,
+): Map<string, string> => {
+  const labels = new Map<string, string>();
+  const put = (id?: string, label?: string) => {
+    const text = label?.trim();
+    if (!id || !text) return;
+    labels.set(id, text);
+  };
+  (context?.componentParams ?? []).forEach((param) => put(param.name, param.label));
+  const filters = context?.globalFilters ?? [];
+  filters.forEach((filter) => put(filter.id, filter.label));
+  const namesByKey = new Map<string, Set<string>>();
+  filters.forEach((filter) => {
+    const text = filter.label?.trim();
+    if (!filter.key || !text) return;
+    const names = namesByKey.get(filter.key) ?? new Set<string>();
+    names.add(text);
+    namesByKey.set(filter.key, names);
+  });
+  namesByKey.forEach((names, key) => {
+    if (names.size === 1) put(key, [...names][0]);
+  });
+  put(context?.self.id, context?.self.label);
+  put(context?.self.key, context?.self.label);
+  return labels;
+};
+
 export const describeQueryIssue = (
   t: (key: string, _default?: string, values?: Record<string, string>) => string,
   issue: { code: string; param?: string; name?: string; ref?: string; path?: string[] },
+  labels?: ReadonlyMap<string, string>,
 ) => {
+  const ref = readableQueryToken(issue.ref || '', labels);
+  const path = readableQueryPath(issue.path, labels);
   if (issue.code === 'concat') return t('paramInput.dynamic.concatRejected');
   if (issue.code === 'self') return t('paramInput.dynamic.selfRef');
   if (issue.code === 'missing') {
-    return t('paramInput.dynamic.missingRef', undefined, { ref: issue.ref || '' });
+    return t('paramInput.dynamic.missingRef', undefined, { ref });
   }
   if (issue.code === 'type') {
-    return t('paramInput.dynamic.unbindableRef', undefined, { ref: issue.ref || '' });
+    return t('paramInput.dynamic.unbindableRef', undefined, { ref });
   }
   if (issue.code === 'ambiguous') return t('paramInput.dynamic.ambiguousRef');
-  if (issue.code === 'cycle') return t('paramInput.dynamic.cycle', undefined, { path: (issue.path || []).join(' → ') });
-  if (issue.code === 'depth') return t('paramInput.dynamic.depth', undefined, { path: (issue.path || []).join(' → ') });
+  if (issue.code === 'cycle') return t('paramInput.dynamic.cycle', undefined, { path });
+  if (issue.code === 'depth') return t('paramInput.dynamic.depth', undefined, { path });
   return t('paramInput.dynamic.invalidValue');
 };
 const SortableStaticRow: React.FC<SortableStaticRowProps> = ({
@@ -303,7 +350,6 @@ export const ParamInputConfigEditor: React.FC<ParamInputConfigEditorProps> = ({
   const [previewFieldKeys, setPreviewFieldKeys] = useState<string[]>([]);
   const [dynamicPreviewLoading, setDynamicPreviewLoading] = useState(false);
   const [queryParamRows, setQueryParamRows] = useState<QueryParamRow[]>([]);
-  const [queryParamError, setQueryParamError] = useState('');
   const previewRequestIdRef = useRef(0);
   const staticSensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
@@ -327,7 +373,6 @@ export const ParamInputConfigEditor: React.FC<ParamInputConfigEditorProps> = ({
       setDynamicPreview([]);
       setPreviewFieldKeys([]);
       setQueryParamRows([]);
-      setQueryParamError('');
       form.resetFields(['dynamicSourceId', 'dynamicValueField', 'dynamicLabelField']);
       return;
     }
@@ -351,7 +396,6 @@ export const ParamInputConfigEditor: React.FC<ParamInputConfigEditorProps> = ({
       setDynamicPreview([]);
       setPreviewFieldKeys([]);
       setQueryParamRows([]);
-      setQueryParamError('');
       form.resetFields(['dynamicSourceId', 'dynamicValueField', 'dynamicLabelField']);
       return;
     }
@@ -369,7 +413,6 @@ export const ParamInputConfigEditor: React.FC<ParamInputConfigEditorProps> = ({
       setDynamicPreview([]);
       setPreviewFieldKeys([]);
       setQueryParamRows([]);
-      setQueryParamError('');
       form.resetFields(['dynamicSourceId', 'dynamicValueField', 'dynamicLabelField']);
       return;
     }
@@ -384,7 +427,6 @@ export const ParamInputConfigEditor: React.FC<ParamInputConfigEditorProps> = ({
     setQueryParamRows(
       Object.entries(value.optionsSource.queryParams ?? {}).map(([name, raw]) => queryRowFromStored(name, raw)),
     );
-    setQueryParamError('');
     setDynamicPreview([]);
     setPreviewFieldKeys([]);
     form.setFieldsValue({
@@ -700,9 +742,7 @@ export const ParamInputConfigEditor: React.FC<ParamInputConfigEditorProps> = ({
       ? { type: 'rest_api' as const, value: selectedSource.rest_api }
       : undefined;
     if (queryParamRows.some((row) => row.name.trim() && row.mode === 'ref' && !row.refName.trim())) {
-      const messageText = t('paramInput.dynamic.refRequired');
-      setQueryParamError(messageText);
-      message.error(messageText);
+      message.error(t('paramInput.dynamic.refRequired'));
       return;
     }
     const draftParams: Record<string, unknown> = {};
@@ -760,17 +800,15 @@ export const ParamInputConfigEditor: React.FC<ParamInputConfigEditorProps> = ({
       ],
     );
     if (issues.length > 0 || isRejectedQueryParams(storedParams)) {
-      const parts = issues.map((issue) => describeQueryIssue(t, issue));
+      const labels = optionsQueryIssueLabels(optionsQueryContext);
+      const parts = issues.map((issue) => describeQueryIssue(t, issue, labels));
       if (isRejectedQueryParams(storedParams)) {
-        const storedText = describeQueryIssue(t, storedParams.issue);
+        const storedText = describeQueryIssue(t, storedParams.issue, labels);
         if (!parts.includes(storedText)) parts.unshift(storedText);
       }
-      const messageText = parts.join('；');
-      setQueryParamError(messageText);
-      message.error(messageText);
+      message.error(parts.join('；'));
       return;
     }
-    setQueryParamError('');
 
     const optionsSource: DynamicOptionsSource = {
       type: 'dynamic',
@@ -1145,6 +1183,7 @@ export const ParamInputConfigEditor: React.FC<ParamInputConfigEditorProps> = ({
                                 <Select
                                   value={selected?.ref ?? (row.refName || undefined)}
                                   style={{ width: '100%' }}
+                                  listHeight={OPTIONS_QUERY_REF_LIST_HEIGHT}
                                   placeholder={t('paramInput.dynamic.selectUpstream')}
                                   options={choices.map((choice) => ({
                                     value: choice.ref,
@@ -1186,9 +1225,6 @@ export const ParamInputConfigEditor: React.FC<ParamInputConfigEditorProps> = ({
                       <div className="mt-2 text-xs text-(--color-text-3)">
                         {t('paramInput.dynamic.previewFixedOnly')}
                       </div>
-                    ) : null}
-                    {queryParamError ? (
-                      <div className="mt-2 text-xs text-(--color-error)">{queryParamError}</div>
                     ) : null}
                   </Form.Item>
                 ) : null}

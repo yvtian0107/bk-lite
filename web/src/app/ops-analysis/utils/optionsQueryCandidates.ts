@@ -30,7 +30,7 @@ export interface OptionsQueryCandidateParam {
 
 export interface OptionsQueryEditorContext {
   scope: 'globalFilter' | 'component';
-  self: { id?: string; key: string };
+  self: { id?: string; key: string; label?: string };
   componentParams?: OptionsQueryCandidateParam[];
   globalFilters?: OptionsQueryCandidateFilter[];
 }

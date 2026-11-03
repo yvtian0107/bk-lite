@@ -157,9 +157,13 @@ const optionQueryEditorContext = (
   filters: UnifiedFilterDefinition[],
   editingName?: string,
 ) => {
+  const editingParam = params.find((param) => param.name === editingName);
   const context: OptionsQueryEditorContext = {
     scope: 'component',
-    self: { key: editingName || '' },
+    self: {
+      key: editingName || '',
+      label: editingParam?.alias_name?.trim() || undefined,
+    },
     componentParams: params.filter((param) => param.name).map((param) => ({
       name: param.name,
       label: param.alias_name || param.name,

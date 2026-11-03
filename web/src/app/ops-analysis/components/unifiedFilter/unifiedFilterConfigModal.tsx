@@ -323,7 +323,21 @@ const UnifiedFilterConfigModal: React.FC<UnifiedFilterConfigModalProps> = ({
     if (hasInvalidDateRangeDefinitions(definitions)) return;
     const queryIssues = collectUnifiedFilterQueryIssues(definitions);
     if (queryIssues.length > 0) {
-      message.error(queryIssues.map((issue) => describeQueryIssue(t, issue)).join('；'));
+      const labels = new Map<string, string>();
+      const namesByKey = new Map<string, Set<string>>();
+      definitions.forEach((item) => {
+        const name = item.name?.trim();
+        if (!name) return;
+        labels.set(item.id, name);
+        if (!item.key) return;
+        const names = namesByKey.get(item.key) ?? new Set<string>();
+        names.add(name);
+        namesByKey.set(item.key, names);
+      });
+      namesByKey.forEach((names, key) => {
+        if (names.size === 1) labels.set(key, [...names][0]);
+      });
+      message.error(queryIssues.map((issue) => describeQueryIssue(t, issue, labels)).join('；'));
       return;
     }
     onConfirm(definitions.map(sanitizeUnifiedFilterDefinition));
@@ -774,6 +788,7 @@ const UnifiedFilterConfigModal: React.FC<UnifiedFilterConfigModalProps> = ({
           self: {
             id: editingFilterId ?? undefined,
             key: definitions.find((item) => item.id === editingFilterId)?.key || '',
+            label: definitions.find((item) => item.id === editingFilterId)?.name,
           },
           globalFilters: definitions
             .filter((item) => item.id !== editingFilterId)
