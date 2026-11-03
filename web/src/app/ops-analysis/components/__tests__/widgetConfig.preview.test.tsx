@@ -849,6 +849,128 @@ describe('ViewConfig interaction validation', () => {
     errorSpy.mockRestore();
   });
 
+  it('切换到同样缺少字段的组件时清掉字段错误和红点', async () => {
+    const user = userEvent.setup();
+    const errorSpy = vi.spyOn(message, 'error').mockImplementation(() => ({}) as never);
+    const onSectionErrorsChange = vi.fn();
+    const nextItem = {
+      ...singleItemWithoutFields(),
+      i: 'single-2',
+      name: '离线数',
+    };
+    const view = render(
+      <ViewConfig
+        open
+        item={singleItemWithoutFields()}
+        onClose={() => undefined}
+        onSectionErrorsChange={onSectionErrorsChange}
+        dataSourceManager={buildManager(lineDataSource) as never}
+      />,
+    );
+
+    await waitFor(() => {
+      expect(screen.getByDisplayValue('在线数')).toBeTruthy();
+    });
+    await user.click(screen.getByRole('tab', { name: 'dashboard.interactionTab' }));
+    await user.click(screen.getByRole('button', { name: 'common.confirm' }));
+    expect(await screen.findByText('topology.nodeConfig.selectAtLeastOneField')).toBeTruthy();
+    expect(
+      screen.getByRole('tab', { name: 'dashboard.interactionDataTab' }).querySelector('.config-section-error-dot'),
+    ).toBeTruthy();
+
+    onSectionErrorsChange.mockClear();
+    view.rerender(
+      <ViewConfig
+        open
+        item={nextItem}
+        onClose={() => undefined}
+        onSectionErrorsChange={onSectionErrorsChange}
+        dataSourceManager={buildManager(lineDataSource) as never}
+      />,
+    );
+
+    await waitFor(() => {
+      expect(screen.getByDisplayValue('离线数')).toBeTruthy();
+    });
+    await waitFor(() => {
+      expect(screen.queryByText('topology.nodeConfig.selectAtLeastOneField')).toBeNull();
+      expect(
+        screen.getByRole('tab', { name: 'dashboard.interactionDataTab' }).querySelector('.config-section-error-dot'),
+      ).toBeNull();
+    });
+    expect(onSectionErrorsChange).toHaveBeenCalledWith({
+      data: false,
+      singleStyle: false,
+      interaction: false,
+    });
+
+    onSectionErrorsChange.mockClear();
+    await user.type(screen.getByDisplayValue('离线数'), 'x');
+    expect(
+      screen.getByRole('tab', { name: 'dashboard.interactionDataTab' }).querySelector('.config-section-error-dot'),
+    ).toBeNull();
+    expect(onSectionErrorsChange).not.toHaveBeenCalledWith(expect.objectContaining({ data: true }));
+    errorSpy.mockRestore();
+  });
+
+  it('切换图表类型后卸下的字段错误和手工数据红点消失', async () => {
+    const user = userEvent.setup();
+    const errorSpy = vi.spyOn(message, 'error').mockImplementation(() => ({}) as never);
+    const source = {
+      ...lineDataSource,
+      chart_type: ['single', 'line', 'table'],
+    } as DatasourceItem;
+    const view = render(
+      <ViewConfig
+        open
+        item={singleItemWithoutFields()}
+        onClose={() => undefined}
+        dataSourceManager={buildManager(source) as never}
+      />,
+    );
+
+    await waitFor(() => {
+      expect(screen.getByDisplayValue('在线数')).toBeTruthy();
+    });
+    await user.click(screen.getByRole('button', { name: 'common.confirm' }));
+    expect(await screen.findByText('topology.nodeConfig.selectAtLeastOneField')).toBeTruthy();
+    expect(
+      screen.getByRole('tab', { name: 'dashboard.interactionDataTab' }).querySelector('.config-section-error-dot'),
+    ).toBeTruthy();
+
+    await user.click(screen.getByText('dataSource.lineChart'));
+    await waitFor(() => {
+      expect(screen.queryByText('topology.nodeConfig.selectAtLeastOneField')).toBeNull();
+      expect(
+        screen.getByRole('tab', { name: 'dashboard.interactionDataTab' }).querySelector('.config-section-error-dot'),
+      ).toBeNull();
+    });
+
+    view.rerender(
+      <ViewConfig
+        open
+        item={tableItem()}
+        onClose={() => undefined}
+        dataSourceManager={buildManager(source) as never}
+      />,
+    );
+    await waitForOpenedWidget();
+    await user.click(screen.getByRole('tab', { name: 'dashboard.interactionTab' }));
+    await user.click(screen.getByRole('button', { name: 'common.confirm' }));
+    await waitFor(() => {
+      expect(
+        screen.getByRole('tab', { name: 'dashboard.interactionDataTab' }).querySelector('.config-section-error-dot'),
+      ).toBeTruthy();
+    });
+    await user.click(screen.getByText('dataSource.lineChart'));
+    await waitFor(() => {
+      expect(
+        screen.getByRole('tab', { name: 'dashboard.interactionDataTab' }).querySelector('.config-section-error-dot'),
+      ).toBeNull();
+    });
+    errorSpy.mockRestore();
+  });
+
   it('数据和交互同时出错时先进入数据页', async () => {
     const user = userEvent.setup();
     const errorSpy = vi.spyOn(message, 'error').mockImplementation(() => ({}) as never);

@@ -294,6 +294,13 @@ const Screen = forwardRef<ScreenRef, ScreenProps>(({ selectedScreen, shareMode =
         : { data: errors.data, interaction: errors.interaction }
     ));
   }, []);
+  useEffect(() => {
+    setConfigSectionErrors((current) => (
+      current.data || current.interaction
+        ? { data: false, interaction: false }
+        : current
+    ));
+  }, [selectedItemId]);
   const [dataFormDirty, setDataFormDirty] = useState(false);
   const [pendingConfigItem, setPendingConfigItem] =
     useState<ComponentSelectorConfigItem | null>(null);

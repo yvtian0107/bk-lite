@@ -239,11 +239,28 @@ const ViewConfig: React.FC<ViewConfigPropsWithManager> = ({
   const onSectionErrorsChangeRef = useRef(onSectionErrorsChange);
   onSectionErrorsChangeRef.current = onSectionErrorsChange;
   const reportedSectionErrorsRef = useRef<string | null>(null);
-  const sectionHasError = {
+  const sectionHasError = useMemo(() => ({
     data: fieldSectionErrors.data || manualDataError,
     singleStyle: fieldSectionErrors.singleStyle,
     interaction: fieldSectionErrors.interaction,
-  };
+  }), [fieldSectionErrors, manualDataError]);
+  const clearRegisteredFieldErrors = useCallback(() => {
+    const errored = form.getFieldsError().filter((field) => field.errors.length > 0);
+    if (errored.length === 0) return;
+    form.setFields(errored.map((field) => ({ name: field.name, errors: [] })));
+  }, [form]);
+  const publishFieldSectionErrors = useCallback((
+    fields: Parameters<typeof sectionErrorFlagsFromNames>[0],
+  ) => {
+    const next = sectionErrorFlagsFromNames(fields);
+    setFieldSectionErrors((current) => (
+      current.data === next.data
+      && current.singleStyle === next.singleStyle
+      && current.interaction === next.interaction
+        ? current
+        : next
+    ));
+  }, []);
 
   useEffect(() => {
     if (!pendingScroll) return;
@@ -254,16 +271,17 @@ const ViewConfig: React.FC<ViewConfigPropsWithManager> = ({
   }, [activeSection, form, pendingScroll]);
 
   useEffect(() => {
-    const payload = {
-      data: fieldSectionErrors.data || manualDataError,
-      singleStyle: fieldSectionErrors.singleStyle,
-      interaction: fieldSectionErrors.interaction,
-    };
-    const key = `${payload.data}|${payload.singleStyle}|${payload.interaction}`;
+    const key = `${sectionHasError.data}|${sectionHasError.singleStyle}|${sectionHasError.interaction}`;
     if (reportedSectionErrorsRef.current === key) return;
     reportedSectionErrorsRef.current = key;
-    onSectionErrorsChangeRef.current?.(payload);
-  }, [fieldSectionErrors, manualDataError]);
+    onSectionErrorsChangeRef.current?.(sectionHasError);
+  }, [sectionHasError]);
+
+  // setFieldValue 不触发 onFieldsChange，条件区块要等这次渲染卸下后才离开 getFieldsError。
+  useEffect(() => {
+    publishFieldSectionErrors(form.getFieldsError());
+    setManualDataError(false);
+  }, [chartType, form, publishFieldSectionErrors]);
 
   const [filterBindings, setFilterBindings] = useState<FilterBindings>({});
   const [dataSourceSelectorVisible, setDataSourceSelectorVisible] = useState(false);
@@ -885,6 +903,7 @@ const ViewConfig: React.FC<ViewConfigPropsWithManager> = ({
     abandonInteractionSample(widgetId);
     const { valueConfig } = widgetItem;
     setDrawerSection('data');
+    clearRegisteredFieldErrors();
     setFieldSectionErrors(emptySectionErrorFlags());
     setManualDataError(false);
     const sceneWidgetType = resolveOpenedSceneWidgetType(valueConfig);
@@ -907,8 +926,11 @@ const ViewConfig: React.FC<ViewConfigPropsWithManager> = ({
         dataSource: undefined,
         networkStatusTopology: buildOpenedSceneWidgetTopology(valueConfig),
       });
+      clearRegisteredFieldErrors();
       // setFieldsValue 在 rc-field-form 2.x 会标记 touched，初始化后清掉以免误报未保存
       markFormPristine(form);
+      setFieldSectionErrors(emptySectionErrorFlags());
+      setManualDataError(false);
       onDirtyChange?.(false);
       settleInteractionSample(requestId, widgetId);
       return;
@@ -1090,8 +1112,11 @@ const ViewConfig: React.FC<ViewConfigPropsWithManager> = ({
       'seriesField',
     ]);
     form.setFieldsValue(formValues);
+    clearRegisteredFieldErrors();
     // setFieldsValue 在 rc-field-form 2.x 会标记 touched，初始化后清掉以免误报未保存
     markFormPristine(form);
+    setFieldSectionErrors(emptySectionErrorFlags());
+    setManualDataError(false);
     onDirtyChange?.(false);
     settleInteractionSample(requestId, widgetId);
   };
@@ -1636,14 +1661,7 @@ const ViewConfig: React.FC<ViewConfigPropsWithManager> = ({
         initialValues={{ compare: false, compareMode: 'percent' }}
         onValuesChange={handleFormValuesChange}
         onFieldsChange={(_, allFields) => {
-          const next = sectionErrorFlagsFromNames(allFields);
-          setFieldSectionErrors((current) => (
-            current.data === next.data
-            && current.singleStyle === next.singleStyle
-            && current.interaction === next.interaction
-              ? current
-              : next
-          ));
+          publishFieldSectionErrors(allFields);
         }}
         className="space-y-8"
       >
