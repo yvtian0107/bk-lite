@@ -24,20 +24,22 @@
 
 ### 1.1 代码对照（真实路径）
 
+2026-10-30 记下的缺口已经落地。下表是当前代码，不再描述「还没有查询入参」。
+
 | 能力点 | 现状 | 关键符号 / 路径 |
 | --- | --- | --- |
-| 参数输入配置 UI | 动态源只配 source / valueField / labelField；**无查询入参、无 `$` 引用拾取** | `components/paramInputConfigEditor.tsx` |
-| 动态选项模型 | `DynamicOptionsSource` 无 params / queryInputs | `types/dataSource.ts` → `DynamicOptionsSource` |
-| 选项请求 | `getSourceDataByApiId(sourceId, {})`，入参恒为空对象 | `utils/paramInputOptionsLoader.ts` L143 |
-| 选项缓存键 | `getParamInputConfigKey` 不含运行时上游值 | 同文件 L66–78 |
-| `$` 语法 | 仅展示文案模板 `$key$` / `$key:type$`，**不参与选项查询** | `utils/filterTemplate.ts` |
-| 草稿 + 搜索 | 栏上改值进 local draft；点搜索才 `onSearch` | `components/unifiedFilter/unifiedFilterBar.tsx` `handleSearch` / `publishValues` |
-| 打开校正 | 动态选项值先 defer 再按列表 `retain`；不在列表则 **清空为 null** | `utils/optionBackedFilterValue.ts` |
-| 选项 reconcile 副作用 | `reconcileFilterOptions` 校正后走 `publishValues`（默认 `notify='search'`），**可能立刻当搜索刷图** | `unifiedFilterBar.tsx` L176–188 |
-| 合并键 | 扫描合并仅 `` `${name}__${type}` ``，后扫到的 `sampleInputConfig` 不覆盖已有 | `unifiedFilterConfigModal.tsx` `scanFilterParams` L203–217；旧包 `ops-analysis-unified-filter/runtime.ts` `scanUnifiedFilterParams` |
-| AI 合同摘要 | 已有私有 `optionsSourceIdentity`（动态源 identity，**不含入参引用**） | `utils/applyDashboardProposal.ts` L181–214 |
-| 组件内切换失效 | 标量走 `reconcileComponentSwitchValue` → **落到 `options[0]`**；多选走 retain 不清空首项 | `utils/componentParamSwitch.ts` L50–82 |
-| 筛选 id | `` `${key}__${type}` ``（如 `server_room_id__string`、`organization__string`） | `getFilterDefinitionId` / 配置弹窗新建 definition |
+| 参数输入配置 UI | 动态源可配 `queryParams`；引用按来源候选，确认时校验环和级数 | `components/paramInputConfigEditor.tsx` |
+| 动态选项模型 | `DynamicOptionsSource.queryParams`：字面量或 `{ ref }` | `types/dataSource.ts` → `DynamicOptionsSource` |
+| 选项请求 | `getSourceDataByApiId(sourceId, resolvedParams)`；上游空则 `blocked`，不发请求 | `utils/paramInputOptionsLoader.ts` |
+| 选项缓存键 | 配置键含规范化 `queryParams`；运行时签名另含已解析上游值 | `paramInputOptionsLoader.ts`、`hooks/useParamInputOptions.ts` |
+| `$` 语法 | 整值 `$key$` / `$key:type$` 归一成 `{ ref }`；拼接拒绝。展示模板仍独立 | `utils/optionsQueryParamRefs.ts`；`utils/filterTemplate.ts` |
+| 草稿 + 搜索 | 栏上改值进草稿；点搜索才 `onSearch`。级联校正不触发搜索 | `components/unifiedFilter/unifiedFilterBar.tsx` |
+| 打开校正 | 动态选项首次校正写入已应用初值，不触发搜索；不在列表则清空 | `utils/optionBackedFilterValue.ts`、`unifiedFilterBar.tsx` |
+| 选项 reconcile 副作用 | `reconcileFilterOptions` 只改草稿；该筛选项第一次回来时另写已应用初值 | `unifiedFilterBar.tsx` |
+| 合并键 | `` `${name}__${type}` ``，同名同类型并一行；后挂图的 `optionsSource` 不覆盖已有 | `utils/scanUnifiedFilterParams.ts` `filterMergeKey` |
+| AI 合同摘要 | `optionsSourceIdentity` 含 queryParams 的 refs 与字面量 | `utils/optionsSourceIdentity.ts` |
+| 组件内切换失效 | 不在选项里清空，不落到 `options[0]`。有 `queryParams` 引用时关掉 `componentSwitch`。选项尚未返回时保留现值；已经是空列表则清空 | `utils/componentParamSwitch.ts` |
+| 筛选 id | `` `${key}__${type}` ``（如 `server_room_id__string`、`organization__string`）。不再新生成摘要 id | `assignFilterDefinitionIds` |
 
 ### 1.2 产品痛点（由 grill 确认）
 
@@ -143,7 +145,7 @@ optionsSourceIdentity(inputConfig) =>
 | 目标存在 | `ref` 必须指向同画布启用筛的 `key`，或（组件内）同卡其它 `params.name` |
 | 类型可绑定 | 被引用参数须为可筛/可传值类型；自引用禁止 |
 | 环检测 | 对 `queryParams.ref` 建有向图，DFS/拓扑；有环则保存失败并提示路径 |
-| 级数 | 最长依赖链 ≤ 3（边数）；超限拒绝保存 |
+| 级数 | 最长依赖链 ≤ 3 个节点（A→B→C 可保存，A→B→C→D 拒绝）；超限拒绝保存 |
 | 空上游 | 运行时任一 required 上游值为 `null` / `undefined` / `''` / `[]` → 下游不发请求，选项置空 |
 
 校验函数建议：`utils/optionsQueryParamRefs.ts`（纯函数 + 单测）。
@@ -316,7 +318,7 @@ mergeKey = `${name}__${type}`
 10. **环**：A→B→A 配置拒绝。  
 11. **拼接**：`queryParams.x = "pre-$id$"` 拒绝。  
 12. **打开盘**：用 defaultValue（+URL）；按选项 retain；不恢复上次搜索会话。  
-13. **组件内切换 + 依赖**：可开启；选项随本卡局部上游 + applied 全局变化；失效清空不选第一项。  
+13. **组件内切换**：存在 `queryParams` 引用时禁用并关掉，不能在组件内切换。没有引用时可以开启；选项随本卡局部值 + 已应用全局筛变化；失效清空不选第一项。  
 14. **YAML 往返**：带 `queryParams.ref` 的盘导出再导入，行为一致。  
 15. **点搜索**：仅此时 applied 更新并刷图；上游抖动不刷图。
 
