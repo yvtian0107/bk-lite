@@ -2,9 +2,11 @@ import { describe, expect, it } from 'vitest';
 
 import { OPTIONS_QUERY_INVALID } from '@/app/ops-analysis/utils/optionsQueryParamRefs';
 import {
+  canonicalizeOptionsQueryRef,
   formatOptionsQueryCandidateLabel,
   listOptionsQueryCandidates,
   readComponentOptionsQueryUpstream,
+  resolveOptionsQueryChoice,
   type OptionsQueryCandidateChoice,
   type OptionsQueryEditorContext,
 } from '@/app/ops-analysis/utils/optionsQueryCandidates';
@@ -141,6 +143,59 @@ describe('options query candidates', () => {
     });
     expect(choices.map((item) => item.ref)).toEqual(['instance_id', 'metric_id', 'object_id']);
     expect(choices.some((item) => item.ref === 'detail_id')).toBe(false);
+  });
+
+  it('keeps a component param ref when a global filter uses the same key', () => {
+    const context: OptionsQueryEditorContext = {
+      scope: 'component',
+      self: { key: 'metric_id' },
+      componentParams: [
+        { name: 'object_id', label: '监控对象', type: 'string', filterType: 'params' },
+        { name: 'metric_id', label: '指标', type: 'string', filterType: 'params' },
+      ],
+      globalFilters: [
+        { id: 'object_id__string', key: 'object_id', label: '监控对象', type: 'string', enabled: true },
+      ],
+    };
+    expect(canonicalizeOptionsQueryRef('object_id', context)).toBe('object_id');
+    expect(canonicalizeOptionsQueryRef('object_id__string', context)).toBe('object_id__string');
+    expect(canonicalizeOptionsQueryRef('site_id', {
+      scope: 'globalFilter',
+      self: { id: 'device_id__string', key: 'device_id' },
+      globalFilters: [
+        { id: 'site_id__string', key: 'site_id', label: '监控对象', type: 'string' },
+      ],
+    })).toBe('site_id__string');
+
+    const choices = listOptionsQueryCandidates({ context, expectedType: 'string' });
+    expect(resolveOptionsQueryChoice('object_id', choices, context)?.origin).toBe('componentParam');
+    expect(resolveOptionsQueryChoice('object_id__string', choices, context)?.origin).toBe('globalFilter');
+    expect(labelOf(resolveOptionsQueryChoice('object_id', choices, context)!, choices)).toBe('组件参数 · 监控对象');
+    expect(labelOf(resolveOptionsQueryChoice('object_id__string', choices, context)!, choices)).toBe('全局筛选 · 监控对象');
+  });
+
+  it('reads a component param ref from the card and a filter id from the canvas', () => {
+    const definitions = [
+      { id: 'object_id__string', key: 'object_id', type: 'string', enabled: true },
+    ];
+    const componentParams = [
+      { name: 'object_id', type: 'string', filterType: 'params' as const, value: 'local-object' },
+    ];
+    const readFilterValue = (id: string) => (id === 'object_id__string' ? 'canvas-object' : undefined);
+    expect(readComponentOptionsQueryUpstream({
+      ref: 'object_id',
+      componentParams,
+      definitions,
+      filterBindings: { object_id__string: true },
+      readFilterValue,
+    })).toBe('local-object');
+    expect(readComponentOptionsQueryUpstream({
+      ref: 'object_id__string',
+      componentParams,
+      definitions,
+      filterBindings: { object_id__string: false },
+      readFilterValue,
+    })).toBe('canvas-object');
   });
 
   it('reads the bound global filter value when a component param is referenced', () => {

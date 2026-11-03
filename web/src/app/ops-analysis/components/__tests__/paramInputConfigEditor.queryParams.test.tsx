@@ -525,6 +525,81 @@ describe('param input query params', () => {
     errorSpy.mockRestore();
   });
 
+  it('keeps a same-name component param ref and still stores a chosen filter id', async () => {
+    const user = userEvent.setup();
+    const onConfirm = vi.fn();
+    getDataSourceList.mockResolvedValue([
+      {
+        id: 12,
+        name: '指标列表',
+        params: [{ name: 'room_id', type: 'string', alias_name: '机房' }],
+        field_schema: [
+          { key: 'id', title: '编号', value_type: 'string' },
+          { key: 'name', title: '名称', value_type: 'string' },
+        ],
+      },
+    ]);
+    const optionsQueryContext = {
+      scope: 'component' as const,
+      self: { key: 'metric_id' },
+      componentParams: [
+        { name: 'metric_id', label: '指标', type: 'string', filterType: 'params' },
+        { name: 'object_id', label: '监控对象', type: 'string', filterType: 'params', value: 'local-object' },
+      ],
+      globalFilters: [
+        { id: 'object_id__string', key: 'object_id', label: '监控对象', type: 'string', enabled: true },
+      ],
+    };
+    const editor = (ref: string) => (
+      <ParamInputConfigEditor
+        open
+        editingParamName="metric_id"
+        onCancel={vi.fn()}
+        onConfirm={onConfirm}
+        optionsQueryContext={optionsQueryContext}
+        value={{
+          control: 'select',
+          optionsSource: {
+            type: 'dynamic',
+            sourceId: 12,
+            valueField: 'id',
+            labelField: 'name',
+            queryParams: { room_id: { ref } },
+          },
+        }}
+      />
+    );
+
+    const view = render(editor('object_id'));
+    const dialog = await screen.findByRole('dialog');
+    expect(await within(dialog).findByText('组件参数 · 监控对象')).not.toBeNull();
+    expect(within(dialog).queryByText('全局筛选 · 监控对象')).toBeNull();
+    await user.click(within(dialog).getByRole('button', { name: /确\s*认/ }));
+    await waitFor(() => expect(onConfirm).toHaveBeenCalledTimes(1));
+    expect(onConfirm.mock.calls[0][0].optionsSource.queryParams).toEqual({
+      room_id: { ref: 'object_id' },
+    });
+
+    view.rerender(editor('object_id'));
+    const reopened = await screen.findByRole('dialog');
+    expect(await within(reopened).findByText('组件参数 · 监控对象')).not.toBeNull();
+    expect(within(reopened).queryByText('全局筛选 · 监控对象')).toBeNull();
+
+    await user.click(within(reopened).getByText('组件参数 · 监控对象'));
+    await user.click(await screen.findByText('全局筛选 · 监控对象'));
+    onConfirm.mockClear();
+    await user.click(within(reopened).getByRole('button', { name: /确\s*认/ }));
+    await waitFor(() => expect(onConfirm).toHaveBeenCalledTimes(1));
+    expect(onConfirm.mock.calls[0][0].optionsSource.queryParams).toEqual({
+      room_id: { ref: 'object_id__string' },
+    });
+
+    view.rerender(editor('object_id__string'));
+    const filterView = await screen.findByRole('dialog');
+    expect(await within(filterView).findByText('全局筛选 · 监控对象')).not.toBeNull();
+    expect(within(filterView).queryByText('组件参数 · 监控对象')).toBeNull();
+  });
+
   it('scrolls the reference dropdown instead of growing with every option', async () => {
     const user = userEvent.setup();
     getDataSourceList.mockResolvedValue([

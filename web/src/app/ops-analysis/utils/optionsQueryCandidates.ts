@@ -137,7 +137,16 @@ export const formatOptionsQueryCandidateLabel = (
   });
 };
 
-/** 保存时：同名当时唯一，或能按选项身份对上的那条，写成 definition.id。 */
+const componentParamOwnsRef = (ref: string, context?: OptionsQueryEditorContext) => (
+  context?.scope === 'component'
+  && (context.componentParams ?? []).some((param) => param.name === ref)
+);
+
+/**
+ * 保存时：已经是筛 id 的保持筛 id。
+ * 本卡存在同名组件参数时，保留参数名，不把组件参引用收成同 key 的筛 id。
+ * 其余裸名在筛唯一或能按选项身份对上时写成 definition.id。
+ */
 export const canonicalizeOptionsQueryRef = (
   ref: string,
   context?: OptionsQueryEditorContext,
@@ -146,6 +155,7 @@ export const canonicalizeOptionsQueryRef = (
   if (!trimmed) return trimmed;
   const filters = (context?.globalFilters ?? []).filter((filter) => filter.enabled !== false && filter.id);
   if (filters.some((filter) => filter.id === trimmed)) return trimmed;
+  if (componentParamOwnsRef(trimmed, context)) return trimmed;
   const byKey = filters.filter((filter) => filter.key === trimmed);
   if (byKey.length === 1) return byKey[0].id;
   if (byKey.length > 1) {
@@ -164,6 +174,21 @@ export const canonicalizeOptionsQueryRef = (
     }
   }
   return trimmed;
+};
+
+/** 回显按 ref 精确对应。组件参名不因为唯一同 key 筛而显示成全局筛选。 */
+export const resolveOptionsQueryChoice = (
+  ref: string,
+  choices: OptionsQueryCandidateChoice[],
+  context?: OptionsQueryEditorContext,
+): OptionsQueryCandidateChoice | undefined => {
+  const exact = choices.find((choice) => choice.ref === ref);
+  if (exact) return exact;
+  if (componentParamOwnsRef(ref, context)) return undefined;
+  const globalMatches = choices.filter((choice) => (
+    choice.origin === 'globalFilter' && choice.key === ref
+  ));
+  return globalMatches.length === 1 ? globalMatches[0] : undefined;
 };
 
 const toFilterDefinition = (

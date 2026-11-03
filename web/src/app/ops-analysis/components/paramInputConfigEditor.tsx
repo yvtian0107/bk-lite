@@ -55,6 +55,7 @@ import {
   formatOptionsQueryCandidateLabel,
   canonicalizeOptionsQueryRef,
   listOptionsQueryCandidates,
+  resolveOptionsQueryChoice,
   type OptionsQueryEditorContext,
 } from '@/app/ops-analysis/utils/optionsQueryCandidates';
 import { useTranslation } from '@/utils/i18n';
@@ -772,11 +773,15 @@ export const ParamInputConfigEditor: React.FC<ParamInputConfigEditorProps> = ({
     const otherParams = scope === 'component'
       ? (optionsQueryContext?.componentParams ?? []).filter((param) => param.name && param.name !== nodeName)
       : [];
+    // 同名组件参的 ref 是参数名。筛 key 不再作别名，避免和参数节点撞成「同名多条」。
+    const componentParamNames = new Set(otherParams.map((param) => param.name));
     const issues = collectOptionsQueryParamIssues(
       [
         ...otherFilters.map((filter) => ({
           name: filter.id,
-          aliases: filter.key && filter.key !== filter.id ? [filter.key] : undefined,
+          aliases: filter.key && filter.key !== filter.id && !componentParamNames.has(filter.key)
+            ? [filter.key]
+            : undefined,
           queryParams: filter.queryParams,
         })),
         ...otherParams.map((param) => ({
@@ -1176,9 +1181,11 @@ export const ParamInputConfigEditor: React.FC<ParamInputConfigEditorProps> = ({
                               expectedType: row.type,
                             });
                             if (row.mode === 'ref') {
-                              const sameKey = choices.filter((choice) => choice.key === row.refName);
-                              const selected = choices.find((choice) => choice.ref === row.refName)
-                                ?? (sameKey.length === 1 ? sameKey[0] : undefined);
+                              const selected = resolveOptionsQueryChoice(
+                                row.refName,
+                                choices,
+                                optionsQueryContext,
+                              );
                               return (
                                 <Select
                                   value={selected?.ref ?? (row.refName || undefined)}
