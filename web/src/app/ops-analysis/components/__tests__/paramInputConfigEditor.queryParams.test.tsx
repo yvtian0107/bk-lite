@@ -45,6 +45,7 @@ vi.mock('@/utils/i18n', () => ({
         'paramInput.dynamic.refChoiceWithHint': '{origin} · {name} · {hint}',
         'paramInput.dynamic.cycle': '查询入参存在循环：{path}',
         'paramInput.dynamic.depth': '查询入参依赖超过 3 级：{path}',
+        'paramInput.dynamic.ambiguousRef': '同名筛选有多条，请按来源选择具体一项',
         'paramInput.dynamic.previewFixedOnly': '引用参数在运行时生效，预览仅使用已填固定值',
         'paramInput.dynamic.queryParamValue': '填写固定值',
         'paramInput.dynamic.preview': '预览',
@@ -598,6 +599,210 @@ describe('param input query params', () => {
     const filterView = await screen.findByRole('dialog');
     expect(await within(filterView).findByText('全局筛选 · 监控对象')).not.toBeNull();
     expect(within(filterView).queryByText('组件参数 · 监控对象')).toBeNull();
+  });
+
+  it('accepts a global filter id while another param already references the row being edited', async () => {
+    const user = userEvent.setup();
+    const onConfirm = vi.fn();
+    const errorSpy = vi.spyOn(message, 'error').mockImplementation(() => ({}) as never);
+    getDataSourceList.mockResolvedValue([
+      {
+        id: 13,
+        name: '指标列表',
+        params: [{ name: 'object_id', type: 'string', alias_name: '监控对象' }],
+        field_schema: [
+          { key: 'id', title: '编号', value_type: 'string' },
+          { key: 'name', title: '名称', value_type: 'string' },
+        ],
+      },
+    ]);
+    render(
+      <ParamInputConfigEditor
+        open
+        editingParamName="metric_id"
+        onCancel={vi.fn()}
+        onConfirm={onConfirm}
+        value={{
+          control: 'select',
+          optionsSource: {
+            type: 'dynamic',
+            sourceId: 13,
+            valueField: 'id',
+            labelField: 'name',
+            queryParams: { object_id: { ref: 'object_id__string' } },
+          },
+        }}
+        optionsQueryContext={{
+          scope: 'component',
+          self: { key: 'metric_id', label: '指标' },
+          componentParams: [
+            { name: 'object_id', label: '监控对象', type: 'string', filterType: 'params' },
+            { name: 'metric_id', label: '指标', type: 'string', filterType: 'params' },
+            {
+              name: 'instance_id',
+              label: '实例',
+              type: 'string',
+              filterType: 'params',
+              queryParams: { metric_id: { ref: 'metric_id' } },
+            },
+          ],
+          globalFilters: [
+            { id: 'object_id__string', key: 'object_id', label: '监控对象', type: 'string' },
+            { id: 'metric_id__string', key: 'metric_id', label: '指标', type: 'string' },
+          ],
+        }}
+      />,
+    );
+
+    const dialog = await screen.findByRole('dialog');
+    expect(await within(dialog).findByText('全局筛选 · 监控对象')).not.toBeNull();
+    await user.click(within(dialog).getByRole('button', { name: /确\s*认/ }));
+    await waitFor(() => expect(onConfirm).toHaveBeenCalledTimes(1));
+    expect(onConfirm.mock.calls[0][0].optionsSource.queryParams).toEqual({
+      object_id: { ref: 'object_id__string' },
+    });
+    expect(errorSpy).not.toHaveBeenCalledWith('同名筛选有多条，请按来源选择具体一项');
+    errorSpy.mockRestore();
+  });
+
+  it('accepts the global filter that shares the edited component param name', async () => {
+    const user = userEvent.setup();
+    const onConfirm = vi.fn();
+    const errorSpy = vi.spyOn(message, 'error').mockImplementation(() => ({}) as never);
+    getDataSourceList.mockResolvedValue([
+      {
+        id: 13,
+        name: '指标列表',
+        params: [{ name: 'upstream_id', type: 'string', alias_name: '上游' }],
+        field_schema: [
+          { key: 'id', title: '编号', value_type: 'string' },
+          { key: 'name', title: '名称', value_type: 'string' },
+        ],
+      },
+    ]);
+    render(
+      <ParamInputConfigEditor
+        open
+        editingParamName="metric_id"
+        onCancel={vi.fn()}
+        onConfirm={onConfirm}
+        value={{
+          control: 'select',
+          optionsSource: {
+            type: 'dynamic',
+            sourceId: 13,
+            valueField: 'id',
+            labelField: 'name',
+            queryParams: { upstream_id: { ref: 'metric_id__string' } },
+          },
+        }}
+        optionsQueryContext={{
+          scope: 'component',
+          self: { key: 'metric_id', label: '指标' },
+          componentParams: [
+            { name: 'metric_id', label: '指标', type: 'string', filterType: 'params' },
+            {
+              name: 'instance_id',
+              label: '实例',
+              type: 'string',
+              filterType: 'params',
+              queryParams: { metric_id: { ref: 'metric_id' } },
+            },
+          ],
+          globalFilters: [
+            { id: 'metric_id__string', key: 'metric_id', label: '指标', type: 'string' },
+          ],
+        }}
+      />,
+    );
+
+    const dialog = await screen.findByRole('dialog');
+    expect(await within(dialog).findByText('全局筛选 · 指标')).not.toBeNull();
+    await user.click(within(dialog).getByRole('button', { name: /确\s*认/ }));
+    await waitFor(() => expect(onConfirm).toHaveBeenCalledTimes(1));
+    expect(onConfirm.mock.calls[0][0].optionsSource.queryParams).toEqual({
+      upstream_id: { ref: 'metric_id__string' },
+    });
+    expect(errorSpy).not.toHaveBeenCalledWith('同名筛选有多条，请按来源选择具体一项');
+    errorSpy.mockRestore();
+  });
+
+  it('rejects a bare name when two filters share a key and accepts a concrete filter id', async () => {
+    const user = userEvent.setup();
+    const onConfirm = vi.fn();
+    const errorSpy = vi.spyOn(message, 'error').mockImplementation(() => ({}) as never);
+    getDataSourceList.mockResolvedValue([
+      {
+        id: 14,
+        name: '设备列表',
+        params: [{ name: 'room_id', type: 'string', alias_name: '机房' }],
+        field_schema: [
+          { key: 'id', title: '编号', value_type: 'string' },
+          { key: 'name', title: '名称', value_type: 'string' },
+        ],
+      },
+    ]);
+    const optionsQueryContext = {
+      scope: 'component' as const,
+      self: { key: 'detail_id' },
+      componentParams: [
+        { name: 'detail_id', label: '明细', type: 'string', filterType: 'params' },
+      ],
+      globalFilters: [
+        {
+          id: 'site_id__string__aaaaaaaa',
+          key: 'site_id',
+          label: '机房',
+          type: 'string',
+          sourceHint: 'cmdb/rooms',
+        },
+        {
+          id: 'site_id__string__bbbbbbbb',
+          key: 'site_id',
+          label: '机房',
+          type: 'string',
+          sourceHint: 'monitor/rooms',
+        },
+      ],
+    };
+    const editor = (ref: string) => (
+      <ParamInputConfigEditor
+        open
+        editingParamName="detail_id"
+        onCancel={vi.fn()}
+        onConfirm={onConfirm}
+        optionsQueryContext={optionsQueryContext}
+        value={{
+          control: 'select',
+          optionsSource: {
+            type: 'dynamic',
+            sourceId: 14,
+            valueField: 'id',
+            labelField: 'name',
+            queryParams: { room_id: { ref } },
+          },
+        }}
+      />
+    );
+
+    const view = render(editor('site_id'));
+    const dialog = await screen.findByRole('dialog');
+    expect(await within(dialog).findByText('机房')).not.toBeNull();
+    await user.click(within(dialog).getByRole('button', { name: /确\s*认/ }));
+    await waitFor(() => expect(errorSpy).toHaveBeenCalledWith('同名筛选有多条，请按来源选择具体一项'));
+    expect(onConfirm).not.toHaveBeenCalled();
+
+    errorSpy.mockClear();
+    view.rerender(editor('site_id__string__aaaaaaaa'));
+    const reopened = await screen.findByRole('dialog');
+    expect(await within(reopened).findByText('全局筛选 · 机房 · cmdb/rooms')).not.toBeNull();
+    await user.click(within(reopened).getByRole('button', { name: /确\s*认/ }));
+    await waitFor(() => expect(onConfirm).toHaveBeenCalledTimes(1));
+    expect(onConfirm.mock.calls[0][0].optionsSource.queryParams).toEqual({
+      room_id: { ref: 'site_id__string__aaaaaaaa' },
+    });
+    expect(errorSpy).not.toHaveBeenCalledWith('同名筛选有多条，请按来源选择具体一项');
+    errorSpy.mockRestore();
   });
 
   it('scrolls the reference dropdown instead of growing with every option', async () => {

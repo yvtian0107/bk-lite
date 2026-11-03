@@ -773,8 +773,15 @@ export const ParamInputConfigEditor: React.FC<ParamInputConfigEditorProps> = ({
     const otherParams = scope === 'component'
       ? (optionsQueryContext?.componentParams ?? []).filter((param) => param.name && param.name !== nodeName)
       : [];
-    // 同名组件参的 ref 是参数名。筛 key 不再作别名，避免和参数节点撞成「同名多条」。
-    const componentParamNames = new Set(otherParams.map((param) => param.name));
+    // 本卡组件参名含正在编辑的 self。这些 key 不再作全局筛别名，避免 self 与筛别名被看成两条。
+    const componentParamNames = new Set<string>();
+    if (scope === 'component') {
+      (optionsQueryContext?.componentParams ?? []).forEach((param) => {
+        if (param.name) componentParamNames.add(param.name);
+      });
+      if (nodeName) componentParamNames.add(nodeName);
+      if (optionsQueryContext?.self.key) componentParamNames.add(optionsQueryContext.self.key);
+    }
     const issues = collectOptionsQueryParamIssues(
       [
         ...otherFilters.map((filter) => ({
