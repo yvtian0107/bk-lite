@@ -667,6 +667,36 @@ test('drops a component-param reference to an unbindable type and turns off comp
   assert.equal(config && config.control === 'select' ? config.componentSwitch : 'missing-config', undefined);
 });
 
+test('keeps a component-param ref when its name matches a global filter key', () => {
+  const result = applyDashboardProposal({
+    layout: [],
+    filters: [],
+    filterValues: {},
+    allocateId,
+    proposal: {
+      schemaVersion: '1.0',
+      layout: [
+        proposalWidget('card', [
+          selectParam('site_id', undefined),
+          selectParam('device_id', { room_id: { ref: 'site_id' } }),
+          selectParam('rack_id', { room_id: { ref: 'site_id__string' } }),
+        ]),
+      ],
+      filters: [dynamicFilter('site_id__string', 'site_id', {})],
+    },
+  });
+
+  assert.equal(result.ok, true);
+  if (!result.ok) return;
+  assert.deepEqual(widgetParamQuery(result.layout, 'card', 'device_id'), {
+    room_id: { ref: 'site_id' },
+  });
+  assert.deepEqual(widgetParamQuery(result.layout, 'card', 'rack_id'), {
+    room_id: { ref: 'site_id__string' },
+  });
+  assert.equal(result.warnings?.some((warning) => warning.includes('ambiguous')) ?? false, false);
+});
+
 test('directory node id matches the open dashboard numeric id', () => {
   assert.equal(proposalTargetsDashboard('current', 426), true);
   assert.equal(proposalTargetsDashboard('dashboard_426', 426), true);

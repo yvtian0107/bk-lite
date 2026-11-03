@@ -365,9 +365,13 @@ const enforceComponentOptionsQueryGraph = (
   if (!paramNodes.some((node) => node.queryParams && Object.keys(node.queryParams).length > 0)) {
     return params;
   }
+  // 与配置表单一致：本卡组件参名不再挂到全局筛别名上，避免 { ref: param.name } 被看成两条。
+  const componentParamNames = new Set(paramNodes.map((node) => node.name));
   const filterNodes: OptionsQueryNode[] = filters.map((filter) => ({
     name: filter.id,
-    aliases: filter.key && filter.key !== filter.id ? [filter.key] : undefined,
+    aliases: filter.key && filter.key !== filter.id && !componentParamNames.has(filter.key)
+      ? [filter.key]
+      : undefined,
     queryParams: dynamicQueryParamsOf(filter.inputConfig),
   }));
   const issues = collectOptionsQueryParamIssues(
@@ -380,8 +384,7 @@ const enforceComponentOptionsQueryGraph = (
       ...params.flatMap((param) => (param.name ? [{ name: param.name, type: param.type }] : [])),
     ],
   );
-  const paramNames = new Set(paramNodes.map((node) => node.name));
-  const relevant = issues.filter((issue) => issue.name && paramNames.has(issue.name));
+  const relevant = issues.filter((issue) => issue.name && componentParamNames.has(issue.name));
   if (!relevant.length) return params;
   const warned = new Set<string>();
   let changed = false;
