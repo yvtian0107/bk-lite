@@ -17,8 +17,10 @@ import { useCarouselApi } from '@/app/ops-analysis/api/carousel';
 import { buildOpsCarouselViewHref } from '@/app/ops-analysis/utils/carouselLinks';
 import {
   createCarouselPlayerState,
+  isCarouselBusinessFailure,
   isCarouselHotkeyBlocked,
   isCarouselOverlayOpen,
+  reduceCarouselLoad,
   reduceCarouselPlayer,
   skippedCarouselCount,
   type CarouselPlayerState,
@@ -54,6 +56,7 @@ const PlayStage = ({ carouselId }: { carouselId: string }) => {
   const [failed, setFailed] = useState(false);
   const [controlsVisible, setControlsVisible] = useState(true);
   const [browserFullscreen, setBrowserFullscreen] = useState(false);
+  const [enterRetryKey, setEnterRetryKey] = useState<string | null>(null);
   const idleTimer = useRef<number | null>(null);
   const playerRef = useRef(player);
   playerRef.current = player;
@@ -121,15 +124,46 @@ const PlayStage = ({ carouselId }: { carouselId: string }) => {
     if (!slide || prefetchedKey.current === `${player.visit}:${slide.key}`) return;
     prefetchedKey.current = `${player.visit}:${slide.key}`;
     let cancelled = false;
-    void prefetchCanvasDetail(slide.resourceType, slide.canvasId).catch(() => {
-      if (!cancelled) {
-        setPlayer((current) => reduceCarouselPlayer(current, { type: 'markUnavailable', key: slide.key }));
+    void prefetchCanvasDetail(slide.resourceType, slide.canvasId).catch((error) => {
+      if (cancelled) return;
+      if (!isCarouselBusinessFailure(error)) {
+        if (playerRef.current.slides[playerRef.current.index]?.key !== slide.key) {
+          setEnterRetryKey(slide.key);
+        }
+        return;
       }
+      setPlayer((current) => reduceCarouselLoad(current, {
+        key: slide.key,
+        phase: 'prefetch',
+        ok: false,
+        business: true,
+      }));
     });
     return () => {
       cancelled = true;
     };
   }, [leadPrefetch, player.index, player.slides, player.visit, prefetchCanvasDetail, slideByKey]);
+
+  const confirmingEnter = Boolean(currentSlide && enterRetryKey === currentSlide.key);
+  useEffect(() => {
+    if (!confirmingEnter || !currentSlide) return;
+    let cancelled = false;
+    void prefetchCanvasDetail(currentSlide.resourceType, currentSlide.canvasId).then(() => {
+      if (!cancelled) setEnterRetryKey(null);
+    }).catch((error) => {
+      if (cancelled) return;
+      setEnterRetryKey(null);
+      setPlayer((current) => reduceCarouselLoad(current, {
+        key: currentSlide.key,
+        phase: 'enter',
+        ok: false,
+        business: isCarouselBusinessFailure(error),
+      }));
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [confirmingEnter, currentSlide, prefetchCanvasDetail]);
 
   const exitPlay = useCallback(() => {
     const href = buildOpsCarouselViewHref(carouselId);
@@ -213,14 +247,16 @@ const PlayStage = ({ carouselId }: { carouselId: string }) => {
             <div className="flex h-full items-center justify-center">
               <Empty description={t('opsCarousel.allUnavailable')} />
             </div>
-          ) : (
+          ) : confirmingEnter ? null : (
             <PlaybackSlideFrame
               key={`${currentSlide.key}:${player.visit}`}
               slide={currentSlide}
               onError={() => {
-                setPlayer((current) => reduceCarouselPlayer(current, {
-                  type: 'markUnavailable',
+                setPlayer((current) => reduceCarouselLoad(current, {
                   key: currentSlide.key,
+                  phase: 'enter',
+                  ok: false,
+                  business: false,
                 }));
               }}
             />

@@ -1,9 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import {
+  CAROUSEL_UNAVAILABLE_RETRY_MS,
   carouselHiddenGroupIds,
   clampCarouselDwellSeconds,
   createCarouselPlayerState,
+  isCarouselBusinessFailure,
   isCarouselHotkeyBlocked,
+  reduceCarouselLoad,
   reduceCarouselPlayer,
   skippedCarouselCount,
   type CarouselSlideInput,
@@ -90,6 +93,78 @@ describe('carousel player', () => {
   it('compares canvas groups against the carousel groups', () => {
     expect(carouselHiddenGroupIds([1, 3], [1, 2, 3])).toEqual([2]);
     expect(carouselHiddenGroupIds([], [1])).toEqual([1]);
+  });
+
+  it('retries a slide after a transient prefetch failure, and skips it only if enter also fails', () => {
+    let state = createCarouselPlayerState(slides([true, true]));
+    state = reduceCarouselLoad(state, {
+      key: 's1',
+      phase: 'prefetch',
+      ok: false,
+      business: isCarouselBusinessFailure(new Error('network')),
+    });
+    expect(state.index).toBe(0);
+    expect(state.slides[1].available).toBe(true);
+
+    state = reduceCarouselLoad(state, { key: 's1', phase: 'enter', ok: true });
+    expect(state.slides[1].available).toBe(true);
+
+    state = reduceCarouselPlayer(state, { type: 'next' });
+    state = reduceCarouselLoad(state, {
+      key: 's1',
+      phase: 'enter',
+      ok: false,
+      business: false,
+    });
+    expect(state.index).toBe(0);
+    expect(state.slides[1].available).toBe(false);
+    expect(skippedCarouselCount(state)).toBe(1);
+  });
+
+  it('skips a business failure for this lap and checks it again next lap', () => {
+    let state = createCarouselPlayerState(slides([true, true]));
+    state = reduceCarouselLoad(state, {
+      key: 's0',
+      phase: 'prefetch',
+      ok: false,
+      business: isCarouselBusinessFailure({ status: 404 }),
+    });
+    expect(state.index).toBe(1);
+    expect(state.slides[0].available).toBe(false);
+    expect(isCarouselBusinessFailure({ status: 403 })).toBe(true);
+    expect(isCarouselBusinessFailure({ status: 500 })).toBe(false);
+
+    state = reduceCarouselPlayer(state, { type: 'tick', deltaMs: 10_000 });
+    expect(state.slides[0].available).toBe(true);
+    expect(state.index).toBe(0);
+    expect(state.slides.every((slide) => slide.available)).toBe(true);
+  });
+
+  it('waits before retrying when every slide is unavailable', () => {
+    let state = createCarouselPlayerState(slides([false, false]));
+    expect(state.index).toBe(-1);
+    expect(state.holdMs).toBe(CAROUSEL_UNAVAILABLE_RETRY_MS);
+
+    state = reduceCarouselPlayer(state, { type: 'tick', deltaMs: 1_000 });
+    expect(state.index).toBe(-1);
+    expect(state.holdMs).toBe(CAROUSEL_UNAVAILABLE_RETRY_MS - 1_000);
+
+    state = createCarouselPlayerState(slides([true]));
+    state = reduceCarouselLoad(state, {
+      key: 's0',
+      phase: 'enter',
+      ok: false,
+      business: true,
+    });
+    expect(state.index).toBe(-1);
+    expect(state.holdMs).toBe(CAROUSEL_UNAVAILABLE_RETRY_MS);
+    state = reduceCarouselPlayer(state, { type: 'tick', deltaMs: 250 });
+    expect(state.index).toBe(-1);
+
+    state = reduceCarouselPlayer(state, { type: 'tick', deltaMs: CAROUSEL_UNAVAILABLE_RETRY_MS });
+    expect(state.index).toBe(0);
+    expect(state.slides[0].available).toBe(true);
+    expect(state.holdMs).toBe(0);
   });
 
   it('ignores hotkeys from inputs and open selectors', () => {

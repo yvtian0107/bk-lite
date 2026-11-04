@@ -2,6 +2,8 @@ export const CAROUSEL_DWELL_MIN_SECONDS = 5;
 export const CAROUSEL_DWELL_MAX_SECONDS = 300;
 export const CAROUSEL_DEFAULT_DWELL_SECONDS = 30;
 export const CAROUSEL_MAX_ITEMS = 50;
+/** 本轮全部不可用时，隔这段时间再开一轮，避免空转刷接口。 */
+export const CAROUSEL_UNAVAILABLE_RETRY_MS = 10_000;
 
 export interface CarouselSlideInput {
   key: string;
@@ -15,6 +17,8 @@ export interface CarouselPlayerState {
   paused: boolean;
   remainingMs: number;
   visit: number;
+  /** 全部不可用时的重试倒计时。为 0 表示没有等待。 */
+  holdMs: number;
 }
 
 export type CarouselPlayerAction =
@@ -81,7 +85,55 @@ const withIndex = (
   paused: state.paused,
   remainingMs: index < 0 ? 0 : dwellMs(slides[index]),
   visit,
+  holdMs: 0,
 });
+
+const restoreSkippedSlides = (slides: readonly CarouselSlideInput[]): CarouselSlideInput[] => {
+  if (slides.every((slide) => slide.available)) {
+    return slides as CarouselSlideInput[];
+  }
+  return slides.map((slide) => (slide.available ? slide : { ...slide, available: true }));
+};
+
+const holdUntilRetry = (
+  state: CarouselPlayerState,
+  slides: CarouselSlideInput[],
+): CarouselPlayerState => ({
+  slides,
+  index: -1,
+  paused: state.paused,
+  remainingMs: 0,
+  visit: state.visit,
+  holdMs: CAROUSEL_UNAVAILABLE_RETRY_MS,
+});
+
+const resumeAfterHold = (state: CarouselPlayerState): CarouselPlayerState => {
+  const slides = restoreSkippedSlides(state.slides);
+  return withIndex(state, slides, stepCarouselIndex(slides, -1, 1), state.visit + 1);
+};
+
+const advanceCarousel = (
+  state: CarouselPlayerState,
+  direction: 1 | -1,
+): CarouselPlayerState => {
+  const upcoming = stepCarouselIndex(state.slides, state.index, direction);
+  const opensNextLap = direction > 0
+    && upcoming >= 0
+    && upcoming <= state.index
+    && state.slides.some((slide) => !slide.available);
+  if (opensNextLap) {
+    const slides = restoreSkippedSlides(state.slides);
+    const index = stepCarouselIndex(slides, state.index, 1);
+    if (index < 0) {
+      return holdUntilRetry(state, slides);
+    }
+    return withIndex(state, slides, index, state.visit + 1);
+  }
+  if (upcoming < 0) {
+    return holdUntilRetry(state, state.slides);
+  }
+  return withIndex(state, state.slides, upcoming, state.visit + 1);
+};
 
 export const createCarouselPlayerState = (
   slides: CarouselSlideInput[],
@@ -95,7 +147,27 @@ export const createCarouselPlayerState = (
     paused: false,
     remainingMs: index < 0 ? 0 : dwellMs(slides[index]),
     visit: 0,
+    holdMs: index < 0 && slides.length > 0 ? CAROUSEL_UNAVAILABLE_RETRY_MS : 0,
   };
+};
+
+export const isCarouselBusinessFailure = (error: unknown): boolean => {
+  if (typeof error !== 'object' || error === null || !('status' in error)) {
+    return false;
+  }
+  const status = Number((error as { status?: unknown }).status);
+  return status === 403 || status === 404;
+};
+
+/** 预取的瞬时失败留到切入再试；403/404 以及切入仍失败只跳过本轮。 */
+export const reduceCarouselLoad = (
+  state: CarouselPlayerState,
+  event: { key: string; phase: 'prefetch' | 'enter'; ok: boolean; business?: boolean },
+): CarouselPlayerState => {
+  if (event.ok || (event.phase === 'prefetch' && !event.business)) {
+    return state;
+  }
+  return reduceCarouselPlayer(state, { type: 'markUnavailable', key: event.key });
 };
 
 export const reduceCarouselPlayer = (
@@ -113,29 +185,36 @@ export const reduceCarouselPlayer = (
       };
     }
     case 'togglePause':
-      if (state.index < 0) {
+      if (state.index < 0 && state.holdMs <= 0) {
         return state;
       }
       return { ...state, paused: !state.paused };
     case 'tick': {
-      if (state.paused || state.index < 0) {
+      if (state.paused) {
+        return state;
+      }
+      if (state.holdMs > 0) {
+        const holdMs = state.holdMs - Math.max(0, action.deltaMs);
+        if (holdMs > 0) {
+          return { ...state, holdMs };
+        }
+        return resumeAfterHold(state);
+      }
+      if (state.index < 0) {
         return state;
       }
       const remainingMs = state.remainingMs - Math.max(0, action.deltaMs);
       if (remainingMs > 0) {
         return { ...state, remainingMs };
       }
-      const index = stepCarouselIndex(state.slides, state.index, 1);
-      return withIndex(state, state.slides, index, state.visit + 1);
+      return advanceCarousel(state, 1);
     }
     case 'next':
-    case 'prev': {
-      const index = stepCarouselIndex(state.slides, state.index, action.type === 'next' ? 1 : -1);
-      if (index < 0) {
-        return { ...state, index: -1, remainingMs: 0 };
+    case 'prev':
+      if (state.index < 0) {
+        return state;
       }
-      return withIndex(state, state.slides, index, state.visit + 1);
-    }
+      return advanceCarousel(state, action.type === 'next' ? 1 : -1);
     case 'markUnavailable': {
       const target = state.slides.find((slide) => slide.key === action.key);
       if (!target?.available) {
@@ -149,6 +228,9 @@ export const reduceCarouselPlayer = (
         return { ...state, slides };
       }
       const index = stepCarouselIndex(slides, state.index, 1);
+      if (index < 0) {
+        return holdUntilRetry(state, slides);
+      }
       return withIndex(state, slides, index, state.visit + 1);
     }
     default:
