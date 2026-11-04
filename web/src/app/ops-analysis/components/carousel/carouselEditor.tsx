@@ -212,8 +212,6 @@ const CarouselEditor = forwardRef<CarouselEditorRef, CarouselEditorProps>(({ car
     return () => {
       cancelled = true;
     };
-    // 只在切换列表时重载。组织变化由条目上的不可见提示即时重算，避免清掉未保存编辑。
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [carouselId, form, getCarousel]);
 
   useEffect(() => {
