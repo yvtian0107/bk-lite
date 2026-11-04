@@ -142,17 +142,25 @@ def _actor_fields(request, *, include_created: bool):
     return fields
 
 
+def _reject_duplicate_canvas():
+    raise ValidationError({"items": oa_message("messages.carousel_item_duplicate", "同一张画布不能重复加入")})
+
+
 def _validate_item_payloads(items):
     if len(items) > CAROUSEL_MAX_ITEMS:
         raise ValidationError({"items": oa_message("messages.carousel_item_limit", "每个轮播列表最多 50 个条目")})
     seen_ids = set()
+    seen_canvases = set()
     for item in items:
         item_id = item.get("id")
-        if item_id is None:
-            continue
-        if item_id in seen_ids:
-            raise ValidationError({"items": oa_message("messages.carousel_item_duplicate", "条目重复")})
-        seen_ids.add(item_id)
+        if item_id is not None:
+            if item_id in seen_ids:
+                _reject_duplicate_canvas()
+            seen_ids.add(item_id)
+        pair = (item.get("resource_type"), item.get("canvas_id"))
+        if pair in seen_canvases:
+            _reject_duplicate_canvas()
+        seen_canvases.add(pair)
 
 
 def replace_carousel_items(request, carousel: CanvasCarousel, items: list[dict]) -> None:
@@ -272,6 +280,8 @@ def append_carousel_item(request, carousel: CanvasCarousel, payload: dict) -> Ca
     locked = CanvasCarousel.objects.select_for_update().get(pk=carousel.pk)
     if locked.items.count() >= CAROUSEL_MAX_ITEMS:
         raise ValidationError({"items": oa_message("messages.carousel_item_limit", "每个轮播列表最多 50 个条目")})
+    if locked.items.filter(resource_type=payload["resource_type"], canvas_id=payload["canvas_id"]).exists():
+        _reject_duplicate_canvas()
     ensure_references_visible(request, [payload])
     last = locked.items.order_by("-position", "-id").only("position").first()
     position = 0 if last is None else last.position + 1

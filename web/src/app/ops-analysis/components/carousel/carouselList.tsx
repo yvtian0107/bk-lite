@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { Button, Modal, Spin } from 'antd';
 import { CaretRightOutlined } from '@ant-design/icons';
 import CompactEmptyState from '@/components/compact-empty-state';
@@ -10,12 +10,14 @@ import useBtnPermissions from '@/hooks/usePermissions';
 import { useTranslation } from '@/utils/i18n';
 import { useCarouselApi } from '@/app/ops-analysis/api/carousel';
 import type { CarouselSummary } from '@/app/ops-analysis/types/carousel';
+import { carouselDurationMessage } from '@/app/ops-analysis/utils/carouselDraft';
 
 interface CarouselListProps {
   keyword: string;
   refreshKey: number;
   selectedId?: string | null;
   onSelect: (id: string) => void;
+  onAutoSelect?: (id: string) => void;
   onPlay: (id: number) => void;
   onCopied: (id: number) => void;
   onDeleted: (id: number) => void;
@@ -26,6 +28,7 @@ const CarouselList: React.FC<CarouselListProps> = ({
   refreshKey,
   selectedId,
   onSelect,
+  onAutoSelect,
   onPlay,
   onCopied,
   onDeleted,
@@ -35,6 +38,13 @@ const CarouselList: React.FC<CarouselListProps> = ({
   const { listCarousels, copyCarousel, deleteCarousel } = useCarouselApi();
   const [rows, setRows] = useState<CarouselSummary[]>([]);
   const [loading, setLoading] = useState(false);
+  const requestedSelection = useRef<string | null>(null);
+  const requestKey = `${refreshKey}|${keyword}`;
+  const [trackedRequest, setTrackedRequest] = useState(requestKey);
+  if (trackedRequest !== requestKey) {
+    setTrackedRequest(requestKey);
+    setLoading(true);
+  }
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -52,6 +62,19 @@ const CarouselList: React.FC<CarouselListProps> = ({
     void load();
   }, [load, refreshKey]);
 
+  useEffect(() => {
+    if (loading || selectedId) {
+      if (selectedId) requestedSelection.current = null;
+      return;
+    }
+    const first = rows[0];
+    if (!first) return;
+    const id = String(first.id);
+    if (requestedSelection.current === id) return;
+    requestedSelection.current = id;
+    (onAutoSelect ?? onSelect)(id);
+  }, [loading, onAutoSelect, onSelect, rows, selectedId]);
+
   const canPlay = hasPermission(['View']);
   const canCopy = hasPermission(['AddChart']);
   const canEdit = hasPermission(['EditChart']);
@@ -65,6 +88,9 @@ const CarouselList: React.FC<CarouselListProps> = ({
         <div className="flex flex-col gap-1">
           {rows.map((row) => {
             const selected = selectedId === String(row.id);
+            const duration = carouselDurationMessage(
+              row.duration_seconds ?? row.item_count * row.default_dwell_seconds,
+            );
             return (
               <div
                 key={row.id}
@@ -82,7 +108,10 @@ const CarouselList: React.FC<CarouselListProps> = ({
                     text={row.name}
                   />
                   <span className="text-xs text-[var(--color-text-3)]">
-                    {t('opsCarousel.canvasCount', undefined, { count: row.item_count })}
+                    {t('opsCarousel.listSubtitle', undefined, {
+                      count: row.item_count,
+                      duration: t(duration.id, undefined, duration.values),
+                    })}
                   </span>
                 </button>
                 {canPlay && (

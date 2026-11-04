@@ -101,6 +101,7 @@ const Sidebar = forwardRef<SidebarRef, SidebarProps>(
     carouselRefreshKey = 0,
     onPanelChange,
     onSelectCarousel,
+    onAutoSelectCarousel,
     onCreateCarousel,
     onPlayCarousel,
     onCarouselCopied,
@@ -988,6 +989,7 @@ const Sidebar = forwardRef<SidebarRef, SidebarProps>(
               refreshKey={carouselRefreshKey}
               selectedId={carouselId}
               onSelect={(id) => onSelectCarousel?.(id)}
+              onAutoSelect={onAutoSelectCarousel}
               onPlay={(id) => {
                 if (onPlayCarousel) {
                   onPlayCarousel(id);

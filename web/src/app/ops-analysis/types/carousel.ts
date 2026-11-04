@@ -34,6 +34,8 @@ export interface CarouselSummary {
   groups: number[];
   default_dwell_seconds: number;
   item_count: number;
+  duration_seconds?: number;
+  canvas_keys?: string[];
   created_by: string;
   updated_by: string;
   created_at: string;

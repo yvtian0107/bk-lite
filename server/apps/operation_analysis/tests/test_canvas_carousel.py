@@ -391,6 +391,7 @@ def test_copy_and_append_follow_current_org_visibility(authenticated_user):
     user = _viewer(authenticated_user)
     user.group_list = [{"id": 1, "name": "甲"}, {"id": 2, "name": "乙"}]
     canvas = _dashboard("可追加", groups=[1])
+    another = _dashboard("另一张可追加", groups=[1])
     hidden = _dashboard("不可追加", groups=[2])
     created = _call(
         {"post": "create"},
@@ -430,7 +431,7 @@ def test_copy_and_append_follow_current_org_visibility(authenticated_user):
         "post",
         user,
         path=f"/carousel/{carousel_id}/append/",
-        data={"resource_type": "dashboard", "canvas_id": canvas.id, "dwell_seconds": 8},
+        data={"resource_type": "dashboard", "canvas_id": another.id, "dwell_seconds": 8},
         pk=carousel_id,
     )
     assert appended.status_code == status.HTTP_200_OK
@@ -477,3 +478,71 @@ def test_directory_activation_gates_visibility_without_leaking_name(authenticate
         data=_create_payload("目录不可见", foreign_canvas),
     )
     assert rejected.status_code == status.HTTP_400_BAD_REQUEST
+
+
+@pytest.mark.django_db
+def test_same_canvas_cannot_be_added_twice(authenticated_user):
+    user = _viewer(authenticated_user)
+    first = _dashboard("第一张")
+    second = _dashboard("第二张")
+    rejected = _call(
+        {"post": "create"},
+        "post",
+        user,
+        data=_create_payload(
+            "重复画布",
+            items=[
+                {"resource_type": "dashboard", "canvas_id": first.id},
+                {"resource_type": "dashboard", "canvas_id": first.id},
+            ],
+        ),
+    )
+    assert rejected.status_code == status.HTTP_400_BAD_REQUEST
+    assert not CanvasCarousel.objects.exists()
+
+    created = _call(
+        {"post": "create"},
+        "post",
+        user,
+        data=_create_payload(
+            "两张不同画布",
+            items=[
+                {"resource_type": "dashboard", "canvas_id": first.id},
+                {"resource_type": "dashboard", "canvas_id": second.id, "dwell_seconds": 12},
+            ],
+        ),
+    )
+    assert created.status_code == status.HTTP_201_CREATED
+    carousel_id = _payload(created)["id"]
+    rows = _rows(_call({"get": "list"}, "get", user))
+    listed = next(row for row in rows if row["id"] == carousel_id)
+    assert listed["duration_seconds"] == 42
+    assert listed["canvas_keys"] == [f"dashboard:{first.id}", f"dashboard:{second.id}"]
+
+    appended = _call(
+        {"post": "append"},
+        "post",
+        user,
+        path=f"/carousel/{carousel_id}/append/",
+        data={"resource_type": "dashboard", "canvas_id": first.id},
+        pk=carousel_id,
+    )
+    assert appended.status_code == status.HTTP_400_BAD_REQUEST
+    assert CanvasCarouselItem.objects.filter(carousel_id=carousel_id).count() == 2
+
+    updated = _call(
+        {"patch": "partial_update"},
+        "patch",
+        user,
+        path=f"/carousel/{carousel_id}/",
+        data={
+            "items": [
+                {"resource_type": "dashboard", "canvas_id": second.id},
+                {"resource_type": "dashboard", "canvas_id": second.id},
+            ],
+        },
+        pk=carousel_id,
+    )
+    assert updated.status_code == status.HTTP_400_BAD_REQUEST
+    kept = CanvasCarouselItem.objects.filter(carousel_id=carousel_id).order_by("position")
+    assert [item.canvas_id for item in kept] == [first.id, second.id]

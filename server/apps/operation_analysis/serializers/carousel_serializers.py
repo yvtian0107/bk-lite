@@ -71,6 +71,8 @@ class CanvasCarouselAppendSerializer(serializers.Serializer):
 
 class CanvasCarouselListSerializer(serializers.ModelSerializer):
     item_count = serializers.IntegerField(read_only=True)
+    duration_seconds = serializers.SerializerMethodField()
+    canvas_keys = serializers.SerializerMethodField()
 
     class Meta:
         model = CanvasCarousel
@@ -81,8 +83,19 @@ class CanvasCarouselListSerializer(serializers.ModelSerializer):
             "groups",
             "default_dwell_seconds",
             "item_count",
+            "duration_seconds",
+            "canvas_keys",
             "created_by",
             "updated_by",
             "created_at",
             "updated_at",
         ]
+
+    def get_duration_seconds(self, carousel: CanvasCarousel) -> int:
+        total = 0
+        for item in carousel.items.all():
+            total += carousel.default_dwell_seconds if item.dwell_seconds is None else item.dwell_seconds
+        return total
+
+    def get_canvas_keys(self, carousel: CanvasCarousel) -> list[str]:
+        return [f"{item.resource_type}:{item.canvas_id}" for item in carousel.items.all()]

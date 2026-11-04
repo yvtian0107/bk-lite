@@ -1,11 +1,25 @@
 'use client';
 
-import React, { useMemo, useState } from 'react';
-import { Button, Drawer, Empty, Input, Tree } from 'antd';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { Button, Empty, Input, Tree, message } from 'antd';
 import type { DataNode } from 'antd/lib/tree';
+import OperateDrawer from '@/components/operate-drawer';
 import { useTranslation } from '@/utils/i18n';
-import { getCanvasTypeMeta, isCanvasType, type CanvasType } from '@/app/ops-analysis/constants/canvasTypes';
+import {
+  CANVAS_TYPE_ORDER,
+  getCanvasTypeMeta,
+  isCanvasType,
+  type CanvasType,
+} from '@/app/ops-analysis/constants/canvasTypes';
 import type { DirItem } from '@/app/ops-analysis/types';
+import { CAROUSEL_MAX_ITEMS } from '@/app/ops-analysis/utils/carouselPlayer';
+import {
+  canvasIdentityKey,
+  mergeCanvasChecks,
+  remainingCapacity,
+  selectionChangeCounts,
+  shouldShowRemainingCapacity,
+} from '@/app/ops-analysis/utils/carouselDraft';
 import { CanvasTypeIcon } from './canvasTypeIcon';
 
 export interface PickedCanvas {
@@ -18,9 +32,13 @@ export interface PickedCanvas {
 interface CanvasPickerProps {
   open: boolean;
   directories: DirItem[];
+  selectedKeys: string[];
+  currentItems: { resourceType: string; canvasId: number }[];
   onClose: () => void;
   onConfirm: (canvases: PickedCanvas[]) => void;
 }
+
+type TypeFilter = 'all' | CanvasType;
 
 const toGroupIds = (groups?: number[]): number[] =>
   (groups || []).map((groupId) => Number(groupId)).filter((groupId) => Number.isFinite(groupId));
@@ -28,24 +46,42 @@ const toGroupIds = (groups?: number[]): number[] =>
 const CanvasPicker: React.FC<CanvasPickerProps> = ({
   open,
   directories,
+  selectedKeys,
+  currentItems,
   onClose,
   onConfirm,
 }) => {
   const { t } = useTranslation();
   const [keyword, setKeyword] = useState('');
-  const [checked, setChecked] = useState<React.Key[]>([]);
+  const [typeFilter, setTypeFilter] = useState<TypeFilter>('all');
+  const [checked, setChecked] = useState<string[]>([]);
+  const wasOpen = useRef(false);
+
+  useEffect(() => {
+    if (open && !wasOpen.current) {
+      setKeyword('');
+      setTypeFilter('all');
+      setChecked(selectedKeys);
+    }
+    wasOpen.current = open;
+  }, [open, selectedKeys]);
 
   const canvases = useMemo(() => {
     const found: PickedCanvas[] = [];
+    const seen = new Set<string>();
     const walk = (items: DirItem[]) => {
       items.forEach((item) => {
         if (isCanvasType(item.type)) {
-          found.push({
-            resourceType: item.type,
-            canvasId: Number(item.data_id),
-            name: item.name,
-            groups: toGroupIds(item.groups),
-          });
+          const key = canvasIdentityKey(item.type, Number(item.data_id));
+          if (!seen.has(key)) {
+            seen.add(key);
+            found.push({
+              resourceType: item.type,
+              canvasId: Number(item.data_id),
+              name: item.name,
+              groups: toGroupIds(item.groups),
+            });
+          }
         }
         if (item.children?.length) {
           walk(item.children);
@@ -56,24 +92,48 @@ const CanvasPicker: React.FC<CanvasPickerProps> = ({
     return found;
   }, [directories]);
 
+  const query = keyword.trim().toLowerCase();
+  const matchesQuery = (canvas: PickedCanvas) => !query || canvas.name.toLowerCase().includes(query);
+  const typeCounts = useMemo(() => {
+    const counts = new Map<CanvasType, number>();
+    canvases.forEach((canvas) => {
+      if (query && !canvas.name.toLowerCase().includes(query)) return;
+      counts.set(canvas.resourceType, (counts.get(canvas.resourceType) || 0) + 1);
+    });
+    return counts;
+  }, [canvases, query]);
+
+  const visibleKeys = useMemo(
+    () => canvases
+      .filter((canvas) => {
+        const matches = !query || canvas.name.toLowerCase().includes(query);
+        return matches && (typeFilter === 'all' || canvas.resourceType === typeFilter);
+      })
+      .map((canvas) => canvasIdentityKey(canvas.resourceType, canvas.canvasId)),
+    [canvases, query, typeFilter],
+  );
+
   const treeData = useMemo(() => {
-    const query = keyword.trim().toLowerCase();
+    const visible = new Set(visibleKeys);
     const build = (items: DirItem[]): DataNode[] => items.flatMap((item): DataNode[] => {
       if (isCanvasType(item.type)) {
-        if (query && !item.name.toLowerCase().includes(query)) {
+        const key = canvasIdentityKey(item.type, Number(item.data_id));
+        if (!visible.has(key)) {
           return [];
         }
         const meta = getCanvasTypeMeta(item.type);
         return [{
-          key: `${item.type}:${item.data_id}`,
+          key,
+          isLeaf: true,
           title: (
-            <span className="inline-flex items-center gap-1">
+            <span className="inline-flex min-w-0 items-center gap-1">
               <CanvasTypeIcon type={item.type} />
-              <span>{item.name}</span>
-              <span className="text-xs text-[var(--color-text-3)]">{meta ? t(meta.nameKey) : ''}</span>
+              <span className="truncate">{item.name}</span>
+              <span className="shrink-0 text-xs text-[var(--color-text-3)]">
+                {meta ? t(meta.nameKey) : ''}
+              </span>
             </span>
           ),
-          isLeaf: true,
         }];
       }
       const children = item.children ? build(item.children) : [];
@@ -81,60 +141,124 @@ const CanvasPicker: React.FC<CanvasPickerProps> = ({
         return [];
       }
       return [{
-        key: item.id,
+        key: `dir:${item.id}`,
         title: item.name,
-        selectable: false,
-        disableCheckbox: true,
         children,
       }];
     });
     return build(directories);
-  }, [directories, keyword, t]);
+  }, [directories, t, visibleKeys]);
+
+  const delta = selectionChangeCounts(currentItems, checked);
+  const changed = delta.added > 0 || delta.removed > 0;
+  const showRemaining = shouldShowRemainingCapacity(checked.length);
+
+  const applyCheck = (keys: React.Key[] | { checked: React.Key[] }) => {
+    const list = Array.isArray(keys) ? keys : keys.checked;
+    const nextVisible = list.map(String).filter((key) => key.includes(':'));
+    const merged = mergeCanvasChecks(checked, visibleKeys, nextVisible);
+    if (merged.blocked) {
+      message.warning(t('opsCarousel.itemLimit'));
+      return;
+    }
+    setChecked(merged.keys);
+  };
+
+  const filters: { key: TypeFilter; label: string; count: number }[] = [
+    {
+      key: 'all',
+      label: t('opsCarousel.allTypes'),
+      count: canvases.filter(matchesQuery).length,
+    },
+    ...CANVAS_TYPE_ORDER.map((type) => ({
+      key: type,
+      label: t(getCanvasTypeMeta(type)?.nameKey || type),
+      count: typeCounts.get(type) || 0,
+    })),
+  ];
 
   return (
-    <Drawer
+    <OperateDrawer
       title={t('opsCarousel.addCanvas')}
       open={open}
-      onClose={onClose}
-      width={420}
+      width={480}
       destroyOnClose
-      extra={(
-        <Button
-          type="primary"
-          disabled={checked.length === 0}
-          onClick={() => {
-            const selected = new Set(checked.map(String));
-            onConfirm(canvases.filter((canvas) => selected.has(`${canvas.resourceType}:${canvas.canvasId}`)));
-            setChecked([]);
-            onClose();
-          }}
-        >
-          {t('common.confirm')}
-        </Button>
+      onClose={onClose}
+      footer={(
+        <div className="flex w-full flex-1 items-center justify-between gap-3">
+          <div className="min-w-0 text-left text-xs text-[var(--color-text-3)]">
+            <div className="text-sm text-[var(--color-text-2)]">
+              {t('opsCarousel.selectedCount', undefined, { count: checked.length })}
+              {changed && (
+                <span>
+                  {' · '}
+                  {t('opsCarousel.selectionDelta', undefined, { added: delta.added, removed: delta.removed })}
+                </span>
+              )}
+            </div>
+            {showRemaining && (
+              <div>{t('opsCarousel.remainingCapacity', undefined, { count: remainingCapacity(checked.length) })}</div>
+            )}
+            {delta.removed > 0 && <div>{t('opsCarousel.removeDwellHint')}</div>}
+          </div>
+          <div className="flex shrink-0 gap-2">
+            <Button onClick={onClose}>{t('common.cancel')}</Button>
+            <Button
+              type="primary"
+              disabled={checked.length > CAROUSEL_MAX_ITEMS}
+              onClick={() => {
+                const selected = new Set(checked);
+                onConfirm(canvases.filter((canvas) => (
+                  selected.has(canvasIdentityKey(canvas.resourceType, canvas.canvasId))
+                )));
+              }}
+            >
+              {t('common.confirm')}
+            </Button>
+          </div>
+        </div>
       )}
     >
       <Input.Search
         allowClear
+        value={keyword}
         placeholder={t('common.search')}
-        className="mb-3"
+        className="mb-2"
         onChange={(event) => setKeyword(event.target.value)}
       />
+      <div className="mb-3 flex flex-wrap gap-x-3 gap-y-1">
+        {filters.map((filter) => {
+          const active = typeFilter === filter.key;
+          return (
+            <button
+              key={filter.key}
+              type="button"
+              className={`cursor-pointer bg-transparent text-xs ${
+                active
+                  ? 'border-b border-[var(--color-text-1)] text-[var(--color-text-1)]'
+                  : 'text-[var(--color-text-3)]'
+              }`}
+              onClick={() => setTypeFilter(filter.key)}
+            >
+              {filter.label} {filter.count}
+            </button>
+          );
+        })}
+      </div>
       {treeData.length === 0 ? (
         <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description={t('opsCarousel.noCanvas')} />
       ) : (
         <Tree
+          key={`${typeFilter}:${query}`}
           checkable
           blockNode
           defaultExpandAll
-          checkedKeys={checked}
+          checkedKeys={checked.filter((key) => visibleKeys.includes(key))}
           treeData={treeData}
-          onCheck={(keys) => {
-            const next = Array.isArray(keys) ? keys : keys.checked;
-            setChecked(next.filter((key) => String(key).includes(':')));
-          }}
+          onCheck={applyCheck}
         />
       )}
-    </Drawer>
+    </OperateDrawer>
   );
 };
 

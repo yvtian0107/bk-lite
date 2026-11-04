@@ -40,7 +40,7 @@ class CanvasCarouselViewSet(BuiltinVisibleMixin, AuthViewSet):
         if name:
             queryset = queryset.filter(name__icontains=name[:128])
         if self.action == "list":
-            queryset = queryset.annotate(item_count=Count("items"))
+            queryset = queryset.annotate(item_count=Count("items")).prefetch_related("items")
         else:
             queryset = queryset.prefetch_related("items")
         _current_team, _include_children, _org_field, org_query = self.filter_by_group(

@@ -303,12 +303,12 @@ const ViewPage: React.FC = () => {
 
   return (
     <div
-      className="flex w-full h-full relative rounded-lg"
+      className="relative flex h-full min-h-0 w-full overflow-hidden rounded-lg"
       style={{ minWidth: screenMode || collapsed ? 0 : 280 }}
     >
       <div
         hidden={screenMode}
-        className={`relative z-30 h-full border-r border-[var(--color-border-1)] transition-all duration-300 ${
+        className={`relative z-30 h-full min-h-0 border-r border-[var(--color-border-1)] transition-all duration-300 ${
           collapsed ? 'w-0 min-w-0 overflow-visible' : 'w-[280px] min-w-[280px]'
         }`}
         style={{
@@ -334,6 +334,9 @@ const ViewPage: React.FC = () => {
             carouselRefreshKey={carouselRefreshKey}
             onPanelChange={changePanel}
             onSelectCarousel={openCarousel}
+            onAutoSelectCarousel={(id) => {
+              router.replace(buildOpsCarouselViewHref(id, searchParams));
+            }}
             onCreateCarousel={() => openCarousel('new')}
             onCarouselCopied={(id) => {
               setCarouselRefreshKey((value) => value + 1);
@@ -366,15 +369,26 @@ const ViewPage: React.FC = () => {
           </Tooltip>
         )}
       </div>
-      <div className="h-full flex-1 flex" style={{ minWidth: 0 }}>
+      <div className="flex h-full min-h-0 flex-1" style={{ minWidth: 0 }}>
         {panel === 'carousel' ? (
-          <div className="h-full min-h-0 flex-1 bg-[var(--color-bg-1)]">
+          <div className="h-full min-h-0 flex-1 overflow-hidden bg-[var(--color-bg-1)]">
             <CarouselEditor
               ref={carouselEditorRef}
               carouselId={carouselId}
+              onCreate={() => openCarousel('new')}
               onSaved={(id) => {
                 setCarouselRefreshKey((value) => value + 1);
                 router.replace(buildOpsCarouselViewHref(String(id), searchParams));
+              }}
+              onCopied={(id) => {
+                setCarouselRefreshKey((value) => value + 1);
+                openCarousel(String(id));
+              }}
+              onDeleted={(id) => {
+                setCarouselRefreshKey((value) => value + 1);
+                if (String(id) === carouselId) {
+                  router.push(buildOpsCarouselViewHref(null, searchParams));
+                }
               }}
             />
           </div>

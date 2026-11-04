@@ -7,6 +7,7 @@ import { useCarouselApi } from '@/app/ops-analysis/api/carousel';
 import type { CanvasType } from '@/app/ops-analysis/constants/canvasTypes';
 import type { CarouselSummary } from '@/app/ops-analysis/types/carousel';
 import { CAROUSEL_MAX_ITEMS } from '@/app/ops-analysis/utils/carouselPlayer';
+import { canvasIdentityKey } from '@/app/ops-analysis/utils/carouselDraft';
 
 interface AddToCarouselModalProps {
   open: boolean;
@@ -68,10 +69,18 @@ const AddToCarouselModal: React.FC<AddToCarouselModalProps> = ({
         optionFilterProp="label"
         placeholder={t('opsCarousel.pickList')}
         value={selected ?? undefined}
-        options={rows.map((row) => ({
-          value: row.id,
-          label: `${row.name} (${row.item_count})`,
-        }))}
+        options={rows.map((row) => {
+          const included = resourceType != null && canvasId != null
+            && (row.canvas_keys || []).includes(canvasIdentityKey(resourceType, canvasId));
+          const full = row.item_count >= CAROUSEL_MAX_ITEMS;
+          return {
+            value: row.id,
+            disabled: included || full,
+            label: included
+              ? `${row.name}（${t('opsCarousel.alreadyContains')}）`
+              : `${row.name} (${row.item_count})`,
+          };
+        })}
         onChange={(value) => setSelected(value)}
       />
     </Modal>
