@@ -29,6 +29,7 @@ export type CarouselPlayerAction =
   | { type: 'togglePause' }
   | { type: 'setPaused'; paused: boolean }
   | { type: 'selectIndex'; index: number }
+  | { type: 'syncSlides'; slides: CarouselSlideInput[] }
   | { type: 'markUnavailable'; key: string };
 
 export const clampCarouselDwellSeconds = (
@@ -214,6 +215,21 @@ export const reduceCarouselPlayer = (
         return state;
       }
       return withIndex(state, state.slides, action.index, state.visit + 1);
+    case 'syncSlides': {
+      const current = state.index >= 0 ? state.slides[state.index] : undefined;
+      if (!current) {
+        return { ...state, slides: action.slides };
+      }
+      const index = action.slides.findIndex((slide) => slide.key === current.key);
+      if (index < 0) {
+        return state;
+      }
+      const next = action.slides[index];
+      const remainingMs = next.dwellSeconds === current.dwellSeconds
+        ? state.remainingMs
+        : Math.max(0, state.remainingMs + (next.dwellSeconds - current.dwellSeconds) * 1000);
+      return { ...state, slides: action.slides, index, remainingMs };
+    }
     case 'tick': {
       if (state.paused) {
         return state;

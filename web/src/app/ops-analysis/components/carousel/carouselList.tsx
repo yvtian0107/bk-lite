@@ -18,6 +18,7 @@ interface CarouselListProps {
   onSelect: (id: string) => void;
   onAutoSelect?: (id: string) => void;
   onEditBasic: (carousel: CarouselSummary) => void;
+  prepareCarouselLeave?: () => Promise<boolean>;
   onCopied: (id: number) => void;
   onDeleted: (id: number) => void;
 }
@@ -29,6 +30,7 @@ const CarouselList: React.FC<CarouselListProps> = ({
   onSelect,
   onAutoSelect,
   onEditBasic,
+  prepareCarouselLeave,
   onCopied,
   onDeleted,
 }) => {
@@ -111,7 +113,11 @@ const CarouselList: React.FC<CarouselListProps> = ({
                 key: 'copy',
                 label: t('common.copy'),
                 onClick: () => {
-                  void copyCarousel(row.id).then((copied) => onCopied(copied.id));
+                  void (async () => {
+                    if (prepareCarouselLeave && !(await prepareCarouselLeave())) return;
+                    const copied = await copyCarousel(row.id);
+                    onCopied(copied.id);
+                  })();
                 },
               }] : []),
               ...(canDelete ? [{
@@ -119,15 +125,22 @@ const CarouselList: React.FC<CarouselListProps> = ({
                 label: t('common.delete'),
                 danger: true,
                 onClick: () => {
-                  Modal.confirm({
-                    title: t('opsCarousel.deleteConfirm'),
-                    content: row.name,
-                    okText: t('common.confirm'),
-                    cancelText: t('common.cancel'),
-                    okButtonProps: { danger: true },
-                    centered: true,
-                    onOk: () => deleteCarousel(row.id).then(() => onDeleted(row.id)),
-                  });
+                  void (async () => {
+                    if (
+                      selectedId === String(row.id)
+                      && prepareCarouselLeave
+                      && !(await prepareCarouselLeave())
+                    ) return;
+                    Modal.confirm({
+                      title: t('opsCarousel.deleteConfirm'),
+                      content: row.name,
+                      okText: t('common.confirm'),
+                      cancelText: t('common.cancel'),
+                      okButtonProps: { danger: true },
+                      centered: true,
+                      onOk: () => deleteCarousel(row.id).then(() => onDeleted(row.id)),
+                    });
+                  })();
                 },
               }] : []),
             ];

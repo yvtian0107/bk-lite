@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useEffect, useState } from 'react';
-import { Button, Form, Input, Modal } from 'antd';
+import { Button, Form, Input, Modal, message } from 'antd';
 import GroupTreeSelect from '@/components/group-tree-select';
 import { useUserInfoContext } from '@/context/userInfo';
 import { convertGroupTreeToTreeSelectData } from '@/utils/index';
@@ -14,6 +14,7 @@ interface CarouselInfoModalProps {
   open: boolean;
   carousel?: CarouselSummary | null;
   onClose: () => void;
+  beforeSubmit?: () => Promise<boolean>;
   onCreated: (detail: CarouselDetail) => void;
   onUpdated: () => void;
 }
@@ -22,6 +23,7 @@ const CarouselInfoModal: React.FC<CarouselInfoModalProps> = ({
   open,
   carousel,
   onClose,
+  beforeSubmit,
   onCreated,
   onUpdated,
 }) => {
@@ -55,6 +57,7 @@ const CarouselInfoModal: React.FC<CarouselInfoModalProps> = ({
     } catch {
       return;
     }
+    if (!carousel && beforeSubmit && !(await beforeSubmit())) return;
     const payload = {
       name: String(values.name).trim(),
       desc: values.desc || '',
@@ -75,8 +78,8 @@ const CarouselInfoModal: React.FC<CarouselInfoModalProps> = ({
       });
       close();
       onCreated(created);
-    } catch (error) {
-      console.error('Failed to save carousel info:', error);
+    } catch {
+      message.error(t('common.operationFailed'));
     } finally {
       setSaving(false);
     }
@@ -102,7 +105,7 @@ const CarouselInfoModal: React.FC<CarouselInfoModalProps> = ({
         <Form.Item
           name="name"
           label={t('opsAnalysisSidebar.nameLabel')}
-          rules={[{ required: true, message: t('common.inputMsg') }]}
+          rules={[{ required: true, whitespace: true, message: t('common.inputMsg') }]}
         >
           <Input placeholder={t('opsAnalysisSidebar.inputPlaceholder')} maxLength={128} />
         </Form.Item>

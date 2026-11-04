@@ -27,6 +27,7 @@ export interface SidebarProps {
   onPanelChange?: (panel: 'directory' | 'carousel') => void;
   onSelectCarousel?: (id: string) => void;
   onAutoSelectCarousel?: (id: string) => void;
+  prepareCarouselLeave?: () => Promise<boolean>;
   onCarouselCreated?: (id: number, openEditor: boolean) => void;
   onCarouselUpdated?: () => void;
   onCarouselCopied?: (id: number) => void;

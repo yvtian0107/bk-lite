@@ -87,10 +87,13 @@ const ViewPage: React.FC = () => {
   const carouselEditorRef = useRef<CarouselEditorRef>(null);
   const [carouselRefreshKey, setCarouselRefreshKey] = useState(0);
   const [carouselInfoRevision, setCarouselInfoRevision] = useState(0);
-  const [carouselEditorSignal, setCarouselEditorSignal] = useState(0);
+  const [editorRequest, setEditorRequest] = useState<{ id: string; nonce: number } | null>(null);
   const panel = isCarouselPanel(searchParams) ? 'carousel' : 'directory';
   const carouselParam = searchParams.get('carousel');
-  const carouselId = carouselParam && carouselParam !== 'new' ? carouselParam : null;
+  const requestedCarouselId = carouselParam && carouselParam !== 'new' ? carouselParam : null;
+  const [carouselId, setCarouselId] = useState<string | null>(requestedCarouselId);
+  const carouselIdRef = useRef(carouselId);
+  carouselIdRef.current = carouselId;
   const selectedItemRef = useRef(selectedItem);
   const [canvasReloadToken, setCanvasReloadToken] = useState(0);
   selectedItemRef.current = selectedItem;
@@ -182,7 +185,7 @@ const ViewPage: React.FC = () => {
     return false;
   };
 
-  const confirmDiscard = (onOk: () => void) => {
+  const confirmDiscard = (onOk: () => void, onCancel?: () => void) => {
     const dirty = checkUnsavedChanges() || Boolean(carouselEditorRef.current?.hasUnsavedChanges());
     if (!dirty) {
       onOk();
@@ -196,8 +199,37 @@ const ViewPage: React.FC = () => {
       okButtonProps: { danger: true },
       centered: true,
       onOk,
+      onCancel,
     });
   };
+
+  const prepareCarouselLeave = () => new Promise<boolean>((resolve) => {
+    confirmDiscard(
+      () => {
+        carouselEditorRef.current?.discardChanges();
+        resolve(true);
+      },
+      () => resolve(false),
+    );
+  });
+
+  const switchGuardRef = useRef<(nextId: string | null) => void>(() => undefined);
+  switchGuardRef.current = (nextId) => {
+    confirmDiscard(
+      () => {
+        carouselEditorRef.current?.discardChanges();
+        setCarouselId(nextId);
+      },
+      () => {
+        router.replace(buildOpsCarouselViewHref(carouselIdRef.current, searchParams));
+      },
+    );
+  };
+
+  useEffect(() => {
+    if (requestedCarouselId === carouselId) return;
+    switchGuardRef.current(requestedCarouselId);
+  }, [carouselId, requestedCarouselId]);
 
   const hydrateSelection = (type: DirectoryType, itemInfo?: DirItem) => {
     setSelectedType(type);
@@ -209,16 +241,18 @@ const ViewPage: React.FC = () => {
 
   const changePanel = (next: 'directory' | 'carousel') => {
     if (next === panel) return;
-    confirmDiscard(() => {
+    void prepareCarouselLeave().then((ok) => {
+      if (!ok) return;
       router.push(next === 'carousel'
-        ? buildOpsCarouselViewHref(carouselId, searchParams)
+        ? buildOpsCarouselViewHref(carouselIdRef.current, searchParams)
         : buildOpsDirectoryPanelHref(searchParams));
     });
   };
 
   const openCarousel = (id: string) => {
-    if (id === carouselId && panel === 'carousel') return;
-    confirmDiscard(() => {
+    if (id === requestedCarouselId && panel === 'carousel') return;
+    void prepareCarouselLeave().then((ok) => {
+      if (!ok) return;
       router.push(buildOpsCarouselViewHref(id, searchParams));
     });
   };
@@ -337,12 +371,18 @@ const ViewPage: React.FC = () => {
             carouselRefreshKey={carouselRefreshKey}
             onPanelChange={changePanel}
             onSelectCarousel={openCarousel}
+            prepareCarouselLeave={prepareCarouselLeave}
             onAutoSelectCarousel={(id) => {
               router.replace(buildOpsCarouselViewHref(id, searchParams));
             }}
             onCarouselCreated={(id, openEditor) => {
               setCarouselRefreshKey((value) => value + 1);
-              if (openEditor) setCarouselEditorSignal((value) => value + 1);
+              if (openEditor) {
+                setEditorRequest((current) => ({
+                  id: String(id),
+                  nonce: (current?.nonce ?? 0) + 1,
+                }));
+              }
               router.replace(buildOpsCarouselViewHref(String(id), searchParams));
             }}
             onCarouselUpdated={() => {
@@ -386,7 +426,7 @@ const ViewPage: React.FC = () => {
             <CarouselEditor
               ref={carouselEditorRef}
               carouselId={carouselId}
-              openEditorSignal={carouselEditorSignal}
+              openEditorRequest={editorRequest}
               infoRevision={carouselInfoRevision}
               onSaved={(id) => {
                 setCarouselRefreshKey((value) => value + 1);

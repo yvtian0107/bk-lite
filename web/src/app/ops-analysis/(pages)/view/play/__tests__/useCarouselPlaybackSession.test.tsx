@@ -4,6 +4,7 @@ import type { CanvasType } from '@/app/ops-analysis/constants/canvasTypes';
 import { CAROUSEL_UNAVAILABLE_RETRY_MS } from '@/app/ops-analysis/utils/carouselPlayer';
 import {
   CAROUSEL_PLAYBACK_TICK_MS,
+  carouselPlaybackNeedsReset,
   useCarouselPlaybackSession,
   type CarouselPlaybackSlide,
 } from '@/app/ops-analysis/(pages)/view/play/useCarouselPlaybackSession';
@@ -341,5 +342,52 @@ describe('useCarouselPlaybackSession', () => {
     });
     expect(loadDetail.mock.calls.filter((call) => call[0].key === 's1')).toHaveLength(2);
     expect((loadDetail.mock.calls.at(-1)?.[1] as AbortSignal).aborted).toBe(false);
+  });
+
+  it('does not reconfirm the current slide when it is reordered or its dwell changes', async () => {
+    const loadDetail = vi.fn(() => Promise.resolve({ id: 1 }));
+    const { result, rerender } = renderHook(
+      ({ slides }: { slides: CarouselPlaybackSlide[] }) => useCarouselPlaybackSession({
+        slides,
+        enabled: true,
+        loadDetail,
+        startPaused: true,
+        confirmWhilePaused: true,
+      }),
+      { initialProps: { slides: [slide('s0', 30), slide('s1', 20)] } },
+    );
+    await settle();
+    expect(loadDetail).toHaveBeenCalledTimes(1);
+    expect(result.current.ready).toBe(true);
+    const remaining = result.current.player.remainingMs;
+
+    rerender({ slides: [slide('s1', 20), slide('s0', 45)] });
+    await settle();
+
+    expect(loadDetail).toHaveBeenCalledTimes(1);
+    expect(result.current.ready).toBe(true);
+    expect(result.current.confirming).toBe(false);
+    expect(result.current.player.slides[result.current.player.index]?.key).toBe('s0');
+    expect(result.current.player.slides[result.current.player.index]?.dwellSeconds).toBe(45);
+    expect(result.current.player.remainingMs).toBe(remaining + 15_000);
+  });
+
+  it('still reconfirms when the playlist is reloaded or the current slide becomes unavailable', () => {
+    const current = { resetKey: '1', key: 's0', available: true };
+    const slides = [{ key: 's0', available: true }, { key: 's1', available: true }];
+    expect(carouselPlaybackNeedsReset(current, { resetKey: '1', slides })).toBe(false);
+    expect(carouselPlaybackNeedsReset(current, {
+      resetKey: '1',
+      slides: [{ key: 's1', available: true }, { key: 's0', available: true }],
+    })).toBe(false);
+    expect(carouselPlaybackNeedsReset(current, { resetKey: '2', slides })).toBe(true);
+    expect(carouselPlaybackNeedsReset(current, {
+      resetKey: '1',
+      slides: [{ key: 's0', available: false }],
+    })).toBe(true);
+    expect(carouselPlaybackNeedsReset(current, {
+      resetKey: '1',
+      slides: [{ key: 's1', available: true }],
+    })).toBe(true);
   });
 });

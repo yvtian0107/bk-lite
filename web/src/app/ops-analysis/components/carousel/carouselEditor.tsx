@@ -76,6 +76,8 @@ import {
   canStartCarouselPreview,
   manualPreviewStep,
   relocatePreviewIndexByKeys,
+  shouldAutoOpenCarouselEditor,
+  type CarouselEditorOpenRequest,
 } from '@/app/ops-analysis/utils/carouselPreview';
 import { buildCarouselPlayHref } from '@/app/ops-analysis/utils/carouselLinks';
 import useBtnPermissions from '@/hooks/usePermissions';
@@ -84,6 +86,7 @@ import CanvasPicker, { type PickedCanvas } from './canvasPicker';
 
 export interface CarouselEditorRef {
   hasUnsavedChanges: () => boolean;
+  discardChanges: () => void;
 }
 
 interface DraftItem {
@@ -100,7 +103,7 @@ interface DraftItem {
 
 interface CarouselEditorProps {
   carouselId: string | null;
-  openEditorSignal?: number;
+  openEditorRequest?: CarouselEditorOpenRequest | null;
   infoRevision?: number;
   onSaved: (id: number) => void;
 }
@@ -288,7 +291,7 @@ const ItemRow = ({
 
 const CarouselEditor = forwardRef<CarouselEditorRef, CarouselEditorProps>(({
   carouselId,
-  openEditorSignal = 0,
+  openEditorRequest = null,
   infoRevision = 0,
   onSaved,
 }, ref) => {
@@ -327,6 +330,8 @@ const CarouselEditor = forwardRef<CarouselEditorRef, CarouselEditorProps>(({
   const canPlay = hasPermission(['View']);
   const defaultDwell = clampCarouselDwellSeconds(fields.defaultDwell, CAROUSEL_DEFAULT_DWELL_SECONDS);
   const dirty = savedDraft != null && !sameCarouselDraft(savedDraft, toComparable(fields, items));
+  const draftDirtyRef = useRef(false);
+  draftDirtyRef.current = editorOpen && dirty;
   const playbackAllowed = canStartCarouselPreview(editorOpen);
 
   const slides = useMemo<PlaybackSlide[]>(() => items.map((item) => ({
@@ -352,9 +357,14 @@ const CarouselEditor = forwardRef<CarouselEditorRef, CarouselEditorProps>(({
   const player = session.player;
   const keysToken = items.map((item) => item.key).join('\u0000');
 
+  const restoreSavedRef = useRef<() => void>(() => undefined);
   useImperativeHandle(ref, () => ({
-    hasUnsavedChanges: () => editorOpen && dirty,
-  }), [dirty, editorOpen]);
+    hasUnsavedChanges: () => draftDirtyRef.current,
+    discardChanges: () => {
+      draftDirtyRef.current = false;
+      restoreSavedRef.current();
+    },
+  }), []);
 
   useEffect(() => {
     const nextKeys = keysToken ? keysToken.split('\u0000') : [];
@@ -379,6 +389,7 @@ const CarouselEditor = forwardRef<CarouselEditorRef, CarouselEditorProps>(({
 
   useEffect(() => {
     session.dispatch({ type: 'setPaused', paused: true });
+    if (draftDirtyRef.current) return;
     setEditorOpen(false);
     setProblemsOnly(false);
   }, [carouselId, session.dispatch]);
@@ -426,6 +437,9 @@ const CarouselEditor = forwardRef<CarouselEditorRef, CarouselEditorProps>(({
 
   useEffect(() => {
     if (!carouselId) return undefined;
+    if (draftDirtyRef.current && loadedId.current && loadedId.current !== carouselId) {
+      return undefined;
+    }
     let cancelled = false;
     setLoading(true);
     void getCarousel(carouselId).then((detail) => {
@@ -450,12 +464,22 @@ const CarouselEditor = forwardRef<CarouselEditorRef, CarouselEditorProps>(({
   }, [applyDetail, carouselId, getCarousel, infoRevision, t]);
 
   useEffect(() => {
-    if (!openEditorSignal || openEditorSignal === appliedSignal.current) return;
-    if (!canEdit || loading || !carouselId || loadedId.current !== carouselId) return;
-    appliedSignal.current = openEditorSignal;
+    if (!openEditorRequest || openEditorRequest.nonce === appliedSignal.current) return;
+    if (loading || loadedId.current !== openEditorRequest.id) return;
+    const open = shouldAutoOpenCarouselEditor({
+      request: openEditorRequest,
+      appliedNonce: appliedSignal.current,
+      loadedId: loadedId.current,
+      loading,
+      itemCount: items.length,
+      canEdit,
+    });
+    if (!canEdit) return;
+    appliedSignal.current = openEditorRequest.nonce;
+    if (!open) return;
     session.dispatch({ type: 'setPaused', paused: true });
     setEditorOpen(true);
-  }, [canEdit, carouselId, loading, openEditorSignal, session.dispatch]);
+  }, [canEdit, items.length, loading, openEditorRequest, session.dispatch]);
 
   const openEditor = () => {
     session.dispatch({ type: 'setPaused', paused: true });
@@ -477,6 +501,7 @@ const CarouselEditor = forwardRef<CarouselEditorRef, CarouselEditorProps>(({
     setEditorOpen(false);
     setProblemsOnly(false);
   };
+  restoreSavedRef.current = restoreSaved;
 
   const requestClose = () => {
     if (!dirty) {

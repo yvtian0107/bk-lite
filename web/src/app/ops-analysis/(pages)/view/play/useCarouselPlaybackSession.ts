@@ -79,6 +79,21 @@ export const confirmCarouselEnter = async (
   return second.status === 'retry' ? { status: 'skip' } : second;
 };
 
+/** 当前项的 key 或可用性变了、或播放列表被整表重载时，才重新确认。重排和停留秒数只改计时。 */
+export const carouselPlaybackNeedsReset = (
+  previous: { resetKey: string; key?: string; available?: boolean },
+  next: { resetKey: string; slides: readonly { key: string; available: boolean }[] },
+): boolean => {
+  if (previous.resetKey !== next.resetKey || !previous.key) {
+    return true;
+  }
+  const slide = next.slides.find((item) => item.key === previous.key);
+  if (!slide) {
+    return true;
+  }
+  return slide.available !== previous.available;
+};
+
 const nextSlide = (
   slides: readonly CarouselPlaybackSlide[],
   player: CarouselPlayerState,
@@ -120,8 +135,9 @@ export const useCarouselPlaybackSession = ({
   slidesRef.current = slides;
   const loadRef = useRef(loadDetail);
   loadRef.current = loadDetail;
-  const signature = `${resetKey}|${slides.map((slide) => `${slide.key}:${Number(slide.available)}:${slide.dwellSeconds}`).join('|')}`;
+  const playlistSignature = `${resetKey}|${slides.map((slide) => `${slide.key}:${Number(slide.available)}:${slide.dwellSeconds}`).join('|')}`;
   const signatureRef = useRef<string | null>(null);
+  const resetKeyRef = useRef<string | null>(null);
   const [player, setPlayer] = useState<CarouselPlayerState>(() => {
     const created = createCarouselPlayerState(slides.map(toInput));
     return startPaused ? { ...created, paused: true } : created;
@@ -142,24 +158,44 @@ export const useCarouselPlaybackSession = ({
   };
 
   useEffect(() => {
-    if (signatureRef.current === null) {
-      signatureRef.current = signature;
+    if (signatureRef.current === playlistSignature) {
       return;
     }
-    if (signatureRef.current === signature) {
+    const isFirst = signatureRef.current === null;
+    signatureRef.current = playlistSignature;
+    if (isFirst) {
+      resetKeyRef.current = resetKey;
       return;
     }
-    signatureRef.current = signature;
+    const previous = playerRef.current;
+    const previousSlide = previous.index >= 0 ? previous.slides[previous.index] : undefined;
+    const nextSlides = slidesRef.current;
+    const needsReset = carouselPlaybackNeedsReset(
+      {
+        resetKey: resetKeyRef.current ?? '',
+        key: previousSlide?.key,
+        available: previousSlide?.available,
+      },
+      { resetKey, slides: nextSlides },
+    );
+    resetKeyRef.current = resetKey;
+    if (!needsReset) {
+      setPlayer((current) => reduceCarouselPlayer(current, {
+        type: 'syncSlides',
+        slides: nextSlides.map(toInput),
+      }));
+      return;
+    }
     disarm();
     confirmingRef.current = false;
     setConfirming(false);
     setPlayer((current) => reduceCarouselPlayer(current, {
       type: 'reset',
-      slides: slidesRef.current.map(toInput),
+      slides: nextSlides.map(toInput),
       preferKey: current.slides[current.index]?.key ?? null,
       retainUnavailable,
     }));
-  }, [retainUnavailable, signature]);
+  }, [playlistSignature, resetKey, retainUnavailable]);
 
   useEffect(() => {
     if (!enabled) {
