@@ -140,7 +140,7 @@ export interface ArchitectureRef {
 }
 
 const Architecture = forwardRef<ArchitectureRef, ArchitectureProps>(
-  ({ selectedArchitecture, shareMode = false }, ref) => {
+  ({ selectedArchitecture, shareMode = false, playbackMode = false }, ref) => {
     const { t } = useTranslation();
     const {
       getArchitectureDetail,
@@ -1266,10 +1266,10 @@ const Architecture = forwardRef<ArchitectureRef, ArchitectureProps>(
           loading={loading}
           titleFallback={t('opsAnalysis.architecture.canvasTitle')}
           emptyDescription={t('opsAnalysis.architecture.emptySelect')}
-          headerVisible={!isFullscreen}
+          headerVisible={!isFullscreen && !playbackMode}
           flushContent
           contentClassName="bg-[var(--color-fill-1)]"
-          toolbar={isFullscreen ? undefined : architectureToolbar}
+          toolbar={isFullscreen || playbackMode ? undefined : architectureToolbar}
         >
         <div
           className={`relative h-full min-h-0 architecture-canvas ${styles.architectureCanvas}`}

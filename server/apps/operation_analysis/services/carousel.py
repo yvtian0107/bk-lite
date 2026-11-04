@@ -1,0 +1,329 @@
+"""轮播列表的组织可见性、条目校验与播放可用状态。"""
+
+from __future__ import annotations
+
+from collections import defaultdict
+
+from django.db import transaction
+from rest_framework.exceptions import ValidationError
+
+from apps.operation_analysis.models.carousel import CAROUSEL_MAX_ITEMS, CAROUSEL_RESOURCE_TYPES, CanvasCarousel, CanvasCarouselItem
+from apps.operation_analysis.models.models import Architecture, Dashboard, NetworkTopology, Report, Screen, Topology
+from apps.operation_analysis.services.user_messages import oa_message
+
+CANVAS_MODELS = {
+    "dashboard": Dashboard,
+    "topology": Topology,
+    "architecture": Architecture,
+    "screen": Screen,
+    "report": Report,
+    "networkTopology": NetworkTopology,
+}
+
+RESOURCE_TYPE_VALUES = {value for value, _label in CAROUSEL_RESOURCE_TYPES}
+
+
+def group_id_set(groups) -> set[int]:
+    result = set()
+    for value in groups or []:
+        try:
+            result.add(int(value))
+        except (TypeError, ValueError):
+            continue
+    return result
+
+
+def normalize_group_list(groups) -> list[int]:
+    seen = set()
+    ordered = []
+    for value in groups or []:
+        try:
+            group_id = int(value)
+        except (TypeError, ValueError):
+            continue
+        if group_id in seen:
+            continue
+        seen.add(group_id)
+        ordered.append(group_id)
+    return ordered
+
+
+def viewer_org_ids(view, request) -> list[int]:
+    """与画布列表同一套当前组织（含子组织开关）范围。"""
+    current_team = view._parse_current_team_cookie(request)
+    include_children = request.COOKIES.get("include_children", "0") == "1"
+    if include_children:
+        tree = getattr(request.user, "group_tree", []) or []
+        child_ids = view.extract_child_group_ids(tree, current_team)
+        normalized = normalize_group_list(child_ids)
+        if normalized:
+            return normalized
+    if not current_team:
+        return []
+    return [int(current_team)]
+
+
+def name_conflicts(name: str, groups, *, exclude_id=None) -> bool:
+    target = group_id_set(groups)
+    if not name or not target:
+        return False
+    queryset = CanvasCarousel.objects.filter(name=name).only("id", "groups")
+    if exclude_id is not None:
+        queryset = queryset.exclude(pk=exclude_id)
+    for row in queryset:
+        if group_id_set(row.groups) & target:
+            return True
+    return False
+
+
+def next_copy_name(name: str, groups) -> str:
+    base = f"{name} 副本"
+    candidate = base[:128]
+    suffix = 2
+    while name_conflicts(candidate, groups):
+        extra = f" {suffix}"
+        candidate = f"{base[: 128 - len(extra)]}{extra}"
+        suffix += 1
+        if suffix > 100:
+            break
+    return candidate
+
+
+def load_canvases(items):
+    ids_by_type = defaultdict(set)
+    for item in items:
+        resource_type = item["resource_type"] if isinstance(item, dict) else item.resource_type
+        canvas_id = item["canvas_id"] if isinstance(item, dict) else item.canvas_id
+        if resource_type in CANVAS_MODELS:
+            ids_by_type[resource_type].add(canvas_id)
+    found = {}
+    for resource_type, canvas_ids in ids_by_type.items():
+        model = CANVAS_MODELS[resource_type]
+        for canvas in model.objects.filter(id__in=canvas_ids).only("id", "name", "groups", "is_build_in"):
+            found[(resource_type, canvas.id)] = canvas
+    return found
+
+
+def canvas_visible_to_orgs(canvas, org_ids) -> bool:
+    if canvas is None:
+        return False
+    return bool(group_id_set(canvas.groups) & set(org_ids))
+
+
+def ensure_canvas_reference_visible(resource_type: str, canvas_id: int, org_ids) -> None:
+    if resource_type not in CANVAS_MODELS:
+        raise ValidationError({"items": oa_message("messages.carousel_resource_type_invalid", "画布类型无效")})
+    canvas = CANVAS_MODELS[resource_type].objects.filter(id=canvas_id).only("id", "groups").first()
+    if canvas is None or not canvas_visible_to_orgs(canvas, org_ids):
+        raise ValidationError({"items": oa_message("messages.carousel_canvas_not_visible", "条目引用的画布不存在或当前组织不可见")})
+
+
+def _actor_fields(request, *, include_created: bool):
+    user = getattr(request, "user", None)
+    username = getattr(user, "username", "") or ""
+    domain = getattr(user, "domain", "") or "domain.com"
+    fields = {
+        "updated_by": username[:32],
+        "updated_by_domain": domain[:100],
+    }
+    if include_created:
+        fields["created_by"] = username[:32]
+        fields["domain"] = domain[:100]
+    return fields
+
+
+def _validate_item_payloads(items):
+    if len(items) > CAROUSEL_MAX_ITEMS:
+        raise ValidationError({"items": oa_message("messages.carousel_item_limit", "每个轮播列表最多 50 个条目")})
+    seen_ids = set()
+    for item in items:
+        item_id = item.get("id")
+        if item_id is None:
+            continue
+        if item_id in seen_ids:
+            raise ValidationError({"items": oa_message("messages.carousel_item_duplicate", "条目重复")})
+        seen_ids.add(item_id)
+
+
+def replace_carousel_items(carousel: CanvasCarousel, items: list[dict], org_ids) -> None:
+    _validate_item_payloads(items)
+    existing = {item.id: item for item in carousel.items.all()}
+    kept_ids = []
+    for payload in items:
+        item_id = payload.get("id")
+        current = existing.get(item_id) if item_id in existing else None
+        reference_changed = current is None or current.resource_type != payload["resource_type"] or current.canvas_id != payload["canvas_id"]
+        if reference_changed:
+            ensure_canvas_reference_visible(payload["resource_type"], payload["canvas_id"], org_ids)
+        if current is not None:
+            kept_ids.append(current.id)
+
+    carousel.items.exclude(id__in=kept_ids).delete()
+    for position, payload in enumerate(items):
+        item_id = payload.get("id")
+        current = existing.get(item_id) if item_id in existing else None
+        dwell_seconds = payload.get("dwell_seconds")
+        if current is None:
+            CanvasCarouselItem.objects.create(
+                carousel=carousel,
+                resource_type=payload["resource_type"],
+                canvas_id=payload["canvas_id"],
+                dwell_seconds=dwell_seconds,
+                position=position,
+            )
+            continue
+        current.resource_type = payload["resource_type"]
+        current.canvas_id = payload["canvas_id"]
+        current.dwell_seconds = dwell_seconds
+        current.position = position
+        current.save(update_fields=["resource_type", "canvas_id", "dwell_seconds", "position"])
+
+
+@transaction.atomic
+def create_carousel(request, validated: dict) -> CanvasCarousel:
+    items = validated.pop("items", [])
+    _validate_item_payloads(items)
+    org_ids = viewer_org_ids_from_request(request)
+    for payload in items:
+        ensure_canvas_reference_visible(payload["resource_type"], payload["canvas_id"], org_ids)
+    if name_conflicts(validated["name"], validated["groups"]):
+        raise ValidationError({"name": oa_message("messages.carousel_name_conflict", "同一组织内已有同名轮播列表")})
+    carousel = CanvasCarousel.objects.create(**validated, **_actor_fields(request, include_created=True))
+    CanvasCarouselItem.objects.bulk_create(
+        [
+            CanvasCarouselItem(
+                carousel=carousel,
+                resource_type=payload["resource_type"],
+                canvas_id=payload["canvas_id"],
+                dwell_seconds=payload.get("dwell_seconds"),
+                position=position,
+            )
+            for position, payload in enumerate(items)
+        ]
+    )
+    return carousel
+
+
+def viewer_org_ids_from_request(request) -> list[int]:
+    """请求级组织范围。ViewSet 与服务共用 cookie 语义。"""
+    from apps.core.utils.viewset_utils import AuthViewSet
+
+    return viewer_org_ids(AuthViewSet, request)
+
+
+@transaction.atomic
+def update_carousel(request, carousel: CanvasCarousel, validated: dict) -> CanvasCarousel:
+    locked = CanvasCarousel.objects.select_for_update().get(pk=carousel.pk)
+    items = validated.pop("items", None)
+    next_name = validated.get("name", locked.name)
+    next_groups = validated.get("groups", locked.groups)
+    if name_conflicts(next_name, next_groups, exclude_id=locked.id):
+        raise ValidationError({"name": oa_message("messages.carousel_name_conflict", "同一组织内已有同名轮播列表")})
+    for field, value in validated.items():
+        setattr(locked, field, value)
+    for field, value in _actor_fields(request, include_created=False).items():
+        setattr(locked, field, value)
+    locked.save()
+    if items is not None:
+        replace_carousel_items(locked, items, viewer_org_ids_from_request(request))
+    return locked
+
+
+@transaction.atomic
+def copy_carousel(request, source: CanvasCarousel, groups: list[int]) -> CanvasCarousel:
+    locked = CanvasCarousel.objects.select_for_update().get(pk=source.pk)
+    copied_groups = normalize_group_list(groups) or normalize_group_list(locked.groups)
+    name = next_copy_name(locked.name, copied_groups)
+    carousel = CanvasCarousel.objects.create(
+        name=name,
+        desc=locked.desc,
+        groups=copied_groups,
+        default_dwell_seconds=locked.default_dwell_seconds,
+        **_actor_fields(request, include_created=True),
+    )
+    CanvasCarouselItem.objects.bulk_create(
+        [
+            CanvasCarouselItem(
+                carousel=carousel,
+                resource_type=item.resource_type,
+                canvas_id=item.canvas_id,
+                dwell_seconds=item.dwell_seconds,
+                position=item.position,
+            )
+            for item in locked.items.all()
+        ]
+    )
+    return carousel
+
+
+@transaction.atomic
+def append_carousel_item(request, carousel: CanvasCarousel, payload: dict) -> CanvasCarouselItem:
+    locked = CanvasCarousel.objects.select_for_update().get(pk=carousel.pk)
+    if locked.items.count() >= CAROUSEL_MAX_ITEMS:
+        raise ValidationError({"items": oa_message("messages.carousel_item_limit", "每个轮播列表最多 50 个条目")})
+    ensure_canvas_reference_visible(
+        payload["resource_type"],
+        payload["canvas_id"],
+        viewer_org_ids_from_request(request),
+    )
+    last = locked.items.order_by("-position", "-id").only("position").first()
+    position = 0 if last is None else last.position + 1
+    item = CanvasCarouselItem.objects.create(
+        carousel=locked,
+        resource_type=payload["resource_type"],
+        canvas_id=payload["canvas_id"],
+        dwell_seconds=payload.get("dwell_seconds"),
+        position=position,
+    )
+    for field, value in _actor_fields(request, include_created=False).items():
+        setattr(locked, field, value)
+    locked.save(update_fields=["updated_by", "updated_by_domain", "updated_at"])
+    return item
+
+
+def describe_carousel(carousel: CanvasCarousel, org_ids, *, playback: bool) -> dict:
+    rows = list(carousel.items.all())
+    canvases = load_canvases(rows)
+    carousel_groups = normalize_group_list(carousel.groups)
+    items = []
+    for item in rows:
+        canvas = canvases.get((item.resource_type, item.canvas_id))
+        exists = canvas is not None
+        visible = canvas_visible_to_orgs(canvas, org_ids)
+        payload = {
+            "id": item.id,
+            "resource_type": item.resource_type,
+            "canvas_id": item.canvas_id,
+            "position": item.position,
+            "dwell_seconds": item.dwell_seconds,
+            "resolved_dwell_seconds": item.dwell_seconds if item.dwell_seconds is not None else carousel.default_dwell_seconds,
+            "exists": exists,
+            "visible": visible,
+            "available": visible,
+        }
+        if playback:
+            if visible:
+                payload["canvas_name"] = canvas.name
+            items.append(payload)
+            continue
+        payload["canvas_name"] = canvas.name if exists else None
+        payload["canvas_group_ids"] = sorted(group_id_set(canvas.groups)) if exists else []
+        if exists:
+            canvas_groups = group_id_set(canvas.groups)
+            payload["hidden_group_ids"] = [group_id for group_id in carousel_groups if group_id not in canvas_groups]
+        else:
+            payload["hidden_group_ids"] = []
+        items.append(payload)
+    return {
+        "id": carousel.id,
+        "name": carousel.name,
+        "desc": carousel.desc or "",
+        "groups": normalize_group_list(carousel.groups),
+        "default_dwell_seconds": carousel.default_dwell_seconds,
+        "created_by": carousel.created_by,
+        "updated_by": carousel.updated_by,
+        "created_at": carousel.created_at,
+        "updated_at": carousel.updated_at,
+        "items": items,
+        "skipped_count": sum(1 for item in items if not item["available"]),
+    }

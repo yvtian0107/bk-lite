@@ -124,6 +124,7 @@ const waitForReportWidgetsReady = (
 const Report = forwardRef<ReportRef, ReportProps>(({
   selectedReport,
   shareMode = false,
+  playbackMode = false,
   renderMode = false,
   renderFilterValues,
   renderDataSourceIds,
@@ -749,7 +750,7 @@ const Report = forwardRef<ReportRef, ReportProps>(({
                     refreshCause={refreshCause}
                     dataSource={dataSourceManager.findDataSource(section.valueConfig.dataSource)}
                     editing={editing}
-                    shareMode={shareMode}
+                    shareMode={shareMode || playbackMode}
                     isFullscreen={isFullscreen}
                     renderMode={renderMode}
                     pdfExportPreparing={pdfExportPreparing}
@@ -769,7 +770,7 @@ const Report = forwardRef<ReportRef, ReportProps>(({
     </div>
   );
 
-  const toolbar = renderMode ? null : (
+  const toolbar = renderMode || playbackMode ? null : (
     <ReportToolbar
       selectedReport={selectedReport}
       chartTheme={chartTheme}
@@ -831,7 +832,8 @@ const Report = forwardRef<ReportRef, ReportProps>(({
           titleFallback={t('opsAnalysis.report.title')}
           emptyDescription={t('opsAnalysis.report.selectFirst')}
           toolbar={toolbar}
-          filterBar={filterBar}
+          filterBar={playbackMode ? null : filterBar}
+          headerVisible={!playbackMode}
           contentRef={exportRef}
           contentClassName="bg-[var(--color-bg-2)]"
         >

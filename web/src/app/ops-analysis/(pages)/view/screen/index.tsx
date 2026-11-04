@@ -227,7 +227,7 @@ const ScreenDataConfig = memo(
   areScreenDataConfigPropsEqual,
 );
 
-const Screen = forwardRef<ScreenRef, ScreenProps>(({ selectedScreen, shareMode = false, onEditingChange }, ref) => {
+const Screen = forwardRef<ScreenRef, ScreenProps>(({ selectedScreen, shareMode = false, playbackMode = false, onEditingChange }, ref) => {
   const onEditingChangeRef = useRef(onEditingChange);
   onEditingChangeRef.current = onEditingChange;
   useEffect(() => {
@@ -1503,11 +1503,11 @@ const Screen = forwardRef<ScreenRef, ScreenProps>(({ selectedScreen, shareMode =
           loading={loading}
           titleFallback={t("opsAnalysis.screen.title")}
           emptyDescription={t("opsAnalysis.screen.selectFirst")}
-          headerVisible={!isFullscreen}
-          filterBarVisible={!isFullscreen}
+          headerVisible={!isFullscreen && !playbackMode}
+          filterBarVisible={!isFullscreen && !playbackMode}
           flushContent
           contentClassName={isFullscreen ? "bg-slate-950" : undefined}
-          toolbar={
+          toolbar={playbackMode ? undefined : (
             <ScreenToolbar
               selectedScreen={selectedScreen}
               editMode={editMode}
@@ -1553,8 +1553,8 @@ const Screen = forwardRef<ScreenRef, ScreenProps>(({ selectedScreen, shareMode =
                 }),
               })}
             />
-          }
-          filterBar={filterBarElement}
+          )}
+          filterBar={playbackMode ? null : filterBarElement}
         >
           {editorOpen ? (
             <div className="relative flex h-full min-h-0 overflow-hidden" data-screen-editor>

@@ -17,9 +17,19 @@ export interface DirItem {
 
 export interface SidebarProps {
   onSelect?: (type: DirectoryType, itemInfo?: DirItem) => void;
+  onHydrateSelection?: (type: DirectoryType, itemInfo?: DirItem) => void;
   onDataUpdate?: (updatedItem: DirItem) => void;
   onCanvasContentReplaced?: (item: DirItem) => void;
   beforeImportUpdate?: (item: DirItem) => boolean | Promise<boolean>;
+  panel?: 'directory' | 'carousel';
+  carouselId?: string | null;
+  carouselRefreshKey?: number;
+  onPanelChange?: (panel: 'directory' | 'carousel') => void;
+  onSelectCarousel?: (id: string) => void;
+  onCreateCarousel?: () => void;
+  onPlayCarousel?: (id: number) => void;
+  onCarouselCopied?: (id: number) => void;
+  onCarouselDeleted?: (id: number) => void;
 }
 
 export interface SidebarRef {

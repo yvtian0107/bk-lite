@@ -168,6 +168,8 @@ interface DashboardProps {
   renderDataSourceIds?: number[];
   /** 登录首页：只读已保存内容，隐藏筛选条和编辑工具。 */
   homepageMode?: boolean;
+  /** 轮播播放：只读展示，隐藏工具栏、筛选条和编辑入口，数据仍走登录态接口。 */
+  playbackMode?: boolean;
 }
 
 export interface DashboardRef {
@@ -186,6 +188,7 @@ const Dashboard = forwardRef<DashboardRef, DashboardProps>(
     renderFilterValues,
     renderDataSourceIds,
     homepageMode = false,
+    playbackMode = false,
   }, ref) => {
     const { t } = useTranslation();
     const labelStoredFilters = useCallback(
@@ -2095,7 +2098,7 @@ const Dashboard = forwardRef<DashboardRef, DashboardProps>(
       void openShare(selectedDashboard?.data_id);
     };
 
-    const dashboardToolbar = renderMode || homepageMode ? null : (
+    const dashboardToolbar = renderMode || homepageMode || playbackMode ? null : (
       <DashboardToolbar
         selectedDashboard={selectedDashboard}
         chartTheme={chartTheme}
@@ -2139,7 +2142,7 @@ const Dashboard = forwardRef<DashboardRef, DashboardProps>(
       isWidgetUnauthorized: viewAuthSnapshot.isWidgetUnauthorized,
     });
 
-    const dashboardFilterBar = !moduleLicenseCanvasEmpty && !homepageMode && (definitions.length > 0 ||
+    const dashboardFilterBar = !playbackMode && !moduleLicenseCanvasEmpty && !homepageMode && (definitions.length > 0 ||
       namespaceSelectorElement) && (
       <UnifiedFilterBar
         definitions={definitions}
@@ -2194,9 +2197,10 @@ const Dashboard = forwardRef<DashboardRef, DashboardProps>(
           appliedFilterDefinitions={appliedFilterDefinitions}
           appliedNamespaceId={appliedNamespaceId}
           selectedDashboardLocked={selectedDashboard?.is_build_in}
-          csvExportHidden={homepageMode}
+          csvExportHidden={homepageMode || playbackMode}
           homepageSurface={homepageMode && !isDarkTheme}
-          shareMode={shareMode}
+          playbackMode={playbackMode}
+          shareMode={shareMode || playbackMode}
           isFullscreen={isFullscreen}
           onOpenAddModal={openAddModal}
           onLayoutChange={handleLayoutCommit}
@@ -2263,7 +2267,7 @@ const Dashboard = forwardRef<DashboardRef, DashboardProps>(
             loading={loading}
             titleFallback={t('dashboard.canvasTitle')}
             emptyDescription={t('dashboard.selectDashboardFirst')}
-            headerVisible={!isFullscreen}
+            headerVisible={!isFullscreen && !playbackMode}
             filterBarVisible
             compactHeader={homepageMode}
             shellClassName={homepageMode && !isDarkTheme ? 'bg-transparent' : undefined}

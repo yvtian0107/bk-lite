@@ -35,6 +35,12 @@ import {
 } from '@/app/ops-analysis/utils/recentCanvasStorage';
 import { isScreenModeEnabled } from '@/console-layout';
 import { buildOpsAnalysisViewHref } from '@/app/ops-analysis/utils/viewHref';
+import {
+  buildOpsCarouselViewHref,
+  buildOpsDirectoryPanelHref,
+  isCarouselPanel,
+} from '@/app/ops-analysis/utils/carouselLinks';
+import CarouselEditor, { type CarouselEditorRef } from '../../components/carousel/carouselEditor';
 
 type SelectedCanvasItems = Record<CanvasType, DirItem | null>;
 
@@ -78,6 +84,10 @@ const ViewPage: React.FC = () => {
   const reportRef = useRef<ReportRef>(null);
   const networkTopologyRef = useRef<NetworkTopologyRef>(null);
   const sidebarRef = useRef<SidebarRef>(null);
+  const carouselEditorRef = useRef<CarouselEditorRef>(null);
+  const [carouselRefreshKey, setCarouselRefreshKey] = useState(0);
+  const panel = isCarouselPanel(searchParams) ? 'carousel' : 'directory';
+  const carouselId = searchParams.get('carousel');
   const selectedItemRef = useRef(selectedItem);
   const [canvasReloadToken, setCanvasReloadToken] = useState(0);
   selectedItemRef.current = selectedItem;
@@ -167,6 +177,47 @@ const ViewPage: React.FC = () => {
       return networkTopologyRef.current.hasUnsavedChanges();
     }
     return false;
+  };
+
+  const confirmDiscard = (onOk: () => void) => {
+    const dirty = checkUnsavedChanges() || Boolean(carouselEditorRef.current?.hasUnsavedChanges());
+    if (!dirty) {
+      onOk();
+      return;
+    }
+    Modal.confirm({
+      title: t('opsAnalysisSidebar.unsavedChanges'),
+      content: t('opsAnalysisSidebar.unsavedChangesWarning'),
+      okText: t('common.confirm'),
+      cancelText: t('common.cancel'),
+      okButtonProps: { danger: true },
+      centered: true,
+      onOk,
+    });
+  };
+
+  const hydrateSelection = (type: DirectoryType, itemInfo?: DirItem) => {
+    setSelectedType(type);
+    setSelectedItem({
+      ...createEmptySelectedItems(),
+      ...(isCanvasType(type) ? { [type]: itemInfo || null } : {}),
+    });
+  };
+
+  const changePanel = (next: 'directory' | 'carousel') => {
+    if (next === panel) return;
+    confirmDiscard(() => {
+      router.push(next === 'carousel'
+        ? buildOpsCarouselViewHref(carouselId, searchParams)
+        : buildOpsDirectoryPanelHref(searchParams));
+    });
+  };
+
+  const openCarousel = (id: string) => {
+    if (id === carouselId && panel === 'carousel') return;
+    confirmDiscard(() => {
+      router.push(buildOpsCarouselViewHref(id, searchParams));
+    });
   };
 
   // 处理导航
@@ -274,9 +325,26 @@ const ViewPage: React.FC = () => {
           <Sidebar
             ref={sidebarRef}
             onSelect={handleNavigation}
+            onHydrateSelection={hydrateSelection}
             onDataUpdate={handleSidebarDataUpdate}
             onCanvasContentReplaced={handleCanvasContentReplaced}
             beforeImportUpdate={confirmBeforeImportUpdate}
+            panel={panel}
+            carouselId={carouselId}
+            carouselRefreshKey={carouselRefreshKey}
+            onPanelChange={changePanel}
+            onSelectCarousel={openCarousel}
+            onCreateCarousel={() => openCarousel('new')}
+            onCarouselCopied={(id) => {
+              setCarouselRefreshKey((value) => value + 1);
+              openCarousel(String(id));
+            }}
+            onCarouselDeleted={(id) => {
+              setCarouselRefreshKey((value) => value + 1);
+              if (String(id) === carouselId) {
+                router.push(buildOpsCarouselViewHref(null, searchParams));
+              }
+            }}
           />
         </div>
         {!screenMode && (
@@ -299,7 +367,18 @@ const ViewPage: React.FC = () => {
         )}
       </div>
       <div className="h-full flex-1 flex" style={{ minWidth: 0 }}>
-        {selectedType === 'screen' ? (
+        {panel === 'carousel' ? (
+          <div className="h-full min-h-0 flex-1 bg-[var(--color-bg-1)]">
+            <CarouselEditor
+              ref={carouselEditorRef}
+              carouselId={carouselId}
+              onSaved={(id) => {
+                setCarouselRefreshKey((value) => value + 1);
+                router.replace(buildOpsCarouselViewHref(String(id), searchParams));
+              }}
+            />
+          </div>
+        ) : selectedType === 'screen' ? (
           <Screen
             ref={screenRef}
             key={`${selectedItem.screen?.data_id ?? 'screen-empty'}:${canvasReloadToken}`}

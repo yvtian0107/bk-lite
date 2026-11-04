@@ -193,6 +193,7 @@ export interface ScreenViewSets {
 export interface ScreenProps {
   selectedScreen?: DirItem | null;
   shareMode?: boolean;
+  playbackMode?: boolean;
   /** 大屏进入或离开编辑。查看页据此收起并恢复目录。 */
   onEditingChange?: (editing: boolean) => void;
 }

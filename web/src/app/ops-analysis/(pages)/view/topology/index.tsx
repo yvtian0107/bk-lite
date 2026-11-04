@@ -75,7 +75,7 @@ import { syncAndFillOrganizationFilterValues } from '@/app/ops-analysis/utils/un
 import { bindCanvasDraftControls } from '@/app/ops-analysis/components/canvasDraftControls';
 
 const Topology = forwardRef<TopologyRef, TopologyProps>(
-  ({ selectedTopology, shareMode = false }, ref) => {
+  ({ selectedTopology, shareMode = false, playbackMode = false }, ref) => {
     const themeName = resolveOpsChartThemeName();
     const chartTheme = getOpsChartTheme(themeName);
     const isDarkTheme = themeName === 'dark';
@@ -193,11 +193,11 @@ const Topology = forwardRef<TopologyRef, TopologyProps>(
     useEffect(() => {
       setTopologyCsvExportHoverEnabled(resolveTopologyCsvExportHoverEnabled({
         editMode: state.isEditMode,
-        shareMode,
+        shareMode: shareMode || playbackMode,
         fullscreen: isFullscreen,
       }));
       return () => setTopologyCsvExportHoverEnabled(false);
-    }, [isFullscreen, shareMode, state.isEditMode]);
+    }, [isFullscreen, playbackMode, shareMode, state.isEditMode]);
 
     const handleContextMenuClick = useCallback((event: { key: string }) => {
       if (event.key !== 'exportCsv') {
@@ -540,6 +540,9 @@ const Topology = forwardRef<TopologyRef, TopologyProps>(
 
     // 键盘快捷键监听
     useEffect(() => {
+      if (playbackMode) {
+        return undefined;
+      }
       const handleKeyDown = (e: KeyboardEvent) => {
         if (e.ctrlKey || e.metaKey) {
           if (e.key === 'z' && !e.shiftKey) {
@@ -556,7 +559,7 @@ const Topology = forwardRef<TopologyRef, TopologyProps>(
       return () => {
         document.removeEventListener('keydown', handleKeyDown);
       };
-    }, [undo, redo]);
+    }, [playbackMode, undo, redo]);
 
     const NodePanel =
       nodeType === 'single-value' ? SingleValueNodePanel : ShapeNodePanel;
@@ -623,6 +626,7 @@ const Topology = forwardRef<TopologyRef, TopologyProps>(
       <div
         className={`flex h-full min-h-0 overflow-hidden p-0 ${state.collapsed ? 'gap-0' : 'gap-2'}`}
       >
+        {!playbackMode && (
         <div className={isFullscreen ? 'hidden' : 'min-h-0 shrink-0'}>
           <NodeSidebar
             collapsed={state.collapsed}
@@ -633,6 +637,7 @@ const Topology = forwardRef<TopologyRef, TopologyProps>(
             onShowChartSelector={handleShowChartSelector}
           />
         </div>
+        )}
 
         <TopologyCanvasShell
           canvasContainerRef={canvasContainerRef}
@@ -665,9 +670,9 @@ const Topology = forwardRef<TopologyRef, TopologyProps>(
           selectedItem={selectedTopology}
           titleFallback={t('topology.canvasTitle')}
           emptyDescription={t('topology.emptySelect')}
-          toolbar={isFullscreen ? undefined : topologyToolbar}
-          filterBar={topologyFilterBar}
-          headerVisible={!isFullscreen}
+          toolbar={isFullscreen || playbackMode ? undefined : topologyToolbar}
+          filterBar={playbackMode ? null : topologyFilterBar}
+          headerVisible={!isFullscreen && !playbackMode}
         >
           {topologyCanvasContent}
         </ViewWorkspace>

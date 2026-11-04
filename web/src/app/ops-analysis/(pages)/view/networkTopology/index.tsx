@@ -147,7 +147,7 @@ const detailPortPairNameClassName =
   'min-w-0 flex-1 break-all [overflow-wrap:anywhere] line-clamp-2 leading-5 text-[var(--color-text-2,#4b5563)]';
 
 const NetworkTopology = forwardRef<NetworkTopologyRef, NetworkTopologyProps>(
-  ({ selectedNetworkTopology, shareMode = false }, ref) => {
+  ({ selectedNetworkTopology, shareMode = false, playbackMode = false }, ref) => {
     const api = useNetworkTopologyApi();
     const { shareLoading, openShare } = useCanvasShareAction('networkTopology');
     const { updateItem } = useDirectoryApi();
@@ -512,7 +512,7 @@ const NetworkTopology = forwardRef<NetworkTopologyRef, NetworkTopologyProps>(
     );
     const library = useNetworkLibrary({
       canvasId,
-      enabled: Boolean(canvasId) && !shareMode,
+      enabled: Boolean(canvasId) && !shareMode && !playbackMode,
       loadModels: loadNodeModels,
       loadNodes: loadLibraryNodes,
     });
@@ -1309,13 +1309,13 @@ const NetworkTopology = forwardRef<NetworkTopologyRef, NetworkTopologyProps>(
             titleFallback={t('opsAnalysis.networkTopology.title')}
             emptyDescription={t('opsAnalysis.networkTopology.selectFirst')}
             toolbar={
-              isFullscreen
+              isFullscreen || playbackMode
                 ? null
                 : selectedNetworkTopology
                   ? sidebarExtra
                   : null
             }
-            headerVisible={!isFullscreen}
+            headerVisible={!isFullscreen && !playbackMode}
             contentClassName={
               isFullscreen
                 ? 'bg-[var(--color-bg-2)] p-0'
@@ -1326,7 +1326,7 @@ const NetworkTopology = forwardRef<NetworkTopologyRef, NetworkTopologyProps>(
               className="flex h-full min-h-0 gap-[10px]"
               data-testid="network-topology-workspace"
             >
-              {!shareMode && !isFullscreen && (
+              {!shareMode && !playbackMode && !isFullscreen && (
                 <section
                   className="flex h-full min-h-0 shrink-0 flex-col overflow-visible rounded-lg border border-[var(--color-border-1,#d9e0e8)] bg-[var(--color-bg-1,#fff)] shadow-[0_10px_24px_rgba(34,47,62,0.05)]"
                   data-testid="network-topology-library-panel"
