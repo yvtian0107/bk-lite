@@ -9,6 +9,7 @@ import Architecture from '@/app/ops-analysis/(pages)/view/architecture';
 import Screen from '@/app/ops-analysis/(pages)/view/screen';
 import Report from '@/app/ops-analysis/(pages)/view/report';
 import NetworkTopology from '@/app/ops-analysis/(pages)/view/networkTopology';
+import { PlaybackInitialDetailProvider } from '@/app/ops-analysis/context/playbackInitialDetail';
 
 export interface PlaybackSlide {
   key: string;
@@ -83,14 +84,25 @@ class PlaybackCanvasBoundary extends React.Component<BoundaryProps, BoundaryStat
 
 export const PlaybackSlideFrame = ({
   slide,
+  initialDetail,
   onError,
 }: {
   slide: PlaybackSlide;
+  initialDetail: unknown;
   onError: () => void;
-}) => (
-  <PlaybackCanvasBoundary slideKey={slide.key} onError={onError}>
-    <PlaybackCanvas slide={slide} />
-  </PlaybackCanvasBoundary>
-);
+}) => {
+  const seeded = React.useMemo(() => ({
+    resourceType: slide.resourceType,
+    canvasId: slide.canvasId,
+    detail: initialDetail,
+  }), [initialDetail, slide.canvasId, slide.resourceType]);
+  return (
+    <PlaybackInitialDetailProvider value={seeded}>
+      <PlaybackCanvasBoundary slideKey={slide.key} onError={onError}>
+        <PlaybackCanvas slide={slide} />
+      </PlaybackCanvasBoundary>
+    </PlaybackInitialDetailProvider>
+  );
+};
 
 export default PlaybackCanvas;

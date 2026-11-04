@@ -89,9 +89,10 @@ describe('useCarouselPlaybackSession', () => {
     expect(result.current.player.remainingMs).toBe(30_000);
 
     await act(async () => {
-      gates[1].resolve({});
+      gates[1].resolve({ refresh_interval: 60_000, name: '盘' });
     });
     expect(result.current.ready).toBe(true);
+    expect(result.current.initialDetail).toEqual({ refresh_interval: 60_000, name: '盘' });
     expect(result.current.confirming).toBe(false);
     await act(async () => {
       vi.advanceTimersByTime(CAROUSEL_PLAYBACK_TICK_MS * 4);

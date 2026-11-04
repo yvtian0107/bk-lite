@@ -183,6 +183,7 @@ const PlayStage = ({ carouselId }: { carouselId: string }) => {
             <PlaybackSlideFrame
               key={`${currentSlide.key}:${player.visit}`}
               slide={currentSlide}
+              initialDetail={session.initialDetail}
               onError={() => session.dispatch({ type: 'markUnavailable', key: currentSlide.key })}
             />
           )}

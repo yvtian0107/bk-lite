@@ -24,7 +24,10 @@ export interface CarouselPlaybackSlide {
   canvasId: number;
 }
 
-type EnterResult = 'ok' | 'skip' | 'ignore';
+export type CarouselEnterOutcome =
+  | { status: 'ok'; detail: unknown }
+  | { status: 'skip' }
+  | { status: 'ignore' };
 
 const toInput = (slide: CarouselPlaybackSlide): CarouselSlideInput => ({
   key: slide.key,
@@ -48,18 +51,17 @@ const oneAttempt = async (
   loadDetail: (slide: CarouselPlaybackSlide, signal: AbortSignal) => Promise<unknown>,
   slide: CarouselPlaybackSlide,
   signal: AbortSignal,
-): Promise<EnterResult | 'retry'> => {
+): Promise<CarouselEnterOutcome | { status: 'retry' }> => {
   try {
-    await loadDetail(slide, signal);
-    return 'ok';
+    return { status: 'ok', detail: await loadDetail(slide, signal) };
   } catch (error) {
     if (isAborted(error, signal) || isCarouselSessionFailure(error)) {
-      return 'ignore';
+      return { status: 'ignore' };
     }
     if (isCarouselBusinessFailure(error)) {
-      return 'skip';
+      return { status: 'skip' };
     }
-    return 'retry';
+    return { status: 'retry' };
   }
 };
 
@@ -68,13 +70,13 @@ export const confirmCarouselEnter = async (
   loadDetail: (slide: CarouselPlaybackSlide, signal: AbortSignal) => Promise<unknown>,
   slide: CarouselPlaybackSlide,
   signal: AbortSignal,
-): Promise<EnterResult> => {
+): Promise<CarouselEnterOutcome> => {
   const first = await oneAttempt(loadDetail, slide, signal);
-  if (first !== 'retry') {
+  if (first.status !== 'retry') {
     return first;
   }
   const second = await oneAttempt(loadDetail, slide, signal);
-  return second === 'retry' ? 'skip' : second;
+  return second.status === 'retry' ? { status: 'skip' } : second;
 };
 
 const nextSlide = (
@@ -114,6 +116,7 @@ export const useCarouselPlaybackSession = ({
   const [player, setPlayer] = useState<CarouselPlayerState>(() => createCarouselPlayerState(slides.map(toInput)));
   const [confirming, setConfirming] = useState(false);
   const [armedVisit, setArmedVisit] = useState<number | null>(null);
+  const [initialDetail, setInitialDetail] = useState<unknown>(undefined);
   const confirmingRef = useRef(false);
   const armedVisitRef = useRef<number | null>(null);
   const prefetchDone = useRef<string | null>(null);
@@ -123,6 +126,7 @@ export const useCarouselPlaybackSession = ({
   const disarm = () => {
     armedVisitRef.current = null;
     setArmedVisit(null);
+    setInitialDetail(undefined);
   };
 
   useEffect(() => {
@@ -179,6 +183,7 @@ export const useCarouselPlaybackSession = ({
     let active = true;
     confirmingRef.current = true;
     setConfirming(true);
+    setInitialDetail(undefined);
     void confirmCarouselEnter(
       (target, signal) => loadRef.current(target, signal),
       slide,
@@ -189,12 +194,13 @@ export const useCarouselPlaybackSession = ({
       }
       confirmingRef.current = false;
       setConfirming(false);
-      if (result === 'ok') {
+      if (result.status === 'ok') {
         armedVisitRef.current = visit;
         setArmedVisit(visit);
+        setInitialDetail(result.detail);
         return;
       }
-      if (result === 'skip') {
+      if (result.status === 'skip') {
         setPlayer((state) => reduceCarouselLoad(state, {
           key: slide.key,
           phase: 'enter',
@@ -262,5 +268,11 @@ export const useCarouselPlaybackSession = ({
 
   const ready = !confirming && player.index >= 0 && armedVisit === player.visit;
 
-  return { player, confirming, ready, dispatch };
+  return {
+    player,
+    confirming,
+    ready,
+    dispatch,
+    initialDetail: ready ? initialDetail : undefined,
+  };
 };
