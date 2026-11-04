@@ -22,11 +22,13 @@ export interface CarouselPlayerState {
 }
 
 export type CarouselPlayerAction =
-  | { type: 'reset'; slides: CarouselSlideInput[]; preferKey?: string | null }
+  | { type: 'reset'; slides: CarouselSlideInput[]; preferKey?: string | null; retainUnavailable?: boolean }
   | { type: 'tick'; deltaMs: number }
   | { type: 'next' }
   | { type: 'prev' }
   | { type: 'togglePause' }
+  | { type: 'setPaused'; paused: boolean }
+  | { type: 'selectIndex'; index: number }
   | { type: 'markUnavailable'; key: string };
 
 export const clampCarouselDwellSeconds = (
@@ -184,9 +186,15 @@ export const reduceCarouselPlayer = (
   switch (action.type) {
     case 'reset': {
       const next = createCarouselPlayerState(action.slides, action.preferKey);
-      const kept = Boolean(action.preferKey) && next.slides[next.index]?.key === action.preferKey;
+      const retained = action.retainUnavailable && action.preferKey
+        ? action.slides.findIndex((slide) => slide.key === action.preferKey)
+        : -1;
+      const index = retained >= 0 ? retained : next.index;
+      const kept = Boolean(action.preferKey) && action.slides[index]?.key === action.preferKey;
       return {
         ...next,
+        index,
+        remainingMs: index < 0 ? 0 : dwellMs(action.slides[index]),
         paused: state.paused,
         visit: kept || state.slides.length === 0 ? state.visit : state.visit + 1,
       };
@@ -196,9 +204,22 @@ export const reduceCarouselPlayer = (
         return state;
       }
       return { ...state, paused: !state.paused };
+    case 'setPaused':
+      if (state.paused === action.paused) {
+        return state;
+      }
+      return { ...state, paused: action.paused };
+    case 'selectIndex':
+      if (action.index < 0 || action.index >= state.slides.length || action.index === state.index) {
+        return state;
+      }
+      return withIndex(state, state.slides, action.index, state.visit + 1);
     case 'tick': {
       if (state.paused) {
         return state;
+      }
+      if (state.index >= 0 && state.slides[state.index] && !state.slides[state.index].available) {
+        return advanceCarousel(state, 1);
       }
       if (state.holdMs > 0) {
         const holdMs = state.holdMs - Math.max(0, action.deltaMs);

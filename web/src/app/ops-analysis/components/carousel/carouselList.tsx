@@ -1,8 +1,7 @@
 'use client';
 
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { Button, Modal, Spin } from 'antd';
-import { CaretRightOutlined } from '@ant-design/icons';
+import { Modal, Spin } from 'antd';
 import CompactEmptyState from '@/components/compact-empty-state';
 import EllipsisWithTooltip from '@/components/ellipsis-with-tooltip';
 import MoreActionsDropdown from '@/components/more-actions-dropdown';
@@ -18,7 +17,7 @@ interface CarouselListProps {
   selectedId?: string | null;
   onSelect: (id: string) => void;
   onAutoSelect?: (id: string) => void;
-  onPlay: (id: number) => void;
+  onEditBasic: (carousel: CarouselSummary) => void;
   onCopied: (id: number) => void;
   onDeleted: (id: number) => void;
 }
@@ -29,7 +28,7 @@ const CarouselList: React.FC<CarouselListProps> = ({
   selectedId,
   onSelect,
   onAutoSelect,
-  onPlay,
+  onEditBasic,
   onCopied,
   onDeleted,
 }) => {
@@ -75,7 +74,6 @@ const CarouselList: React.FC<CarouselListProps> = ({
     (onAutoSelect ?? onSelect)(id);
   }, [loading, onAutoSelect, onSelect, rows, selectedId]);
 
-  const canPlay = hasPermission(['View']);
   const canCopy = hasPermission(['AddChart']);
   const canEdit = hasPermission(['EditChart']);
   const canDelete = hasPermission(['DeleteChart']);
@@ -106,8 +104,8 @@ const CarouselList: React.FC<CarouselListProps> = ({
             const menuItems = [
               ...(canEdit ? [{
                 key: 'edit',
-                label: t('common.edit'),
-                onClick: () => onSelect(String(row.id)),
+                label: t('opsCarousel.editBasic'),
+                onClick: () => onEditBasic(row),
               }] : []),
               ...(canCopy ? [{
                 key: 'copy',
@@ -151,15 +149,6 @@ const CarouselList: React.FC<CarouselListProps> = ({
                   />
                   <span className="text-xs text-[var(--color-text-3)]">{subtitle}</span>
                 </button>
-                {canPlay && (
-                  <Button
-                    type="text"
-                    size="small"
-                    aria-label={t('opsCarousel.play')}
-                    icon={<CaretRightOutlined />}
-                    onClick={() => onPlay(row.id)}
-                  />
-                )}
                 {menuItems.length > 0 && (
                   <MoreActionsDropdown
                     stopPropagation

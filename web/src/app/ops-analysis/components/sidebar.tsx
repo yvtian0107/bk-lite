@@ -87,7 +87,8 @@ import {
 } from '@/app/ops-analysis/utils/homepageDirectoryActions';
 import CarouselList from '@/app/ops-analysis/components/carousel/carouselList';
 import AddToCarouselModal from '@/app/ops-analysis/components/carousel/addToCarouselModal';
-import { buildCarouselPlayHref } from '@/app/ops-analysis/utils/carouselLinks';
+import CarouselInfoModal from '@/app/ops-analysis/components/carousel/carouselInfoModal';
+import type { CarouselSummary } from '@/app/ops-analysis/types/carousel';
 
 const Sidebar = forwardRef<SidebarRef, SidebarProps>(
   ({
@@ -102,8 +103,8 @@ const Sidebar = forwardRef<SidebarRef, SidebarProps>(
     onPanelChange,
     onSelectCarousel,
     onAutoSelectCarousel,
-    onCreateCarousel,
-    onPlayCarousel,
+    onCarouselCreated,
+    onCarouselUpdated,
     onCarouselCopied,
     onCarouselDeleted,
   }, ref) => {
@@ -121,6 +122,8 @@ const Sidebar = forwardRef<SidebarRef, SidebarProps>(
     const [submitLoading, setSubmitLoading] = useState(false);
     const [connectionTesting, setConnectionTesting] = useState(false);
     const [searchTerm, setSearchTerm] = useState('');
+    const [carouselInfoOpen, setCarouselInfoOpen] = useState(false);
+    const [carouselInfoTarget, setCarouselInfoTarget] = useState<CarouselSummary | null>(null);
     const [modalVisible, setModalVisible] = useState(false);
     const [modalTitle, setModalTitle] = useState('');
     const [modalAction, setModalAction] = useState<ModalAction>('addRoot');
@@ -965,7 +968,10 @@ const Sidebar = forwardRef<SidebarRef, SidebarProps>(
                 icon={<PlusOutlined />}
                 className="ml-2"
                 aria-label={t('opsCarousel.newList')}
-                onClick={() => onCreateCarousel?.()}
+                onClick={() => {
+                  setCarouselInfoTarget(null);
+                  setCarouselInfoOpen(true);
+                }}
               />
             ) : null
           ) : (
@@ -990,12 +996,9 @@ const Sidebar = forwardRef<SidebarRef, SidebarProps>(
               selectedId={carouselId}
               onSelect={(id) => onSelectCarousel?.(id)}
               onAutoSelect={onAutoSelectCarousel}
-              onPlay={(id) => {
-                if (onPlayCarousel) {
-                  onPlayCarousel(id);
-                  return;
-                }
-                window.open(buildCarouselPlayHref(id), '_blank', 'noopener,noreferrer');
+              onEditBasic={(carousel) => {
+                setCarouselInfoTarget(carousel);
+                setCarouselInfoOpen(true);
               }}
               onCopied={(id) => onCarouselCopied?.(id)}
               onDeleted={(id) => onCarouselDeleted?.(id)}
@@ -1036,6 +1039,19 @@ const Sidebar = forwardRef<SidebarRef, SidebarProps>(
           </Spin>
           )}
         </div>
+
+        <CarouselInfoModal
+          open={carouselInfoOpen}
+          carousel={carouselInfoTarget}
+          onClose={() => setCarouselInfoOpen(false)}
+          onCreated={(detail) => {
+            onCarouselCreated?.(
+              detail.id,
+              (detail.items?.length ?? 0) === 0 && hasPermission(['EditChart']),
+            );
+          }}
+          onUpdated={() => onCarouselUpdated?.()}
+        />
 
         <Modal
           title={modalTitle}

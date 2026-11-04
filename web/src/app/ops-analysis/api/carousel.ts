@@ -41,7 +41,10 @@ export const useCarouselApi = () => {
     return post<CarouselDetail>(BASE, data);
   }, [post]);
 
-  const updateCarousel = useCallback(async (id: number | string, data: CarouselWriteInput) => {
+  const updateCarousel = useCallback(async (
+    id: number | string,
+    data: CarouselWriteInput | Pick<CarouselWriteInput, 'name' | 'groups'> & { desc?: string },
+  ) => {
     return patch<CarouselDetail>(`${BASE}${id}/`, data);
   }, [patch]);
 

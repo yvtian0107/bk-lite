@@ -2081,6 +2081,9 @@
     "directory": "目录",
     "carousel": "轮播",
     "newList": "新建轮播",
+    "editBasic": "编辑基本信息",
+    "fullscreenPlay": "全屏播放",
+    "previewUnavailable": "该画布已删除或当前组织不可见",
     "emptyList": "暂无轮播列表",
     "canvasCount": "{count} 张画布",
     "play": "播放",
@@ -2088,7 +2091,6 @@
     "addCanvas": "添加画布",
     "noCanvas": "没有可添加的画布",
     "selectList": "选择一个轮播列表，或新建一个",
-    "startPlay": "开始播放",
     "defaultDwell": "默认停留时长",
     "seconds": "秒",
     "items": "画布",
@@ -2111,8 +2113,6 @@
     "resume": "继续",
     "browserFullscreen": "浏览器全屏",
     "ownerOrg": "所属组织",
-    "saved": "已保存",
-    "unsaved": "有未保存的改动",
     "roundDuration": "整轮 {duration}",
     "durationSeconds": "{count} 秒",
     "durationMinutes": "{count} 分",
@@ -2142,10 +2142,6 @@
     "remainingCapacity": "还可添加 {count} 张",
     "allTypes": "全部",
     "duplicateHint": "列表里有重复的画布，移除多余项后即可保存",
-    "alreadyContains": "已包含",
-    "saveAndPlay": "保存并播放",
-    "playSaved": "播放已保存版本",
-    "unsavedPlayTitle": "有未保存的改动",
-    "unsavedPlayBody": "播放前先处理这些改动。"
+    "alreadyContains": "已包含"
   }
 }

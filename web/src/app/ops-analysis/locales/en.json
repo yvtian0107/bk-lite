@@ -2081,6 +2081,9 @@
     "directory": "Directory",
     "carousel": "Carousel",
     "newList": "New carousel",
+    "editBasic": "Edit details",
+    "fullscreenPlay": "Full screen",
+    "previewUnavailable": "This canvas was deleted or is hidden from the current organization",
     "emptyList": "No carousels yet",
     "canvasCount": "{count} canvases",
     "play": "Play",
@@ -2088,7 +2091,6 @@
     "addCanvas": "Add canvases",
     "noCanvas": "No canvases to add",
     "selectList": "Select a carousel, or create one",
-    "startPlay": "Start playback",
     "defaultDwell": "Default dwell",
     "seconds": "sec",
     "items": "Canvases",
@@ -2111,8 +2113,6 @@
     "resume": "Resume",
     "browserFullscreen": "Browser fullscreen",
     "ownerOrg": "Organizations",
-    "saved": "Saved",
-    "unsaved": "Unsaved changes",
     "roundDuration": "Round {duration}",
     "durationSeconds": "{count} sec",
     "durationMinutes": "{count} min",
@@ -2142,10 +2142,6 @@
     "remainingCapacity": "{count} more can be added",
     "allTypes": "All",
     "duplicateHint": "This list has duplicate canvases. Remove the extras before saving",
-    "alreadyContains": "Already included",
-    "saveAndPlay": "Save and play",
-    "playSaved": "Play saved version",
-    "unsavedPlayTitle": "Unsaved changes",
-    "unsavedPlayBody": "Decide what to do with these changes before playback."
+    "alreadyContains": "Already included"
   }
 }

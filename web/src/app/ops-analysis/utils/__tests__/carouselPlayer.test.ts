@@ -78,6 +78,18 @@ describe('carousel player', () => {
     expect(skippedCarouselCount(state)).toBe(2);
   });
 
+  it('can rest on an unavailable slide and skips it as soon as playback resumes', () => {
+    let state = createCarouselPlayerState(slides([true, false, true]));
+    state = reduceCarouselPlayer(state, { type: 'selectIndex', index: 1 });
+    expect(state.index).toBe(1);
+    state = reduceCarouselPlayer(state, { type: 'setPaused', paused: true });
+    const held = reduceCarouselPlayer(state, { type: 'tick', deltaMs: 10_000 });
+    expect(held.index).toBe(1);
+    state = reduceCarouselPlayer(held, { type: 'setPaused', paused: false });
+    state = reduceCarouselPlayer(state, { type: 'tick', deltaMs: 1 });
+    expect(state.index).toBe(2);
+  });
+
   it('keeps the current slide when the playlist is refreshed', () => {
     const current = createCarouselPlayerState(slides([true, true]));
     const moved = reduceCarouselPlayer(current, { type: 'next' });

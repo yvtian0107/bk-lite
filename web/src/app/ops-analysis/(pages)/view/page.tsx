@@ -86,8 +86,11 @@ const ViewPage: React.FC = () => {
   const sidebarRef = useRef<SidebarRef>(null);
   const carouselEditorRef = useRef<CarouselEditorRef>(null);
   const [carouselRefreshKey, setCarouselRefreshKey] = useState(0);
+  const [carouselInfoRevision, setCarouselInfoRevision] = useState(0);
+  const [carouselEditorSignal, setCarouselEditorSignal] = useState(0);
   const panel = isCarouselPanel(searchParams) ? 'carousel' : 'directory';
-  const carouselId = searchParams.get('carousel');
+  const carouselParam = searchParams.get('carousel');
+  const carouselId = carouselParam && carouselParam !== 'new' ? carouselParam : null;
   const selectedItemRef = useRef(selectedItem);
   const [canvasReloadToken, setCanvasReloadToken] = useState(0);
   selectedItemRef.current = selectedItem;
@@ -337,7 +340,15 @@ const ViewPage: React.FC = () => {
             onAutoSelectCarousel={(id) => {
               router.replace(buildOpsCarouselViewHref(id, searchParams));
             }}
-            onCreateCarousel={() => openCarousel('new')}
+            onCarouselCreated={(id, openEditor) => {
+              setCarouselRefreshKey((value) => value + 1);
+              if (openEditor) setCarouselEditorSignal((value) => value + 1);
+              router.replace(buildOpsCarouselViewHref(String(id), searchParams));
+            }}
+            onCarouselUpdated={() => {
+              setCarouselRefreshKey((value) => value + 1);
+              setCarouselInfoRevision((value) => value + 1);
+            }}
             onCarouselCopied={(id) => {
               setCarouselRefreshKey((value) => value + 1);
               openCarousel(String(id));
@@ -375,20 +386,11 @@ const ViewPage: React.FC = () => {
             <CarouselEditor
               ref={carouselEditorRef}
               carouselId={carouselId}
-              onCreate={() => openCarousel('new')}
+              openEditorSignal={carouselEditorSignal}
+              infoRevision={carouselInfoRevision}
               onSaved={(id) => {
                 setCarouselRefreshKey((value) => value + 1);
                 router.replace(buildOpsCarouselViewHref(String(id), searchParams));
-              }}
-              onCopied={(id) => {
-                setCarouselRefreshKey((value) => value + 1);
-                openCarousel(String(id));
-              }}
-              onDeleted={(id) => {
-                setCarouselRefreshKey((value) => value + 1);
-                if (String(id) === carouselId) {
-                  router.push(buildOpsCarouselViewHref(null, searchParams));
-                }
               }}
             />
           </div>

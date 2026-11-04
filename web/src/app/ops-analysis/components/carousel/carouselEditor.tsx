@@ -2,9 +2,11 @@
 
 import React, {
   forwardRef,
+  useCallback,
   useEffect,
   useImperativeHandle,
   useMemo,
+  useRef,
   useState,
 } from 'react';
 import {
@@ -24,10 +26,7 @@ import {
 import { CSS } from '@dnd-kit/utilities';
 import {
   Alert,
-  Breadcrumb,
   Button,
-  Form,
-  Input,
   InputNumber,
   Modal,
   Popover,
@@ -35,18 +34,26 @@ import {
   Tag,
   message,
 } from 'antd';
-import { HolderOutlined, PlusOutlined } from '@ant-design/icons';
-import GroupTreeSelect from '@/components/group-tree-select';
+import {
+  CaretRightOutlined,
+  HolderOutlined,
+  LeftOutlined,
+  PauseOutlined,
+  PlusOutlined,
+  RightOutlined,
+} from '@ant-design/icons';
+import OperateFormDrawer from '@/components/operate-form-drawer';
 import CompactEmptyState from '@/components/compact-empty-state';
 import MoreActionsDropdown from '@/components/more-actions-dropdown';
 import { useTranslation } from '@/utils/i18n';
 import { useUserInfoContext } from '@/context/userInfo';
-import { convertGroupTreeToTreeSelectData } from '@/utils/index';
 import { getCanvasTypeMeta } from '@/app/ops-analysis/constants/canvasTypes';
 import { useDirectoryApi } from '@/app/ops-analysis/api';
 import { useCarouselApi } from '@/app/ops-analysis/api/carousel';
 import type { CarouselItem } from '@/app/ops-analysis/types/carousel';
 import type { DirItem } from '@/app/ops-analysis/types';
+import { PlaybackSlideFrame, type PlaybackSlide } from '@/app/ops-analysis/(pages)/view/play/playbackCanvas';
+import { useCarouselPlaybackSession } from '@/app/ops-analysis/(pages)/view/play/useCarouselPlaybackSession';
 import {
   CAROUSEL_DEFAULT_DWELL_SECONDS,
   CAROUSEL_DWELL_MAX_SECONDS,
@@ -65,6 +72,11 @@ import {
   syncCarouselSelection,
   type CarouselDraftComparable,
 } from '@/app/ops-analysis/utils/carouselDraft';
+import {
+  canStartCarouselPreview,
+  manualPreviewStep,
+  relocatePreviewIndexByKeys,
+} from '@/app/ops-analysis/utils/carouselPreview';
 import { buildCarouselPlayHref } from '@/app/ops-analysis/utils/carouselLinks';
 import useBtnPermissions from '@/hooks/usePermissions';
 import { CanvasTypeIcon } from './canvasTypeIcon';
@@ -88,23 +100,10 @@ interface DraftItem {
 
 interface CarouselEditorProps {
   carouselId: string | null;
+  openEditorSignal?: number;
+  infoRevision?: number;
   onSaved: (id: number) => void;
-  onCreate?: () => void;
-  onCopied?: (id: number) => void;
-  onDeleted?: (id: number) => void;
 }
-
-const toDraft = (item: CarouselItem): DraftItem => ({
-  key: `item-${item.id}`,
-  id: item.id,
-  resource_type: item.resource_type,
-  canvas_id: item.canvas_id,
-  dwell_seconds: item.dwell_seconds,
-  canvas_name: item.canvas_name || '',
-  exists: item.exists,
-  visible: item.visible,
-  canvas_group_ids: item.canvas_group_ids || [],
-});
 
 interface EditorFields {
   name: string;
@@ -113,16 +112,16 @@ interface EditorFields {
   defaultDwell: number | null;
 }
 
-const fieldsFromForm = (values: {
+const fieldsFromDetail = (detail: {
   name?: string;
   desc?: string;
   groups?: number[];
   default_dwell_seconds?: number | null;
 }): EditorFields => ({
-  name: values.name ?? '',
-  desc: values.desc ?? '',
-  groups: (values.groups || []).map((groupId) => Number(groupId)),
-  defaultDwell: values.default_dwell_seconds ?? null,
+  name: detail.name ?? '',
+  desc: detail.desc ?? '',
+  groups: (detail.groups || []).map((groupId) => Number(groupId)),
+  defaultDwell: detail.default_dwell_seconds ?? null,
 });
 
 const toComparable = (fields: EditorFields, rows: DraftItem[]): CarouselDraftComparable => ({
@@ -137,11 +136,21 @@ const toComparable = (fields: EditorFields, rows: DraftItem[]): CarouselDraftCom
   })),
 });
 
+const toDraft = (item: CarouselItem): DraftItem => ({
+  key: `item-${item.id}`,
+  id: item.id,
+  resource_type: item.resource_type,
+  canvas_id: item.canvas_id,
+  dwell_seconds: item.dwell_seconds,
+  canvas_name: item.canvas_name || '',
+  exists: item.exists,
+  visible: item.visible,
+  canvas_group_ids: item.canvas_group_ids || [],
+});
+
 const moveItem = (items: DraftItem[], key: string, to: number): DraftItem[] => {
   const from = items.findIndex((item) => item.key === key);
-  if (from < 0 || from === to) {
-    return items;
-  }
+  if (from < 0 || from === to) return items;
   const next = items.slice();
   const [row] = next.splice(from, 1);
   next.splice(Math.max(0, Math.min(to, next.length)), 0, row);
@@ -151,6 +160,7 @@ const moveItem = (items: DraftItem[], key: string, to: number): DraftItem[] => {
 const ItemRow = ({
   item,
   index,
+  selected,
   canEdit,
   defaultDwell,
   hiddenLabels,
@@ -158,6 +168,7 @@ const ItemRow = ({
   canMoveDown,
   canMoveTop,
   canMoveBottom,
+  onActivate,
   onDwell,
   onMoveUp,
   onMoveDown,
@@ -167,6 +178,7 @@ const ItemRow = ({
 }: {
   item: DraftItem;
   index: number;
+  selected: boolean;
   canEdit: boolean;
   defaultDwell: number;
   hiddenLabels: string[];
@@ -174,6 +186,7 @@ const ItemRow = ({
   canMoveDown: boolean;
   canMoveTop: boolean;
   canMoveBottom: boolean;
+  onActivate: () => void;
   onDwell: (value: number | null) => void;
   onMoveUp: () => void;
   onMoveDown: () => void;
@@ -194,13 +207,17 @@ const ItemRow = ({
     <div
       ref={sortable.setNodeRef}
       style={{ transform: CSS.Transform.toString(sortable.transform), transition: sortable.transition }}
-      className="flex items-center gap-2 border-b border-[var(--color-border-1)] px-2 py-1.5"
+      className={`flex items-center gap-2 border-b border-[var(--color-border-1)] px-2 py-1.5 ${
+        selected ? 'bg-[var(--color-fill-2)]' : ''
+      }`}
+      onClick={onActivate}
     >
       {canEdit && (
         <button
           type="button"
           className="w-6 cursor-grab text-[var(--color-text-3)]"
           aria-label={t('opsCarousel.drag')}
+          onClick={(event) => event.stopPropagation()}
           {...sortable.attributes}
           {...sortable.listeners}
         >
@@ -227,36 +244,43 @@ const ItemRow = ({
             </div>
           )}
         >
-          <Tag>{t('opsCarousel.hiddenOrgCount', undefined, { count: hiddenLabels.length })}</Tag>
+          <Tag onClick={(event) => event.stopPropagation()}>
+            {t('opsCarousel.hiddenOrgCount', undefined, { count: hiddenLabels.length })}
+          </Tag>
         </Popover>
       )}
-      {canEdit ? (
-        <InputNumber
-          min={CAROUSEL_DWELL_MIN_SECONDS}
-          max={CAROUSEL_DWELL_MAX_SECONDS}
-          value={item.dwell_seconds ?? undefined}
-          placeholder={String(defaultDwell)}
-          className="w-32"
-          addonAfter={t('opsCarousel.seconds')}
-          onChange={(value) => onDwell(value == null ? null : clampCarouselDwellSeconds(value))}
-        />
-      ) : (
-        <span className="w-32 text-sm text-[var(--color-text-2)]">
-          {item.dwell_seconds ?? defaultDwell} {t('opsCarousel.seconds')}
-        </span>
-      )}
+      <div onClick={(event) => event.stopPropagation()}>
+        {canEdit ? (
+          <InputNumber
+            min={CAROUSEL_DWELL_MIN_SECONDS}
+            max={CAROUSEL_DWELL_MAX_SECONDS}
+            value={item.dwell_seconds ?? undefined}
+            placeholder={String(defaultDwell)}
+            className="w-32"
+            addonAfter={t('opsCarousel.seconds')}
+            title={t('opsCarousel.dwellEmptyHint', undefined, { seconds: defaultDwell })}
+            onChange={(value) => onDwell(value == null ? null : clampCarouselDwellSeconds(value))}
+          />
+        ) : (
+          <span className="w-32 text-sm text-[var(--color-text-2)]">
+            {item.dwell_seconds ?? defaultDwell} {t('opsCarousel.seconds')}
+          </span>
+        )}
+      </div>
       {canEdit && (
-        <MoreActionsDropdown
-          stopPropagation
-          labelAlign="start"
-          items={[
-            { key: 'up', label: t('opsCarousel.moveUp'), disabled: !canMoveUp, onClick: onMoveUp },
-            { key: 'down', label: t('opsCarousel.moveDown'), disabled: !canMoveDown, onClick: onMoveDown },
-            { key: 'top', label: t('opsCarousel.moveTop'), disabled: !canMoveTop, onClick: onMoveTop },
-            { key: 'bottom', label: t('opsCarousel.moveBottom'), disabled: !canMoveBottom, onClick: onMoveBottom },
-            { key: 'remove', label: t('opsCarousel.remove'), danger: true, onClick: onRemove },
-          ]}
-        />
+        <div onClick={(event) => event.stopPropagation()}>
+          <MoreActionsDropdown
+            stopPropagation
+            labelAlign="start"
+            items={[
+              { key: 'up', label: t('opsCarousel.moveUp'), disabled: !canMoveUp, onClick: onMoveUp },
+              { key: 'down', label: t('opsCarousel.moveDown'), disabled: !canMoveDown, onClick: onMoveDown },
+              { key: 'top', label: t('opsCarousel.moveTop'), disabled: !canMoveTop, onClick: onMoveTop },
+              { key: 'bottom', label: t('opsCarousel.moveBottom'), disabled: !canMoveBottom, onClick: onMoveBottom },
+              { key: 'remove', label: t('opsCarousel.remove'), danger: true, onClick: onRemove },
+            ]}
+          />
+        </div>
       )}
     </div>
   );
@@ -264,24 +288,17 @@ const ItemRow = ({
 
 const CarouselEditor = forwardRef<CarouselEditorRef, CarouselEditorProps>(({
   carouselId,
+  openEditorSignal = 0,
+  infoRevision = 0,
   onSaved,
-  onCreate,
-  onCopied,
-  onDeleted,
 }, ref) => {
   const { t } = useTranslation();
   const { hasPermission } = useBtnPermissions();
-  const { selectedGroup, groupTree, flatGroups } = useUserInfoContext();
-  const {
-    getCarousel,
-    createCarousel,
-    updateCarousel,
-    copyCarousel,
-    deleteCarousel,
-  } = useCarouselApi();
+  const { flatGroups } = useUserInfoContext();
+  const { getCarousel, updateCarousel, prefetchCanvasDetail } = useCarouselApi();
   const { getDirectoryTree } = useDirectoryApi();
-  const [form] = Form.useForm();
   const [items, setItems] = useState<DraftItem[]>([]);
+  const [savedRows, setSavedRows] = useState<DraftItem[]>([]);
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [fields, setFields] = useState<EditorFields>({
@@ -291,24 +308,84 @@ const CarouselEditor = forwardRef<CarouselEditorRef, CarouselEditorProps>(({
     defaultDwell: CAROUSEL_DEFAULT_DWELL_SECONDS,
   });
   const [savedDraft, setSavedDraft] = useState<CarouselDraftComparable | null>(null);
+  const [editorOpen, setEditorOpen] = useState(false);
   const [pickerOpen, setPickerOpen] = useState(false);
   const [treeLoadFailed, setTreeLoadFailed] = useState(false);
-  const [playPrompt, setPlayPrompt] = useState(false);
   const [problemsOnly, setProblemsOnly] = useState(false);
   const [directories, setDirectories] = useState<DirItem[]>([]);
+  const editorOpenRef = useRef(false);
+  const appliedSignal = useRef(0);
+  const loadedId = useRef<string | null>(null);
+  const dragging = useRef(false);
+  const seenToken = useRef<string | null>(null);
+  const previousKeysRef = useRef<string[]>([]);
+  const lockedIndexRef = useRef(0);
+  const thumbRef = useRef<HTMLButtonElement>(null);
+  editorOpenRef.current = editorOpen;
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 4 } }));
-  const canEdit = carouselId === 'new' ? hasPermission(['AddChart']) : hasPermission(['EditChart']);
+  const canEdit = hasPermission(['EditChart']);
   const canPlay = hasPermission(['View']);
-  const canCopy = hasPermission(['AddChart']);
-  const canDelete = hasPermission(['DeleteChart']);
-  const isNew = !carouselId || carouselId === 'new';
   const defaultDwell = clampCarouselDwellSeconds(fields.defaultDwell, CAROUSEL_DEFAULT_DWELL_SECONDS);
   const dirty = savedDraft != null && !sameCarouselDraft(savedDraft, toComparable(fields, items));
-  const unsaved = dirty || carouselId === 'new';
+  const playbackAllowed = canStartCarouselPreview(editorOpen);
+
+  const slides = useMemo<PlaybackSlide[]>(() => items.map((item) => ({
+    key: item.key,
+    resourceType: item.resource_type,
+    canvasId: item.canvas_id,
+    name: item.exists && item.visible ? (item.canvas_name || '') : '',
+    dwellSeconds: clampCarouselDwellSeconds(item.dwell_seconds ?? defaultDwell),
+    available: item.exists && item.visible,
+  })), [defaultDwell, items]);
+  const loadCanvas = useCallback((slide: PlaybackSlide, signal: AbortSignal) => (
+    prefetchCanvasDetail(slide.resourceType, slide.canvasId, signal)
+  ), [prefetchCanvasDetail]);
+  const session = useCarouselPlaybackSession({
+    slides,
+    enabled: Boolean(carouselId) && !loading && slides.length > 0,
+    loadDetail: loadCanvas,
+    resetKey: carouselId || '',
+    startPaused: true,
+    confirmWhilePaused: true,
+    retainUnavailable: true,
+  });
+  const player = session.player;
+  const keysToken = items.map((item) => item.key).join('\u0000');
 
   useImperativeHandle(ref, () => ({
-    hasUnsavedChanges: () => dirty,
-  }), [dirty]);
+    hasUnsavedChanges: () => editorOpen && dirty,
+  }), [dirty, editorOpen]);
+
+  useEffect(() => {
+    const nextKeys = keysToken ? keysToken.split('\u0000') : [];
+    if (seenToken.current !== keysToken) {
+      const nextIndex = relocatePreviewIndexByKeys(
+        previousKeysRef.current,
+        lockedIndexRef.current,
+        nextKeys,
+      );
+      previousKeysRef.current = nextKeys;
+      lockedIndexRef.current = Math.max(nextIndex, 0);
+      seenToken.current = keysToken;
+      if (nextIndex >= 0 && player.index !== nextIndex) {
+        session.dispatch({ type: 'selectIndex', index: nextIndex });
+      }
+      return;
+    }
+    if (player.index >= 0) {
+      lockedIndexRef.current = player.index;
+    }
+  }, [keysToken, player.index, player.visit, session.dispatch]);
+
+  useEffect(() => {
+    session.dispatch({ type: 'setPaused', paused: true });
+    setEditorOpen(false);
+    setProblemsOnly(false);
+  }, [carouselId, session.dispatch]);
+
+  useEffect(() => {
+    thumbRef.current?.scrollIntoView({ behavior: 'smooth', inline: 'center', block: 'nearest' });
+  }, [player.index, slides.length]);
 
   const groupName = useMemo(() => {
     const names = new Map<string, string>();
@@ -318,48 +395,45 @@ const CarouselEditor = forwardRef<CarouselEditorRef, CarouselEditorProps>(({
     return (groupId: number) => names.get(String(groupId)) || String(groupId);
   }, [flatGroups]);
 
-  useEffect(() => {
-    if (!carouselId || carouselId === 'new') {
-      const nextFields = fieldsFromForm({
-        name: '',
-        desc: '',
-        groups: selectedGroup?.id ? [Number(selectedGroup.id)] : [],
-        default_dwell_seconds: CAROUSEL_DEFAULT_DWELL_SECONDS,
-      });
-      form.setFieldsValue({
+  const applyDetail = useCallback((detail: {
+    name: string;
+    desc: string;
+    groups: number[];
+    default_dwell_seconds: number;
+    items: CarouselItem[];
+  }, identityOnly: boolean) => {
+    const nextFields = fieldsFromDetail(detail);
+    if (identityOnly) {
+      setFields((current) => ({
+        ...current,
         name: nextFields.name,
         desc: nextFields.desc,
         groups: nextFields.groups,
-        default_dwell_seconds: nextFields.defaultDwell,
-      });
-      setFields(nextFields);
-      setItems([]);
-      setSavedDraft(toComparable(nextFields, []));
-      setProblemsOnly(false);
+      }));
+      setSavedDraft((current) => (
+        current
+          ? { ...current, name: nextFields.name, desc: nextFields.desc, groups: nextFields.groups }
+          : current
+      ));
       return;
     }
+    const drafts = detail.items.map(toDraft);
+    setFields(nextFields);
+    setSavedRows(drafts);
+    setItems(drafts);
+    setSavedDraft(toComparable(nextFields, drafts));
+  }, []);
+
+  useEffect(() => {
+    if (!carouselId) return undefined;
     let cancelled = false;
     setLoading(true);
     void getCarousel(carouselId).then((detail) => {
-      if (cancelled) return;
-      const drafts = detail.items.map(toDraft);
-      const nextFields = fieldsFromForm({
-        name: detail.name,
-        desc: detail.desc,
-        groups: detail.groups,
-        default_dwell_seconds: detail.default_dwell_seconds,
-      });
-      form.setFieldsValue({
-        name: nextFields.name,
-        desc: nextFields.desc,
-        groups: nextFields.groups,
-        default_dwell_seconds: nextFields.defaultDwell,
-      });
-      setFields(nextFields);
-      setItems(drafts);
-      setSavedDraft(toComparable(nextFields, drafts));
-      setProblemsOnly(false);
-      if (duplicateCanvasKeys(drafts.map((item) => ({
+      if (cancelled || !carouselId) return;
+      const identityOnly = editorOpenRef.current && loadedId.current === carouselId;
+      applyDetail(detail, identityOnly);
+      loadedId.current = carouselId;
+      if (!identityOnly && duplicateCanvasKeys(detail.items.map((item) => ({
         resourceType: item.resource_type,
         canvasId: item.canvas_id,
       }))).length > 0) {
@@ -373,19 +447,53 @@ const CarouselEditor = forwardRef<CarouselEditorRef, CarouselEditorProps>(({
     return () => {
       cancelled = true;
     };
-  }, [carouselId, form, getCarousel, t]);
+  }, [applyDetail, carouselId, getCarousel, infoRevision, t]);
 
   useEffect(() => {
-    if (carouselId !== 'new' || !selectedGroup?.id) return;
-    const groupId = Number(selectedGroup.id);
-    const currentGroups = form.getFieldValue('groups') as number[] | undefined;
-    if (currentGroups?.length) return;
-    form.setFieldsValue({ groups: [groupId] });
-    setFields((current) => (current.groups.length ? current : { ...current, groups: [groupId] }));
-    setSavedDraft((current) => (
-      !current || current.groups.length ? current : { ...current, groups: [groupId] }
-    ));
-  }, [carouselId, form, selectedGroup?.id]);
+    if (!openEditorSignal || openEditorSignal === appliedSignal.current) return;
+    if (!canEdit || loading || !carouselId || loadedId.current !== carouselId) return;
+    appliedSignal.current = openEditorSignal;
+    session.dispatch({ type: 'setPaused', paused: true });
+    setEditorOpen(true);
+  }, [canEdit, carouselId, loading, openEditorSignal, session.dispatch]);
+
+  const openEditor = () => {
+    session.dispatch({ type: 'setPaused', paused: true });
+    setEditorOpen(true);
+  };
+
+  const restoreSaved = () => {
+    if (!savedDraft) {
+      setEditorOpen(false);
+      return;
+    }
+    setFields({
+      name: savedDraft.name,
+      desc: savedDraft.desc,
+      groups: savedDraft.groups,
+      defaultDwell: savedDraft.defaultDwell,
+    });
+    setItems(savedRows);
+    setEditorOpen(false);
+    setProblemsOnly(false);
+  };
+
+  const requestClose = () => {
+    if (!dirty) {
+      setEditorOpen(false);
+      setProblemsOnly(false);
+      return;
+    }
+    Modal.confirm({
+      title: t('opsAnalysisSidebar.unsavedChanges'),
+      content: t('opsAnalysisSidebar.unsavedChangesWarning'),
+      okText: t('common.confirm'),
+      cancelText: t('common.cancel'),
+      okButtonProps: { danger: true },
+      centered: true,
+      onOk: restoreSaved,
+    });
+  };
 
   const openPicker = async () => {
     try {
@@ -425,21 +533,21 @@ const CarouselEditor = forwardRef<CarouselEditorRef, CarouselEditorProps>(({
     setPickerOpen(false);
   };
 
-  const persist = async (): Promise<number | null> => {
+  const persist = async () => {
     const duplicates = duplicateCanvasKeys(items.map((item) => ({
       resourceType: item.resource_type,
       canvasId: item.canvas_id,
     })));
     if (duplicates.length > 0) {
-      message.warning(t('opsCarousel.duplicateHint'));
-      return null;
+      Modal.warning({ title: t('opsCarousel.duplicateHint'), centered: true });
+      return;
     }
-    const values = await form.validateFields();
+    if (!carouselId) return;
     const payload = {
-      name: String(values.name).trim(),
-      desc: values.desc || '',
-      groups: (values.groups || []).map((groupId: number) => Number(groupId)),
-      default_dwell_seconds: clampCarouselDwellSeconds(values.default_dwell_seconds),
+      name: fields.name.trim(),
+      desc: fields.desc || '',
+      groups: fields.groups,
+      default_dwell_seconds: clampCarouselDwellSeconds(fields.defaultDwell),
       items: items.map((item) => ({
         ...(item.id ? { id: item.id } : {}),
         resource_type: item.resource_type,
@@ -449,57 +557,51 @@ const CarouselEditor = forwardRef<CarouselEditorRef, CarouselEditorProps>(({
     };
     setSaving(true);
     try {
-      const saved = carouselId && carouselId !== 'new'
-        ? await updateCarousel(carouselId, payload)
-        : await createCarousel(payload);
-      const savedFields = fieldsFromForm({
-        name: payload.name,
-        desc: payload.desc,
-        groups: payload.groups,
-        default_dwell_seconds: payload.default_dwell_seconds,
-      });
-      form.setFieldsValue({
-        name: savedFields.name,
-        desc: savedFields.desc,
-        groups: savedFields.groups,
-        default_dwell_seconds: savedFields.defaultDwell,
-      });
-      setFields(savedFields);
-      setSavedDraft(toComparable(savedFields, items));
-      message.success(t('common.saveSuccess'));
-      return saved.id;
+      const saved = await updateCarousel(carouselId, payload);
+      const drafts = saved.items.map(toDraft);
+      const nextFields = fieldsFromDetail(saved);
+      setFields(nextFields);
+      setSavedRows(drafts);
+      setItems(drafts);
+      setSavedDraft(toComparable(nextFields, drafts));
+      setEditorOpen(false);
+      setProblemsOnly(false);
+      session.dispatch({ type: 'setPaused', paused: true });
+      onSaved(saved.id);
     } catch (error) {
       console.error('Failed to save carousel:', error);
-      return null;
     } finally {
       setSaving(false);
     }
   };
 
-  const playSaved = () => {
-    if (!carouselId || carouselId === 'new') return;
-    window.open(buildCarouselPlayHref(carouselId), '_blank', 'noopener,noreferrer');
+  const chooseIndex = (index: number) => {
+    if (dragging.current) return;
+    const row = items[index];
+    if (!row) return;
+    if (!playbackAllowed || !row.exists || !row.visible) {
+      session.dispatch({ type: 'setPaused', paused: true });
+    }
+    lockedIndexRef.current = index;
+    session.dispatch({ type: 'selectIndex', index });
   };
 
-  const saveAndPlay = async () => {
-    const id = await persist();
-    if (id == null) return;
-    window.open(buildCarouselPlayHref(id), '_blank', 'noopener,noreferrer');
-    setPlayPrompt(false);
-    onSaved(id);
-  };
-
-  const startPlay = () => {
-    if (carouselId === 'new' || dirty) {
-      setPlayPrompt(true);
+  const togglePlay = () => {
+    if (!playbackAllowed) return;
+    if (player.paused) {
+      const current = slides[player.index];
+      if (current && !current.available) {
+        session.dispatch({ type: 'next' });
+      }
+      session.dispatch({ type: 'setPaused', paused: false });
       return;
     }
-    playSaved();
+    session.dispatch({ type: 'setPaused', paused: true });
   };
 
-  const duration = carouselDurationMessage(carouselRoundSeconds(items.map((item) => ({
-    dwellSeconds: item.dwell_seconds,
-    countsTowardDuration: item.exists && item.visible,
+  const duration = carouselDurationMessage(carouselRoundSeconds(slides.map((item) => ({
+    dwellSeconds: item.dwellSeconds,
+    countsTowardDuration: item.available,
   })), defaultDwell));
   const invalidCount = items.filter((item) => !item.exists || !item.visible).length;
   const hiddenCount = items.filter((item) => (
@@ -519,16 +621,13 @@ const CarouselEditor = forwardRef<CarouselEditorRef, CarouselEditorProps>(({
     () => [...new Set(items.map((item) => canvasIdentityKey(item.resource_type, item.canvas_id)))],
     [items],
   );
+  const previewIndex = player.index >= 0 && player.index < slides.length ? player.index : 0;
+  const preview = slides[previewIndex];
 
   if (!carouselId) {
     return (
-      <div className="flex h-full flex-col items-center justify-center gap-3">
+      <div className="flex h-full items-center justify-center">
         <CompactEmptyState description={t('opsCarousel.emptyList')} />
-        {hasPermission(['AddChart']) && (
-          <Button type="primary" icon={<PlusOutlined />} onClick={onCreate}>
-            {t('opsCarousel.newList')}
-          </Button>
-        )}
       </div>
     );
   }
@@ -545,6 +644,7 @@ const CarouselEditor = forwardRef<CarouselEditorRef, CarouselEditorProps>(({
         key={item.key}
         item={item}
         index={index}
+        selected={item.key === preview?.key}
         canEdit={canEdit}
         defaultDwell={defaultDwell}
         hiddenLabels={hidden.map(groupName)}
@@ -552,6 +652,7 @@ const CarouselEditor = forwardRef<CarouselEditorRef, CarouselEditorProps>(({
         canMoveDown={moveDownTarget != null}
         canMoveTop={index > 0}
         canMoveBottom={index < items.length - 1}
+        onActivate={() => chooseIndex(index)}
         onDwell={(value) => {
           setItems((current) => current.map((row) => (
             row.key === item.key ? { ...row, dwell_seconds: value } : row
@@ -567,126 +668,150 @@ const CarouselEditor = forwardRef<CarouselEditorRef, CarouselEditorProps>(({
         }}
         onMoveTop={() => setItems((current) => moveItem(current, item.key, 0))}
         onMoveBottom={() => setItems((current) => moveItem(current, item.key, current.length - 1))}
-        onRemove={() => {
-          setItems((current) => current.filter((row) => row.key !== item.key));
-        }}
+        onRemove={() => setItems((current) => current.filter((row) => row.key !== item.key))}
       />
     );
   };
-
-  const list = shown.map(({ item, index }) => renderRow(item, index));
 
   return (
     <Spin spinning={loading} wrapperClassName="h-full [&_.ant-spin-container]:h-full">
       <div className="flex h-full min-h-0 flex-col overflow-hidden">
         <div className="flex shrink-0 items-center justify-between gap-3 border-b border-[var(--color-border-1)] px-4 py-2">
           <div className="flex min-w-0 items-center gap-3">
-            <Breadcrumb
-              items={[
-                { title: t('opsCarousel.carousel') },
-                { title: fields.name.trim() || (isNew ? t('opsCarousel.newList') : t('opsCarousel.unnamed')) },
-              ]}
-            />
+            <span className="truncate text-sm font-medium text-[var(--color-text-1)]">
+              {fields.name.trim() || t('opsCarousel.unnamed')}
+            </span>
             <span className="shrink-0 text-xs text-[var(--color-text-3)]">
               {t('opsCarousel.roundDuration', undefined, { duration: t(duration.id, undefined, duration.values) })}
             </span>
-            <span className="shrink-0 text-xs text-[var(--color-text-3)]">
-              {unsaved ? t('opsCarousel.unsaved') : t('opsCarousel.saved')}
-            </span>
           </div>
           <div className="flex shrink-0 items-center gap-2">
-            {canPlay && (!isNew || canEdit) && (
-              <Button onClick={startPlay}>{t('opsCarousel.startPlay')}</Button>
-            )}
             {canEdit && (
-              <Button type="primary" loading={saving} onClick={() => { void persist().then((id) => { if (id != null) onSaved(id); }); }}>
-                {t('common.save')}
-              </Button>
+              <Button onClick={openEditor}>{t('common.edit')}</Button>
             )}
-            {canEdit && !isNew && (canCopy || canDelete) && (
-              <MoreActionsDropdown
-                buttonSize="middle"
-                labelAlign="start"
-                items={[
-                  ...(canCopy ? [{
-                    key: 'copy',
-                    label: t('common.copy'),
-                    onClick: () => {
-                      if (!carouselId) return;
-                      void copyCarousel(carouselId).then((copied) => onCopied?.(copied.id));
-                    },
-                  }] : []),
-                  ...(canDelete ? [{
-                    key: 'delete',
-                    label: t('common.delete'),
-                    danger: true,
-                    onClick: () => {
-                      if (!carouselId) return;
-                      Modal.confirm({
-                        title: t('opsCarousel.deleteConfirm'),
-                        content: fields.name,
-                        okText: t('common.confirm'),
-                        cancelText: t('common.cancel'),
-                        okButtonProps: { danger: true },
-                        centered: true,
-                        onOk: () => deleteCarousel(carouselId).then(() => onDeleted?.(Number(carouselId))),
-                      });
-                    },
-                  }] : []),
-                ]}
-              />
+            {canPlay && (
+              <Button
+                type="primary"
+                disabled={!playbackAllowed || items.length === 0}
+                onClick={() => {
+                  window.open(buildCarouselPlayHref(carouselId), '_blank', 'noopener,noreferrer');
+                }}
+              >
+                {t('opsCarousel.fullscreenPlay')}
+              </Button>
             )}
           </div>
         </div>
-        <div className="shrink-0 border-b border-[var(--color-border-1)] px-4 py-3">
-          <Form
-            form={form}
-            layout="vertical"
-            disabled={!canEdit}
-            className="grid grid-cols-4 gap-3 rounded-md border border-[var(--color-border-1)] bg-[var(--color-bg-2)] px-3 py-3"
-            onValuesChange={(_, all) => setFields(fieldsFromForm(all))}
-          >
-            <Form.Item
-              className="mb-0 min-w-0"
-              name="name"
-              label={t('opsAnalysisSidebar.nameLabel')}
-              rules={[{ required: true, message: t('common.inputMsg') }]}
-            >
-              <Input maxLength={128} />
-            </Form.Item>
-            <Form.Item
-              className="mb-0 min-w-0"
-              name="groups"
-              label={t('opsCarousel.ownerOrg')}
-              rules={[{ required: true, message: `${t('common.selectMsg')}${t('opsCarousel.ownerOrg')}` }]}
-            >
-              <GroupTreeSelect
-                treeData={convertGroupTreeToTreeSelectData(groupTree || [])}
-                placeholder={`${t('common.selectMsg')}${t('opsCarousel.ownerOrg')}`}
-                multiple
-                mode="ownership"
+        <div className="relative min-h-0 flex-1 overflow-hidden bg-[var(--color-bg)]">
+          {items.length === 0 ? (
+            <div className="flex h-full flex-col items-center justify-center gap-3">
+              <CompactEmptyState description={t('opsCarousel.noItems')} />
+              {canEdit && (
+                <Button type="primary" icon={<PlusOutlined />} onClick={openEditor}>
+                  {t('opsCarousel.addCanvas')}
+                </Button>
+              )}
+            </div>
+          ) : !preview || !preview.available ? (
+            <div className="flex h-full items-center justify-center px-6 text-center text-sm text-[var(--color-text-3)]">
+              {t('opsCarousel.previewUnavailable')}
+            </div>
+          ) : !session.ready ? (
+            <div className="flex h-full items-center justify-center">
+              <Spin />
+            </div>
+          ) : (
+            <div className={`h-full min-h-0 w-full ${preview.resourceType === 'screen' ? 'overflow-hidden' : 'overflow-auto'}`}>
+              <PlaybackSlideFrame
+                key={`${preview.key}:${player.visit}`}
+                slide={preview}
+                initialDetail={session.initialDetail}
+                onError={() => session.dispatch({ type: 'markUnavailable', key: preview.key })}
               />
-            </Form.Item>
-            <Form.Item
-              className="mb-0 min-w-0"
-              name="default_dwell_seconds"
-              label={t('opsCarousel.defaultDwell')}
-              rules={[{ required: true, message: t('common.inputMsg') }]}
-            >
-              <InputNumber
-                min={CAROUSEL_DWELL_MIN_SECONDS}
-                max={CAROUSEL_DWELL_MAX_SECONDS}
-                className="w-full"
-                addonAfter={t('opsCarousel.seconds')}
-              />
-            </Form.Item>
-            <Form.Item className="mb-0 min-w-0" name="desc" label={t('opsAnalysisSidebar.descLabel')}>
-              <Input />
-            </Form.Item>
-          </Form>
+            </div>
+          )}
         </div>
-        <div className="min-h-0 flex-1 overflow-auto px-4 py-3">
-          <div className="mb-2 flex items-center justify-between gap-3">
+        {items.length > 0 && (
+          <div className="flex shrink-0 items-center gap-2 border-t border-[var(--color-border-1)] px-3 py-2">
+            <div className="flex min-w-0 flex-1 gap-2 overflow-x-auto">
+              {slides.map((slide, index) => {
+                const row = items[index];
+                const label = slide.available
+                  ? (row?.canvas_name || t('opsCarousel.unnamed'))
+                  : t('opsCarousel.invalid');
+                return (
+                  <button
+                    key={slide.key}
+                    ref={index === previewIndex ? thumbRef : undefined}
+                    type="button"
+                    className={`flex max-w-48 shrink-0 items-center gap-1.5 rounded border px-2 py-1 text-left ${
+                      index === previewIndex
+                        ? 'border-[var(--color-primary)] bg-[var(--color-fill-2)]'
+                        : 'border-transparent hover:bg-[var(--color-fill-1)]'
+                    } ${slide.available ? 'text-[var(--color-text-1)]' : 'text-[var(--color-text-3)]'}`}
+                    onClick={() => chooseIndex(index)}
+                  >
+                    <span className="text-xs text-[var(--color-text-3)]">{index + 1}</span>
+                    <CanvasTypeIcon type={slide.resourceType} />
+                    <span className="truncate text-sm">{label}</span>
+                  </button>
+                );
+              })}
+            </div>
+            <Button
+              type="text"
+              aria-label={t('opsCarousel.previous')}
+              icon={<LeftOutlined />}
+              onClick={() => chooseIndex(manualPreviewStep(slides.length, previewIndex, -1))}
+            />
+            <Button
+              type="text"
+              aria-label={t('opsCarousel.next')}
+              icon={<RightOutlined />}
+              onClick={() => chooseIndex(manualPreviewStep(slides.length, previewIndex, 1))}
+            />
+            {playbackAllowed && (
+              <Button
+                type="text"
+                aria-label={player.paused ? t('opsCarousel.play') : t('opsCarousel.pause')}
+                icon={player.paused ? <CaretRightOutlined /> : <PauseOutlined />}
+                disabled={!slides.some((slide) => slide.available)}
+                onClick={togglePlay}
+              />
+            )}
+          </div>
+        )}
+      </div>
+      <OperateFormDrawer
+        title={t('common.edit')}
+        open={editorOpen}
+        width={640}
+        destroyOnClose={false}
+        onClose={requestClose}
+        onCancel={requestClose}
+        onConfirm={() => { void persist(); }}
+        confirmLoading={saving}
+        confirmText={t('common.save')}
+        cancelText={t('common.cancel')}
+        primaryFirst={false}
+        styles={{ body: { overflow: 'hidden', display: 'flex', flexDirection: 'column' } }}
+      >
+        <div className="flex h-full min-h-0 flex-1 flex-col">
+          <div className="mb-3 flex shrink-0 items-center justify-between gap-3">
+            <span className="text-sm text-[var(--color-text-2)]">{t('opsCarousel.defaultDwell')}</span>
+            <InputNumber
+              min={CAROUSEL_DWELL_MIN_SECONDS}
+              max={CAROUSEL_DWELL_MAX_SECONDS}
+              value={fields.defaultDwell ?? undefined}
+              className="w-32"
+              addonAfter={t('opsCarousel.seconds')}
+              onChange={(value) => setFields((current) => ({
+                ...current,
+                defaultDwell: value == null ? null : clampCarouselDwellSeconds(value),
+              }))}
+            />
+          </div>
+          <div className="mb-2 flex shrink-0 items-center justify-between gap-3">
             <div>
               <div className="text-sm font-medium text-[var(--color-text-1)]">
                 {t('opsCarousel.items')} ({items.length}/{CAROUSEL_MAX_ITEMS})
@@ -703,7 +828,7 @@ const CarouselEditor = forwardRef<CarouselEditorRef, CarouselEditorProps>(({
           </div>
           {(invalidCount > 0 || hiddenCount > 0) && (
             <Alert
-              className="mb-3"
+              className="mb-3 shrink-0"
               type="warning"
               showIcon
               message={t('opsCarousel.issueSummary', undefined, { invalid: invalidCount, hidden: hiddenCount })}
@@ -716,9 +841,7 @@ const CarouselEditor = forwardRef<CarouselEditorRef, CarouselEditorProps>(({
                     <Button
                       size="small"
                       danger
-                      onClick={() => {
-                        setItems((current) => current.filter((item) => item.exists && item.visible));
-                      }}
+                      onClick={() => setItems((current) => current.filter((item) => item.exists && item.visible))}
                     >
                       {t('opsCarousel.removeInvalid')}
                     </Button>
@@ -727,31 +850,36 @@ const CarouselEditor = forwardRef<CarouselEditorRef, CarouselEditorProps>(({
               )}
             />
           )}
-          {shown.length === 0 ? (
-            <CompactEmptyState description={t('opsCarousel.noItems')} />
-          ) : (
-            <DndContext
-              sensors={sensors}
-              collisionDetection={closestCenter}
-              onDragEnd={(event: DragEndEvent) => {
-                if (!canEdit) return;
-                const { active, over } = event;
-                if (!over || active.id === over.id) return;
-                setItems((current) => {
-                  const from = current.findIndex((item) => item.key === active.id);
-                  const to = current.findIndex((item) => item.key === over.id);
-                  if (from < 0 || to < 0) return current;
-                  return arrayMove(current, from, to);
-                });
-              }}
-            >
-              <SortableContext items={shown.map(({ item }) => item.key)} strategy={verticalListSortingStrategy}>
-                <div>{list}</div>
-              </SortableContext>
-            </DndContext>
-          )}
+          <div className="min-h-0 flex-1 overflow-auto">
+            {shown.length === 0 ? (
+              <CompactEmptyState description={t('opsCarousel.noItems')} />
+            ) : (
+              <DndContext
+                sensors={sensors}
+                collisionDetection={closestCenter}
+                onDragStart={() => { dragging.current = true; }}
+                onDragEnd={(event: DragEndEvent) => {
+                  window.setTimeout(() => { dragging.current = false; }, 0);
+                  if (!canEdit) return;
+                  const { active, over } = event;
+                  if (!over || active.id === over.id) return;
+                  setItems((current) => {
+                    const from = current.findIndex((item) => item.key === active.id);
+                    const to = current.findIndex((item) => item.key === over.id);
+                    if (from < 0 || to < 0) return current;
+                    return arrayMove(current, from, to);
+                  });
+                }}
+                onDragCancel={() => { dragging.current = false; }}
+              >
+                <SortableContext items={shown.map(({ item }) => item.key)} strategy={verticalListSortingStrategy}>
+                  <div>{shown.map(({ item, index }) => renderRow(item, index))}</div>
+                </SortableContext>
+              </DndContext>
+            )}
+          </div>
         </div>
-      </div>
+      </OperateFormDrawer>
       <CanvasPicker
         open={pickerOpen}
         directories={directories}
@@ -761,27 +889,6 @@ const CarouselEditor = forwardRef<CarouselEditorRef, CarouselEditorProps>(({
         onClose={() => setPickerOpen(false)}
         onConfirm={applyPicked}
       />
-      <Modal
-        open={playPrompt}
-        centered
-        title={t('opsCarousel.unsavedPlayTitle')}
-        onCancel={() => setPlayPrompt(false)}
-        footer={(
-          <div className="flex justify-end gap-2">
-            <Button onClick={() => setPlayPrompt(false)}>{t('common.cancel')}</Button>
-            {carouselId !== 'new' && (
-              <Button onClick={() => { setPlayPrompt(false); playSaved(); }}>
-                {t('opsCarousel.playSaved')}
-              </Button>
-            )}
-            <Button type="primary" loading={saving} onClick={() => { void saveAndPlay(); }}>
-              {t('opsCarousel.saveAndPlay')}
-            </Button>
-          </div>
-        )}
-      >
-        {t('opsCarousel.unsavedPlayBody')}
-      </Modal>
     </Spin>
   );
 });

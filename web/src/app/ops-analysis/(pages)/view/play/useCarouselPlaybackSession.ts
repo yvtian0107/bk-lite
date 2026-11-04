@@ -100,12 +100,21 @@ export const useCarouselPlaybackSession = ({
   enabled,
   loadDetail,
   resetKey = '',
+  startPaused = false,
+  confirmWhilePaused = false,
+  retainUnavailable = false,
 }: {
   slides: readonly CarouselPlaybackSlide[];
   enabled: boolean;
   loadDetail: (slide: CarouselPlaybackSlide, signal: AbortSignal) => Promise<unknown>;
   /** 播放列表重新拉取（切换轮播或组织）时递增，强制重新确认当前画布。 */
   resetKey?: string;
+  /** 配置页预览默认暂停。播放页不传，仍进入即播放。 */
+  startPaused?: boolean;
+  /** 暂停时也确认当前画布，供预览加载。播放页不传，暂停仍会取消确认。 */
+  confirmWhilePaused?: boolean;
+  /** 刷新列表时，当前项即使失效也留在原位。播放页不传。 */
+  retainUnavailable?: boolean;
 }) => {
   const slidesRef = useRef(slides);
   slidesRef.current = slides;
@@ -113,7 +122,10 @@ export const useCarouselPlaybackSession = ({
   loadRef.current = loadDetail;
   const signature = `${resetKey}|${slides.map((slide) => `${slide.key}:${Number(slide.available)}:${slide.dwellSeconds}`).join('|')}`;
   const signatureRef = useRef<string | null>(null);
-  const [player, setPlayer] = useState<CarouselPlayerState>(() => createCarouselPlayerState(slides.map(toInput)));
+  const [player, setPlayer] = useState<CarouselPlayerState>(() => {
+    const created = createCarouselPlayerState(slides.map(toInput));
+    return startPaused ? { ...created, paused: true } : created;
+  });
   const [confirming, setConfirming] = useState(false);
   const [armedVisit, setArmedVisit] = useState<number | null>(null);
   const [initialDetail, setInitialDetail] = useState<unknown>(undefined);
@@ -145,8 +157,9 @@ export const useCarouselPlaybackSession = ({
       type: 'reset',
       slides: slidesRef.current.map(toInput),
       preferKey: current.slides[current.index]?.key ?? null,
+      retainUnavailable,
     }));
-  }, [signature]);
+  }, [retainUnavailable, signature]);
 
   useEffect(() => {
     if (!enabled) {
@@ -171,7 +184,7 @@ export const useCarouselPlaybackSession = ({
     if (!enabled || !current?.available || player.holdMs > 0) {
       return undefined;
     }
-    if (player.paused || armedVisitRef.current === player.visit) {
+    if ((!confirmWhilePaused && player.paused) || armedVisitRef.current === player.visit) {
       return undefined;
     }
     const slide = slidesRef.current.find((item) => item.key === current.key);
@@ -215,7 +228,15 @@ export const useCarouselPlaybackSession = ({
       confirmingRef.current = false;
       setConfirming(false);
     };
-  }, [current?.available, current?.key, enabled, player.holdMs, player.paused, player.visit]);
+  }, [
+    confirmWhilePaused,
+    current?.available,
+    current?.key,
+    enabled,
+    player.holdMs,
+    confirmWhilePaused ? false : player.paused,
+    player.visit,
+  ]);
 
   const lead = Boolean(current) && !player.paused && player.holdMs <= 0 && armedVisit === player.visit
     && player.remainingMs <= CAROUSEL_PREFETCH_LEAD_MS;

@@ -188,6 +188,7 @@ const CanvasPicker: React.FC<CanvasPickerProps> = ({
       title={t('opsCarousel.addCanvas')}
       open={open}
       width={480}
+      zIndex={1200}
       destroyOnClose
       onClose={onClose}
       footer={(
