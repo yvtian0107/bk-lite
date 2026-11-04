@@ -38,3 +38,37 @@ export const buildOpsDirectoryPanelHref = (
 
 export const buildCarouselPlayHref = (id: number | string): string =>
   `/ops-analysis/view/play/${id}?screen=true`;
+
+export type OpsAnalysisPanel = 'directory' | 'carousel';
+
+export interface OpsAnalysisViewLocation {
+  panel: OpsAnalysisPanel;
+  carouselId: string | null;
+}
+
+export const resolveRequestedCarouselView = (
+  search: string | URLSearchParams | null | undefined,
+): OpsAnalysisViewLocation => {
+  const params = toSearchParams(search);
+  const carouselParam = params.get('carousel');
+  return {
+    panel: isCarouselPanel(params) ? 'carousel' : 'directory',
+    carouselId: carouselParam && carouselParam !== 'new' ? carouselParam : null,
+  };
+};
+
+/** 地址和已确认的面板不一致时：没改动直接跟上，有改动先确认。 */
+export const carouselViewDecision = (
+  current: OpsAnalysisViewLocation,
+  requested: OpsAnalysisViewLocation,
+  dirty: boolean,
+): 'stay' | 'apply' | 'confirm' => {
+  if (current.panel === requested.panel && current.carouselId === requested.carouselId) {
+    return 'stay';
+  }
+  return dirty ? 'confirm' : 'apply';
+};
+
+/** 前进/后退只认最新一次确认。旧弹窗的确定和取消都不再改界面。 */
+export const carouselGuardIsCurrent = (activeToken: number, eventToken: number): boolean =>
+  activeToken === eventToken;

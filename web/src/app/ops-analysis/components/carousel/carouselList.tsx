@@ -19,6 +19,7 @@ interface CarouselListProps {
   onAutoSelect?: (id: string) => void;
   onEditBasic: (carousel: CarouselSummary) => void;
   prepareCarouselLeave?: () => Promise<boolean>;
+  hasUnsavedCarouselChanges?: () => boolean;
   onCopied: (id: number) => void;
   onDeleted: (id: number) => void;
 }
@@ -31,6 +32,7 @@ const CarouselList: React.FC<CarouselListProps> = ({
   onAutoSelect,
   onEditBasic,
   prepareCarouselLeave,
+  hasUnsavedCarouselChanges,
   onCopied,
   onDeleted,
 }) => {
@@ -125,22 +127,18 @@ const CarouselList: React.FC<CarouselListProps> = ({
                 label: t('common.delete'),
                 danger: true,
                 onClick: () => {
-                  void (async () => {
-                    if (
-                      selectedId === String(row.id)
-                      && prepareCarouselLeave
-                      && !(await prepareCarouselLeave())
-                    ) return;
-                    Modal.confirm({
-                      title: t('opsCarousel.deleteConfirm'),
-                      content: row.name,
-                      okText: t('common.confirm'),
-                      cancelText: t('common.cancel'),
-                      okButtonProps: { danger: true },
-                      centered: true,
-                      onOk: () => deleteCarousel(row.id).then(() => onDeleted(row.id)),
-                    });
-                  })();
+                  const dirty = selectedId === String(row.id) && Boolean(hasUnsavedCarouselChanges?.());
+                  Modal.confirm({
+                    title: t('opsCarousel.deleteConfirm'),
+                    content: dirty
+                      ? `${row.name} ${t('opsAnalysisSidebar.unsavedChangesWarning')}`
+                      : row.name,
+                    okText: t('common.confirm'),
+                    cancelText: t('common.cancel'),
+                    okButtonProps: { danger: true },
+                    centered: true,
+                    onOk: () => deleteCarousel(row.id).then(() => onDeleted(row.id)),
+                  });
                 },
               }] : []),
             ];

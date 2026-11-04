@@ -38,7 +38,9 @@ import { buildOpsAnalysisViewHref } from '@/app/ops-analysis/utils/viewHref';
 import {
   buildOpsCarouselViewHref,
   buildOpsDirectoryPanelHref,
-  isCarouselPanel,
+  carouselGuardIsCurrent,
+  carouselViewDecision,
+  resolveRequestedCarouselView,
 } from '@/app/ops-analysis/utils/carouselLinks';
 import CarouselEditor, { type CarouselEditorRef } from '../../components/carousel/carouselEditor';
 
@@ -88,12 +90,24 @@ const ViewPage: React.FC = () => {
   const [carouselRefreshKey, setCarouselRefreshKey] = useState(0);
   const [carouselInfoRevision, setCarouselInfoRevision] = useState(0);
   const [editorRequest, setEditorRequest] = useState<{ id: string; nonce: number } | null>(null);
-  const panel = isCarouselPanel(searchParams) ? 'carousel' : 'directory';
-  const carouselParam = searchParams.get('carousel');
-  const requestedCarouselId = carouselParam && carouselParam !== 'new' ? carouselParam : null;
+  const requestedView = resolveRequestedCarouselView(searchParams);
+  const requestedPanel = requestedView.panel;
+  const requestedCarouselId = requestedView.carouselId;
+  const [panel, setPanel] = useState(requestedPanel);
   const [carouselId, setCarouselId] = useState<string | null>(requestedCarouselId);
-  const carouselIdRef = useRef(carouselId);
-  carouselIdRef.current = carouselId;
+  const viewRef = useRef({ panel, carouselId });
+  viewRef.current = { panel, carouselId };
+  const searchParamsRef = useRef(searchParams);
+  searchParamsRef.current = searchParams;
+  const routerRef = useRef(router);
+  routerRef.current = router;
+  const unsavedRef = useRef<() => boolean>(() => false);
+  const tRef = useRef(t);
+  tRef.current = t;
+  const guardToken = useRef(0);
+  const guardModal = useRef<{ destroy: () => void } | null>(null);
+  const pendingViewRef = useRef(requestedView);
+  pendingViewRef.current = requestedView;
   const selectedItemRef = useRef(selectedItem);
   const [canvasReloadToken, setCanvasReloadToken] = useState(0);
   selectedItemRef.current = selectedItem;
@@ -185,6 +199,8 @@ const ViewPage: React.FC = () => {
     return false;
   };
 
+  unsavedRef.current = checkUnsavedChanges;
+
   const confirmDiscard = (onOk: () => void, onCancel?: () => void) => {
     const dirty = checkUnsavedChanges() || Boolean(carouselEditorRef.current?.hasUnsavedChanges());
     if (!dirty) {
@@ -204,32 +220,65 @@ const ViewPage: React.FC = () => {
   };
 
   const prepareCarouselLeave = () => new Promise<boolean>((resolve) => {
-    confirmDiscard(
-      () => {
-        carouselEditorRef.current?.discardChanges();
-        resolve(true);
-      },
-      () => resolve(false),
-    );
+    confirmDiscard(() => resolve(true), () => resolve(false));
   });
 
-  const switchGuardRef = useRef<(nextId: string | null) => void>(() => undefined);
-  switchGuardRef.current = (nextId) => {
-    confirmDiscard(
-      () => {
-        carouselEditorRef.current?.discardChanges();
-        setCarouselId(nextId);
-      },
-      () => {
-        router.replace(buildOpsCarouselViewHref(carouselIdRef.current, searchParams));
-      },
-    );
+  const commitCarouselLeave = () => {
+    if (carouselEditorRef.current?.hasUnsavedChanges()) {
+      carouselEditorRef.current.discardChanges();
+    }
   };
 
+  useEffect(() => () => {
+    guardToken.current += 1;
+    guardModal.current?.destroy();
+    guardModal.current = null;
+  }, []);
+
   useEffect(() => {
-    if (requestedCarouselId === carouselId) return;
-    switchGuardRef.current(requestedCarouselId);
-  }, [carouselId, requestedCarouselId]);
+    const requested = pendingViewRef.current;
+    const dirty = Boolean(carouselEditorRef.current?.hasUnsavedChanges()) || unsavedRef.current();
+    const decision = carouselViewDecision(viewRef.current, requested, dirty);
+    if (decision !== 'confirm') {
+      guardToken.current += 1;
+      guardModal.current?.destroy();
+      guardModal.current = null;
+      if (decision === 'apply') {
+        setPanel(requested.panel);
+        setCarouselId(requested.carouselId);
+      }
+      return;
+    }
+    if (guardModal.current) return;
+    const token = guardToken.current + 1;
+    guardToken.current = token;
+    const translate = tRef.current;
+    guardModal.current = Modal.confirm({
+      title: translate('opsAnalysisSidebar.unsavedChanges'),
+      content: translate('opsAnalysisSidebar.unsavedChangesWarning'),
+      okText: translate('common.confirm'),
+      cancelText: translate('common.cancel'),
+      okButtonProps: { danger: true },
+      centered: true,
+      onOk: () => {
+        if (!carouselGuardIsCurrent(guardToken.current, token)) return;
+        guardModal.current = null;
+        const target = pendingViewRef.current;
+        carouselEditorRef.current?.discardChanges();
+        setPanel(target.panel);
+        setCarouselId(target.carouselId);
+      },
+      onCancel: () => {
+        if (!carouselGuardIsCurrent(guardToken.current, token)) return;
+        guardModal.current = null;
+        const current = viewRef.current;
+        const search = searchParamsRef.current;
+        routerRef.current.replace(current.panel === 'carousel'
+          ? buildOpsCarouselViewHref(current.carouselId, search)
+          : buildOpsDirectoryPanelHref(search));
+      },
+    });
+  }, [requestedCarouselId, requestedPanel]);
 
   const hydrateSelection = (type: DirectoryType, itemInfo?: DirItem) => {
     setSelectedType(type);
@@ -240,21 +289,15 @@ const ViewPage: React.FC = () => {
   };
 
   const changePanel = (next: 'directory' | 'carousel') => {
-    if (next === panel) return;
-    void prepareCarouselLeave().then((ok) => {
-      if (!ok) return;
-      router.push(next === 'carousel'
-        ? buildOpsCarouselViewHref(carouselIdRef.current, searchParams)
-        : buildOpsDirectoryPanelHref(searchParams));
-    });
+    if (next === requestedPanel) return;
+    router.push(next === 'carousel'
+      ? buildOpsCarouselViewHref(viewRef.current.carouselId, searchParams)
+      : buildOpsDirectoryPanelHref(searchParams));
   };
 
   const openCarousel = (id: string) => {
-    if (id === requestedCarouselId && panel === 'carousel') return;
-    void prepareCarouselLeave().then((ok) => {
-      if (!ok) return;
-      router.push(buildOpsCarouselViewHref(id, searchParams));
-    });
+    if (requestedPanel === 'carousel' && id === requestedCarouselId) return;
+    router.push(buildOpsCarouselViewHref(id, searchParams));
   };
 
   // 处理导航
@@ -372,10 +415,12 @@ const ViewPage: React.FC = () => {
             onPanelChange={changePanel}
             onSelectCarousel={openCarousel}
             prepareCarouselLeave={prepareCarouselLeave}
+            hasUnsavedCarouselChanges={() => Boolean(carouselEditorRef.current?.hasUnsavedChanges())}
             onAutoSelectCarousel={(id) => {
               router.replace(buildOpsCarouselViewHref(id, searchParams));
             }}
             onCarouselCreated={(id, openEditor) => {
+              commitCarouselLeave();
               setCarouselRefreshKey((value) => value + 1);
               if (openEditor) {
                 setEditorRequest((current) => ({
@@ -390,12 +435,14 @@ const ViewPage: React.FC = () => {
               setCarouselInfoRevision((value) => value + 1);
             }}
             onCarouselCopied={(id) => {
+              commitCarouselLeave();
               setCarouselRefreshKey((value) => value + 1);
               openCarousel(String(id));
             }}
             onCarouselDeleted={(id) => {
               setCarouselRefreshKey((value) => value + 1);
               if (String(id) === carouselId) {
+                commitCarouselLeave();
                 router.push(buildOpsCarouselViewHref(null, searchParams));
               }
             }}

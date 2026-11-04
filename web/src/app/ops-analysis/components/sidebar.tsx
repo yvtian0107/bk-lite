@@ -104,6 +104,7 @@ const Sidebar = forwardRef<SidebarRef, SidebarProps>(
     onSelectCarousel,
     onAutoSelectCarousel,
     prepareCarouselLeave,
+    hasUnsavedCarouselChanges,
     onCarouselCreated,
     onCarouselUpdated,
     onCarouselCopied,
@@ -970,11 +971,8 @@ const Sidebar = forwardRef<SidebarRef, SidebarProps>(
                 className="ml-2"
                 aria-label={t('opsCarousel.newList')}
                 onClick={() => {
-                  void (async () => {
-                    if (prepareCarouselLeave && !(await prepareCarouselLeave())) return;
-                    setCarouselInfoTarget(null);
-                    setCarouselInfoOpen(true);
-                  })();
+                  setCarouselInfoTarget(null);
+                  setCarouselInfoOpen(true);
                 }}
               />
             ) : null
@@ -1005,6 +1003,7 @@ const Sidebar = forwardRef<SidebarRef, SidebarProps>(
                 setCarouselInfoOpen(true);
               }}
               prepareCarouselLeave={prepareCarouselLeave}
+              hasUnsavedCarouselChanges={hasUnsavedCarouselChanges}
               onCopied={(id) => onCarouselCopied?.(id)}
               onDeleted={(id) => onCarouselDeleted?.(id)}
             />

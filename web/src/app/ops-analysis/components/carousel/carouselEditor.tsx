@@ -395,6 +395,15 @@ const CarouselEditor = forwardRef<CarouselEditorRef, CarouselEditorProps>(({
   }, [carouselId, session.dispatch]);
 
   useEffect(() => {
+    if (!(editorOpen && dirty)) return undefined;
+    const handleBeforeUnload = (event: BeforeUnloadEvent) => {
+      event.preventDefault();
+    };
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    return () => window.removeEventListener('beforeunload', handleBeforeUnload);
+  }, [dirty, editorOpen]);
+
+  useEffect(() => {
     thumbRef.current?.scrollIntoView({ behavior: 'smooth', inline: 'center', block: 'nearest' });
   }, [player.index, slides.length]);
 
@@ -474,7 +483,6 @@ const CarouselEditor = forwardRef<CarouselEditorRef, CarouselEditorProps>(({
       itemCount: items.length,
       canEdit,
     });
-    if (!canEdit) return;
     appliedSignal.current = openEditorRequest.nonce;
     if (!open) return;
     session.dispatch({ type: 'setPaused', paused: true });
