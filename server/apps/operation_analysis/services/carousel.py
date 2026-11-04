@@ -287,7 +287,7 @@ def append_carousel_item(request, carousel: CanvasCarousel, payload: dict) -> Ca
     return item
 
 
-def describe_carousel(carousel: CanvasCarousel, request, *, playback: bool) -> dict:
+def describe_carousel(carousel: CanvasCarousel, request) -> dict:
     rows = list(carousel.items.all())
     canvases, visible_keys = load_canvas_visibility(request, rows)
     items = []
@@ -308,8 +308,7 @@ def describe_carousel(carousel: CanvasCarousel, request, *, playback: bool) -> d
         }
         if visible and canvas is not None:
             payload["canvas_name"] = canvas.name
-            if not playback:
-                payload["canvas_group_ids"] = sorted(group_id_set(canvas.groups))
+            payload["canvas_group_ids"] = sorted(group_id_set(canvas.groups))
         items.append(payload)
     return {
         "id": carousel.id,

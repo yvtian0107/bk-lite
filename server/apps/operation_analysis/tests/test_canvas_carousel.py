@@ -350,22 +350,24 @@ def test_dwell_bounds_item_limit_and_playback_availability(authenticated_user):
 
     Dashboard.objects.filter(pk=canvases["dashboard"].id).delete()
     Topology.objects.filter(pk=canvases["topology"].id).update(groups=[9])
-    playback = _payload(_call({"get": "playback"}, "get", user, path=f"/carousel/{carousel_id}/playback/", pk=carousel_id))
-    by_type = {item["resource_type"]: item for item in playback["items"]}
+    refreshed = _payload(_call({"get": "retrieve"}, "get", user, path=f"/carousel/{carousel_id}/", pk=carousel_id))
+    by_type = {item["resource_type"]: item for item in refreshed["items"]}
     assert by_type["dashboard"]["exists"] is False
     assert by_type["dashboard"]["available"] is False
     assert "canvas_name" not in by_type["dashboard"]
+    assert "canvas_group_ids" not in by_type["dashboard"]
     assert by_type["topology"]["exists"] is True
     assert by_type["topology"]["visible"] is False
     assert "canvas_name" not in by_type["topology"]
+    assert "canvas_group_ids" not in by_type["topology"]
     assert by_type["architecture"]["available"] is True
     assert by_type["architecture"]["canvas_name"] == "架构"
+    assert by_type["architecture"]["canvas_group_ids"] == [1]
     assert by_type["screen"]["available"] is True
     assert by_type["report"]["available"] is True
     assert by_type["networkTopology"]["available"] is True
-    assert "canvas_group_ids" not in by_type["architecture"]
-    assert "skipped_count" not in playback
-    assert sum(1 for item in playback["items"] if not item["available"]) == 2
+    assert "skipped_count" not in refreshed
+    assert sum(1 for item in refreshed["items"] if not item["available"]) == 2
 
     edges = _call(
         {"patch": "partial_update"},
@@ -451,11 +453,7 @@ def test_directory_activation_gates_visibility_without_leaking_name(authenticate
     assert item["available"] is False
     assert "canvas_name" not in item
     assert "canvas_group_ids" not in item
-
-    playback = _payload(_call({"get": "playback"}, "get", user, path=f"/carousel/{carousel_id}/playback/", pk=carousel_id))
-    assert playback["items"][0]["available"] is False
-    assert "canvas_name" not in playback["items"][0]
-    assert "skipped_count" not in playback
+    assert "skipped_count" not in detail
 
     foreign_directory = _directory("外目录", groups=[2])
     foreign_canvas = _dashboard("画布在当前组织但目录不在", groups=[1], directory=foreign_directory)

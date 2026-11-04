@@ -27,6 +27,7 @@ import { CSS } from '@dnd-kit/utilities';
 import {
   Alert,
   Button,
+  ConfigProvider,
   InputNumber,
   Modal,
   Popover,
@@ -34,6 +35,7 @@ import {
   Tag,
   Tooltip,
   message,
+  notification,
 } from 'antd';
 import {
   CaretRightOutlined,
@@ -85,6 +87,7 @@ import {
   type CarouselEditorOpenRequest,
 } from '@/app/ops-analysis/utils/carouselPreview';
 import useBtnPermissions from '@/hooks/usePermissions';
+import { fullscreenPopupContainer } from '@/utils/fullscreenPopupContainer';
 import { CanvasTypeIcon } from './canvasTypeIcon';
 import CanvasPicker, { type PickedCanvas } from './canvasPicker';
 
@@ -441,6 +444,17 @@ const CarouselEditor = forwardRef<CarouselEditorRef, CarouselEditorProps>(({
     window.addEventListener('keydown', onKeyDown, true);
     return () => window.removeEventListener('keydown', onKeyDown, true);
   }, [session.dispatch, showFullscreenControls, stageFullscreen]);
+
+  useEffect(() => {
+    if (!stageFullscreen) return undefined;
+    message.config({ getContainer: fullscreenPopupContainer });
+    notification.config({ getContainer: fullscreenPopupContainer });
+    return () => {
+      const restore = () => document.body;
+      message.config({ getContainer: restore });
+      notification.config({ getContainer: restore });
+    };
+  }, [stageFullscreen]);
 
   const groupName = useMemo(() => {
     const names = new Map<string, string>();
@@ -854,6 +868,7 @@ const CarouselEditor = forwardRef<CarouselEditorRef, CarouselEditorProps>(({
           }`}
           onMouseMove={stageFullscreen ? showFullscreenControls : undefined}
         >
+          <ConfigProvider getPopupContainer={stageFullscreen ? fullscreenPopupContainer : undefined}>
           {items.length === 0 ? (
             <div className="flex h-full flex-col items-center justify-center gap-3">
               <CompactEmptyState description={t('opsCarousel.noItems')} />
@@ -901,6 +916,7 @@ const CarouselEditor = forwardRef<CarouselEditorRef, CarouselEditorProps>(({
               </Tooltip>
             </div>
           )}
+          </ConfigProvider>
         </div>
       </div>
       <OperateFormDrawer

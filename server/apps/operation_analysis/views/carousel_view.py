@@ -43,9 +43,9 @@ class CanvasCarouselViewSet(BuiltinVisibleMixin, AuthViewSet):
         )
         return queryset.filter(org_query)
 
-    def _detail_payload(self, carousel, *, playback: bool):
+    def _detail_payload(self, carousel):
         carousel = CanvasCarousel.objects.prefetch_related("items").get(pk=carousel.pk)
-        return describe_carousel(carousel, self.request, playback=playback)
+        return describe_carousel(carousel, self.request)
 
     @HasPermission("view-View")
     def list(self, request, *args, **kwargs):
@@ -62,13 +62,7 @@ class CanvasCarouselViewSet(BuiltinVisibleMixin, AuthViewSet):
     @HasPermission("view-View")
     def retrieve(self, request, *args, **kwargs):
         carousel = self.get_object()
-        return Response(self._detail_payload(carousel, playback=False))
-
-    @HasPermission("view-View")
-    @action(detail=True, methods=["get"])
-    def playback(self, request, *args, **kwargs):
-        carousel = self.get_object()
-        return Response(self._detail_payload(carousel, playback=True))
+        return Response(self._detail_payload(carousel))
 
     @HasPermission("view-AddChart")
     def create(self, request, *args, **kwargs):
@@ -77,7 +71,7 @@ class CanvasCarouselViewSet(BuiltinVisibleMixin, AuthViewSet):
         groups = serializer.validated_data.get("groups") or []
         self._validate_org_field_permission(request, groups)
         carousel = create_carousel(request, serializer.validated_data)
-        response = Response(self._detail_payload(carousel, playback=False), status=201)
+        response = Response(self._detail_payload(carousel), status=201)
         log_ops_analysis_success(
             request,
             response,
@@ -106,7 +100,7 @@ class CanvasCarouselViewSet(BuiltinVisibleMixin, AuthViewSet):
         if "groups" in serializer.validated_data:
             self._validate_org_field_permission(request, serializer.validated_data["groups"])
         updated = update_carousel(request, carousel, serializer.validated_data)
-        response = Response(self._detail_payload(updated, playback=False))
+        response = Response(self._detail_payload(updated))
         log_ops_analysis_success(
             request,
             response,
@@ -130,6 +124,6 @@ class CanvasCarouselViewSet(BuiltinVisibleMixin, AuthViewSet):
         serializer = CanvasCarouselAppendSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         append_carousel_item(request, carousel, serializer.validated_data)
-        response = Response(self._detail_payload(carousel, playback=False))
+        response = Response(self._detail_payload(carousel))
         log_ops_analysis_success(request, response, "update", f"编辑轮播列表: {carousel.name}")
         return response
