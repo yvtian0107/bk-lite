@@ -1,6 +1,5 @@
 from django.db.models import Count
 from rest_framework.decorators import action
-from rest_framework.exceptions import ValidationError
 from rest_framework.response import Response
 
 from apps.core.decorators.api_permission import HasPermission
@@ -19,7 +18,6 @@ from apps.operation_analysis.services.carousel import (
     describe_carousel,
     normalize_group_list,
     update_carousel,
-    viewer_org_ids,
 )
 from apps.operation_analysis.views.view import BuiltinVisibleMixin
 from config.drf.pagination import CustomPageNumberPagination
@@ -33,7 +31,6 @@ class CanvasCarouselViewSet(BuiltinVisibleMixin, AuthViewSet):
     ordering_fields = ["id"]
     ordering = ["-id"]
     pagination_class = CustomPageNumberPagination
-    permission_key = "canvas.carousel"
     ORGANIZATION_FIELD = "groups"
     ORDERING_FIELD = "-id"
 
@@ -55,7 +52,7 @@ class CanvasCarouselViewSet(BuiltinVisibleMixin, AuthViewSet):
 
     def _detail_payload(self, carousel, *, playback: bool):
         carousel = CanvasCarousel.objects.prefetch_related("items").get(pk=carousel.pk)
-        return describe_carousel(carousel, viewer_org_ids(self, self.request), playback=playback)
+        return describe_carousel(carousel, self.request, playback=playback)
 
     @HasPermission("view-View")
     def list(self, request, *args, **kwargs):
@@ -78,10 +75,7 @@ class CanvasCarouselViewSet(BuiltinVisibleMixin, AuthViewSet):
         serializer.is_valid(raise_exception=True)
         groups = serializer.validated_data.get("groups") or []
         self._validate_org_field_permission(request, groups)
-        try:
-            carousel = create_carousel(request, serializer.validated_data)
-        except ValidationError as error:
-            raise error
+        carousel = create_carousel(request, serializer.validated_data)
         response = Response(self._detail_payload(carousel, playback=False), status=201)
         log_ops_analysis_success(
             request,

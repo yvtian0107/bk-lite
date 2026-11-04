@@ -1,10 +1,6 @@
 import { useCallback } from 'react';
 import useApiClient from '@/utils/request';
 import { useShareCanvasDetailOverride } from '@/app/ops-analysis/context/shareCanvasDetail';
-import {
-  readPlaybackCanvasDetail,
-  usePlaybackCanvasDetailCache,
-} from '@/app/ops-analysis/context/playbackCanvasDetail';
 
 export interface ArchitectureResourceSearchParams {
   keyword: string;
@@ -17,15 +13,10 @@ export interface ArchitectureResourceSearchParams {
 export const useArchitectureApi = () => {
   const { get, put, post, del } = useApiClient();
   const shareDetailOverride = useShareCanvasDetailOverride();
-  const playbackCache = usePlaybackCanvasDetailCache();
 
   const getArchitectureDetail = async (id: string | number) => {
     if (shareDetailOverride) {
       return shareDetailOverride();
-    }
-    const cached = readPlaybackCanvasDetail(playbackCache, 'architecture', id);
-    if (cached) {
-      return cached;
     }
     return get(`/operation_analysis/api/architecture/${id}/`);
   };

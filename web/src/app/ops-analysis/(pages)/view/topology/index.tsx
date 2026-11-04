@@ -191,9 +191,9 @@ const Topology = forwardRef<TopologyRef, TopologyProps>(
       useContextMenuAndModal(containerRef, state);
 
     useEffect(() => {
-      setTopologyCsvExportHoverEnabled(resolveTopologyCsvExportHoverEnabled({
+      setTopologyCsvExportHoverEnabled(!playbackMode && resolveTopologyCsvExportHoverEnabled({
         editMode: state.isEditMode,
-        shareMode: shareMode || playbackMode,
+        shareMode,
         fullscreen: isFullscreen,
       }));
       return () => setTopologyCsvExportHoverEnabled(false);

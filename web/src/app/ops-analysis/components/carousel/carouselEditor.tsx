@@ -125,7 +125,7 @@ const SortableRow = ({
       <CanvasTypeIcon type={item.resource_type} />
       <div className="min-w-0 flex-1">
         <div className="truncate text-sm text-[var(--color-text-1)]">
-          {item.exists ? item.canvas_name || t('opsCarousel.unnamed') : t('opsCarousel.invalid')}
+          {!item.exists || !item.visible ? t('opsCarousel.invalid') : (item.canvas_name || t('opsCarousel.unnamed'))}
         </div>
         <div className="text-xs text-[var(--color-text-3)]">{meta ? t(meta.nameKey) : item.resource_type}</div>
       </div>

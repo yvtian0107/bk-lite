@@ -14,11 +14,6 @@ import { useRouter } from 'next/navigation';
 import { useTranslation } from '@/utils/i18n';
 import { useUserInfoContext } from '@/context/userInfo';
 import { useCarouselApi } from '@/app/ops-analysis/api/carousel';
-import {
-  PlaybackCanvasDetailProvider,
-  playbackDetailKey,
-  type PlaybackDetailCache,
-} from '@/app/ops-analysis/context/playbackCanvasDetail';
 import { buildOpsCarouselViewHref } from '@/app/ops-analysis/utils/carouselLinks';
 import {
   createCarouselPlayerState,
@@ -34,6 +29,7 @@ import { PlaybackSlideFrame, type PlaybackSlide } from './playbackCanvas';
 
 const IDLE_MS = 3000;
 const TICK_MS = 250;
+const PREFETCH_LEAD_MS = 2000;
 
 const toSlides = (detail: CarouselDetail): PlaybackSlide[] =>
   detail.items.map((item) => ({
@@ -50,8 +46,8 @@ const PlayStage = ({ carouselId }: { carouselId: string }) => {
   const router = useRouter();
   const { selectedGroup } = useUserInfoContext();
   const { getCarouselPlayback, prefetchCanvasDetail } = useCarouselApi();
-  const cacheRef = useRef<PlaybackDetailCache>(new Map());
   const rootRef = useRef<HTMLDivElement>(null);
+  const prefetchedKey = useRef<string | null>(null);
   const [detail, setDetail] = useState<CarouselDetail | null>(null);
   const [player, setPlayer] = useState<CarouselPlayerState>(() => createCarouselPlayerState([]));
   const [loading, setLoading] = useState(true);
@@ -114,19 +110,18 @@ const PlayStage = ({ carouselId }: { carouselId: string }) => {
   const currentSlide = player.index >= 0 ? slideByKey.get(player.slides[player.index]?.key) : undefined;
   const currentInput: CarouselSlideInput | undefined = player.slides[player.index];
 
+  const leadPrefetch = Boolean(currentInput) && !player.paused && player.remainingMs <= PREFETCH_LEAD_MS;
   useEffect(() => {
-    if (!currentInput) return;
+    if (!leadPrefetch) return;
     const nextIndex = player.slides.findIndex((slide, index) => slide.available && index !== player.index && index > player.index);
     const fallback = player.slides.findIndex((slide, index) => slide.available && index !== player.index);
     const targetIndex = nextIndex >= 0 ? nextIndex : fallback;
     const target = targetIndex >= 0 ? player.slides[targetIndex] : undefined;
     const slide = target ? slideByKey.get(target.key) : undefined;
-    if (!slide) return;
+    if (!slide || prefetchedKey.current === `${player.visit}:${slide.key}`) return;
+    prefetchedKey.current = `${player.visit}:${slide.key}`;
     let cancelled = false;
-    void prefetchCanvasDetail(slide.resourceType, slide.canvasId).then((payload) => {
-      if (cancelled) return;
-      cacheRef.current.set(playbackDetailKey(slide.resourceType, slide.canvasId), payload);
-    }).catch(() => {
+    void prefetchCanvasDetail(slide.resourceType, slide.canvasId).catch(() => {
       if (!cancelled) {
         setPlayer((current) => reduceCarouselPlayer(current, { type: 'markUnavailable', key: slide.key }));
       }
@@ -134,7 +129,7 @@ const PlayStage = ({ carouselId }: { carouselId: string }) => {
     return () => {
       cancelled = true;
     };
-  }, [currentInput?.key, player.index, player.slides, prefetchCanvasDetail, slideByKey]);
+  }, [leadPrefetch, player.index, player.slides, player.visit, prefetchCanvasDetail, slideByKey]);
 
   const exitPlay = useCallback(() => {
     const href = buildOpsCarouselViewHref(carouselId);
@@ -204,7 +199,6 @@ const PlayStage = ({ carouselId }: { carouselId: string }) => {
   };
 
   return (
-    <PlaybackCanvasDetailProvider value={cacheRef.current}>
       <div
         ref={rootRef}
         className="relative h-screen w-screen overflow-hidden bg-[var(--color-bg-1)]"
@@ -276,7 +270,6 @@ const PlayStage = ({ carouselId }: { carouselId: string }) => {
           </div>
         </div>
       </div>
-    </PlaybackCanvasDetailProvider>
   );
 };
 

@@ -1,10 +1,6 @@
 import { useCallback, useMemo } from 'react';
 import useApiClient from '@/utils/request';
 import { useShareCanvasDetailOverride } from '@/app/ops-analysis/context/shareCanvasDetail';
-import {
-  readPlaybackCanvasDetail,
-  usePlaybackCanvasDetailCache,
-} from '@/app/ops-analysis/context/playbackCanvasDetail';
 import { useShareMode } from '@/app/ops-analysis/context/shareMode';
 import { useSharedNetworkTopologyRuntime } from '@/app/ops-analysis/context/shareNetworkTopologyRuntime';
 import {
@@ -81,7 +77,6 @@ export const useNetworkTopologyApi = () => {
   const { get, post, put, del } = useApiClient();
   const shareMode = useShareMode();
   const shareDetailOverride = useShareCanvasDetailOverride();
-  const playbackCache = usePlaybackCanvasDetailCache();
   const shareRuntime = useSharedNetworkTopologyRuntime();
   const shareAccess = isNetworkTopologyShareAccess({
     shareMode,
@@ -94,17 +89,9 @@ export const useNetworkTopologyApi = () => {
       if (shareDetailOverride) {
         return (await shareDetailOverride()) as NetworkTopologyDetail;
       }
-      const cached = readPlaybackCanvasDetail<NetworkTopologyDetail>(
-        playbackCache,
-        'networkTopology',
-        id,
-      );
-      if (cached) {
-        return cached;
-      }
       return get<NetworkTopologyDetail>(`/operation_analysis/api/network_topology/${id}/`);
     },
-    [get, playbackCache, shareDetailOverride],
+    [get, shareDetailOverride],
   );
 
   const createNetworkTopology = useCallback(

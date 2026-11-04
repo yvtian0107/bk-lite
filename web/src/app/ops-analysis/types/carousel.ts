@@ -12,7 +12,6 @@ export interface CarouselItem {
   available: boolean;
   canvas_name?: string | null;
   canvas_group_ids?: number[];
-  hidden_group_ids?: number[];
 }
 
 export interface CarouselDetail {
@@ -26,7 +25,6 @@ export interface CarouselDetail {
   created_at: string;
   updated_at: string;
   items: CarouselItem[];
-  skipped_count: number;
 }
 
 export interface CarouselSummary {

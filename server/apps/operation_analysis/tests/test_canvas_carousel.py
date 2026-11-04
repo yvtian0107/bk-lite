@@ -52,12 +52,15 @@ def _viewer(user, *, permission=None, groups=None, superuser=False):
     return user
 
 
-def _directory(name="目录", groups=None):
-    return Directory.objects.create(name=name, groups=groups or [1], created_by="testuser")
+def _directory(name="目录", groups=None, **kwargs):
+    return Directory.objects.create(name=name, groups=groups or [1], created_by="testuser", **kwargs)
 
 
 def _dashboard(name, groups=None, **kwargs):
-    return Dashboard.objects.create(name=name, groups=groups or [1], created_by="testuser", **kwargs)
+    groups = groups or [1]
+    if "directory" not in kwargs:
+        kwargs["directory"] = _directory(f"{name}目录", groups=groups)
+    return Dashboard.objects.create(name=name, groups=groups, created_by="testuser", **kwargs)
 
 
 def _call(view, method, user, path="/carousel/", data=None, team="1", include_children="0", **kwargs):
@@ -259,8 +262,11 @@ def test_item_validation_keeps_existing_invalid_reference(authenticated_user):
     assert invalid["exists"] is True
     assert invalid["visible"] is False
     assert invalid["available"] is False
-    assert invalid["canvas_name"] == "可见盘"
+    assert "canvas_name" not in invalid
+    assert "canvas_group_ids" not in invalid
+    assert "hidden_group_ids" not in invalid
     assert detail["items"][1]["available"] is True
+    assert detail["items"][1]["canvas_name"] == "内置盘"
     assert detail["items"][1]["resolved_dwell_seconds"] == 40
     assert invalid["resolved_dwell_seconds"] == 12
 
@@ -286,10 +292,10 @@ def test_dwell_bounds_item_limit_and_playback_availability(authenticated_user):
     directory = _directory("网目录")
     canvases = {
         "dashboard": _dashboard("盘", groups=[1, 2]),
-        "topology": Topology.objects.create(name="拓扑", groups=[1], created_by="testuser"),
-        "architecture": Architecture.objects.create(name="架构", groups=[1], created_by="testuser"),
-        "screen": Screen.objects.create(name="大屏", groups=[1], created_by="testuser"),
-        "report": Report.objects.create(name="报表", groups=[1], created_by="testuser"),
+        "topology": Topology.objects.create(name="拓扑", groups=[1], directory=directory, created_by="testuser"),
+        "architecture": Architecture.objects.create(name="架构", groups=[1], directory=directory, created_by="testuser"),
+        "screen": Screen.objects.create(name="大屏", groups=[1], directory=directory, created_by="testuser"),
+        "report": Report.objects.create(name="报表", groups=[1], directory=directory, created_by="testuser"),
         "networkTopology": NetworkTopology.objects.create(
             name="网络",
             directory=directory,
@@ -309,8 +315,9 @@ def test_dwell_bounds_item_limit_and_playback_availability(authenticated_user):
     carousel_id = _payload(created)["id"]
     detail = _payload(created)
     dashboard_item = next(item for item in detail["items"] if item["resource_type"] == "dashboard")
-    assert dashboard_item["hidden_group_ids"] == []
-    assert 2 in dashboard_item["canvas_group_ids"]
+    assert "hidden_group_ids" not in dashboard_item
+    assert dashboard_item["canvas_group_ids"] == [1, 2]
+    assert "skipped_count" not in detail
 
     too_short = _call(
         {"patch": "partial_update"},
@@ -356,7 +363,9 @@ def test_dwell_bounds_item_limit_and_playback_availability(authenticated_user):
     assert by_type["screen"]["available"] is True
     assert by_type["report"]["available"] is True
     assert by_type["networkTopology"]["available"] is True
-    assert playback["skipped_count"] == 2
+    assert "canvas_group_ids" not in by_type["architecture"]
+    assert "skipped_count" not in playback
+    assert sum(1 for item in playback["items"] if not item["available"]) == 2
 
     edges = _call(
         {"patch": "partial_update"},
@@ -431,3 +440,40 @@ def test_copy_and_append_follow_current_org_visibility(authenticated_user):
     user.permission = {"ops-analysis": {"view-View", "view-EditChart"}}
     rows = _rows(_call({"get": "list"}, "get", user, path="/carousel/?name=原列表 副本"))
     assert {row["name"] for row in rows} == {"原列表 副本"}
+
+
+@pytest.mark.django_db
+def test_directory_activation_gates_visibility_without_leaking_name(authenticated_user):
+    user = _viewer(authenticated_user)
+    directory = _directory("会停用", groups=[1])
+    canvas = _dashboard("目录盘", groups=[1], directory=directory)
+    created = _call({"post": "create"}, "post", user, data=_create_payload("停用前", canvas))
+    assert created.status_code == status.HTTP_201_CREATED
+    carousel_id = _payload(created)["id"]
+    assert _payload(created)["items"][0]["canvas_name"] == "目录盘"
+    assert _payload(created)["items"][0]["canvas_group_ids"] == [1]
+
+    directory.is_active = False
+    directory.save(update_fields=["is_active"])
+    detail = _payload(_call({"get": "retrieve"}, "get", user, path=f"/carousel/{carousel_id}/", pk=carousel_id))
+    item = detail["items"][0]
+    assert item["exists"] is True
+    assert item["visible"] is False
+    assert item["available"] is False
+    assert "canvas_name" not in item
+    assert "canvas_group_ids" not in item
+
+    playback = _payload(_call({"get": "playback"}, "get", user, path=f"/carousel/{carousel_id}/playback/", pk=carousel_id))
+    assert playback["items"][0]["available"] is False
+    assert "canvas_name" not in playback["items"][0]
+    assert "skipped_count" not in playback
+
+    foreign_directory = _directory("外目录", groups=[2])
+    foreign_canvas = _dashboard("画布在当前组织但目录不在", groups=[1], directory=foreign_directory)
+    rejected = _call(
+        {"post": "create"},
+        "post",
+        user,
+        data=_create_payload("目录不可见", foreign_canvas),
+    )
+    assert rejected.status_code == status.HTTP_400_BAD_REQUEST
