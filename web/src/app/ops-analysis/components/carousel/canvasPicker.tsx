@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { Button, Empty, Input, Tree, message } from 'antd';
+import { Button, Empty, Input, Select, Tree, message } from 'antd';
 import type { DataNode } from 'antd/lib/tree';
 import OperateDrawer from '@/components/operate-drawer';
 import { useTranslation } from '@/utils/i18n';
@@ -124,7 +124,6 @@ const CanvasPicker: React.FC<CanvasPickerProps> = ({
         if (!visible.has(key)) {
           return [];
         }
-        const meta = getCanvasTypeMeta(item.type);
         return [{
           key,
           isLeaf: true,
@@ -132,9 +131,6 @@ const CanvasPicker: React.FC<CanvasPickerProps> = ({
             <span className="inline-flex min-w-0 items-center gap-1">
               <CanvasTypeIcon type={item.type} />
               <span className="truncate">{item.name}</span>
-              <span className="shrink-0 text-xs text-[var(--color-text-3)]">
-                {meta ? t(meta.nameKey) : ''}
-              </span>
             </span>
           ),
         }];
@@ -150,7 +146,7 @@ const CanvasPicker: React.FC<CanvasPickerProps> = ({
       }];
     });
     return build(directories);
-  }, [directories, t, visibleKeys]);
+  }, [directories, visibleKeys]);
 
   const treeKeys = canvases.map((canvas) => canvasIdentityKey(canvas.resourceType, canvas.canvasId));
   const delta = selectionChangeCounts(currentItems, checked, loadFailed ? [] : treeKeys);
@@ -227,31 +223,30 @@ const CanvasPicker: React.FC<CanvasPickerProps> = ({
         </div>
       )}
     >
-      <Input.Search
-        allowClear
-        value={keyword}
-        placeholder={t('common.search')}
-        className="mb-2"
-        onChange={(event) => setKeyword(event.target.value)}
-      />
-      <div className="mb-3 flex flex-wrap gap-x-3 gap-y-1">
-        {filters.map((filter) => {
-          const active = typeFilter === filter.key;
-          return (
-            <button
-              key={filter.key}
-              type="button"
-              className={`cursor-pointer bg-transparent text-xs ${
-                active
-                  ? 'border-b border-[var(--color-text-1)] text-[var(--color-text-1)]'
-                  : 'text-[var(--color-text-3)]'
-              }`}
-              onClick={() => setTypeFilter(filter.key)}
-            >
-              {filter.label} {filter.count}
-            </button>
-          );
-        })}
+      <div className="mb-3 flex items-center gap-2">
+        <Input.Search
+          allowClear
+          value={keyword}
+          placeholder={t('common.search')}
+          className="min-w-0 flex-1"
+          onChange={(event) => setKeyword(event.target.value)}
+        />
+        <Select<TypeFilter>
+          className="w-36 shrink-0"
+          value={typeFilter}
+          popupMatchSelectWidth={false}
+          getPopupContainer={(trigger) => trigger.parentElement || document.body}
+          onChange={setTypeFilter}
+          options={filters.map((filter) => ({
+            value: filter.key,
+            label: (
+              <span className="inline-flex items-center gap-1">
+                {filter.key !== 'all' && <CanvasTypeIcon type={filter.key} />}
+                <span>{filter.label} {filter.count}</span>
+              </span>
+            ),
+          }))}
+        />
       </div>
       {treeData.length === 0 ? (
         <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description={t('opsCarousel.noCanvas')} />

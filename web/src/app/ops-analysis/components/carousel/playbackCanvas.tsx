@@ -27,7 +27,13 @@ const toDirItem = (slide: PlaybackSlide): DirItem => ({
   type: slide.resourceType,
 });
 
-const PlaybackCanvas = ({ slide }: { slide: PlaybackSlide }) => {
+const PlaybackCanvas = ({
+  slide,
+  presentFullscreen = false,
+}: {
+  slide: PlaybackSlide;
+  presentFullscreen?: boolean;
+}) => {
   const item = toDirItem(slide);
   switch (slide.resourceType) {
     case 'dashboard':
@@ -37,7 +43,7 @@ const PlaybackCanvas = ({ slide }: { slide: PlaybackSlide }) => {
     case 'architecture':
       return <Architecture selectedArchitecture={item} playbackMode />;
     case 'screen':
-      return <Screen selectedScreen={item} playbackMode />;
+      return <Screen selectedScreen={item} playbackMode playbackFullscreen={presentFullscreen} />;
     case 'report':
       return <Report selectedReport={item} playbackMode />;
     case 'networkTopology':
@@ -86,10 +92,12 @@ export const PlaybackSlideFrame = ({
   slide,
   initialDetail,
   onError,
+  presentFullscreen = false,
 }: {
   slide: PlaybackSlide;
   initialDetail: unknown;
   onError: () => void;
+  presentFullscreen?: boolean;
 }) => {
   const seeded = React.useMemo(() => ({
     resourceType: slide.resourceType,
@@ -99,7 +107,7 @@ export const PlaybackSlideFrame = ({
   return (
     <PlaybackInitialDetailProvider value={seeded}>
       <PlaybackCanvasBoundary slideKey={slide.key} onError={onError}>
-        <PlaybackCanvas slide={slide} />
+        <PlaybackCanvas slide={slide} presentFullscreen={presentFullscreen} />
       </PlaybackCanvasBoundary>
     </PlaybackInitialDetailProvider>
   );

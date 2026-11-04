@@ -76,16 +76,6 @@ def name_conflicts(name: str, groups, *, exclude_id=None) -> bool:
     return False
 
 
-def next_copy_name(name: str, groups) -> str:
-    base = f"{name} 副本"
-    for index in range(100):
-        extra = "" if index == 0 else f" {index + 1}"
-        candidate = f"{base[: 128 - len(extra)]}{extra}" if extra else base[:128]
-        if not name_conflicts(candidate, groups):
-            return candidate
-    raise ValidationError({"name": oa_message("messages.carousel_name_conflict", "同一组织内已有同名轮播列表")})
-
-
 def _reference_pairs(items):
     pairs = []
     for item in items:
@@ -272,33 +262,6 @@ def update_carousel(request, carousel: CanvasCarousel, validated: dict) -> Canva
     if items is not None:
         replace_carousel_items(request, locked, items)
     return locked
-
-
-@transaction.atomic
-def copy_carousel(request, source: CanvasCarousel, groups: list[int]) -> CanvasCarousel:
-    locked = CanvasCarousel.objects.select_for_update().get(pk=source.pk)
-    copied_groups = normalize_group_list(groups) or normalize_group_list(locked.groups)
-    name = next_copy_name(locked.name, copied_groups)
-    carousel = CanvasCarousel.objects.create(
-        name=name,
-        desc=locked.desc,
-        groups=copied_groups,
-        default_dwell_seconds=locked.default_dwell_seconds,
-        **_actor_fields(request, include_created=True),
-    )
-    CanvasCarouselItem.objects.bulk_create(
-        [
-            CanvasCarouselItem(
-                carousel=carousel,
-                resource_type=item.resource_type,
-                canvas_id=item.canvas_id,
-                dwell_seconds=item.dwell_seconds,
-                position=item.position,
-            )
-            for item in locked.items.all()
-        ]
-    )
-    return carousel
 
 
 @transaction.atomic

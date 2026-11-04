@@ -227,7 +227,13 @@ const ScreenDataConfig = memo(
   areScreenDataConfigPropsEqual,
 );
 
-const Screen = forwardRef<ScreenRef, ScreenProps>(({ selectedScreen, shareMode = false, playbackMode = false, onEditingChange }, ref) => {
+const Screen = forwardRef<ScreenRef, ScreenProps>(({
+  selectedScreen,
+  shareMode = false,
+  playbackMode = false,
+  playbackFullscreen = false,
+  onEditingChange,
+}, ref) => {
   const onEditingChangeRef = useRef(onEditingChange);
   onEditingChangeRef.current = onEditingChange;
   useEffect(() => {
@@ -1339,7 +1345,7 @@ const Screen = forwardRef<ScreenRef, ScreenProps>(({ selectedScreen, shareMode =
     () => (
       <ScreenCanvas
         viewSets={activeViewSets}
-        fullscreen={isFullscreen}
+        fullscreen={isFullscreen || playbackFullscreen}
         editMode={editMode}
         shareMode={shareMode}
         selectedItemId={selectedItemId}
@@ -1387,6 +1393,7 @@ const Screen = forwardRef<ScreenRef, ScreenProps>(({ selectedScreen, shareMode =
       refreshCause,
       handleSelectCanvasItem,
       isFullscreen,
+      playbackFullscreen,
       selectedItemId,
       resolveFilterTextRef,
       selectedScreen?.data_id,
@@ -1506,7 +1513,7 @@ const Screen = forwardRef<ScreenRef, ScreenProps>(({ selectedScreen, shareMode =
           headerVisible={!isFullscreen && !playbackMode}
           filterBarVisible={!isFullscreen && !playbackMode}
           flushContent
-          contentClassName={isFullscreen ? "bg-slate-950" : undefined}
+          contentClassName={isFullscreen || playbackFullscreen ? "bg-slate-950" : undefined}
           toolbar={playbackMode ? undefined : (
             <ScreenToolbar
               selectedScreen={selectedScreen}

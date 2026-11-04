@@ -107,7 +107,6 @@ const Sidebar = forwardRef<SidebarRef, SidebarProps>(
     hasUnsavedCarouselChanges,
     onCarouselCreated,
     onCarouselUpdated,
-    onCarouselCopied,
     onCarouselDeleted,
   }, ref) => {
     const [form] = Form.useForm();
@@ -1002,9 +1001,7 @@ const Sidebar = forwardRef<SidebarRef, SidebarProps>(
                 setCarouselInfoTarget(carousel);
                 setCarouselInfoOpen(true);
               }}
-              prepareCarouselLeave={prepareCarouselLeave}
               hasUnsavedCarouselChanges={hasUnsavedCarouselChanges}
-              onCopied={(id) => onCarouselCopied?.(id)}
               onDeleted={(id) => onCarouselDeleted?.(id)}
             />
           ) : (

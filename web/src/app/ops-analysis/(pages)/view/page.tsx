@@ -434,11 +434,6 @@ const ViewPage: React.FC = () => {
               setCarouselRefreshKey((value) => value + 1);
               setCarouselInfoRevision((value) => value + 1);
             }}
-            onCarouselCopied={(id) => {
-              commitCarouselLeave();
-              setCarouselRefreshKey((value) => value + 1);
-              openCarousel(String(id));
-            }}
             onCarouselDeleted={(id) => {
               setCarouselRefreshKey((value) => value + 1);
               if (String(id) === carouselId) {

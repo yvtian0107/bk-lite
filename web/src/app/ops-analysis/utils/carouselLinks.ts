@@ -36,9 +36,6 @@ export const buildOpsDirectoryPanelHref = (
   );
 };
 
-export const buildCarouselPlayHref = (id: number | string): string =>
-  `/ops-analysis/view/play/${id}?screen=true`;
-
 export type OpsAnalysisPanel = 'directory' | 'carousel';
 
 export interface OpsAnalysisViewLocation {

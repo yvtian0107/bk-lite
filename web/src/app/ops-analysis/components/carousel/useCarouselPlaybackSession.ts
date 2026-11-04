@@ -124,11 +124,11 @@ export const useCarouselPlaybackSession = ({
   loadDetail: (slide: CarouselPlaybackSlide, signal: AbortSignal) => Promise<unknown>;
   /** 播放列表重新拉取（切换轮播或组织）时递增，强制重新确认当前画布。 */
   resetKey?: string;
-  /** 配置页预览默认暂停。播放页不传，仍进入即播放。 */
+  /** 预览默认暂停。缺省为进入即播放。 */
   startPaused?: boolean;
-  /** 暂停时也确认当前画布，供预览加载。播放页不传，暂停仍会取消确认。 */
+  /** 暂停时也确认当前画布。缺省时暂停会取消确认。 */
   confirmWhilePaused?: boolean;
-  /** 刷新列表时，当前项即使失效也留在原位。播放页不传。 */
+  /** 刷新列表时，当前项即使失效也留在原位。 */
   retainUnavailable?: boolean;
 }) => {
   const slidesRef = useRef(slides);

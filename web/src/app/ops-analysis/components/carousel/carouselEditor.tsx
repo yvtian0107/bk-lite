@@ -32,10 +32,14 @@ import {
   Popover,
   Spin,
   Tag,
+  Tooltip,
   message,
 } from 'antd';
 import {
   CaretRightOutlined,
+  EditOutlined,
+  FullscreenExitOutlined,
+  FullscreenOutlined,
   HolderOutlined,
   LeftOutlined,
   PauseOutlined,
@@ -47,13 +51,12 @@ import CompactEmptyState from '@/components/compact-empty-state';
 import MoreActionsDropdown from '@/components/more-actions-dropdown';
 import { useTranslation } from '@/utils/i18n';
 import { useUserInfoContext } from '@/context/userInfo';
-import { getCanvasTypeMeta } from '@/app/ops-analysis/constants/canvasTypes';
 import { useDirectoryApi } from '@/app/ops-analysis/api';
 import { useCarouselApi } from '@/app/ops-analysis/api/carousel';
 import type { CarouselItem } from '@/app/ops-analysis/types/carousel';
 import type { DirItem } from '@/app/ops-analysis/types';
-import { PlaybackSlideFrame, type PlaybackSlide } from '@/app/ops-analysis/(pages)/view/play/playbackCanvas';
-import { useCarouselPlaybackSession } from '@/app/ops-analysis/(pages)/view/play/useCarouselPlaybackSession';
+import { PlaybackSlideFrame, type PlaybackSlide } from './playbackCanvas';
+import { useCarouselPlaybackSession } from './useCarouselPlaybackSession';
 import {
   CAROUSEL_DEFAULT_DWELL_SECONDS,
   CAROUSEL_DWELL_MAX_SECONDS,
@@ -61,6 +64,8 @@ import {
   CAROUSEL_MAX_ITEMS,
   carouselHiddenGroupIds,
   clampCarouselDwellSeconds,
+  isCarouselHotkeyBlocked,
+  isCarouselOverlayOpen,
 } from '@/app/ops-analysis/utils/carouselPlayer';
 import {
   canvasIdentityKey,
@@ -79,7 +84,6 @@ import {
   shouldAutoOpenCarouselEditor,
   type CarouselEditorOpenRequest,
 } from '@/app/ops-analysis/utils/carouselPreview';
-import { buildCarouselPlayHref } from '@/app/ops-analysis/utils/carouselLinks';
 import useBtnPermissions from '@/hooks/usePermissions';
 import { CanvasTypeIcon } from './canvasTypeIcon';
 import CanvasPicker, { type PickedCanvas } from './canvasPicker';
@@ -199,7 +203,6 @@ const ItemRow = ({
 }) => {
   const { t } = useTranslation();
   const sortable = useSortable({ id: item.key, disabled: !canEdit });
-  const meta = getCanvasTypeMeta(item.resource_type);
   const invalid = !item.exists || !item.visible;
   const name = !item.exists
     ? (item.canvas_name || t('opsCarousel.deletedCanvas'))
@@ -234,9 +237,6 @@ const ItemRow = ({
           {name}
         </div>
       </div>
-      <span className="w-16 shrink-0 text-xs text-[var(--color-text-3)]">
-        {meta ? t(meta.nameKey) : item.resource_type}
-      </span>
       {!item.exists && <Tag>{t('opsCarousel.invalidDeleted')}</Tag>}
       {item.exists && !item.visible && <Tag>{t('opsCarousel.invalidHidden')}</Tag>}
       {hiddenLabels.length > 0 && (
@@ -323,7 +323,10 @@ const CarouselEditor = forwardRef<CarouselEditorRef, CarouselEditorProps>(({
   const seenToken = useRef<string | null>(null);
   const previousKeysRef = useRef<string[]>([]);
   const lockedIndexRef = useRef(0);
-  const thumbRef = useRef<HTMLButtonElement>(null);
+  const stageRef = useRef<HTMLDivElement>(null);
+  const idleTimer = useRef<number | null>(null);
+  const [stageFullscreen, setStageFullscreen] = useState(false);
+  const [controlsVisible, setControlsVisible] = useState(true);
   editorOpenRef.current = editorOpen;
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 4 } }));
   const canEdit = hasPermission(['EditChart']);
@@ -403,9 +406,41 @@ const CarouselEditor = forwardRef<CarouselEditorRef, CarouselEditorProps>(({
     return () => window.removeEventListener('beforeunload', handleBeforeUnload);
   }, [dirty, editorOpen]);
 
+  const showFullscreenControls = useCallback(() => {
+    setControlsVisible(true);
+    if (idleTimer.current != null) window.clearTimeout(idleTimer.current);
+    idleTimer.current = window.setTimeout(() => setControlsVisible(false), 3000);
+  }, []);
+
   useEffect(() => {
-    thumbRef.current?.scrollIntoView({ behavior: 'smooth', inline: 'center', block: 'nearest' });
-  }, [player.index, slides.length]);
+    const onChange = () => {
+      const active = document.fullscreenElement === stageRef.current;
+      setStageFullscreen(active);
+      session.dispatch({ type: 'setPaused', paused: !active });
+      if (active) showFullscreenControls();
+    };
+    document.addEventListener('fullscreenchange', onChange);
+    return () => {
+      document.removeEventListener('fullscreenchange', onChange);
+      if (idleTimer.current != null) window.clearTimeout(idleTimer.current);
+    };
+  }, [session.dispatch, showFullscreenControls]);
+
+  useEffect(() => {
+    if (!stageFullscreen) return undefined;
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (isCarouselHotkeyBlocked(event.target) || isCarouselOverlayOpen()) return;
+      if (event.key === 'ArrowRight' || event.key === 'ArrowLeft' || event.key === ' ') {
+        event.preventDefault();
+        showFullscreenControls();
+        session.dispatch({
+          type: event.key === 'ArrowLeft' ? 'prev' : event.key === 'ArrowRight' ? 'next' : 'togglePause',
+        });
+      }
+    };
+    window.addEventListener('keydown', onKeyDown, true);
+    return () => window.removeEventListener('keydown', onKeyDown, true);
+  }, [session.dispatch, showFullscreenControls, stageFullscreen]);
 
   const groupName = useMemo(() => {
     const names = new Map<string, string>();
@@ -490,6 +525,9 @@ const CarouselEditor = forwardRef<CarouselEditorRef, CarouselEditorProps>(({
   }, [canEdit, items.length, loading, openEditorRequest, session.dispatch]);
 
   const openEditor = () => {
+    if (document.fullscreenElement === stageRef.current) {
+      void document.exitFullscreen();
+    }
     session.dispatch({ type: 'setPaused', paused: true });
     setEditorOpen(true);
   };
@@ -656,6 +694,69 @@ const CarouselEditor = forwardRef<CarouselEditorRef, CarouselEditorProps>(({
   );
   const previewIndex = player.index >= 0 && player.index < slides.length ? player.index : 0;
   const preview = slides[previewIndex];
+  const playableCount = slides.filter((slide) => slide.available).length;
+  const positionLabel = slides.length > 0 ? `${previewIndex + 1} / ${slides.length}` : '';
+  const positionName = preview?.available && preview.name ? preview.name : '';
+  const iconButtonClassName = 'rounded-full! h-8 w-8 min-w-8 flex items-center justify-center';
+  const renderTransport = (mode: 'preview' | 'stage') => {
+    const hidePlay = mode === 'preview' && !playbackAllowed;
+    const disableStep = mode === 'stage' ? playableCount <= 1 : slides.length <= 1;
+    const step = (direction: 1 | -1) => {
+      if (mode === 'stage') {
+        showFullscreenControls();
+        session.dispatch({ type: direction > 0 ? 'next' : 'prev' });
+        return;
+      }
+      chooseIndex(manualPreviewStep(slides.length, previewIndex, direction));
+    };
+    return (
+      <>
+        <Tooltip title={t('opsCarousel.previous')}>
+          <Button
+            type="text"
+            className={iconButtonClassName}
+            aria-label={t('opsCarousel.previous')}
+            icon={<LeftOutlined style={{ fontSize: 16 }} />}
+            disabled={disableStep}
+            onClick={() => step(-1)}
+          />
+        </Tooltip>
+        {!hidePlay && (
+          <Tooltip title={player.paused ? t('opsCarousel.play') : t('opsCarousel.pause')}>
+            <Button
+              type="text"
+              className={iconButtonClassName}
+              aria-label={player.paused ? t('opsCarousel.play') : t('opsCarousel.pause')}
+              icon={player.paused
+                ? <CaretRightOutlined style={{ fontSize: 16 }} />
+                : <PauseOutlined style={{ fontSize: 16 }} />}
+              disabled={playableCount === 0 || slides.length <= 1}
+              onClick={togglePlay}
+            />
+          </Tooltip>
+        )}
+        <Tooltip title={t('opsCarousel.next')}>
+          <Button
+            type="text"
+            className={iconButtonClassName}
+            aria-label={t('opsCarousel.next')}
+            icon={<RightOutlined style={{ fontSize: 16 }} />}
+            disabled={disableStep}
+            onClick={() => step(1)}
+          />
+        </Tooltip>
+      </>
+    );
+  };
+  const positionIndicator = positionLabel ? (
+    positionName ? (
+      <Tooltip title={positionName}>
+        <span className="px-1 text-sm tabular-nums text-[var(--color-text-2)]">{positionLabel}</span>
+      </Tooltip>
+    ) : (
+      <span className="px-1 text-sm tabular-nums text-[var(--color-text-2)]">{positionLabel}</span>
+    )
+  ) : null;
 
   if (!carouselId) {
     return (
@@ -718,24 +819,41 @@ const CarouselEditor = forwardRef<CarouselEditorRef, CarouselEditorProps>(({
               {t('opsCarousel.roundDuration', undefined, { duration: t(duration.id, undefined, duration.values) })}
             </span>
           </div>
-          <div className="flex shrink-0 items-center gap-2">
+          <div className="flex shrink-0 items-center gap-1">
+            {items.length > 0 && renderTransport('preview')}
+            {positionIndicator}
             {canEdit && (
-              <Button onClick={openEditor}>{t('common.edit')}</Button>
+              <Tooltip title={t('common.edit')}>
+                <Button
+                  type="text"
+                  className={iconButtonClassName}
+                  aria-label={t('common.edit')}
+                  icon={<EditOutlined style={{ fontSize: 16 }} />}
+                  onClick={openEditor}
+                />
+              </Tooltip>
             )}
             {canPlay && (
-              <Button
-                type="primary"
-                disabled={!playbackAllowed || items.length === 0}
-                onClick={() => {
-                  window.open(buildCarouselPlayHref(carouselId), '_blank', 'noopener,noreferrer');
-                }}
-              >
-                {t('opsCarousel.fullscreenPlay')}
-              </Button>
+              <Tooltip title={t('common.fullscreen')}>
+                <Button
+                  type="text"
+                  className={iconButtonClassName}
+                  aria-label={t('common.fullscreen')}
+                  icon={<FullscreenOutlined style={{ fontSize: 16 }} />}
+                  disabled={!playbackAllowed || playableCount === 0}
+                  onClick={() => { void stageRef.current?.requestFullscreen(); }}
+                />
+              </Tooltip>
             )}
           </div>
         </div>
-        <div className="relative min-h-0 flex-1 overflow-hidden bg-[var(--color-bg)]">
+        <div
+          ref={stageRef}
+          className={`relative min-h-0 flex-1 overflow-hidden ${
+            stageFullscreen && preview?.resourceType === 'screen' ? 'bg-slate-950' : 'bg-[var(--color-bg)]'
+          }`}
+          onMouseMove={stageFullscreen ? showFullscreenControls : undefined}
+        >
           {items.length === 0 ? (
             <div className="flex h-full flex-col items-center justify-center gap-3">
               <CompactEmptyState description={t('opsCarousel.noItems')} />
@@ -759,61 +877,31 @@ const CarouselEditor = forwardRef<CarouselEditorRef, CarouselEditorProps>(({
                 key={`${preview.key}:${player.visit}`}
                 slide={preview}
                 initialDetail={session.initialDetail}
+                presentFullscreen={stageFullscreen && preview.resourceType === 'screen'}
                 onError={() => session.dispatch({ type: 'markUnavailable', key: preview.key })}
               />
             </div>
           )}
-        </div>
-        {items.length > 0 && (
-          <div className="flex shrink-0 items-center gap-2 border-t border-[var(--color-border-1)] px-3 py-2">
-            <div className="flex min-w-0 flex-1 gap-2 overflow-x-auto">
-              {slides.map((slide, index) => {
-                const row = items[index];
-                const label = slide.available
-                  ? (row?.canvas_name || t('opsCarousel.unnamed'))
-                  : t('opsCarousel.invalid');
-                return (
-                  <button
-                    key={slide.key}
-                    ref={index === previewIndex ? thumbRef : undefined}
-                    type="button"
-                    className={`flex max-w-48 shrink-0 items-center gap-1.5 rounded border px-2 py-1 text-left ${
-                      index === previewIndex
-                        ? 'border-[var(--color-primary)] bg-[var(--color-fill-2)]'
-                        : 'border-transparent hover:bg-[var(--color-fill-1)]'
-                    } ${slide.available ? 'text-[var(--color-text-1)]' : 'text-[var(--color-text-3)]'}`}
-                    onClick={() => chooseIndex(index)}
-                  >
-                    <span className="text-xs text-[var(--color-text-3)]">{index + 1}</span>
-                    <CanvasTypeIcon type={slide.resourceType} />
-                    <span className="truncate text-sm">{label}</span>
-                  </button>
-                );
-              })}
+          {stageFullscreen && (
+            <div
+              className={`absolute inset-x-0 bottom-0 z-20 flex items-center justify-center gap-1 bg-[color-mix(in_srgb,var(--color-bg-1)_72%,transparent)] px-3 py-2 transition-opacity ${
+                controlsVisible ? 'opacity-100' : 'pointer-events-none opacity-0'
+              }`}
+            >
+              {renderTransport('stage')}
+              {positionIndicator}
+              <Tooltip title={t('common.exitFullscreen')}>
+                <Button
+                  type="text"
+                  className={iconButtonClassName}
+                  aria-label={t('common.exitFullscreen')}
+                  icon={<FullscreenExitOutlined style={{ fontSize: 16 }} />}
+                  onClick={() => { void document.exitFullscreen(); }}
+                />
+              </Tooltip>
             </div>
-            <Button
-              type="text"
-              aria-label={t('opsCarousel.previous')}
-              icon={<LeftOutlined />}
-              onClick={() => chooseIndex(manualPreviewStep(slides.length, previewIndex, -1))}
-            />
-            <Button
-              type="text"
-              aria-label={t('opsCarousel.next')}
-              icon={<RightOutlined />}
-              onClick={() => chooseIndex(manualPreviewStep(slides.length, previewIndex, 1))}
-            />
-            {playbackAllowed && (
-              <Button
-                type="text"
-                aria-label={player.paused ? t('opsCarousel.play') : t('opsCarousel.pause')}
-                icon={player.paused ? <CaretRightOutlined /> : <PauseOutlined />}
-                disabled={!slides.some((slide) => slide.available)}
-                onClick={togglePlay}
-              />
-            )}
-          </div>
-        )}
+          )}
+        </div>
       </div>
       <OperateFormDrawer
         title={t('common.edit')}

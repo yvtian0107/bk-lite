@@ -18,9 +18,7 @@ interface CarouselListProps {
   onSelect: (id: string) => void;
   onAutoSelect?: (id: string) => void;
   onEditBasic: (carousel: CarouselSummary) => void;
-  prepareCarouselLeave?: () => Promise<boolean>;
   hasUnsavedCarouselChanges?: () => boolean;
-  onCopied: (id: number) => void;
   onDeleted: (id: number) => void;
 }
 
@@ -31,14 +29,12 @@ const CarouselList: React.FC<CarouselListProps> = ({
   onSelect,
   onAutoSelect,
   onEditBasic,
-  prepareCarouselLeave,
   hasUnsavedCarouselChanges,
-  onCopied,
   onDeleted,
 }) => {
   const { t } = useTranslation();
   const { hasPermission } = useBtnPermissions();
-  const { listCarousels, copyCarousel, deleteCarousel } = useCarouselApi();
+  const { listCarousels, deleteCarousel } = useCarouselApi();
   const [rows, setRows] = useState<CarouselSummary[]>([]);
   const [loading, setLoading] = useState(false);
   const requestedSelection = useRef<string | null>(null);
@@ -78,7 +74,6 @@ const CarouselList: React.FC<CarouselListProps> = ({
     (onAutoSelect ?? onSelect)(id);
   }, [loading, onAutoSelect, onSelect, rows, selectedId]);
 
-  const canCopy = hasPermission(['AddChart']);
   const canEdit = hasPermission(['EditChart']);
   const canDelete = hasPermission(['DeleteChart']);
 
@@ -110,17 +105,6 @@ const CarouselList: React.FC<CarouselListProps> = ({
                 key: 'edit',
                 label: t('opsCarousel.editBasic'),
                 onClick: () => onEditBasic(row),
-              }] : []),
-              ...(canCopy ? [{
-                key: 'copy',
-                label: t('common.copy'),
-                onClick: () => {
-                  void (async () => {
-                    if (prepareCarouselLeave && !(await prepareCarouselLeave())) return;
-                    const copied = await copyCarousel(row.id);
-                    onCopied(copied.id);
-                  })();
-                },
               }] : []),
               ...(canDelete ? [{
                 key: 'delete',

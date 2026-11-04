@@ -31,7 +31,6 @@ export interface SidebarProps {
   hasUnsavedCarouselChanges?: () => boolean;
   onCarouselCreated?: (id: number, openEditor: boolean) => void;
   onCarouselUpdated?: () => void;
-  onCarouselCopied?: (id: number) => void;
   onCarouselDeleted?: (id: number) => void;
 }
 

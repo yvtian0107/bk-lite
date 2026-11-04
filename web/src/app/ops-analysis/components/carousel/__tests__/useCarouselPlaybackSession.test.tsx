@@ -7,7 +7,7 @@ import {
   carouselPlaybackNeedsReset,
   useCarouselPlaybackSession,
   type CarouselPlaybackSlide,
-} from '@/app/ops-analysis/(pages)/view/play/useCarouselPlaybackSession';
+} from '@/app/ops-analysis/components/carousel/useCarouselPlaybackSession';
 
 interface Gate {
   promise: Promise<unknown>;

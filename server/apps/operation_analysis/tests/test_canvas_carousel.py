@@ -387,7 +387,7 @@ def test_dwell_bounds_item_limit_and_playback_availability(authenticated_user):
 
 
 @pytest.mark.django_db
-def test_copy_and_append_follow_current_org_visibility(authenticated_user):
+def test_append_follows_current_org_visibility(authenticated_user):
     user = _viewer(authenticated_user)
     user.group_list = [{"id": 1, "name": "甲"}, {"id": 2, "name": "乙"}]
     canvas = _dashboard("可追加", groups=[1])
@@ -400,18 +400,6 @@ def test_copy_and_append_follow_current_org_visibility(authenticated_user):
         data=_create_payload("原列表", canvas, groups=[1, 2]),
     )
     carousel_id = _payload(created)["id"]
-
-    copied = _call({"post": "copy"}, "post", user, path=f"/carousel/{carousel_id}/copy/", pk=carousel_id, team="1")
-    assert copied.status_code == status.HTTP_201_CREATED
-    copy_body = _payload(copied)
-    assert copy_body["name"] == "原列表 副本"
-    assert copy_body["groups"] == [1, 2]
-    assert len(copy_body["items"]) == 1
-    assert copy_body["id"] != carousel_id
-
-    user.permission = {"ops-analysis": {"view-View"}}
-    denied_copy = _call({"post": "copy"}, "post", user, path=f"/carousel/{carousel_id}/copy/", pk=carousel_id)
-    assert denied_copy.status_code == status.HTTP_403_FORBIDDEN
 
     user.permission = {"ops-analysis": {"view-EditChart"}}
     refused = _call(
@@ -439,8 +427,8 @@ def test_copy_and_append_follow_current_org_visibility(authenticated_user):
     assert _payload(appended)["items"][-1]["resolved_dwell_seconds"] == 8
 
     user.permission = {"ops-analysis": {"view-View", "view-EditChart"}}
-    rows = _rows(_call({"get": "list"}, "get", user, path="/carousel/?name=原列表 副本"))
-    assert {row["name"] for row in rows} == {"原列表 副本"}
+    rows = _rows(_call({"get": "list"}, "get", user, path="/carousel/?name=原列表"))
+    assert {row["name"] for row in rows} == {"原列表"}
 
 
 @pytest.mark.django_db

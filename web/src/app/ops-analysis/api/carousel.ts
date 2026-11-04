@@ -31,12 +31,6 @@ export const useCarouselApi = () => {
     return get<CarouselDetail>(`${BASE}${id}/`);
   }, [get]);
 
-  const getCarouselPlayback = useCallback(async (id: number | string) => {
-    return get<CarouselDetail>(`${BASE}${id}/playback/`, {
-      suppressErrorNotification: true,
-    });
-  }, [get]);
-
   const createCarousel = useCallback(async (data: CarouselWriteInput) => {
     return post<CarouselDetail>(BASE, data);
   }, [post]);
@@ -51,10 +45,6 @@ export const useCarouselApi = () => {
   const deleteCarousel = useCallback(async (id: number | string) => {
     return del(`${BASE}${id}/`);
   }, [del]);
-
-  const copyCarousel = useCallback(async (id: number | string) => {
-    return post<CarouselDetail>(`${BASE}${id}/copy/`);
-  }, [post]);
 
   const appendCarouselItem = useCallback(async (
     id: number | string,
@@ -85,11 +75,9 @@ export const useCarouselApi = () => {
   return {
     listCarousels,
     getCarousel,
-    getCarouselPlayback,
     createCarousel,
     updateCarousel,
     deleteCarousel,
-    copyCarousel,
     appendCarouselItem,
     prefetchCanvasDetail,
   };

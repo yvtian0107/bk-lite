@@ -15,11 +15,7 @@ const useBtnPermissions = (permissionPath?: string) => {
     }
 
     const routePath = permissionPath || currentPath || '';
-    const playPermissions = routePath === '/ops-analysis/view/play'
-      || routePath.startsWith('/ops-analysis/view/play/')
-      ? permissions['/ops-analysis/view/play'] || permissions['/ops-analysis/view'] || []
-      : [];
-    const routePermissions = permissions[routePath] || playPermissions;
+    const routePermissions = permissions[routePath] || [];
 
     return (requiredPermissions: string[]): boolean => {
       const userPermissions = new Set<string>();

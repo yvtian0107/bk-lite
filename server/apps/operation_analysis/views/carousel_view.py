@@ -3,7 +3,7 @@ from rest_framework.decorators import action
 from rest_framework.response import Response
 
 from apps.core.decorators.api_permission import HasPermission
-from apps.core.utils.viewset_utils import AuthViewSet, user_group_id_set
+from apps.core.utils.viewset_utils import AuthViewSet
 from apps.operation_analysis.common.audit_log import get_response_name, log_ops_analysis_success
 from apps.operation_analysis.models.carousel import CanvasCarousel
 from apps.operation_analysis.serializers.carousel_serializers import (
@@ -11,15 +11,7 @@ from apps.operation_analysis.serializers.carousel_serializers import (
     CanvasCarouselListSerializer,
     CanvasCarouselWriteSerializer,
 )
-from apps.operation_analysis.services.carousel import (
-    append_carousel_item,
-    copy_carousel,
-    create_carousel,
-    describe_carousel,
-    normalize_group_list,
-    playable_item_stats,
-    update_carousel,
-)
+from apps.operation_analysis.services.carousel import append_carousel_item, create_carousel, describe_carousel, playable_item_stats, update_carousel
 from apps.operation_analysis.views.view import BuiltinVisibleMixin
 from config.drf.pagination import CustomPageNumberPagination
 
@@ -131,17 +123,6 @@ class CanvasCarouselViewSet(BuiltinVisibleMixin, AuthViewSet):
         log_ops_analysis_success(request, response, "delete", f"删除轮播列表: {name}")
         return response
 
-    @HasPermission("view-AddChart")
-    @action(detail=True, methods=["post"])
-    def copy(self, request, *args, **kwargs):
-        source = self.get_object()
-        groups = self._copy_groups(request, source)
-        self._validate_org_field_permission(request, groups)
-        copied = copy_carousel(request, source, groups)
-        response = Response(self._detail_payload(copied, playback=False), status=201)
-        log_ops_analysis_success(request, response, "create", f"复制轮播列表: {copied.name}")
-        return response
-
     @HasPermission("view-EditChart")
     @action(detail=True, methods=["post"])
     def append(self, request, *args, **kwargs):
@@ -152,15 +133,3 @@ class CanvasCarouselViewSet(BuiltinVisibleMixin, AuthViewSet):
         response = Response(self._detail_payload(carousel, playback=False))
         log_ops_analysis_success(request, response, "update", f"编辑轮播列表: {carousel.name}")
         return response
-
-    def _copy_groups(self, request, source):
-        current_team = self._parse_current_team_cookie(request)
-        source_groups = normalize_group_list(source.groups)
-        user = request.user
-        if getattr(user, "is_superuser", False):
-            return source_groups or ([int(current_team)] if current_team else [])
-        allowed = user_group_id_set(user)
-        kept = [group_id for group_id in source_groups if group_id in allowed]
-        if current_team and int(current_team) not in kept:
-            kept.append(int(current_team))
-        return kept or ([int(current_team)] if current_team else [])

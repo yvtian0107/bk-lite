@@ -4,15 +4,7 @@
       "title": "运营分析",
       "icon": "ops-analysis",
       "url": "/ops-analysis/view",
-      "name": "view",
-      "children": [
-        {
-          "title": "轮播播放",
-          "url": "/ops-analysis/view/play",
-          "name": "view_play",
-          "isNotMenuItem": true
-        }
-      ]
+      "name": "view"
     },
     {
     "title": "管理",
@@ -47,15 +39,7 @@
       "title": "Operations Analysis",
       "icon": "ops-analysis",
       "url": "/ops-analysis/view",
-      "name": "view",
-      "children": [
-        {
-          "title": "Carousel playback",
-          "url": "/ops-analysis/view/play",
-          "name": "view_play",
-          "isNotMenuItem": true
-        }
-      ]
+      "name": "view"
     },
     {
       "title": "Management",
