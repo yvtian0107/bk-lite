@@ -88,9 +88,51 @@ const CarouselList: React.FC<CarouselListProps> = ({
         <div className="flex flex-col gap-1">
           {rows.map((row) => {
             const selected = selectedId === String(row.id);
+            const playableCount = row.playable_count ?? row.item_count;
+            const invalidCount = Math.max(0, row.item_count - playableCount);
             const duration = carouselDurationMessage(
-              row.duration_seconds ?? row.item_count * row.default_dwell_seconds,
+              row.duration_seconds ?? playableCount * row.default_dwell_seconds,
             );
+            const subtitle = invalidCount > 0
+              ? t('opsCarousel.listSubtitleWithInvalid', undefined, {
+                count: playableCount,
+                duration: t(duration.id, undefined, duration.values),
+                invalid: invalidCount,
+              })
+              : t('opsCarousel.listSubtitle', undefined, {
+                count: playableCount,
+                duration: t(duration.id, undefined, duration.values),
+              });
+            const menuItems = [
+              ...(canEdit ? [{
+                key: 'edit',
+                label: t('common.edit'),
+                onClick: () => onSelect(String(row.id)),
+              }] : []),
+              ...(canCopy ? [{
+                key: 'copy',
+                label: t('common.copy'),
+                onClick: () => {
+                  void copyCarousel(row.id).then((copied) => onCopied(copied.id));
+                },
+              }] : []),
+              ...(canDelete ? [{
+                key: 'delete',
+                label: t('common.delete'),
+                danger: true,
+                onClick: () => {
+                  Modal.confirm({
+                    title: t('opsCarousel.deleteConfirm'),
+                    content: row.name,
+                    okText: t('common.confirm'),
+                    cancelText: t('common.cancel'),
+                    okButtonProps: { danger: true },
+                    centered: true,
+                    onOk: () => deleteCarousel(row.id).then(() => onDeleted(row.id)),
+                  });
+                },
+              }] : []),
+            ];
             return (
               <div
                 key={row.id}
@@ -107,12 +149,7 @@ const CarouselList: React.FC<CarouselListProps> = ({
                     className="block truncate text-sm text-[var(--color-text-1)]"
                     text={row.name}
                   />
-                  <span className="text-xs text-[var(--color-text-3)]">
-                    {t('opsCarousel.listSubtitle', undefined, {
-                      count: row.item_count,
-                      duration: t(duration.id, undefined, duration.values),
-                    })}
-                  </span>
+                  <span className="text-xs text-[var(--color-text-3)]">{subtitle}</span>
                 </button>
                 {canPlay && (
                   <Button
@@ -123,40 +160,13 @@ const CarouselList: React.FC<CarouselListProps> = ({
                     onClick={() => onPlay(row.id)}
                   />
                 )}
-                <MoreActionsDropdown
-                  stopPropagation
-                  labelAlign="start"
-                  items={[
-                    ...(canEdit ? [{
-                      key: 'edit',
-                      label: t('common.edit'),
-                      onClick: () => onSelect(String(row.id)),
-                    }] : []),
-                    ...(canCopy ? [{
-                      key: 'copy',
-                      label: t('common.copy'),
-                      onClick: () => {
-                        void copyCarousel(row.id).then((copied) => onCopied(copied.id));
-                      },
-                    }] : []),
-                    ...(canDelete ? [{
-                      key: 'delete',
-                      label: t('common.delete'),
-                      danger: true,
-                      onClick: () => {
-                        Modal.confirm({
-                          title: t('opsCarousel.deleteConfirm'),
-                          content: row.name,
-                          okText: t('common.confirm'),
-                          cancelText: t('common.cancel'),
-                          okButtonProps: { danger: true },
-                          centered: true,
-                          onOk: () => deleteCarousel(row.id).then(() => onDeleted(row.id)),
-                        });
-                      },
-                    }] : []),
-                  ]}
-                />
+                {menuItems.length > 0 && (
+                  <MoreActionsDropdown
+                    stopPropagation
+                    labelAlign="start"
+                    items={menuItems}
+                  />
+                )}
               </div>
             );
           })}

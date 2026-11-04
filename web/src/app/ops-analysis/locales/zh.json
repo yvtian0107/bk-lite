@@ -2118,6 +2118,8 @@
     "durationMinutes": "{count} 分",
     "durationMinutesSeconds": "{minutes} 分 {seconds} 秒",
     "listSubtitle": "{count} 张 · 约 {duration}",
+    "listSubtitleWithInvalid": "{count} 张 · 约 {duration} · {invalid} 张失效",
+    "treeLoadFailed": "目录加载失败，请关闭后重试",
     "dwell": "停留时间",
     "dwellEmptyHint": "留空则使用默认 {seconds} 秒",
     "moveUp": "上移",

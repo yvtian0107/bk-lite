@@ -2118,6 +2118,8 @@
     "durationMinutes": "{count} min",
     "durationMinutesSeconds": "{minutes} min {seconds} sec",
     "listSubtitle": "{count} canvases · about {duration}",
+    "listSubtitleWithInvalid": "{count} canvases · about {duration} · {invalid} unavailable",
+    "treeLoadFailed": "Could not load the directory. Close and try again",
     "dwell": "Dwell",
     "dwellEmptyHint": "Empty uses the default {seconds} sec",
     "moveUp": "Move up",

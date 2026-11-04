@@ -3,9 +3,11 @@ import { CAROUSEL_MAX_ITEMS } from '@/app/ops-analysis/utils/carouselPlayer';
 import {
   canvasIdentityKey,
   carouselRoundSeconds,
+  displayedMoveTarget,
   duplicateCanvasKeys,
   mergeCanvasChecks,
   remainingCapacity,
+  sameCarouselDraft,
   selectionChangeCounts,
   shouldShowRemainingCapacity,
   syncCarouselSelection,
@@ -34,6 +36,7 @@ describe('carousel draft selection', () => {
     const result = syncCarouselSelection(
       current,
       selected,
+      ['dashboard:1', 'dashboard:2', 'dashboard:3', 'dashboard:4', 'dashboard:5'],
       (item) => canvasIdentityKey(item.resourceType, item.canvasId),
       (item) => row(item.canvasId, 7),
     );
@@ -52,6 +55,7 @@ describe('carousel draft selection', () => {
     const result = syncCarouselSelection(
       current,
       [canvas(1), canvas(1)],
+      ['dashboard:1'],
       (item) => canvasIdentityKey(item.resourceType, item.canvasId),
       (item) => row(item.canvasId, null),
     );
@@ -66,7 +70,73 @@ describe('carousel draft selection', () => {
     expect(selectionChangeCounts(
       current.map((item) => ({ resourceType: item.resourceType, canvasId: item.canvasId })),
       ['dashboard:2'],
+      ['dashboard:1', 'dashboard:2'],
     )).toEqual({ added: 0, removed: 2, selected: 1 });
+  });
+
+  it('keeps rows the directory tree does not contain, including a removed pending add', () => {
+    const hidden = row(9, 15);
+    const kept = row(1, 12);
+    const result = syncCarouselSelection(
+      [kept, hidden],
+      [canvas(3)],
+      ['dashboard:1', 'dashboard:3'],
+      (item) => canvasIdentityKey(item.resourceType, item.canvasId),
+      (item) => row(item.canvasId, null),
+    );
+    expect(result.removed).toBe(1);
+    expect(result.added).toBe(1);
+    expect(result.items.map((item) => [item.canvasId, item.dwellSeconds])).toEqual([
+      [9, 15],
+      [3, null],
+    ]);
+    expect(result.items[0]).toBe(hidden);
+
+    const pendingRemoved = syncCarouselSelection(
+      [kept],
+      [canvas(1)],
+      ['dashboard:1', 'dashboard:8'],
+      (item) => canvasIdentityKey(item.resourceType, item.canvasId),
+      (item) => row(item.canvasId, null),
+    );
+    expect(pendingRemoved.items).toEqual([kept]);
+    expect(pendingRemoved.added).toBe(0);
+    expect(pendingRemoved.removed).toBe(0);
+
+    const failedTree = syncCarouselSelection(
+      [kept, hidden],
+      [],
+      [],
+      (item) => canvasIdentityKey(item.resourceType, item.canvasId),
+      (item) => row(item.canvasId, null),
+    );
+    expect(failedTree.items).toEqual([kept, hidden]);
+    expect(failedTree.removed).toBe(0);
+  });
+
+  it('moves up and down by the displayed order and maps back to the full list', () => {
+    expect(displayedMoveTarget([0, 2, 5], 1, -1)).toBe(0);
+    expect(displayedMoveTarget([0, 2, 5], 1, 1)).toBe(5);
+    expect(displayedMoveTarget([0, 2, 5], 0, -1)).toBeNull();
+    expect(displayedMoveTarget([0, 2, 5], 2, 1)).toBeNull();
+  });
+
+  it('treats a draft as clean when order, dwell and fields match the snapshot', () => {
+    const saved = {
+      name: '值班',
+      desc: '',
+      groups: [2, 1],
+      defaultDwell: 30,
+      items: [{ resourceType: 'dashboard', canvasId: 9, dwellSeconds: 15 }],
+    };
+    expect(sameCarouselDraft(saved, {
+      ...saved,
+      groups: [1, 2],
+    })).toBe(true);
+    expect(sameCarouselDraft(saved, {
+      ...saved,
+      items: [{ resourceType: 'dashboard', canvasId: 9, dwellSeconds: 16 }],
+    })).toBe(false);
   });
 
   it('blocks a directory check that would pass the 50 canvas limit', () => {

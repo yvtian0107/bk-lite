@@ -937,7 +937,7 @@ const Sidebar = forwardRef<SidebarRef, SidebarProps>(
     }, []);
 
     return (
-      <div className="p-4 h-full flex flex-col">
+      <div className="flex h-full min-h-0 flex-col p-4">
         <h3 className="text-base font-semibold mb-4">
           {t('opsAnalysisSidebar.title')}
         </h3>
@@ -982,7 +982,7 @@ const Sidebar = forwardRef<SidebarRef, SidebarProps>(
           )}
         </div>
 
-        <div className="overflow-auto flex-1">
+        <div className="min-h-0 flex-1 overflow-auto">
           {panel === 'carousel' ? (
             <CarouselList
               keyword={searchTerm}

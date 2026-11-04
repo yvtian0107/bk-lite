@@ -517,6 +517,7 @@ def test_same_canvas_cannot_be_added_twice(authenticated_user):
     rows = _rows(_call({"get": "list"}, "get", user))
     listed = next(row for row in rows if row["id"] == carousel_id)
     assert listed["duration_seconds"] == 42
+    assert listed["playable_count"] == 2
     assert listed["canvas_keys"] == [f"dashboard:{first.id}", f"dashboard:{second.id}"]
 
     appended = _call(
@@ -546,3 +547,35 @@ def test_same_canvas_cannot_be_added_twice(authenticated_user):
     assert updated.status_code == status.HTTP_400_BAD_REQUEST
     kept = CanvasCarouselItem.objects.filter(carousel_id=carousel_id).order_by("position")
     assert [item.canvas_id for item in kept] == [first.id, second.id]
+
+
+@pytest.mark.django_db
+def test_list_duration_skips_invisible_canvases_without_names(authenticated_user):
+    user = _viewer(authenticated_user)
+    visible = _dashboard("可见盘", groups=[1])
+    hidden_directory = _directory("将停用", groups=[1])
+    hidden = _dashboard("隐藏盘", groups=[1], directory=hidden_directory)
+    created = _call(
+        {"post": "create"},
+        "post",
+        user,
+        data=_create_payload(
+            "含失效",
+            items=[
+                {"resource_type": "dashboard", "canvas_id": visible.id, "dwell_seconds": 10},
+                {"resource_type": "dashboard", "canvas_id": hidden.id, "dwell_seconds": 200},
+            ],
+        ),
+    )
+    assert created.status_code == status.HTTP_201_CREATED
+    carousel_id = _payload(created)["id"]
+    hidden_directory.is_active = False
+    hidden_directory.save(update_fields=["is_active"])
+
+    rows = _rows(_call({"get": "list"}, "get", user))
+    listed = next(row for row in rows if row["id"] == carousel_id)
+    assert listed["item_count"] == 2
+    assert listed["playable_count"] == 1
+    assert listed["duration_seconds"] == 10
+    assert "隐藏盘" not in json.dumps(listed, ensure_ascii=False)
+    assert "canvas_name" not in listed

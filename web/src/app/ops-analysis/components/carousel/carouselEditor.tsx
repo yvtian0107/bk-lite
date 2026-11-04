@@ -59,8 +59,11 @@ import {
   canvasIdentityKey,
   carouselDurationMessage,
   carouselRoundSeconds,
+  displayedMoveTarget,
   duplicateCanvasKeys,
+  sameCarouselDraft,
   syncCarouselSelection,
+  type CarouselDraftComparable,
 } from '@/app/ops-analysis/utils/carouselDraft';
 import { buildCarouselPlayHref } from '@/app/ops-analysis/utils/carouselLinks';
 import useBtnPermissions from '@/hooks/usePermissions';
@@ -103,6 +106,37 @@ const toDraft = (item: CarouselItem): DraftItem => ({
   canvas_group_ids: item.canvas_group_ids || [],
 });
 
+interface EditorFields {
+  name: string;
+  desc: string;
+  groups: number[];
+  defaultDwell: number | null;
+}
+
+const fieldsFromForm = (values: {
+  name?: string;
+  desc?: string;
+  groups?: number[];
+  default_dwell_seconds?: number | null;
+}): EditorFields => ({
+  name: values.name ?? '',
+  desc: values.desc ?? '',
+  groups: (values.groups || []).map((groupId) => Number(groupId)),
+  defaultDwell: values.default_dwell_seconds ?? null,
+});
+
+const toComparable = (fields: EditorFields, rows: DraftItem[]): CarouselDraftComparable => ({
+  name: fields.name,
+  desc: fields.desc,
+  groups: fields.groups,
+  defaultDwell: fields.defaultDwell,
+  items: rows.map((item) => ({
+    resourceType: item.resource_type,
+    canvasId: item.canvas_id,
+    dwellSeconds: item.dwell_seconds,
+  })),
+});
+
 const moveItem = (items: DraftItem[], key: string, to: number): DraftItem[] => {
   const from = items.findIndex((item) => item.key === key);
   if (from < 0 || from === to) {
@@ -117,22 +151,34 @@ const moveItem = (items: DraftItem[], key: string, to: number): DraftItem[] => {
 const ItemRow = ({
   item,
   index,
-  total,
   canEdit,
   defaultDwell,
   hiddenLabels,
+  canMoveUp,
+  canMoveDown,
+  canMoveTop,
+  canMoveBottom,
   onDwell,
-  onMove,
+  onMoveUp,
+  onMoveDown,
+  onMoveTop,
+  onMoveBottom,
   onRemove,
 }: {
   item: DraftItem;
   index: number;
-  total: number;
   canEdit: boolean;
   defaultDwell: number;
   hiddenLabels: string[];
+  canMoveUp: boolean;
+  canMoveDown: boolean;
+  canMoveTop: boolean;
+  canMoveBottom: boolean;
   onDwell: (value: number | null) => void;
-  onMove: (to: number) => void;
+  onMoveUp: () => void;
+  onMoveDown: () => void;
+  onMoveTop: () => void;
+  onMoveBottom: () => void;
   onRemove: () => void;
 }) => {
   const { t } = useTranslation();
@@ -204,10 +250,10 @@ const ItemRow = ({
           stopPropagation
           labelAlign="start"
           items={[
-            { key: 'up', label: t('opsCarousel.moveUp'), disabled: index === 0, onClick: () => onMove(index - 1) },
-            { key: 'down', label: t('opsCarousel.moveDown'), disabled: index === total - 1, onClick: () => onMove(index + 1) },
-            { key: 'top', label: t('opsCarousel.moveTop'), disabled: index === 0, onClick: () => onMove(0) },
-            { key: 'bottom', label: t('opsCarousel.moveBottom'), disabled: index === total - 1, onClick: () => onMove(total - 1) },
+            { key: 'up', label: t('opsCarousel.moveUp'), disabled: !canMoveUp, onClick: onMoveUp },
+            { key: 'down', label: t('opsCarousel.moveDown'), disabled: !canMoveDown, onClick: onMoveDown },
+            { key: 'top', label: t('opsCarousel.moveTop'), disabled: !canMoveTop, onClick: onMoveTop },
+            { key: 'bottom', label: t('opsCarousel.moveBottom'), disabled: !canMoveBottom, onClick: onMoveBottom },
             { key: 'remove', label: t('opsCarousel.remove'), danger: true, onClick: onRemove },
           ]}
         />
@@ -238,21 +284,26 @@ const CarouselEditor = forwardRef<CarouselEditorRef, CarouselEditorProps>(({
   const [items, setItems] = useState<DraftItem[]>([]);
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
-  const [dirty, setDirty] = useState(false);
+  const [fields, setFields] = useState<EditorFields>({
+    name: '',
+    desc: '',
+    groups: [],
+    defaultDwell: CAROUSEL_DEFAULT_DWELL_SECONDS,
+  });
+  const [savedDraft, setSavedDraft] = useState<CarouselDraftComparable | null>(null);
   const [pickerOpen, setPickerOpen] = useState(false);
+  const [treeLoadFailed, setTreeLoadFailed] = useState(false);
   const [playPrompt, setPlayPrompt] = useState(false);
   const [problemsOnly, setProblemsOnly] = useState(false);
   const [directories, setDirectories] = useState<DirItem[]>([]);
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 4 } }));
-  const groups = Form.useWatch('groups', form) as number[] | undefined;
-  const watchedName = Form.useWatch('name', form) as string | undefined;
-  const watchedDwell = Form.useWatch('default_dwell_seconds', form) as number | undefined;
   const canEdit = carouselId === 'new' ? hasPermission(['AddChart']) : hasPermission(['EditChart']);
   const canPlay = hasPermission(['View']);
   const canCopy = hasPermission(['AddChart']);
   const canDelete = hasPermission(['DeleteChart']);
   const isNew = !carouselId || carouselId === 'new';
-  const defaultDwell = clampCarouselDwellSeconds(watchedDwell, CAROUSEL_DEFAULT_DWELL_SECONDS);
+  const defaultDwell = clampCarouselDwellSeconds(fields.defaultDwell, CAROUSEL_DEFAULT_DWELL_SECONDS);
+  const dirty = savedDraft != null && !sameCarouselDraft(savedDraft, toComparable(fields, items));
   const unsaved = dirty || carouselId === 'new';
 
   useImperativeHandle(ref, () => ({
@@ -269,14 +320,21 @@ const CarouselEditor = forwardRef<CarouselEditorRef, CarouselEditorProps>(({
 
   useEffect(() => {
     if (!carouselId || carouselId === 'new') {
-      form.setFieldsValue({
+      const nextFields = fieldsFromForm({
         name: '',
         desc: '',
         groups: selectedGroup?.id ? [Number(selectedGroup.id)] : [],
         default_dwell_seconds: CAROUSEL_DEFAULT_DWELL_SECONDS,
       });
+      form.setFieldsValue({
+        name: nextFields.name,
+        desc: nextFields.desc,
+        groups: nextFields.groups,
+        default_dwell_seconds: nextFields.defaultDwell,
+      });
+      setFields(nextFields);
       setItems([]);
-      setDirty(false);
+      setSavedDraft(toComparable(nextFields, []));
       setProblemsOnly(false);
       return;
     }
@@ -285,14 +343,21 @@ const CarouselEditor = forwardRef<CarouselEditorRef, CarouselEditorProps>(({
     void getCarousel(carouselId).then((detail) => {
       if (cancelled) return;
       const drafts = detail.items.map(toDraft);
-      form.setFieldsValue({
+      const nextFields = fieldsFromForm({
         name: detail.name,
         desc: detail.desc,
         groups: detail.groups,
         default_dwell_seconds: detail.default_dwell_seconds,
       });
+      form.setFieldsValue({
+        name: nextFields.name,
+        desc: nextFields.desc,
+        groups: nextFields.groups,
+        default_dwell_seconds: nextFields.defaultDwell,
+      });
+      setFields(nextFields);
       setItems(drafts);
-      setDirty(false);
+      setSavedDraft(toComparable(nextFields, drafts));
       setProblemsOnly(false);
       if (duplicateCanvasKeys(drafts.map((item) => ({
         resourceType: item.resource_type,
@@ -312,28 +377,39 @@ const CarouselEditor = forwardRef<CarouselEditorRef, CarouselEditorProps>(({
 
   useEffect(() => {
     if (carouselId !== 'new' || !selectedGroup?.id) return;
-    const current = form.getFieldValue('groups') as number[] | undefined;
-    if (!current?.length) {
-      form.setFieldsValue({ groups: [Number(selectedGroup.id)] });
-    }
+    const groupId = Number(selectedGroup.id);
+    const currentGroups = form.getFieldValue('groups') as number[] | undefined;
+    if (currentGroups?.length) return;
+    form.setFieldsValue({ groups: [groupId] });
+    setFields((current) => (current.groups.length ? current : { ...current, groups: [groupId] }));
+    setSavedDraft((current) => (
+      !current || current.groups.length ? current : { ...current, groups: [groupId] }
+    ));
   }, [carouselId, form, selectedGroup?.id]);
 
   const openPicker = async () => {
     try {
       setDirectories(await getDirectoryTree());
+      setTreeLoadFailed(false);
     } catch (error) {
       console.error('Failed to load canvases:', error);
       setDirectories([]);
+      setTreeLoadFailed(true);
     }
     setPickerOpen(true);
   };
 
-  const applyPicked = (picked: PickedCanvas[]) => {
+  const applyPicked = (picked: PickedCanvas[], treeKeys: string[]) => {
+    if (treeLoadFailed) {
+      setPickerOpen(false);
+      return;
+    }
     const stamp = Date.now();
     let sequence = 0;
     setItems((current) => syncCarouselSelection(
       current,
       picked,
+      treeKeys,
       (item) => canvasIdentityKey(item.resource_type, item.canvas_id),
       (canvas) => ({
         key: `new-${canvas.resourceType}-${canvas.canvasId}-${stamp}-${sequence += 1}`,
@@ -346,7 +422,6 @@ const CarouselEditor = forwardRef<CarouselEditorRef, CarouselEditorProps>(({
         canvas_group_ids: canvas.groups,
       }),
     ).items);
-    setDirty(true);
     setPickerOpen(false);
   };
 
@@ -377,7 +452,20 @@ const CarouselEditor = forwardRef<CarouselEditorRef, CarouselEditorProps>(({
       const saved = carouselId && carouselId !== 'new'
         ? await updateCarousel(carouselId, payload)
         : await createCarousel(payload);
-      setDirty(false);
+      const savedFields = fieldsFromForm({
+        name: payload.name,
+        desc: payload.desc,
+        groups: payload.groups,
+        default_dwell_seconds: payload.default_dwell_seconds,
+      });
+      form.setFieldsValue({
+        name: savedFields.name,
+        desc: savedFields.desc,
+        groups: savedFields.groups,
+        default_dwell_seconds: savedFields.defaultDwell,
+      });
+      setFields(savedFields);
+      setSavedDraft(toComparable(savedFields, items));
       message.success(t('common.saveSuccess'));
       return saved.id;
     } catch (error) {
@@ -415,7 +503,7 @@ const CarouselEditor = forwardRef<CarouselEditorRef, CarouselEditorProps>(({
   })), defaultDwell));
   const invalidCount = items.filter((item) => !item.exists || !item.visible).length;
   const hiddenCount = items.filter((item) => (
-    item.exists && item.visible && carouselHiddenGroupIds(item.canvas_group_ids, groups || []).length > 0
+    item.exists && item.visible && carouselHiddenGroupIds(item.canvas_group_ids, fields.groups).length > 0
   )).length;
   const problemFilter = problemsOnly && (invalidCount > 0 || hiddenCount > 0);
   const shown = items
@@ -423,7 +511,7 @@ const CarouselEditor = forwardRef<CarouselEditorRef, CarouselEditorProps>(({
     .filter(({ item }) => {
       if (!problemFilter) return true;
       const hidden = item.exists && item.visible
-        ? carouselHiddenGroupIds(item.canvas_group_ids, groups || [])
+        ? carouselHiddenGroupIds(item.canvas_group_ids, fields.groups)
         : [];
       return !item.exists || !item.visible || hidden.length > 0;
     });
@@ -448,29 +536,39 @@ const CarouselEditor = forwardRef<CarouselEditorRef, CarouselEditorProps>(({
   const renderRow = (item: DraftItem, index: number) => {
     const hidden = !item.exists || !item.visible
       ? []
-      : carouselHiddenGroupIds(item.canvas_group_ids, groups || []);
+      : carouselHiddenGroupIds(item.canvas_group_ids, fields.groups);
+    const shownPosition = shown.findIndex((row) => row.item.key === item.key);
+    const moveUpTarget = displayedMoveTarget(shown.map((row) => row.index), shownPosition, -1);
+    const moveDownTarget = displayedMoveTarget(shown.map((row) => row.index), shownPosition, 1);
     return (
       <ItemRow
         key={item.key}
         item={item}
         index={index}
-        total={items.length}
         canEdit={canEdit}
         defaultDwell={defaultDwell}
         hiddenLabels={hidden.map(groupName)}
+        canMoveUp={moveUpTarget != null}
+        canMoveDown={moveDownTarget != null}
+        canMoveTop={index > 0}
+        canMoveBottom={index < items.length - 1}
         onDwell={(value) => {
           setItems((current) => current.map((row) => (
             row.key === item.key ? { ...row, dwell_seconds: value } : row
           )));
-          setDirty(true);
         }}
-        onMove={(to) => {
-          setItems((current) => moveItem(current, item.key, to));
-          setDirty(true);
+        onMoveUp={() => {
+          if (moveUpTarget == null) return;
+          setItems((current) => moveItem(current, item.key, moveUpTarget));
         }}
+        onMoveDown={() => {
+          if (moveDownTarget == null) return;
+          setItems((current) => moveItem(current, item.key, moveDownTarget));
+        }}
+        onMoveTop={() => setItems((current) => moveItem(current, item.key, 0))}
+        onMoveBottom={() => setItems((current) => moveItem(current, item.key, current.length - 1))}
         onRemove={() => {
           setItems((current) => current.filter((row) => row.key !== item.key));
-          setDirty(true);
         }}
       />
     );
@@ -479,14 +577,14 @@ const CarouselEditor = forwardRef<CarouselEditorRef, CarouselEditorProps>(({
   const list = shown.map(({ item, index }) => renderRow(item, index));
 
   return (
-    <Spin spinning={loading} wrapperClassName="h-full">
+    <Spin spinning={loading} wrapperClassName="h-full [&_.ant-spin-container]:h-full">
       <div className="flex h-full min-h-0 flex-col overflow-hidden">
         <div className="flex shrink-0 items-center justify-between gap-3 border-b border-[var(--color-border-1)] px-4 py-2">
           <div className="flex min-w-0 items-center gap-3">
             <Breadcrumb
               items={[
                 { title: t('opsCarousel.carousel') },
-                { title: watchedName?.trim() || (isNew ? t('opsCarousel.newList') : t('opsCarousel.unnamed')) },
+                { title: fields.name.trim() || (isNew ? t('opsCarousel.newList') : t('opsCarousel.unnamed')) },
               ]}
             />
             <span className="shrink-0 text-xs text-[var(--color-text-3)]">
@@ -526,7 +624,7 @@ const CarouselEditor = forwardRef<CarouselEditorRef, CarouselEditorProps>(({
                       if (!carouselId) return;
                       Modal.confirm({
                         title: t('opsCarousel.deleteConfirm'),
-                        content: watchedName,
+                        content: fields.name,
                         okText: t('common.confirm'),
                         cancelText: t('common.cancel'),
                         okButtonProps: { danger: true },
@@ -546,7 +644,7 @@ const CarouselEditor = forwardRef<CarouselEditorRef, CarouselEditorProps>(({
             layout="vertical"
             disabled={!canEdit}
             className="grid grid-cols-4 gap-3 rounded-md border border-[var(--color-border-1)] bg-[var(--color-bg-2)] px-3 py-3"
-            onValuesChange={() => setDirty(true)}
+            onValuesChange={(_, all) => setFields(fieldsFromForm(all))}
           >
             <Form.Item
               className="mb-0 min-w-0"
@@ -620,7 +718,6 @@ const CarouselEditor = forwardRef<CarouselEditorRef, CarouselEditorProps>(({
                       danger
                       onClick={() => {
                         setItems((current) => current.filter((item) => item.exists && item.visible));
-                        setDirty(true);
                       }}
                     >
                       {t('opsCarousel.removeInvalid')}
@@ -646,7 +743,6 @@ const CarouselEditor = forwardRef<CarouselEditorRef, CarouselEditorProps>(({
                   if (from < 0 || to < 0) return current;
                   return arrayMove(current, from, to);
                 });
-                setDirty(true);
               }}
             >
               <SortableContext items={shown.map(({ item }) => item.key)} strategy={verticalListSortingStrategy}>
@@ -661,6 +757,7 @@ const CarouselEditor = forwardRef<CarouselEditorRef, CarouselEditorProps>(({
         directories={directories}
         selectedKeys={selectedKeys}
         currentItems={items.map((item) => ({ resourceType: item.resource_type, canvasId: item.canvas_id }))}
+        loadFailed={treeLoadFailed}
         onClose={() => setPickerOpen(false)}
         onConfirm={applyPicked}
       />

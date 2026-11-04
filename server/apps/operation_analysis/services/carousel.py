@@ -95,6 +95,32 @@ def _reference_pairs(items):
     return pairs
 
 
+def playable_item_stats(request, carousels) -> dict[int, dict[str, int]]:
+    """列表上的有效张数和有效时长。按画布类型各查一次可见集合，不返回画布名称。"""
+    from apps.operation_analysis.services.directory_service import visible_canvas_queryset
+
+    ids_by_type = defaultdict(set)
+    for carousel in carousels:
+        for item in carousel.items.all():
+            if item.resource_type in CANVAS_MODELS:
+                ids_by_type[item.resource_type].add(item.canvas_id)
+    visible = set()
+    for resource_type, canvas_ids in ids_by_type.items():
+        visible_ids = visible_canvas_queryset(request, resource_type).filter(id__in=canvas_ids).values_list("id", flat=True)
+        visible.update((resource_type, canvas_id) for canvas_id in visible_ids)
+    stats = {}
+    for carousel in carousels:
+        playable = 0
+        duration = 0
+        for item in carousel.items.all():
+            if (item.resource_type, item.canvas_id) not in visible:
+                continue
+            playable += 1
+            duration += carousel.default_dwell_seconds if item.dwell_seconds is None else item.dwell_seconds
+        stats[carousel.id] = {"playable_count": playable, "duration_seconds": duration}
+    return stats
+
+
 def load_canvas_visibility(request, items):
     """存在性与目录树可见性各按类型批量查询。
 

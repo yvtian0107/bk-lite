@@ -17,6 +17,7 @@ from apps.operation_analysis.services.carousel import (
     create_carousel,
     describe_carousel,
     normalize_group_list,
+    playable_item_stats,
     update_carousel,
 )
 from apps.operation_analysis.views.view import BuiltinVisibleMixin
@@ -56,7 +57,15 @@ class CanvasCarouselViewSet(BuiltinVisibleMixin, AuthViewSet):
 
     @HasPermission("view-View")
     def list(self, request, *args, **kwargs):
-        return super().list(request, *args, **kwargs)
+        queryset = self.filter_queryset(self.get_queryset())
+        page = self.paginate_queryset(queryset)
+        carousels = page if page is not None else list(queryset)
+        context = self.get_serializer_context()
+        context["playback_stats"] = playable_item_stats(request, carousels)
+        serializer = self.get_serializer(carousels, many=True, context=context)
+        if page is not None:
+            return self.get_paginated_response(serializer.data)
+        return Response(serializer.data)
 
     @HasPermission("view-View")
     def retrieve(self, request, *args, **kwargs):

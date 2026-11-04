@@ -16,6 +16,7 @@ import { CAROUSEL_MAX_ITEMS } from '@/app/ops-analysis/utils/carouselPlayer';
 import {
   canvasIdentityKey,
   mergeCanvasChecks,
+  projectedCarouselItemCount,
   remainingCapacity,
   selectionChangeCounts,
   shouldShowRemainingCapacity,
@@ -34,8 +35,9 @@ interface CanvasPickerProps {
   directories: DirItem[];
   selectedKeys: string[];
   currentItems: { resourceType: string; canvasId: number }[];
+  loadFailed?: boolean;
   onClose: () => void;
-  onConfirm: (canvases: PickedCanvas[]) => void;
+  onConfirm: (canvases: PickedCanvas[], treeKeys: string[]) => void;
 }
 
 type TypeFilter = 'all' | CanvasType;
@@ -48,6 +50,7 @@ const CanvasPicker: React.FC<CanvasPickerProps> = ({
   directories,
   selectedKeys,
   currentItems,
+  loadFailed = false,
   onClose,
   onConfirm,
 }) => {
@@ -149,15 +152,18 @@ const CanvasPicker: React.FC<CanvasPickerProps> = ({
     return build(directories);
   }, [directories, t, visibleKeys]);
 
-  const delta = selectionChangeCounts(currentItems, checked);
+  const treeKeys = canvases.map((canvas) => canvasIdentityKey(canvas.resourceType, canvas.canvasId));
+  const delta = selectionChangeCounts(currentItems, checked, loadFailed ? [] : treeKeys);
   const changed = delta.added > 0 || delta.removed > 0;
-  const showRemaining = shouldShowRemainingCapacity(checked.length);
+  const projected = projectedCarouselItemCount(currentItems, checked, loadFailed ? [] : treeKeys);
+  const showRemaining = shouldShowRemainingCapacity(projected);
 
   const applyCheck = (keys: React.Key[] | { checked: React.Key[] }) => {
     const list = Array.isArray(keys) ? keys : keys.checked;
     const nextVisible = list.map(String).filter((key) => key.includes(':'));
     const merged = mergeCanvasChecks(checked, visibleKeys, nextVisible);
-    if (merged.blocked) {
+    const nextCount = projectedCarouselItemCount(currentItems, merged.keys, treeKeys);
+    if (merged.blocked || nextCount > CAROUSEL_MAX_ITEMS) {
       message.warning(t('opsCarousel.itemLimit'));
       return;
     }
@@ -197,20 +203,21 @@ const CanvasPicker: React.FC<CanvasPickerProps> = ({
               )}
             </div>
             {showRemaining && (
-              <div>{t('opsCarousel.remainingCapacity', undefined, { count: remainingCapacity(checked.length) })}</div>
+              <div>{t('opsCarousel.remainingCapacity', undefined, { count: remainingCapacity(projected) })}</div>
             )}
             {delta.removed > 0 && <div>{t('opsCarousel.removeDwellHint')}</div>}
+            {loadFailed && <div>{t('opsCarousel.treeLoadFailed')}</div>}
           </div>
           <div className="flex shrink-0 gap-2">
             <Button onClick={onClose}>{t('common.cancel')}</Button>
             <Button
               type="primary"
-              disabled={checked.length > CAROUSEL_MAX_ITEMS}
+              disabled={loadFailed || projected > CAROUSEL_MAX_ITEMS}
               onClick={() => {
                 const selected = new Set(checked);
                 onConfirm(canvases.filter((canvas) => (
                   selected.has(canvasIdentityKey(canvas.resourceType, canvas.canvasId))
-                )));
+                )), treeKeys);
               }}
             >
               {t('common.confirm')}
