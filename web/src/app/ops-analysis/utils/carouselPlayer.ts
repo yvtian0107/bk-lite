@@ -151,13 +151,20 @@ export const createCarouselPlayerState = (
   };
 };
 
-export const isCarouselBusinessFailure = (error: unknown): boolean => {
+const carouselErrorStatus = (error: unknown): number => {
   if (typeof error !== 'object' || error === null || !('status' in error)) {
-    return false;
+    return Number.NaN;
   }
-  const status = Number((error as { status?: unknown }).status);
+  return Number((error as { status?: unknown }).status);
+};
+
+export const isCarouselBusinessFailure = (error: unknown): boolean => {
+  const status = carouselErrorStatus(error);
   return status === 403 || status === 404;
 };
+
+/** 401 交给全局会话过期处理，不记入本轮跳过。 */
+export const isCarouselSessionFailure = (error: unknown): boolean => carouselErrorStatus(error) === 401;
 
 /** 预取的瞬时失败留到切入再试；403/404 以及切入仍失败只跳过本轮。 */
 export const reduceCarouselLoad = (

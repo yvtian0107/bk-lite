@@ -60,7 +60,11 @@ export const useCarouselApi = () => {
     return post<CarouselDetail>(`${BASE}${id}/append/`, item);
   }, [post]);
 
-  const prefetchCanvasDetail = useCallback(async (resourceType: CanvasType, canvasId: number) => {
+  const prefetchCanvasDetail = useCallback(async (
+    resourceType: CanvasType,
+    canvasId: number,
+    signal?: AbortSignal,
+  ) => {
     const endpoints: Record<CanvasType, string> = {
       dashboard: '/operation_analysis/api/dashboard/',
       topology: '/operation_analysis/api/topology/',
@@ -71,6 +75,7 @@ export const useCarouselApi = () => {
     };
     return get(endpoints[resourceType] + `${canvasId}/`, {
       suppressErrorNotification: true,
+      signal,
     });
   }, [get]);
 

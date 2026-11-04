@@ -1,0 +1,266 @@
+'use client';
+
+import { useCallback, useEffect, useRef, useState } from 'react';
+import type { CanvasType } from '@/app/ops-analysis/constants/canvasTypes';
+import {
+  createCarouselPlayerState,
+  isCarouselBusinessFailure,
+  isCarouselSessionFailure,
+  reduceCarouselLoad,
+  reduceCarouselPlayer,
+  type CarouselPlayerAction,
+  type CarouselPlayerState,
+  type CarouselSlideInput,
+} from '@/app/ops-analysis/utils/carouselPlayer';
+
+export const CAROUSEL_PLAYBACK_TICK_MS = 250;
+export const CAROUSEL_PREFETCH_LEAD_MS = 2000;
+
+export interface CarouselPlaybackSlide {
+  key: string;
+  available: boolean;
+  dwellSeconds: number;
+  resourceType: CanvasType;
+  canvasId: number;
+}
+
+type EnterResult = 'ok' | 'skip' | 'ignore';
+
+const toInput = (slide: CarouselPlaybackSlide): CarouselSlideInput => ({
+  key: slide.key,
+  available: slide.available,
+  dwellSeconds: slide.dwellSeconds,
+});
+
+const isAborted = (error: unknown, signal: AbortSignal): boolean => {
+  if (signal.aborted) {
+    return true;
+  }
+  if (typeof error !== 'object' || error === null) {
+    return false;
+  }
+  const name = 'name' in error ? String((error as { name?: unknown }).name) : '';
+  const code = 'code' in error ? String((error as { code?: unknown }).code) : '';
+  return name === 'AbortError' || name === 'CanceledError' || code === 'ERR_CANCELED';
+};
+
+const oneAttempt = async (
+  loadDetail: (slide: CarouselPlaybackSlide, signal: AbortSignal) => Promise<unknown>,
+  slide: CarouselPlaybackSlide,
+  signal: AbortSignal,
+): Promise<EnterResult | 'retry'> => {
+  try {
+    await loadDetail(slide, signal);
+    return 'ok';
+  } catch (error) {
+    if (isAborted(error, signal) || isCarouselSessionFailure(error)) {
+      return 'ignore';
+    }
+    if (isCarouselBusinessFailure(error)) {
+      return 'skip';
+    }
+    return 'retry';
+  }
+};
+
+/** 切入确认：403/404 立即跳过，瞬时错误再试一次，401 与取消都不记失败。 */
+export const confirmCarouselEnter = async (
+  loadDetail: (slide: CarouselPlaybackSlide, signal: AbortSignal) => Promise<unknown>,
+  slide: CarouselPlaybackSlide,
+  signal: AbortSignal,
+): Promise<EnterResult> => {
+  const first = await oneAttempt(loadDetail, slide, signal);
+  if (first !== 'retry') {
+    return first;
+  }
+  const second = await oneAttempt(loadDetail, slide, signal);
+  return second === 'retry' ? 'skip' : second;
+};
+
+const nextSlide = (
+  slides: readonly CarouselPlaybackSlide[],
+  player: CarouselPlayerState,
+): CarouselPlaybackSlide | undefined => {
+  const upcoming = player.slides.findIndex((slide, index) => (
+    slide.available && index !== player.index && index > player.index
+  ));
+  const fallback = player.slides.findIndex((slide, index) => slide.available && index !== player.index);
+  const target = upcoming >= 0 ? upcoming : fallback;
+  if (target < 0) {
+    return undefined;
+  }
+  const key = player.slides[target]?.key;
+  return slides.find((slide) => slide.key === key);
+};
+
+export const useCarouselPlaybackSession = ({
+  slides,
+  enabled,
+  loadDetail,
+  resetKey = '',
+}: {
+  slides: readonly CarouselPlaybackSlide[];
+  enabled: boolean;
+  loadDetail: (slide: CarouselPlaybackSlide, signal: AbortSignal) => Promise<unknown>;
+  /** 播放列表重新拉取（切换轮播或组织）时递增，强制重新确认当前画布。 */
+  resetKey?: string;
+}) => {
+  const slidesRef = useRef(slides);
+  slidesRef.current = slides;
+  const loadRef = useRef(loadDetail);
+  loadRef.current = loadDetail;
+  const signature = `${resetKey}|${slides.map((slide) => `${slide.key}:${Number(slide.available)}:${slide.dwellSeconds}`).join('|')}`;
+  const signatureRef = useRef<string | null>(null);
+  const [player, setPlayer] = useState<CarouselPlayerState>(() => createCarouselPlayerState(slides.map(toInput)));
+  const [confirming, setConfirming] = useState(false);
+  const [armedVisit, setArmedVisit] = useState<number | null>(null);
+  const confirmingRef = useRef(false);
+  const armedVisitRef = useRef<number | null>(null);
+  const prefetchDone = useRef<string | null>(null);
+  const playerRef = useRef(player);
+  playerRef.current = player;
+
+  const disarm = () => {
+    armedVisitRef.current = null;
+    setArmedVisit(null);
+  };
+
+  useEffect(() => {
+    if (signatureRef.current === null) {
+      signatureRef.current = signature;
+      return;
+    }
+    if (signatureRef.current === signature) {
+      return;
+    }
+    signatureRef.current = signature;
+    disarm();
+    confirmingRef.current = false;
+    setConfirming(false);
+    setPlayer((current) => reduceCarouselPlayer(current, {
+      type: 'reset',
+      slides: slidesRef.current.map(toInput),
+      preferKey: current.slides[current.index]?.key ?? null,
+    }));
+  }, [signature]);
+
+  useEffect(() => {
+    if (!enabled) {
+      return undefined;
+    }
+    const timer = window.setInterval(() => {
+      setPlayer((current) => {
+        if (confirmingRef.current) {
+          return current;
+        }
+        if (current.index >= 0 && armedVisitRef.current !== current.visit) {
+          return current;
+        }
+        return reduceCarouselPlayer(current, { type: 'tick', deltaMs: CAROUSEL_PLAYBACK_TICK_MS });
+      });
+    }, CAROUSEL_PLAYBACK_TICK_MS);
+    return () => window.clearInterval(timer);
+  }, [enabled]);
+
+  const current = player.index >= 0 ? player.slides[player.index] : undefined;
+  useEffect(() => {
+    if (!enabled || !current?.available || player.holdMs > 0) {
+      return undefined;
+    }
+    if (player.paused || armedVisitRef.current === player.visit) {
+      return undefined;
+    }
+    const slide = slidesRef.current.find((item) => item.key === current.key);
+    if (!slide) {
+      return undefined;
+    }
+    const visit = player.visit;
+    const controller = new AbortController();
+    let active = true;
+    confirmingRef.current = true;
+    setConfirming(true);
+    void confirmCarouselEnter(
+      (target, signal) => loadRef.current(target, signal),
+      slide,
+      controller.signal,
+    ).then((result) => {
+      if (!active) {
+        return;
+      }
+      confirmingRef.current = false;
+      setConfirming(false);
+      if (result === 'ok') {
+        armedVisitRef.current = visit;
+        setArmedVisit(visit);
+        return;
+      }
+      if (result === 'skip') {
+        setPlayer((state) => reduceCarouselLoad(state, {
+          key: slide.key,
+          phase: 'enter',
+          ok: false,
+          business: true,
+        }));
+      }
+    });
+    return () => {
+      active = false;
+      controller.abort();
+      confirmingRef.current = false;
+      setConfirming(false);
+    };
+  }, [current?.available, current?.key, enabled, player.holdMs, player.paused, player.visit]);
+
+  const lead = Boolean(current) && !player.paused && player.holdMs <= 0 && armedVisit === player.visit
+    && player.remainingMs <= CAROUSEL_PREFETCH_LEAD_MS;
+  useEffect(() => {
+    if (!lead || player.index < 0) {
+      return undefined;
+    }
+    const slide = nextSlide(slidesRef.current, playerRef.current);
+    if (!slide) {
+      return undefined;
+    }
+    const mark = `${player.visit}:${slide.key}`;
+    const done = prefetchDone.current;
+    if (done === mark) {
+      return undefined;
+    }
+    const controller = new AbortController();
+    let settled = false;
+    void loadRef.current(slide, controller.signal).then(() => {
+      settled = true;
+      if (!controller.signal.aborted) {
+        prefetchDone.current = mark;
+      }
+    }).catch((error) => {
+      if (controller.signal.aborted || isAborted(error, controller.signal)) {
+        return;
+      }
+      settled = true;
+      prefetchDone.current = mark;
+      if (isCarouselBusinessFailure(error)) {
+        setPlayer((state) => reduceCarouselLoad(state, {
+          key: slide.key,
+          phase: 'prefetch',
+          ok: false,
+          business: true,
+        }));
+      }
+    });
+    return () => {
+      controller.abort();
+      if (!settled) {
+        prefetchDone.current = null;
+      }
+    };
+  }, [lead, player.index, player.visit]);
+
+  const dispatch = useCallback((action: Exclude<CarouselPlayerAction, { type: 'tick' } | { type: 'reset' }>) => {
+    setPlayer((currentState) => reduceCarouselPlayer(currentState, action));
+  }, []);
+
+  const ready = !confirming && player.index >= 0 && armedVisit === player.visit;
+
+  return { player, confirming, ready, dispatch };
+};
