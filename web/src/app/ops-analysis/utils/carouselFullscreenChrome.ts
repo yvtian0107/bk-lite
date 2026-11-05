@@ -85,20 +85,23 @@ export const resolveCarouselFullscreenProgress = (input: {
   paused: boolean;
 }): FullscreenProgressModel => {
   const count = input.slides.length;
-  const index = count === 0 ? -1 : Math.min(Math.max(input.index, 0), count - 1);
+  const index = input.index < 0 || count === 0
+    ? -1
+    : Math.min(input.index, count - 1);
   const current = index >= 0 ? input.slides[index] : undefined;
   const currentFill = current?.available
     ? carouselDwellFill(current.dwellSeconds, input.remainingMs)
     : 0;
   const segments = input.slides.map((slide, slideIndex): FullscreenSegment => {
     if (!slide.available) return { tone: 'unavailable', fill: 0 };
+    if (index < 0) return { tone: 'upcoming', fill: 0 };
     if (slideIndex < index) return { tone: 'played', fill: 1 };
     if (slideIndex === index) return { tone: 'current', fill: currentFill };
     return { tone: 'upcoming', fill: 0 };
   });
-  const continuous = count === 0
+  const continuous = index < 0 || count === 0
     ? 0
-    : clampUnit((Math.max(index, 0) + currentFill) / count);
+    : clampUnit((index + currentFill) / count);
   return {
     mode: count > CAROUSEL_FULLSCREEN_SEGMENT_MAX ? 'continuous' : 'segments',
     segments,

@@ -67,6 +67,35 @@ describe('carousel fullscreen chrome', () => {
     expect(paused.continuous).toBeCloseTo((2 + playing.segments[2].fill) / 4);
   });
 
+  it('keeps a hold at index -1 empty instead of filling the first canvas', () => {
+    const held = resolveCarouselFullscreenProgress({
+      slides: slides(4, [0, 1, 2, 3]),
+      index: -1,
+      remainingMs: 0,
+      paused: false,
+    });
+    expect(held.segments).toEqual([
+      { tone: 'unavailable', fill: 0 },
+      { tone: 'unavailable', fill: 0 },
+      { tone: 'unavailable', fill: 0 },
+      { tone: 'unavailable', fill: 0 },
+    ]);
+    expect(held.continuous).toBe(0);
+    expect(held.segments.some((segment) => segment.tone === 'current' || segment.tone === 'played')).toBe(false);
+
+    const continuous = resolveCarouselFullscreenProgress({
+      slides: slides(CAROUSEL_FULLSCREEN_SEGMENT_MAX + 1),
+      index: -1,
+      remainingMs: 0,
+      paused: false,
+    });
+    expect(continuous.mode).toBe('continuous');
+    expect(continuous.continuous).toBe(0);
+    expect(continuous.segments.some((segment) => segment.tone === 'current')).toBe(false);
+    expect(carouselRemainingWholeSeconds(10_000)).toBe(10);
+    expect(carouselRemainingWholeSeconds(10_001)).toBe(11);
+  });
+
   it('keeps the controls up while paused or hovered, and hides them after idle otherwise', () => {
     expect(planFullscreenControlIdle('show', { paused: false, hoveringControls: false })).toEqual({
       visible: true,

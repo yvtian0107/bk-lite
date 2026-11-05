@@ -57,6 +57,29 @@ describe('carousel fullscreen chrome', () => {
     expect(screen.getByTestId('carousel-fullscreen-paused-hint').getAttribute('aria-hidden')).toBe('true');
   });
 
+  it('shows the hold message and leaves the progress empty', () => {
+    renderChrome({
+      slides: [
+        { available: false, dwellSeconds: 30 },
+        { available: false, dwellSeconds: 30 },
+        { available: false, dwellSeconds: 30 },
+      ],
+      index: -1,
+      remainingMs: 0,
+      positionLabel: '暂无可播放的画布',
+      canvasName: '',
+      remainingLabel: '10 秒后重试',
+    });
+    expect(screen.getByText('暂无可播放的画布')).toBeTruthy();
+    expect(screen.queryByText(/\d+ \/ \d+/)).toBeNull();
+    expect(screen.getByText('10 秒后重试')).toBeTruthy();
+    expect(screen.queryByText('剩余 0 秒')).toBeNull();
+    const progress = screen.getByTestId('carousel-fullscreen-progress');
+    expect(progress.querySelector('[data-tone="current"]')).toBeNull();
+    expect(progress.querySelectorAll('[data-tone="unavailable"]')).toHaveLength(3);
+    expect(Array.from(progress.querySelectorAll('[data-fill]')).map((node) => node.getAttribute('data-fill'))).toEqual(['0', '0', '0']);
+  });
+
   it('omits the canvas name when the slide is unavailable and switches the progress at 20', () => {
     const { rerender } = render(
       <CarouselFullscreenChrome

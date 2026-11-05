@@ -926,13 +926,17 @@ const CarouselEditor = forwardRef<CarouselEditorRef, CarouselEditorProps>(({
               visible={controlsVisible}
               paused={player.paused}
               slides={slides}
-              index={previewIndex}
+              index={player.index}
               remainingMs={player.remainingMs}
-              positionLabel={positionLabel}
-              canvasName={positionName}
-              remainingLabel={t('opsCarousel.remainingSeconds', undefined, {
-                count: carouselRemainingWholeSeconds(player.remainingMs),
-              })}
+              positionLabel={player.index < 0 ? t('opsCarousel.nothingToPlay') : positionLabel}
+              canvasName={player.index < 0 ? '' : positionName}
+              remainingLabel={player.index < 0
+                ? t('opsCarousel.retryInSeconds', undefined, {
+                  count: carouselRemainingWholeSeconds(player.holdMs),
+                })
+                : t('opsCarousel.remainingSeconds', undefined, {
+                  count: carouselRemainingWholeSeconds(player.remainingMs),
+                })}
               pausedLabel={t('opsCarousel.pausedHint')}
               previousLabel={t('opsCarousel.previous')}
               nextLabel={t('opsCarousel.next')}
