@@ -79,7 +79,7 @@ export interface NetworkTopologyTestConnectionResult {
 const encodeNodeRef = (nodeRef: Record<string, unknown>): string =>
   encodeURIComponent(JSON.stringify(nodeRef));
 
-const readPlaybackNetworkViewSets = (
+export const readPlaybackNetworkViewSets = (
   seeded: PlaybackInitialDetail | null,
   id: string | number,
 ): NetworkTopologyConfig | undefined => {

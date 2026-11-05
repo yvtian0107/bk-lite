@@ -18,7 +18,9 @@ import {
   AppViewFullscreenExit,
   useAppViewFullscreen,
 } from '@/app/ops-analysis/components/appFullscreen';
+import { usePlaybackInitialDetail } from '@/app/ops-analysis/context/playbackInitialDetail';
 import {
+  readPlaybackNetworkViewSets,
   useNetworkTopologyApi,
 } from '@/app/ops-analysis/api/networkTopology';
 import { useDirectoryApi } from '@/app/ops-analysis/api';
@@ -155,8 +157,18 @@ const NetworkTopology = forwardRef<NetworkTopologyRef, NetworkTopologyProps>(
     const { hasPermission } = useBtnPermissions();
     const { t } = useTranslation();
     const canvasId = selectedNetworkTopology?.data_id;
-    const [config, setConfig] = useState<NetworkTopologyConfig>(emptyConfig);
-    const [savedConfig, setSavedConfig] = useState<NetworkTopologyConfig>(emptyConfig);
+    const playbackDetail = usePlaybackInitialDetail();
+    const playbackDetailRef = useRef(playbackDetail);
+    playbackDetailRef.current = playbackDetail;
+    const seededNetworkConfig = playbackMode && canvasId != null
+      ? readPlaybackNetworkViewSets(playbackDetail, canvasId)
+      : undefined;
+    const [config, setConfig] = useState<NetworkTopologyConfig>(
+      () => seededNetworkConfig ?? emptyConfig,
+    );
+    const [savedConfig, setSavedConfig] = useState<NetworkTopologyConfig>(
+      () => seededNetworkConfig ?? emptyConfig,
+    );
     const [metricOptions, setMetricOptions] = useState<
       NetworkNodeDrawerPropsMetric[]
     >([]);
@@ -459,6 +471,31 @@ const NetworkTopology = forwardRef<NetworkTopologyRef, NetworkTopologyProps>(
       setRuntimeLinkOverrides({});
       setRuntimeInterfaceSummaryOverrides({});
       setSavedRefreshInterval(0);
+      const seeded = playbackMode
+        ? readPlaybackNetworkViewSets(playbackDetailRef.current, id)
+        : undefined;
+      if (seeded) {
+        setConfig(seeded);
+        setSavedConfig(seeded);
+        editor.resetConfig(seeded);
+        setViewSetsLoading(false);
+        api
+          .getNetworkTopologyDetail(id)
+          .then((detail) => {
+            if (!active) return;
+            setSavedRefreshInterval(
+              normalizeCanvasRefreshInterval(detail?.refresh_interval),
+            );
+          })
+          .catch(() => {
+            if (!active) return;
+            setSavedRefreshInterval(0);
+          });
+        void loadConfiguredRuntime(id, seeded);
+        return () => {
+          active = false;
+        };
+      }
       setViewSetsLoading(true);
       api
         .getNetworkTopologyDetail(id)
@@ -500,7 +537,7 @@ const NetworkTopology = forwardRef<NetworkTopologyRef, NetworkTopologyProps>(
       };
       // 故意省略 api/editor 等稳定依赖,避免画布切换以外的因素触发重新拉取。
        
-    }, [canvasId, shareMode]);
+    }, [canvasId, playbackMode, shareMode]);
 
     const loadNodeModels = useCallback(
       (id: string | number) => api.getNodeModels(id),

@@ -10,6 +10,7 @@ import Screen from '@/app/ops-analysis/(pages)/view/screen';
 import Report from '@/app/ops-analysis/(pages)/view/report';
 import NetworkTopology from '@/app/ops-analysis/(pages)/view/networkTopology';
 import { PlaybackInitialDetailProvider } from '@/app/ops-analysis/context/playbackInitialDetail';
+import { playbackCanvasKey } from './playbackStage';
 
 export interface PlaybackSlide {
   key: string;
@@ -35,19 +36,29 @@ const PlaybackCanvas = ({
   presentFullscreen?: boolean;
 }) => {
   const item = toDirItem(slide);
+  // 同类型换盘必须重挂页面：Room3D / Isoflow / X6 在卸载时 dispose。
+  // visit 不在键里，同一张盘的再次确认不会拆实例。
+  const canvasKey = playbackCanvasKey(slide);
   switch (slide.resourceType) {
     case 'dashboard':
-      return <Dashboard selectedDashboard={item} playbackMode />;
+      return <Dashboard key={canvasKey} selectedDashboard={item} playbackMode />;
     case 'topology':
-      return <Topology selectedTopology={item} playbackMode />;
+      return <Topology key={canvasKey} selectedTopology={item} playbackMode />;
     case 'architecture':
-      return <Architecture selectedArchitecture={item} playbackMode />;
+      return <Architecture key={canvasKey} selectedArchitecture={item} playbackMode />;
     case 'screen':
-      return <Screen selectedScreen={item} playbackMode playbackFullscreen={presentFullscreen} />;
+      return (
+        <Screen
+          key={canvasKey}
+          selectedScreen={item}
+          playbackMode
+          playbackFullscreen={presentFullscreen}
+        />
+      );
     case 'report':
-      return <Report selectedReport={item} playbackMode />;
+      return <Report key={canvasKey} selectedReport={item} playbackMode />;
     case 'networkTopology':
-      return <NetworkTopology selectedNetworkTopology={item} playbackMode />;
+      return <NetworkTopology key={canvasKey} selectedNetworkTopology={item} playbackMode />;
     default:
       return null;
   }

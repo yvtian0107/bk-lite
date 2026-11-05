@@ -2,14 +2,19 @@ import { render } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 import type { PlaybackSlide } from '@/app/ops-analysis/components/carousel/playbackCanvas';
 
-const paint = vi.hoisted(() => ({ dashboard: 0 }));
+const paint = vi.hoisted(() => ({ dashboard: 0, dashboardMounts: 0, screenMounts: 0 }));
 
-vi.mock('@/app/ops-analysis/(pages)/view/dashBoard', () => ({
-  default: () => {
+vi.mock('@/app/ops-analysis/(pages)/view/dashBoard', async () => {
+  const React = await import('react');
+  function DashboardCanvas() {
     paint.dashboard += 1;
+    React.useEffect(() => {
+      paint.dashboardMounts += 1;
+    }, []);
     return <div data-testid="dashboard-canvas" />;
-  },
-}));
+  }
+  return { default: DashboardCanvas };
+});
 
 vi.mock('@/app/ops-analysis/(pages)/view/topology', () => ({
   default: () => null,
@@ -19,9 +24,16 @@ vi.mock('@/app/ops-analysis/(pages)/view/architecture', () => ({
   default: () => null,
 }));
 
-vi.mock('@/app/ops-analysis/(pages)/view/screen', () => ({
-  default: () => null,
-}));
+vi.mock('@/app/ops-analysis/(pages)/view/screen', async () => {
+  const React = await import('react');
+  function ScreenCanvas() {
+    React.useEffect(() => {
+      paint.screenMounts += 1;
+    }, []);
+    return <div data-testid="screen-canvas" />;
+  }
+  return { default: ScreenCanvas };
+});
 
 vi.mock('@/app/ops-analysis/(pages)/view/report', () => ({
   default: () => null,
@@ -47,6 +59,7 @@ const onError = () => undefined;
 describe('PlaybackSlideFrame', () => {
   it('keeps the canvas mounted when the parent repaints with the same slide inputs', () => {
     paint.dashboard = 0;
+    paint.dashboardMounts = 0;
     const detail = { id: 7, name: '机房总览' };
     const view = render(
       <PlaybackSlideFrame
@@ -77,5 +90,39 @@ describe('PlaybackSlideFrame', () => {
       />,
     );
     expect(paint.dashboard).toBe(2);
+    expect(paint.dashboardMounts).toBe(1);
+  });
+
+  it('remounts the page when the canvas id changes and when the resource type changes', () => {
+    paint.dashboardMounts = 0;
+    paint.screenMounts = 0;
+    const detail = { id: 7, name: '机房总览' };
+    const view = render(
+      <PlaybackSlideFrame
+        slide={slide}
+        initialDetail={detail}
+        onError={onError}
+      />,
+    );
+    expect(paint.dashboardMounts).toBe(1);
+
+    view.rerender(
+      <PlaybackSlideFrame
+        slide={{ ...slide, canvasId: 8, key: 's1' }}
+        initialDetail={{ id: 8, name: '下一盘' }}
+        onError={onError}
+      />,
+    );
+    expect(paint.dashboardMounts).toBe(2);
+    expect(paint.screenMounts).toBe(0);
+
+    view.rerender(
+      <PlaybackSlideFrame
+        slide={{ ...slide, resourceType: 'screen', canvasId: 3, key: 's2' }}
+        initialDetail={{ id: 3 }}
+        onError={onError}
+      />,
+    );
+    expect(paint.screenMounts).toBe(1);
   });
 });

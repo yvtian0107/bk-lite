@@ -1,6 +1,7 @@
 import React, {
   useRef,
   useEffect,
+  useLayoutEffect,
   forwardRef,
   useImperativeHandle,
   useState,
@@ -29,6 +30,7 @@ import { useDataSourceManager } from '@/app/ops-analysis/hooks/useDataSource';
 import { useUnifiedFilter } from '@/app/ops-analysis/hooks/useUnifiedFilter';
 import { useCanvasShareAction } from '@/app/ops-analysis/hooks/useCanvasShareAction';
 import { useDirectoryApi } from '@/app/ops-analysis/api';
+import { readPlaybackInitialDetail, usePlaybackInitialDetail } from '@/app/ops-analysis/context/playbackInitialDetail';
 import useBtnPermissions from '@/hooks/usePermissions';
 import { useCanvasPeriodicRefresh } from '@/app/ops-analysis/hooks/useCanvasPeriodicRefresh';
 import { canvasPeriodicRefreshEnabled } from '@/app/ops-analysis/utils/canvasPlaybackRefresh';
@@ -187,6 +189,33 @@ const Topology = forwardRef<TopologyRef, TopologyProps>(
       isFullscreen,
       setSingleValueFetchErrorTooltip,
     );
+
+    const playbackDetail = usePlaybackInitialDetail();
+    const paintedTopologyGraphRef = useRef<unknown>(null);
+    useLayoutEffect(() => {
+      if (!playbackMode || !selectedTopology?.data_id || !state.graphInstance) {
+        return;
+      }
+      const seeded = readPlaybackInitialDetail<{ view_sets?: TopologyViewSets }>(
+        playbackDetail,
+        'topology',
+        selectedTopology.data_id,
+      );
+      if (!seeded?.view_sets) {
+        return;
+      }
+      if (paintedTopologyGraphRef.current === state.graphInstance) {
+        return;
+      }
+      paintedTopologyGraphRef.current = state.graphInstance;
+      loadTopologyData(seeded.view_sets);
+    }, [
+      loadTopologyData,
+      playbackDetail,
+      playbackMode,
+      selectedTopology?.data_id,
+      state.graphInstance,
+    ]);
 
     const { handleEdgeConfigConfirm, closeEdgeConfig, handleMenuClick } =
       useContextMenuAndModal(containerRef, state);

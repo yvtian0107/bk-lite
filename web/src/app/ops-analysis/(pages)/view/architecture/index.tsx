@@ -3,6 +3,7 @@
 import {
   useState,
   useEffect,
+  useLayoutEffect,
   forwardRef,
   useImperativeHandle,
   useCallback,
@@ -22,6 +23,7 @@ import type {
   ItemControlsExtraTarget,
 } from '../../../../../../packages/isoflow';
 import { useArchitectureApi } from '@/app/ops-analysis/api/architecture';
+import { readPlaybackInitialDetail, usePlaybackInitialDetail } from '@/app/ops-analysis/context/playbackInitialDetail';
 import { useDirectoryApi } from '@/app/ops-analysis/api';
 import useBtnPermissions from '@/hooks/usePermissions';
 import { useCanvasPeriodicRefresh } from '@/app/ops-analysis/hooks/useCanvasPeriodicRefresh';
@@ -219,6 +221,43 @@ const Architecture = forwardRef<ArchitectureRef, ArchitectureProps>(
       };
     }, []);
 
+    const playbackDetail = usePlaybackInitialDetail();
+    const playbackDetailRef = useRef(playbackDetail);
+    playbackDetailRef.current = playbackDetail;
+    const seededIsoflowMarkRef = useRef('');
+    useLayoutEffect(() => {
+      if (!playbackMode || !selectedArchitecture?.data_id) {
+        return;
+      }
+      const data = readPlaybackInitialDetail<{
+        name?: string;
+        view_sets?: { items?: DiagramData['items']; views?: DiagramData['views'] } | unknown[];
+        refresh_interval?: unknown;
+      }>(playbackDetail, 'architecture', selectedArchitecture.data_id);
+      if (!data) {
+        return;
+      }
+      const viewSets = Array.isArray(data.view_sets)
+        ? { items: [], views: [] }
+        : data.view_sets || { items: [], views: [] };
+      setDiagramName(data.name || '');
+      setSavedRefreshInterval(normalizeCanvasRefreshInterval(data.refresh_interval));
+      setDiagramData({
+        items: viewSets.items || [],
+        views: viewSets.views || [],
+        title: data.name || '',
+        icons: uniqueIcons,
+        colors: DEFAULT_COLORS,
+        fitToScreen: true,
+      });
+      const isoflowMark = `${selectedArchitecture.data_id}:${uniqueIcons.length}`;
+      if (seededIsoflowMarkRef.current !== isoflowMark) {
+        seededIsoflowMarkRef.current = isoflowMark;
+        setFossflowKey((current) => current + 1);
+      }
+      setLoading(false);
+    }, [playbackDetail, playbackMode, selectedArchitecture?.data_id, uniqueIcons]);
+
     useEffect(() => {
       if (uniqueIcons.length === 0) return;
 
@@ -230,21 +269,29 @@ const Architecture = forwardRef<ArchitectureRef, ArchitectureProps>(
       ) {
         (async () => {
           try {
-            setLoading(true);
+            const seeded = playbackMode
+              ? readPlaybackInitialDetail<Awaited<ReturnType<typeof getArchitectureDetail>>>(
+                playbackDetailRef.current,
+                'architecture',
+                currentArchitectureId,
+              )
+              : undefined;
             isUpdatingRef.current = true;
             invalidatePendingModelWrite();
-
-            setCurrentModel(null);
-            setSavedRefreshInterval(0);
-            setDiagramData({
-              title: 'Loading...',
-              icons: uniqueIcons,
-              colors: DEFAULT_COLORS,
-              items: [],
-              views: [],
-              fitToScreen: true,
-            });
-            const data = await getArchitectureDetail(currentArchitectureId);
+            if (!seeded) {
+              setLoading(true);
+              setCurrentModel(null);
+              setSavedRefreshInterval(0);
+              setDiagramData({
+                title: 'Loading...',
+                icons: uniqueIcons,
+                colors: DEFAULT_COLORS,
+                items: [],
+                views: [],
+                fitToScreen: true,
+              });
+            }
+            const data = seeded ?? await getArchitectureDetail(currentArchitectureId);
             const viewSets = Array.isArray(data.view_sets)
               ? { items: [], views: [] }
               : data.view_sets || { items: [], views: [] };
@@ -262,7 +309,9 @@ const Architecture = forwardRef<ArchitectureRef, ArchitectureProps>(
               setSavedRefreshInterval(normalizeCanvasRefreshInterval(data.refresh_interval));
               setDiagramData({ ...mergedData });
               setCurrentModel({ ...mergedData });
-              setFossflowKey((prev) => prev + 1);
+              if (!seeded) {
+                setFossflowKey((prev) => prev + 1);
+              }
               setHasUnsaved(false);
               setLoadedArchitectureId(currentArchitectureId);
               setIsEditMode(false);
@@ -303,6 +352,7 @@ const Architecture = forwardRef<ArchitectureRef, ArchitectureProps>(
       }
     }, [
       uniqueIcons,
+      playbackMode,
       selectedArchitecture?.data_id,
       loadedArchitectureId,
       invalidatePendingModelWrite,

@@ -58,7 +58,9 @@ import type { CarouselItem } from '@/app/ops-analysis/types/carousel';
 import type { DirItem } from '@/app/ops-analysis/types';
 import { PlaybackSlideFrame, type PlaybackSlide } from './playbackCanvas';
 import CarouselFullscreenChrome from './carouselFullscreenChrome';
+import { resolvePlaybackStage, type HeldPlaybackFrame } from './playbackStage';
 import { useCarouselPlaybackSession } from './useCarouselPlaybackSession';
+import { readCachedCanvasDetail } from '@/app/ops-analysis/utils/canvasDetailCache';
 import {
   CAROUSEL_DEFAULT_DWELL_SECONDS,
   CAROUSEL_DWELL_MAX_SECONDS,
@@ -371,6 +373,8 @@ const CarouselEditor = forwardRef<CarouselEditorRef, CarouselEditorProps>(({
   });
   const player = session.player;
   const playbackSlideKeyRef = useRef('');
+  const heldPlaybackRef = useRef<HeldPlaybackFrame | null>(null);
+  const ignorePlaybackError = useCallback(() => undefined, []);
   const onPlaybackError = useCallback(() => {
     const key = playbackSlideKeyRef.current;
     if (key) {
@@ -739,7 +743,21 @@ const CarouselEditor = forwardRef<CarouselEditorRef, CarouselEditorProps>(({
   );
   const previewIndex = player.index >= 0 && player.index < slides.length ? player.index : 0;
   const preview = slides[previewIndex];
-  playbackSlideKeyRef.current = preview?.key ?? '';
+  const cachedPreview = preview?.available
+    ? readCachedCanvasDetail(preview.resourceType, preview.canvasId)
+    : { hit: false as const };
+  const stage = resolvePlaybackStage({
+    slide: preview,
+    ready: session.ready,
+    confirmedDetail: session.initialDetail,
+    cached: cachedPreview,
+    held: heldPlaybackRef.current,
+  });
+  if (stage.kind === 'frame' && !stage.holding) {
+    heldPlaybackRef.current = { slide: stage.slide, detail: stage.detail };
+  }
+  playbackSlideKeyRef.current = stage.kind === 'frame' ? stage.slide.key : (preview?.key ?? '');
+  const stageResourceType = stage.kind === 'frame' ? stage.slide.resourceType : preview?.resourceType;
   const playableCount = slides.filter((slide) => slide.available).length;
   const positionLabel = slides.length > 0 ? `${previewIndex + 1} / ${slides.length}` : '';
   const positionName = preview?.available && preview.name ? preview.name : '';
@@ -891,7 +909,7 @@ const CarouselEditor = forwardRef<CarouselEditorRef, CarouselEditorProps>(({
         <div
           ref={stageRef}
           className={`relative min-h-0 flex-1 overflow-hidden ${
-            stageFullscreen && preview?.resourceType === 'screen' ? 'bg-slate-950' : 'bg-[var(--color-bg)]'
+            stageFullscreen && stageResourceType === 'screen' ? 'bg-slate-950' : 'bg-[var(--color-bg)]'
           } ${fullscreenStageCursor(stageFullscreen, controlsVisible) === 'none' ? 'cursor-none' : ''}`}
         >
           <ConfigProvider getPopupContainer={stageFullscreen ? fullscreenPopupContainer : undefined}>
@@ -904,22 +922,22 @@ const CarouselEditor = forwardRef<CarouselEditorRef, CarouselEditorProps>(({
                 </Button>
               )}
             </div>
-          ) : !preview || !preview.available ? (
+          ) : stage.kind === 'unavailable' ? (
             <div className="flex h-full items-center justify-center px-6 text-center text-sm text-[var(--color-text-3)]">
               {t('opsCarousel.previewUnavailable')}
             </div>
-          ) : !session.ready ? (
+          ) : stage.kind === 'pending' ? (
             <div className="flex h-full items-center justify-center">
               <Spin />
             </div>
           ) : (
-            <div className={`h-full min-h-0 w-full ${preview.resourceType === 'screen' ? 'overflow-hidden' : 'overflow-auto'}`}>
+            <div className={`h-full min-h-0 w-full ${stage.slide.resourceType === 'screen' ? 'overflow-hidden' : 'overflow-auto'}`}>
               <PlaybackSlideFrame
-                key={`${preview.key}:${player.visit}`}
-                slide={preview}
-                initialDetail={session.initialDetail}
-                presentFullscreen={stageFullscreen && preview.resourceType === 'screen'}
-                onError={onPlaybackError}
+                key={stage.shellKey}
+                slide={stage.slide}
+                initialDetail={stage.detail}
+                presentFullscreen={stageFullscreen && stage.slide.resourceType === 'screen'}
+                onError={stage.holding ? ignorePlaybackError : onPlaybackError}
               />
             </div>
           )}

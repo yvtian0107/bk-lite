@@ -6,6 +6,7 @@ import {
   useCallback,
   useEffect,
   useImperativeHandle,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -17,6 +18,7 @@ import { FilterTemplateProvider } from "@/app/ops-analysis/context/filterTemplat
 import { InteractionSurfaceProvider } from "@/app/ops-analysis/context/interactionSurface";
 import { useTranslation } from "@/utils/i18n";
 import { useScreenApi } from "@/app/ops-analysis/api/screen";
+import { readPlaybackInitialDetail, usePlaybackInitialDetail } from "@/app/ops-analysis/context/playbackInitialDetail";
 import { useDirectoryApi } from "@/app/ops-analysis/api";
 import useBtnPermissions from "@/hooks/usePermissions";
 import { useCanvasPeriodicRefresh } from "@/app/ops-analysis/hooks/useCanvasPeriodicRefresh";
@@ -525,6 +527,42 @@ const Screen = forwardRef<ScreenRef, ScreenProps>(({
     hasUnsavedChanges,
   }));
 
+  const playbackDetail = usePlaybackInitialDetail();
+  const playbackDetailRef = useRef(playbackDetail);
+  playbackDetailRef.current = playbackDetail;
+  const playbackScreenViewRef = useRef<ReturnType<typeof normalizeScreenViewSets> | null>(null);
+  useLayoutEffect(() => {
+    if (!playbackMode || !selectedScreen?.data_id) {
+      return;
+    }
+    const detail = readPlaybackInitialDetail<{
+      view_sets?: unknown;
+      refresh_interval?: unknown;
+    }>(playbackDetail, "screen", selectedScreen.data_id);
+    if (!detail) {
+      playbackScreenViewRef.current = null;
+      return;
+    }
+    const normalized = labelSceneFilters(normalizeScreenViewSets(detail.view_sets));
+    playbackScreenViewRef.current = normalized;
+    setViewSets(normalized);
+    setSavedViewSets(normalized);
+    setDraftViewSets(normalized);
+    setSavedRefreshInterval(normalizeCanvasRefreshInterval(detail.refresh_interval));
+    setLoading(false);
+    queryState.resetQueryState({
+      definitions: normalized.filters ?? [],
+      organizationId: shareOrganizationSeed,
+    });
+  }, [
+    labelSceneFilters,
+    playbackDetail,
+    playbackMode,
+    queryState.resetQueryState,
+    selectedScreen?.data_id,
+    shareOrganizationSeed,
+  ]);
+
   useEffect(() => {
     sessionRef.current = null;
     pendingResizeRef.current = null;
@@ -547,6 +585,11 @@ const Screen = forwardRef<ScreenRef, ScreenProps>(({
         definitions: emptyViewSets.filters ?? [],
         organizationId: shareOrganizationSeed,
       });
+      return;
+    }
+
+    if (playbackMode && playbackScreenViewRef.current) {
+      void syncScreenCanvasResources(playbackScreenViewRef.current);
       return;
     }
 
@@ -607,6 +650,7 @@ const Screen = forwardRef<ScreenRef, ScreenProps>(({
   }, [
     getScreenDetail,
     labelSceneFilters,
+    playbackMode,
     queryState.resetQueryState,
     selectedScreen?.data_id,
     shareOrganizationSeed,
