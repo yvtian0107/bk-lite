@@ -2130,6 +2130,9 @@
     "remainingCapacity": "{count} more can be added",
     "allTypes": "All types",
     "duplicateHint": "This list has duplicate canvases. Remove the extras before saving",
-    "alreadyContains": "Already included"
+    "alreadyContains": "Already included",
+    "remainingSeconds": "{count}s left",
+    "pausedHint": "Paused · press Space to continue",
+    "exitFullscreen": "Exit fullscreen (Esc)"
   }
 }

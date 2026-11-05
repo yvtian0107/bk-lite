@@ -2130,6 +2130,9 @@
     "remainingCapacity": "还可添加 {count} 张",
     "allTypes": "全部类型",
     "duplicateHint": "列表里有重复的画布，移除多余项后即可保存",
-    "alreadyContains": "已包含"
+    "alreadyContains": "已包含",
+    "remainingSeconds": "剩余 {count} 秒",
+    "pausedHint": "已暂停 · 按空格继续",
+    "exitFullscreen": "退出全屏（Esc）"
   }
 }
