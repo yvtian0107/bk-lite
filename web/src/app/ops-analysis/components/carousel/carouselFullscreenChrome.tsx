@@ -1,15 +1,18 @@
 'use client';
 
-import React from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
   CaretRightOutlined,
-  FullscreenExitOutlined,
   LeftOutlined,
   PauseOutlined,
   RightOutlined,
 } from '@ant-design/icons';
 import {
   CAROUSEL_FULLSCREEN_CHROME,
+  CAROUSEL_FULLSCREEN_EXIT_TIP_MS,
+  CAROUSEL_FULLSCREEN_RESUME_HINT_MS,
+  markFullscreenExitTipSeen,
+  readFullscreenExitTipSeen,
   resolveCarouselFullscreenProgress,
   type FullscreenSlideProgressInput,
 } from '@/app/ops-analysis/utils/carouselFullscreenChrome';
@@ -18,16 +21,48 @@ const chromeVars = {
   '--carousel-fs-surface': CAROUSEL_FULLSCREEN_CHROME.surface,
   '--carousel-fs-border': CAROUSEL_FULLSCREEN_CHROME.border,
   '--carousel-fs-ink': CAROUSEL_FULLSCREEN_CHROME.ink,
-  '--carousel-fs-play-surface': CAROUSEL_FULLSCREEN_CHROME.playSurface,
-  '--carousel-fs-play-ink': CAROUSEL_FULLSCREEN_CHROME.playInk,
+  '--carousel-fs-hover': CAROUSEL_FULLSCREEN_CHROME.hover,
   '--carousel-fs-track': CAROUSEL_FULLSCREEN_CHROME.track,
-  '--carousel-fs-played': CAROUSEL_FULLSCREEN_CHROME.played,
   '--carousel-fs-upcoming': CAROUSEL_FULLSCREEN_CHROME.upcoming,
-  '--carousel-fs-shade': CAROUSEL_FULLSCREEN_CHROME.shade,
-  '--carousel-fs-text-shadow': CAROUSEL_FULLSCREEN_CHROME.textShadow,
 } as React.CSSProperties;
 
-const capsuleClassName = 'border border-(--carousel-fs-border) bg-(--carousel-fs-surface) text-(--carousel-fs-ink) backdrop-blur-[12px] [text-shadow:var(--carousel-fs-text-shadow)]';
+const ghostButtonClassName = 'inline-flex shrink-0 cursor-pointer items-center justify-center rounded-md border border-transparent bg-transparent p-0 text-(--carousel-fs-ink) transition-colors hover:border-(--carousel-fs-border) hover:bg-(--carousel-fs-hover) disabled:cursor-not-allowed disabled:opacity-40';
+
+const hintClassName = 'pointer-events-none rounded-[10px] border border-(--carousel-fs-border) bg-(--carousel-fs-surface) px-2.5 py-1 text-xs leading-none text-(--carousel-fs-ink) backdrop-blur-[12px]';
+
+/** 连续条按序号铺开：已过的部分保持亮色，只有当前这一段用播放色或暂停琥珀色。 */
+const ContinuousProgress: React.FC<{
+  segments: readonly { tone: string; fill: number }[];
+  currentColor: string;
+}> = ({ segments, currentColor }) => {
+  const count = segments.length || 1;
+  const currentIndex = segments.findIndex((segment) => segment.tone === 'current');
+  const playedRatio = currentIndex >= 0 ? currentIndex / count : 0;
+  const currentRatio = currentIndex >= 0 ? segments[currentIndex].fill / count : 0;
+  return (
+    <div className="relative h-full w-full">
+      <div
+        className="absolute inset-y-0 left-0"
+        data-part="played"
+        data-fill={playedRatio}
+        style={{
+          width: `${playedRatio * 100}%`,
+          backgroundColor: CAROUSEL_FULLSCREEN_CHROME.played,
+        }}
+      />
+      <div
+        className="absolute inset-y-0"
+        data-part="current"
+        data-fill={currentRatio}
+        style={{
+          left: `${playedRatio * 100}%`,
+          width: `${currentRatio * 100}%`,
+          backgroundColor: currentColor,
+        }}
+      />
+    </div>
+  );
+};
 
 export interface CarouselFullscreenChromeProps {
   visible: boolean;
@@ -35,25 +70,19 @@ export interface CarouselFullscreenChromeProps {
   slides: readonly FullscreenSlideProgressInput[];
   index: number;
   remainingMs: number;
-  positionLabel: string;
-  canvasName: string;
-  remainingLabel: string;
-  pausedLabel: string;
   previousLabel: string;
   nextLabel: string;
   playLabel: string;
   pauseLabel: string;
-  exitLabel: string;
+  resumeHint: string;
+  exitHint: string;
   disableStep: boolean;
   disablePlay: boolean;
   onPrevious: () => void;
   onNext: () => void;
   onTogglePlay: () => void;
-  onExit: () => void;
   onHoverChange: (hovering: boolean) => void;
 }
-
-const stepButtonClassName = 'inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-full border-0 bg-transparent p-0 text-(--carousel-fs-ink) transition-opacity disabled:cursor-not-allowed disabled:opacity-40';
 
 const CarouselFullscreenChrome: React.FC<CarouselFullscreenChromeProps> = ({
   visible,
@@ -61,21 +90,17 @@ const CarouselFullscreenChrome: React.FC<CarouselFullscreenChromeProps> = ({
   slides,
   index,
   remainingMs,
-  positionLabel,
-  canvasName,
-  remainingLabel,
-  pausedLabel,
   previousLabel,
   nextLabel,
   playLabel,
   pauseLabel,
-  exitLabel,
+  resumeHint,
+  exitHint,
   disableStep,
   disablePlay,
   onPrevious,
   onNext,
   onTogglePlay,
-  onExit,
   onHoverChange,
 }) => {
   const progress = resolveCarouselFullscreenProgress({
@@ -84,84 +109,115 @@ const CarouselFullscreenChrome: React.FC<CarouselFullscreenChromeProps> = ({
     remainingMs,
     paused,
   });
+  const resumeSeen = useRef(false);
+  const [resumeHintOn, setResumeHintOn] = useState(false);
+  const [exitTipOn, setExitTipOn] = useState(false);
   const controlsClassName = visible
-    ? 'pointer-events-auto translate-y-0 opacity-100'
-    : 'pointer-events-none translate-y-2 opacity-0';
+    ? 'pointer-events-auto opacity-100'
+    : 'pointer-events-none opacity-0';
+
+  useEffect(() => {
+    if (!paused || !visible || resumeSeen.current) {
+      if (!paused || !visible) setResumeHintOn(false);
+      return undefined;
+    }
+    setResumeHintOn(true);
+    const timer = window.setTimeout(() => {
+      resumeSeen.current = true;
+      setResumeHintOn(false);
+    }, CAROUSEL_FULLSCREEN_RESUME_HINT_MS);
+    return () => window.clearTimeout(timer);
+  }, [paused, visible]);
+
+  useEffect(() => {
+    let storage: Storage | null = null;
+    try {
+      storage = window.sessionStorage;
+    } catch {
+      storage = null;
+    }
+    if (readFullscreenExitTipSeen(storage)) return undefined;
+    markFullscreenExitTipSeen(storage);
+    setExitTipOn(true);
+    const timer = window.setTimeout(() => setExitTipOn(false), CAROUSEL_FULLSCREEN_EXIT_TIP_MS);
+    return () => window.clearTimeout(timer);
+  }, []);
+
+  const buttons = [
+    {
+      key: 'previous',
+      label: previousLabel,
+      disabled: disableStep,
+      onClick: onPrevious,
+      icon: <LeftOutlined style={{ fontSize: 14 }} />,
+    },
+    {
+      key: 'toggle',
+      label: paused ? playLabel : pauseLabel,
+      disabled: disablePlay,
+      onClick: onTogglePlay,
+      icon: paused
+        ? <CaretRightOutlined style={{ fontSize: 14 }} />
+        : <PauseOutlined style={{ fontSize: 14 }} />,
+    },
+    {
+      key: 'next',
+      label: nextLabel,
+      disabled: disableStep,
+      onClick: onNext,
+      icon: <RightOutlined style={{ fontSize: 14 }} />,
+    },
+  ];
 
   return (
     <div className="pointer-events-none absolute inset-0 z-20" style={chromeVars}>
+      {exitTipOn ? (
+        <div
+          className={`absolute bottom-[16px] left-[16px] ${hintClassName}`}
+          data-testid="carousel-fullscreen-exit-hint"
+        >
+          {exitHint}
+        </div>
+      ) : null}
       <div
-        className={`absolute left-1/2 top-6 -translate-x-1/2 rounded-[16px] px-4 py-2 text-sm transition-opacity duration-300 ${capsuleClassName} ${
-          paused ? 'opacity-100' : 'opacity-0'
-        }`}
-        aria-hidden={!paused}
-        data-testid="carousel-fullscreen-paused-hint"
-      >
-        {pausedLabel}
-      </div>
-      <div
-        className={`absolute inset-x-0 bottom-0 h-[120px] bg-gradient-to-t from-(--carousel-fs-shade) to-transparent transition-opacity duration-300 ${
-          visible ? 'opacity-100' : 'opacity-0'
-        }`}
-        aria-hidden
-      />
-      <div
-        className={`absolute bottom-6 left-1/2 flex w-max max-w-[min(960px,calc(100%-48px))] -translate-x-1/2 items-center gap-3 rounded-[16px] px-3 py-2 transition-[opacity,translate] duration-300 ${capsuleClassName} ${controlsClassName}`}
-        data-testid="carousel-fullscreen-controls"
+        className="pointer-events-auto absolute bottom-[16px] right-[16px] h-[80px] w-[120px] cursor-auto"
+        data-testid="carousel-fullscreen-hotzone"
         onMouseEnter={() => onHoverChange(true)}
+        onMouseMove={() => {
+          if (!visible) onHoverChange(true);
+        }}
         onMouseLeave={() => onHoverChange(false)}
       >
-        <button
-          type="button"
-          className={`${stepButtonClassName} cursor-pointer`}
-          aria-label={previousLabel}
-          disabled={disableStep}
-          onClick={onPrevious}
+        {resumeHintOn ? (
+          <div
+            className={`absolute right-0 bottom-11 whitespace-nowrap ${hintClassName}`}
+            data-testid="carousel-fullscreen-resume-hint"
+          >
+            {resumeHint}
+          </div>
+        ) : null}
+        <div
+          className={`absolute right-0 bottom-0 flex h-[40px] items-center gap-1 rounded-[10px] border border-(--carousel-fs-border) bg-(--carousel-fs-surface) px-1.5 backdrop-blur-[12px] transition-opacity duration-300 ${controlsClassName}`}
+          data-testid="carousel-fullscreen-controls"
+          aria-hidden={!visible}
         >
-          <LeftOutlined style={{ fontSize: 16 }} />
-        </button>
-        <button
-          type="button"
-          className="inline-flex h-[52px] w-[52px] shrink-0 cursor-pointer items-center justify-center rounded-full border-0 bg-(--carousel-fs-play-surface) p-0 text-(--carousel-fs-play-ink) [text-shadow:none] disabled:cursor-not-allowed disabled:opacity-40"
-          aria-label={paused ? playLabel : pauseLabel}
-          disabled={disablePlay}
-          onClick={onTogglePlay}
-        >
-          {paused
-            ? <CaretRightOutlined style={{ fontSize: 22 }} />
-            : <PauseOutlined style={{ fontSize: 20 }} />}
-        </button>
-        <button
-          type="button"
-          className={`${stepButtonClassName} cursor-pointer`}
-          aria-label={nextLabel}
-          disabled={disableStep}
-          onClick={onNext}
-        >
-          <RightOutlined style={{ fontSize: 16 }} />
-        </button>
-        <p className="m-0 flex min-w-0 items-baseline text-[17px] leading-none">
-          <span className="shrink-0 tabular-nums">{positionLabel}</span>
-          {canvasName ? (
-            <span className="min-w-0 max-w-[420px] truncate" title={canvasName}>
-              <span className="px-2 opacity-70">·</span>
-              {canvasName}
-            </span>
-          ) : null}
-        </p>
-        <span className="shrink-0 text-sm tabular-nums">{remainingLabel}</span>
-        <button
-          type="button"
-          className="inline-flex h-11 shrink-0 cursor-pointer items-center gap-1.5 rounded-full border-0 bg-transparent px-2 text-(--carousel-fs-ink)"
-          aria-label={exitLabel}
-          onClick={onExit}
-        >
-          <FullscreenExitOutlined style={{ fontSize: 16 }} />
-          <span className="text-xs tracking-wide opacity-80">Esc</span>
-        </button>
+          {buttons.map((button) => (
+            <button
+              key={button.key}
+              type="button"
+              className={`${ghostButtonClassName} h-[28px] w-[28px]`}
+              aria-label={button.label}
+              tabIndex={visible ? 0 : -1}
+              disabled={button.disabled}
+              onClick={button.onClick}
+            >
+              {button.icon}
+            </button>
+          ))}
+        </div>
       </div>
       <div
-        className="absolute inset-x-0 bottom-0 h-1 bg-(--carousel-fs-track)"
+        className="pointer-events-none absolute inset-x-0 bottom-0 h-[3px] bg-(--carousel-fs-track)"
         data-testid="carousel-fullscreen-progress"
         data-progress-mode={progress.mode}
         data-current-color={progress.currentColor}
@@ -195,13 +251,9 @@ const CarouselFullscreenChrome: React.FC<CarouselFullscreenChromeProps> = ({
             ))}
           </div>
         ) : (
-          <div
-            className="h-full w-full origin-left transition-transform duration-200 ease-linear"
-            data-fill={progress.continuous}
-            style={{
-              transform: `scaleX(${progress.continuous})`,
-              backgroundColor: progress.currentColor,
-            }}
+          <ContinuousProgress
+            segments={progress.segments}
+            currentColor={progress.currentColor}
           />
         )}
       </div>

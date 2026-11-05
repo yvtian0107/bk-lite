@@ -2131,10 +2131,7 @@
     "allTypes": "All types",
     "duplicateHint": "This list has duplicate canvases. Remove the extras before saving",
     "alreadyContains": "Already included",
-    "nothingToPlay": "No canvases can play",
-    "retryInSeconds": "Retry in {count}s",
-    "remainingSeconds": "{count}s left",
-    "pausedHint": "Paused · press Space to continue",
-    "exitFullscreen": "Exit fullscreen (Esc)"
+    "spaceToResume": "Space to continue",
+    "escToExit": "Esc to exit"
   }
 }

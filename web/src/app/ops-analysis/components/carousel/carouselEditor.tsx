@@ -90,9 +90,9 @@ import useBtnPermissions from '@/hooks/usePermissions';
 import { fullscreenPopupContainer } from '@/utils/fullscreenPopupContainer';
 import {
   CAROUSEL_FULLSCREEN_CONTROLS_IDLE_MS,
-  carouselRemainingWholeSeconds,
   fullscreenStageCursor,
-  planFullscreenControlIdle,
+  planFullscreenChrome,
+  type FullscreenChromeEvent,
 } from '@/app/ops-analysis/utils/carouselFullscreenChrome';
 import { CanvasTypeIcon } from './canvasTypeIcon';
 import CanvasPicker, { type PickedCanvas } from './canvasPicker';
@@ -335,10 +335,10 @@ const CarouselEditor = forwardRef<CarouselEditorRef, CarouselEditorProps>(({
   const stageRef = useRef<HTMLDivElement>(null);
   const idleTimer = useRef<number | null>(null);
   const pausedRef = useRef(false);
-  const controlsHoverRef = useRef(false);
-  const applyControlPlanRef = useRef<(reason: 'show' | 'idle') => void>(() => undefined);
+  const hotzoneHoverRef = useRef(false);
+  const applyChromePlanRef = useRef<(event: FullscreenChromeEvent) => void>(() => undefined);
   const [stageFullscreen, setStageFullscreen] = useState(false);
-  const [controlsVisible, setControlsVisible] = useState(true);
+  const [controlsVisible, setControlsVisible] = useState(false);
   editorOpenRef.current = editorOpen;
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 4 } }));
   const canEdit = hasPermission(['EditChart']);
@@ -419,43 +419,39 @@ const CarouselEditor = forwardRef<CarouselEditorRef, CarouselEditorProps>(({
   }, [dirty, editorOpen]);
 
   pausedRef.current = player.paused;
-  applyControlPlanRef.current = (reason) => {
-    const plan = planFullscreenControlIdle(reason, {
+  applyChromePlanRef.current = (event) => {
+    const plan = planFullscreenChrome(event, {
       paused: pausedRef.current,
-      hoveringControls: controlsHoverRef.current,
+      hoveringHotzone: hotzoneHoverRef.current,
     });
     setControlsVisible(plan.visible);
     if (idleTimer.current != null) window.clearTimeout(idleTimer.current);
     idleTimer.current = plan.armIdleTimer
-      ? window.setTimeout(() => applyControlPlanRef.current('idle'), CAROUSEL_FULLSCREEN_CONTROLS_IDLE_MS)
+      ? window.setTimeout(() => applyChromePlanRef.current('hide-elapsed'), CAROUSEL_FULLSCREEN_CONTROLS_IDLE_MS)
       : null;
   };
-  const showFullscreenControls = useCallback(() => {
-    applyControlPlanRef.current('show');
-  }, []);
 
   useEffect(() => {
     const onChange = () => {
       const active = document.fullscreenElement === stageRef.current;
       setStageFullscreen(active);
       session.dispatch({ type: 'setPaused', paused: !active });
-      if (active) {
-        showFullscreenControls();
-        return;
-      }
+      if (active) return;
+      hotzoneHoverRef.current = false;
       if (idleTimer.current != null) window.clearTimeout(idleTimer.current);
       idleTimer.current = null;
+      setControlsVisible(false);
     };
     document.addEventListener('fullscreenchange', onChange);
     return () => {
       document.removeEventListener('fullscreenchange', onChange);
       if (idleTimer.current != null) window.clearTimeout(idleTimer.current);
     };
-  }, [session.dispatch, showFullscreenControls]);
+  }, [session.dispatch]);
 
   useEffect(() => {
     if (!stageFullscreen) return;
-    applyControlPlanRef.current('show');
+    applyChromePlanRef.current(player.paused ? 'paused' : 'resumed');
   }, [player.paused, stageFullscreen]);
 
   useEffect(() => {
@@ -464,7 +460,6 @@ const CarouselEditor = forwardRef<CarouselEditorRef, CarouselEditorProps>(({
       if (isCarouselHotkeyBlocked(event.target) || isCarouselOverlayOpen()) return;
       if (event.key === 'ArrowRight' || event.key === 'ArrowLeft' || event.key === ' ') {
         event.preventDefault();
-        showFullscreenControls();
         session.dispatch({
           type: event.key === 'ArrowLeft' ? 'prev' : event.key === 'ArrowRight' ? 'next' : 'togglePause',
         });
@@ -472,7 +467,7 @@ const CarouselEditor = forwardRef<CarouselEditorRef, CarouselEditorProps>(({
     };
     window.addEventListener('keydown', onKeyDown, true);
     return () => window.removeEventListener('keydown', onKeyDown, true);
-  }, [session.dispatch, showFullscreenControls, stageFullscreen]);
+  }, [session.dispatch, stageFullscreen]);
 
   useEffect(() => {
     if (!stageFullscreen) return undefined;
@@ -890,7 +885,6 @@ const CarouselEditor = forwardRef<CarouselEditorRef, CarouselEditorProps>(({
           className={`relative min-h-0 flex-1 overflow-hidden ${
             stageFullscreen && preview?.resourceType === 'screen' ? 'bg-slate-950' : 'bg-[var(--color-bg)]'
           } ${fullscreenStageCursor(stageFullscreen, controlsVisible) === 'none' ? 'cursor-none' : ''}`}
-          onMouseMove={stageFullscreen ? showFullscreenControls : undefined}
         >
           <ConfigProvider getPopupContainer={stageFullscreen ? fullscreenPopupContainer : undefined}>
           {items.length === 0 ? (
@@ -928,36 +922,21 @@ const CarouselEditor = forwardRef<CarouselEditorRef, CarouselEditorProps>(({
               slides={slides}
               index={player.index}
               remainingMs={player.remainingMs}
-              positionLabel={player.index < 0 ? t('opsCarousel.nothingToPlay') : positionLabel}
-              canvasName={player.index < 0 ? '' : positionName}
-              remainingLabel={player.index < 0
-                ? t('opsCarousel.retryInSeconds', undefined, {
-                  count: carouselRemainingWholeSeconds(player.holdMs),
-                })
-                : t('opsCarousel.remainingSeconds', undefined, {
-                  count: carouselRemainingWholeSeconds(player.remainingMs),
-                })}
-              pausedLabel={t('opsCarousel.pausedHint')}
               previousLabel={t('opsCarousel.previous')}
               nextLabel={t('opsCarousel.next')}
               playLabel={t('opsCarousel.play')}
               pauseLabel={t('opsCarousel.pause')}
-              exitLabel={t('opsCarousel.exitFullscreen')}
+              resumeHint={t('opsCarousel.spaceToResume')}
+              exitHint={t('opsCarousel.escToExit')}
               disableStep={playableCount <= 1}
               disablePlay={playableCount === 0 || slides.length <= 1}
-              onPrevious={() => {
-                showFullscreenControls();
-                session.dispatch({ type: 'prev' });
-              }}
-              onNext={() => {
-                showFullscreenControls();
-                session.dispatch({ type: 'next' });
-              }}
+              onPrevious={() => session.dispatch({ type: 'prev' })}
+              onNext={() => session.dispatch({ type: 'next' })}
               onTogglePlay={togglePlay}
-              onExit={() => { void document.exitFullscreen(); }}
               onHoverChange={(hovering) => {
-                controlsHoverRef.current = hovering;
-                applyControlPlanRef.current('show');
+                if (hotzoneHoverRef.current === hovering) return;
+                hotzoneHoverRef.current = hovering;
+                applyChromePlanRef.current(hovering ? 'hotzone-enter' : 'hotzone-leave');
               }}
             />
           )}

@@ -1,11 +1,15 @@
 import { describe, expect, it } from 'vitest';
 import {
   CAROUSEL_FULLSCREEN_CHROME,
+  CAROUSEL_FULLSCREEN_CONTROLS_IDLE_MS,
+  CAROUSEL_FULLSCREEN_EXIT_TIP_MS,
+  CAROUSEL_FULLSCREEN_RESUME_HINT_MS,
   CAROUSEL_FULLSCREEN_SEGMENT_MAX,
   carouselDwellFill,
-  carouselRemainingWholeSeconds,
   fullscreenStageCursor,
-  planFullscreenControlIdle,
+  markFullscreenExitTipSeen,
+  planFullscreenChrome,
+  readFullscreenExitTipSeen,
   resolveCarouselFullscreenProgress,
 } from '@/app/ops-analysis/utils/carouselFullscreenChrome';
 
@@ -15,6 +19,16 @@ const slides = (count: number, unavailableAt: number[] = []) => (
     dwellSeconds: 30,
   }))
 );
+
+const memoryStorage = () => {
+  const values = new Map<string, string>();
+  return {
+    getItem: (key: string) => values.get(key) ?? null,
+    setItem: (key: string, value: string) => {
+      values.set(key, value);
+    },
+  };
+};
 
 describe('carousel fullscreen chrome', () => {
   it('splits progress into segments through 20 canvases and switches to one bar after that', () => {
@@ -92,40 +106,39 @@ describe('carousel fullscreen chrome', () => {
     expect(continuous.mode).toBe('continuous');
     expect(continuous.continuous).toBe(0);
     expect(continuous.segments.some((segment) => segment.tone === 'current')).toBe(false);
-    expect(carouselRemainingWholeSeconds(10_000)).toBe(10);
-    expect(carouselRemainingWholeSeconds(10_001)).toBe(11);
   });
 
-  it('keeps the controls up while paused or hovered, and hides them after idle otherwise', () => {
-    expect(planFullscreenControlIdle('show', { paused: false, hoveringControls: false })).toEqual({
-      visible: true,
-      armIdleTimer: true,
-    });
-    expect(planFullscreenControlIdle('idle', { paused: false, hoveringControls: false })).toEqual({
-      visible: false,
-      armIdleTimer: false,
-    });
-    expect(planFullscreenControlIdle('show', { paused: false, hoveringControls: true })).toEqual({
-      visible: true,
-      armIdleTimer: false,
-    });
-    expect(planFullscreenControlIdle('idle', { paused: false, hoveringControls: true })).toEqual({
-      visible: true,
-      armIdleTimer: false,
-    });
-    expect(planFullscreenControlIdle('show', { paused: true, hoveringControls: false })).toEqual({
-      visible: true,
-      armIdleTimer: false,
-    });
-    expect(planFullscreenControlIdle('idle', { paused: true, hoveringControls: false })).toEqual({
-      visible: true,
-      armIdleTimer: false,
-    });
+  it('keeps the corner cluster up while paused or hovered, and hides it shortly after the pointer leaves', () => {
+    const playing = { paused: false, hoveringHotzone: false };
+    const hovering = { paused: false, hoveringHotzone: true };
+    const paused = { paused: true, hoveringHotzone: false };
+    expect(CAROUSEL_FULLSCREEN_CONTROLS_IDLE_MS).toBe(500);
+    expect(CAROUSEL_FULLSCREEN_RESUME_HINT_MS).toBe(2000);
+    expect(CAROUSEL_FULLSCREEN_EXIT_TIP_MS).toBe(2500);
+    expect(CAROUSEL_FULLSCREEN_CHROME.border).toBe('rgba(103, 232, 249, 0.55)');
+    expect(CAROUSEL_FULLSCREEN_CHROME).not.toHaveProperty('playSurface');
+    expect(CAROUSEL_FULLSCREEN_CHROME).not.toHaveProperty('shade');
+
+    expect(planFullscreenChrome('resumed', playing)).toEqual({ visible: false, armIdleTimer: false });
+    expect(planFullscreenChrome('hotzone-enter', hovering)).toEqual({ visible: true, armIdleTimer: false });
+    expect(planFullscreenChrome('hotzone-leave', playing)).toEqual({ visible: true, armIdleTimer: true });
+    expect(planFullscreenChrome('hide-elapsed', playing)).toEqual({ visible: false, armIdleTimer: false });
+    expect(planFullscreenChrome('hide-elapsed', hovering)).toEqual({ visible: true, armIdleTimer: false });
+    expect(planFullscreenChrome('paused', paused)).toEqual({ visible: true, armIdleTimer: false });
+    expect(planFullscreenChrome('hotzone-leave', paused)).toEqual({ visible: true, armIdleTimer: false });
+    expect(planFullscreenChrome('hide-elapsed', paused)).toEqual({ visible: true, armIdleTimer: false });
+    expect(planFullscreenChrome('resumed', hovering)).toEqual({ visible: true, armIdleTimer: false });
     expect(fullscreenStageCursor(true, false)).toBe('none');
     expect(fullscreenStageCursor(true, true)).toBe('auto');
     expect(fullscreenStageCursor(false, false)).toBe('auto');
-    expect(carouselRemainingWholeSeconds(30_000)).toBe(30);
-    expect(carouselRemainingWholeSeconds(1)).toBe(1);
-    expect(carouselRemainingWholeSeconds(0)).toBe(0);
+  });
+
+  it('shows the Esc tip once per browser tab', () => {
+    const storage = memoryStorage();
+    expect(readFullscreenExitTipSeen(null)).toBe(false);
+    expect(readFullscreenExitTipSeen(storage)).toBe(false);
+    markFullscreenExitTipSeen(null);
+    markFullscreenExitTipSeen(storage);
+    expect(readFullscreenExitTipSeen(storage)).toBe(true);
   });
 });
