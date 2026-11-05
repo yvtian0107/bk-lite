@@ -1,5 +1,6 @@
 import { useCallback } from 'react';
 import useApiClient from '@/utils/request';
+import { fetchSharedCanvasDetail } from '@/app/ops-analysis/utils/canvasDetailCache';
 import type {
   CarouselDetail,
   CarouselItemInput,
@@ -66,10 +67,15 @@ export const useCarouselApi = () => {
       report: '/operation_analysis/api/report/',
       networkTopology: '/operation_analysis/api/network_topology/',
     };
-    return get(endpoints[resourceType] + `${canvasId}/`, {
-      suppressErrorNotification: true,
+    return fetchSharedCanvasDetail(
+      resourceType,
+      canvasId,
+      (requestSignal) => get(endpoints[resourceType] + `${canvasId}/`, {
+        suppressErrorNotification: true,
+        signal: requestSignal,
+      }),
       signal,
-    });
+    );
   }, [get]);
 
   return {

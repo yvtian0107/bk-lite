@@ -17,6 +17,7 @@ import { useDirectoryApi } from '@/app/ops-analysis/api';
 import { useDataSourceManager } from '@/app/ops-analysis/hooks/useDataSource';
 import { useShareOrganizationSeed } from '@/app/ops-analysis/context/shareOrganization';
 import { useCanvasPeriodicRefresh } from '@/app/ops-analysis/hooks/useCanvasPeriodicRefresh';
+import { canvasPeriodicRefreshEnabled } from '@/app/ops-analysis/utils/canvasPlaybackRefresh';
 import { useCanvasShareAction } from '@/app/ops-analysis/hooks/useCanvasShareAction';
 import type { ComponentSelectorConfigItem, FilterValue, LayoutItem, UnifiedFilterDefinition, WidgetConfig } from '@/app/ops-analysis/types/dashBoard';
 import type { ReportProps, ReportViewSets } from '@/app/ops-analysis/types/report';
@@ -379,7 +380,7 @@ const Report = forwardRef<ReportRef, ReportProps>(({
       canvasId: selectedReport?.data_id,
       savedInterval: savedRefreshInterval,
       canPersist: canPersistRefreshInterval,
-      enabled: !renderMode && !pdfExportPreparing && !editing,
+      enabled: canvasPeriodicRefreshEnabled(!renderMode && !pdfExportPreparing && !editing, playbackMode),
       patchRefreshInterval: async (interval) => {
         if (!selectedReport?.data_id) {
           return;

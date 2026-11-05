@@ -2,6 +2,10 @@
 
 import { createContext, useContext } from 'react';
 import type { CanvasType } from '@/app/ops-analysis/constants/canvasTypes';
+import {
+  fetchSharedCanvasDetail,
+  rememberCanvasDetailIfAbsent,
+} from '@/app/ops-analysis/utils/canvasDetailCache';
 
 export interface PlaybackInitialDetail {
   resourceType: CanvasType;
@@ -34,8 +38,19 @@ export const loadPlaybackCanvasDetail = async <T,>(
   fetchDetail: () => Promise<T>,
 ): Promise<T> => {
   const initial = readPlaybackInitialDetail<T>(seeded, resourceType, id);
+  const canvasId = Number(id);
   if (initial !== undefined) {
+    if (Number.isFinite(canvasId)) {
+      rememberCanvasDetailIfAbsent(resourceType, canvasId, initial);
+    }
     return initial;
   }
-  return fetchDetail();
+  if (!Number.isFinite(canvasId)) {
+    return fetchDetail();
+  }
+  return fetchSharedCanvasDetail(
+    resourceType,
+    canvasId,
+    () => fetchDetail(),
+  ) as Promise<T>;
 };

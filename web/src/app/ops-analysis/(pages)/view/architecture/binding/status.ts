@@ -173,7 +173,9 @@ const readCoord = (value: unknown): { x: number; y: number } | null => {
 export function architectureStatusRequestMode(input: {
   shareMode: boolean;
   editMode: boolean;
+  playbackMode?: boolean;
 }): 'off' | 'once' | 'poll' {
+  if (input.playbackMode) return 'once';
   if (input.shareMode) return 'off';
   if (input.editMode) return 'once';
   return 'poll';

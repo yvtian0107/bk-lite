@@ -2,6 +2,7 @@ import React from 'react';
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import CarouselFullscreenChrome from '@/app/ops-analysis/components/carousel/carouselFullscreenChrome';
+import { createCarouselRemainingClock } from '@/app/ops-analysis/utils/carouselRemainingClock';
 import {
   CAROUSEL_FULLSCREEN_CHROME,
   CAROUSEL_FULLSCREEN_EXIT_TIP_KEY,
@@ -194,6 +195,26 @@ describe('carousel fullscreen chrome', () => {
     expect(parseFloat(current.style.width)).toBeCloseTo((0.5 / 21) * 100);
     expect(current.style.backgroundColor).toBe('rgb(250, 173, 20)');
     expect(played.style.backgroundColor).not.toBe(current.style.backgroundColor);
+  });
+
+  it('advances the 3px progress from the clock without rerendering the chrome owner', () => {
+    window.sessionStorage.setItem(CAROUSEL_FULLSCREEN_EXIT_TIP_KEY, '1');
+    const clock = createCarouselRemainingClock(15_000);
+    let paints = 0;
+    function Owner() {
+      paints += 1;
+      return <CarouselFullscreenChrome {...baseProps()} remainingMs={15_000} remainingClock={clock} />;
+    }
+    render(<Owner />);
+    expect(screen.getByTestId('carousel-fullscreen-progress').querySelector('[data-tone="current"]')?.getAttribute('data-fill')).toBe('0.5');
+    const painted = paints;
+    act(() => {
+      clock.set(0);
+    });
+    expect(paints).toBe(painted);
+    expect(
+      screen.getByTestId('carousel-fullscreen-progress').querySelector('[data-tone="current"]')?.getAttribute('data-fill'),
+    ).toBe('1');
   });
 
   it('shows the Esc tip once per tab and keeps it out of the button cluster', () => {

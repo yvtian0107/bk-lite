@@ -370,6 +370,13 @@ const CarouselEditor = forwardRef<CarouselEditorRef, CarouselEditorProps>(({
     retainUnavailable: true,
   });
   const player = session.player;
+  const playbackSlideKeyRef = useRef('');
+  const onPlaybackError = useCallback(() => {
+    const key = playbackSlideKeyRef.current;
+    if (key) {
+      session.dispatch({ type: 'markUnavailable', key });
+    }
+  }, [session.dispatch]);
   const keysToken = items.map((item) => item.key).join('\u0000');
 
   const restoreSavedRef = useRef<() => void>(() => undefined);
@@ -732,6 +739,7 @@ const CarouselEditor = forwardRef<CarouselEditorRef, CarouselEditorProps>(({
   );
   const previewIndex = player.index >= 0 && player.index < slides.length ? player.index : 0;
   const preview = slides[previewIndex];
+  playbackSlideKeyRef.current = preview?.key ?? '';
   const playableCount = slides.filter((slide) => slide.available).length;
   const positionLabel = slides.length > 0 ? `${previewIndex + 1} / ${slides.length}` : '';
   const positionName = preview?.available && preview.name ? preview.name : '';
@@ -911,7 +919,7 @@ const CarouselEditor = forwardRef<CarouselEditorRef, CarouselEditorProps>(({
                 slide={preview}
                 initialDetail={session.initialDetail}
                 presentFullscreen={stageFullscreen && preview.resourceType === 'screen'}
-                onError={() => session.dispatch({ type: 'markUnavailable', key: preview.key })}
+                onError={onPlaybackError}
               />
             </div>
           )}
@@ -922,6 +930,7 @@ const CarouselEditor = forwardRef<CarouselEditorRef, CarouselEditorProps>(({
               slides={slides}
               index={player.index}
               remainingMs={player.remainingMs}
+              remainingClock={session.remainingClock}
               previousLabel={t('opsCarousel.previous')}
               nextLabel={t('opsCarousel.next')}
               playLabel={t('opsCarousel.play')}

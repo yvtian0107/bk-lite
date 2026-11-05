@@ -1,9 +1,10 @@
-import { describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { CanvasType } from '@/app/ops-analysis/constants/canvasTypes';
 import {
   loadPlaybackCanvasDetail,
   type PlaybackInitialDetail,
 } from '@/app/ops-analysis/context/playbackInitialDetail';
+import { clearCanvasDetailCache } from '@/app/ops-analysis/utils/canvasDetailCache';
 import { shouldRunCanvasIntervalTick } from '@/app/ops-analysis/utils/canvasRefreshTimer';
 
 const TYPES: CanvasType[] = [
@@ -22,6 +23,10 @@ const seed = (resourceType: CanvasType, detail: unknown): PlaybackInitialDetail 
 });
 
 describe('playback initial detail', () => {
+  beforeEach(() => {
+    clearCanvasDetailCache();
+  });
+
   it('serves the confirmed detail for every canvas type and does not fetch again', async () => {
     for (const resourceType of TYPES) {
       const fetchDetail = vi.fn(async () => ({ refresh_interval: 1 }));
@@ -36,10 +41,12 @@ describe('playback initial detail', () => {
 
   it('fetches when playback has no seed or the seed is for another canvas', async () => {
     const fetchDetail = vi.fn(async () => ({ refresh_interval: 30_000 }));
-    await loadPlaybackCanvasDetail(null, 'dashboard', 7, fetchDetail);
-    await loadPlaybackCanvasDetail(seed('topology', { id: 7 }), 'dashboard', 7, fetchDetail);
-    await loadPlaybackCanvasDetail(seed('dashboard', { id: 8 }), 'dashboard', 9, fetchDetail);
-    expect(fetchDetail).toHaveBeenCalledTimes(3);
+    const first = await loadPlaybackCanvasDetail(null, 'dashboard', 7, fetchDetail);
+    const second = await loadPlaybackCanvasDetail(seed('topology', { id: 7 }), 'dashboard', 7, fetchDetail);
+    const third = await loadPlaybackCanvasDetail(seed('dashboard', { id: 8 }), 'dashboard', 9, fetchDetail);
+    expect(second).toBe(first);
+    expect(third).toEqual({ refresh_interval: 30_000 });
+    expect(fetchDetail).toHaveBeenCalledTimes(2);
   });
 
   it('keeps refresh interval behavior on the confirmed payload', () => {

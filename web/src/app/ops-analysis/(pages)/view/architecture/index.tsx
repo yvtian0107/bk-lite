@@ -25,6 +25,7 @@ import { useArchitectureApi } from '@/app/ops-analysis/api/architecture';
 import { useDirectoryApi } from '@/app/ops-analysis/api';
 import useBtnPermissions from '@/hooks/usePermissions';
 import { useCanvasPeriodicRefresh } from '@/app/ops-analysis/hooks/useCanvasPeriodicRefresh';
+import { canvasPeriodicRefreshEnabled } from '@/app/ops-analysis/utils/canvasPlaybackRefresh';
 import {
   canPersistCanvasRefreshInterval,
   normalizeCanvasRefreshInterval,
@@ -581,6 +582,7 @@ const Architecture = forwardRef<ArchitectureRef, ArchitectureProps>(
     const requestMode = architectureStatusRequestMode({
       shareMode,
       editMode: isEditMode,
+      playbackMode,
     });
     const modelNames = useMemo(
       () => Object.fromEntries(modelOptions.map((model) => [model.model_id, model.model_name])),
@@ -608,6 +610,7 @@ const Architecture = forwardRef<ArchitectureRef, ArchitectureProps>(
       enabled: requestMode === 'once',
       uuids: boundUuids,
       intervalMs: 0,
+      refreshOnVisible: !playbackMode,
     });
     const metricUuids = useMemo(() => collectMetricUuids(diagramViews), [diagramViews]);
     const selectedBoundUuid = useMemo(() => {
@@ -639,7 +642,7 @@ const Architecture = forwardRef<ArchitectureRef, ArchitectureProps>(
         canvasId: selectedArchitecture?.data_id,
         savedInterval: savedRefreshInterval,
         canPersist: canPersistRefreshInterval,
-        enabled: !shareMode && !isEditMode,
+        enabled: canvasPeriodicRefreshEnabled(!shareMode && !isEditMode, playbackMode),
         patchRefreshInterval: async (interval) => {
           if (!selectedArchitecture?.data_id) {
             return;

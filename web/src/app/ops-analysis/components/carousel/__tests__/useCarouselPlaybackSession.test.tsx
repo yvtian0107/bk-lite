@@ -1,5 +1,7 @@
-import { act, renderHook } from '@testing-library/react';
+import { memo, useSyncExternalStore } from 'react';
+import { act, render, renderHook, screen } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import type { CarouselRemainingClock } from '@/app/ops-analysis/utils/carouselRemainingClock';
 import type { CanvasType } from '@/app/ops-analysis/constants/canvasTypes';
 import { CAROUSEL_UNAVAILABLE_RETRY_MS } from '@/app/ops-analysis/utils/carouselPlayer';
 import {
@@ -98,7 +100,8 @@ describe('useCarouselPlaybackSession', () => {
     await act(async () => {
       vi.advanceTimersByTime(CAROUSEL_PLAYBACK_TICK_MS * 4);
     });
-    expect(result.current.player.remainingMs).toBe(30_000 - CAROUSEL_PLAYBACK_TICK_MS * 4);
+    expect(result.current.player.remainingMs).toBe(30_000);
+    expect(result.current.remainingClock.getSnapshot()).toBe(30_000 - CAROUSEL_PLAYBACK_TICK_MS * 4);
   });
 
   it('skips a failed first slide and confirms the next one', async () => {
@@ -295,15 +298,17 @@ describe('useCarouselPlaybackSession', () => {
     await act(async () => {
       vi.advanceTimersByTime(1_000);
     });
-    const remaining = result.current.player.remainingMs;
+    const remaining = result.current.remainingClock.getSnapshot();
     expect(remaining).toBeLessThan(30_000);
+    expect(result.current.player.remainingMs).toBe(30_000);
     act(() => {
       result.current.dispatch({ type: 'togglePause' });
     });
+    expect(result.current.player.remainingMs).toBe(remaining);
     await act(async () => {
       vi.advanceTimersByTime(2_000);
     });
-    expect(result.current.player.remainingMs).toBe(remaining);
+    expect(result.current.remainingClock.getSnapshot()).toBe(remaining);
     act(() => {
       result.current.dispatch({ type: 'togglePause' });
       result.current.dispatch({ type: 'next' });
@@ -370,6 +375,53 @@ describe('useCarouselPlaybackSession', () => {
     expect(result.current.player.slides[result.current.player.index]?.key).toBe('s0');
     expect(result.current.player.slides[result.current.player.index]?.dwellSeconds).toBe(45);
     expect(result.current.player.remainingMs).toBe(remaining + 15_000);
+  });
+
+  it('does not rerender the playback host while only the dwell clock advances', async () => {
+    const gates: Gate[] = [];
+    const loadDetail = vi.fn(() => {
+      const gate = deferred();
+      gates.push(gate);
+      return gate.promise;
+    });
+    let hostRenders = 0;
+    let frameRenders = 0;
+    const Frame = memo(function Frame({ visit }: { visit: number }) {
+      frameRenders += 1;
+      return <span data-testid="frame">{visit}</span>;
+    });
+    function Remaining({ clock }: { clock: CarouselRemainingClock }) {
+      const remaining = useSyncExternalStore(clock.subscribe, clock.getSnapshot, clock.getSnapshot);
+      return <span data-testid="remaining">{remaining}</span>;
+    }
+    function Host() {
+      hostRenders += 1;
+      const session = useCarouselPlaybackSession({
+        slides: [slide('s0'), slide('s1')],
+        enabled: true,
+        loadDetail,
+      });
+      return (
+        <>
+          <Frame visit={session.player.visit} />
+          <Remaining clock={session.remainingClock} />
+        </>
+      );
+    }
+    render(<Host />);
+    await act(async () => {
+      gates[0].resolve({ id: 1 });
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    const hostAfterReady = hostRenders;
+    const frameAfterReady = frameRenders;
+    await act(async () => {
+      vi.advanceTimersByTime(CAROUSEL_PLAYBACK_TICK_MS * 4);
+    });
+    expect(hostRenders).toBe(hostAfterReady);
+    expect(frameRenders).toBe(frameAfterReady);
+    expect(screen.getByTestId('remaining').textContent).toBe(String(30_000 - CAROUSEL_PLAYBACK_TICK_MS * 4));
   });
 
   it('still reconfirms when the playlist is reloaded or the current slide becomes unavailable', () => {

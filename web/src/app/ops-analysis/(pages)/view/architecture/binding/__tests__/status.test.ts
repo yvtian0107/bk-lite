@@ -109,6 +109,11 @@ describe('architecture view status', () => {
     expect(architectureStatusRequestMode({ shareMode: true, editMode: true })).toBe('off');
     expect(architectureStatusRequestMode({ shareMode: false, editMode: true })).toBe('once');
     expect(architectureStatusRequestMode({ shareMode: false, editMode: false })).toBe('poll');
+    expect(architectureStatusRequestMode({ shareMode: false, editMode: false, playbackMode: false })).toBe('poll');
+    expect(architectureStatusRequestMode({ shareMode: false, editMode: true, playbackMode: false })).toBe('once');
+    expect(architectureStatusRequestMode({ shareMode: false, editMode: false, playbackMode: true })).toBe('once');
+    expect(architectureStatusRequestMode({ shareMode: true, editMode: false, playbackMode: true })).toBe('once');
+    expect(architectureStatusRequestMode({ shareMode: false, editMode: true, playbackMode: true })).toBe('once');
     expect(shouldPauseArchitectureStatusRefresh(true)).toBe(true);
     expect(shouldPauseArchitectureStatusRefresh(false)).toBe(false);
   });

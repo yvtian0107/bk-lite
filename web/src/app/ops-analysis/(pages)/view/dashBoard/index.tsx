@@ -49,6 +49,7 @@ import { useDashBoardApi } from '@/app/ops-analysis/api/dashBoard';
 import { useDirectoryApi } from '@/app/ops-analysis/api';
 import useBtnPermissions from '@/hooks/usePermissions';
 import { useCanvasPeriodicRefresh } from '@/app/ops-analysis/hooks/useCanvasPeriodicRefresh';
+import { canvasPeriodicRefreshEnabled } from '@/app/ops-analysis/utils/canvasPlaybackRefresh';
 import { relabelApplicationTopologyFilters } from '@/app/ops-analysis/utils/applicationTopologyCanvasFilter';
 import { canPersistCanvasRefreshInterval, normalizeCanvasRefreshInterval } from '@/app/ops-analysis/utils/canvasRefreshInterval';
 import type { CanvasRuntimeRefreshCause } from '@/app/ops-analysis/utils/canvasRefreshTimer';
@@ -1270,7 +1271,7 @@ const Dashboard = forwardRef<DashboardRef, DashboardProps>(
         canvasId: selectedDashboard?.data_id,
         savedInterval: savedRefreshInterval,
         canPersist: canPersistRefreshInterval,
-        enabled: !renderMode && !isEditMode,
+        enabled: canvasPeriodicRefreshEnabled(!renderMode && !isEditMode, playbackMode),
         patchRefreshInterval: async (interval) => {
           if (!selectedDashboard?.data_id) {
             return;

@@ -1,6 +1,7 @@
 'use client';
 
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useRef, useState, useSyncExternalStore } from 'react';
+import type { CarouselRemainingClock } from '@/app/ops-analysis/utils/carouselRemainingClock';
 import {
   CaretRightOutlined,
   LeftOutlined,
@@ -29,6 +30,8 @@ const chromeVars = {
 const ghostButtonClassName = 'inline-flex shrink-0 cursor-pointer items-center justify-center rounded-md border border-transparent bg-transparent p-0 text-(--carousel-fs-ink) transition-colors hover:border-(--carousel-fs-border) hover:bg-(--carousel-fs-hover) disabled:cursor-not-allowed disabled:opacity-40';
 
 const hintClassName = 'pointer-events-none rounded-[10px] border border-(--carousel-fs-border) bg-(--carousel-fs-surface) px-2.5 py-1 text-xs leading-none text-(--carousel-fs-ink) backdrop-blur-[12px]';
+
+const subscribeToNothing = () => () => undefined;
 
 /** 连续条按序号铺开：已过的部分保持亮色，只有当前这一段用播放色或暂停琥珀色。 */
 const ContinuousProgress: React.FC<{
@@ -64,12 +67,82 @@ const ContinuousProgress: React.FC<{
   );
 };
 
+const CarouselFullscreenProgress: React.FC<{
+  slides: readonly FullscreenSlideProgressInput[];
+  index: number;
+  paused: boolean;
+  remainingMs: number;
+  remainingClock?: CarouselRemainingClock;
+}> = ({
+  slides,
+  index,
+  paused,
+  remainingMs,
+  remainingClock,
+}) => {
+  const liveRemaining = useSyncExternalStore(
+    remainingClock ? remainingClock.subscribe : subscribeToNothing,
+    () => (remainingClock ? remainingClock.getSnapshot() : remainingMs),
+    () => (remainingClock ? remainingClock.getSnapshot() : remainingMs),
+  );
+  const progress = resolveCarouselFullscreenProgress({
+    slides,
+    index,
+    remainingMs: liveRemaining,
+    paused,
+  });
+  return (
+    <div
+      className="pointer-events-none absolute inset-x-0 bottom-0 h-[3px] bg-(--carousel-fs-track)"
+      data-testid="carousel-fullscreen-progress"
+      data-progress-mode={progress.mode}
+      data-current-color={progress.currentColor}
+      aria-hidden
+    >
+      {progress.mode === 'segments' ? (
+        <div className="flex h-full gap-0.5">
+          {progress.segments.map((segment, segmentIndex) => (
+            <div
+              key={segmentIndex}
+              className={`relative h-full min-w-0 flex-1 overflow-hidden ${
+                segment.tone === 'unavailable'
+                  ? 'bg-[repeating-linear-gradient(135deg,rgba(255,255,255,0.28)_0_3px,rgba(255,255,255,0.08)_3px_7px)]'
+                  : 'bg-(--carousel-fs-upcoming)'
+              }`}
+              data-tone={segment.tone}
+              data-fill={segment.fill}
+            >
+              {segment.tone === 'played' || segment.tone === 'current' ? (
+                <div
+                  className="absolute inset-y-0 left-0 w-full origin-left transition-transform duration-200 ease-linear"
+                  style={{
+                    transform: `scaleX(${segment.fill})`,
+                    backgroundColor: segment.tone === 'played'
+                      ? CAROUSEL_FULLSCREEN_CHROME.played
+                      : progress.currentColor,
+                  }}
+                />
+              ) : null}
+            </div>
+          ))}
+        </div>
+      ) : (
+        <ContinuousProgress
+          segments={progress.segments}
+          currentColor={progress.currentColor}
+        />
+      )}
+    </div>
+  );
+};
+
 export interface CarouselFullscreenChromeProps {
   visible: boolean;
   paused: boolean;
   slides: readonly FullscreenSlideProgressInput[];
   index: number;
   remainingMs: number;
+  remainingClock?: CarouselRemainingClock;
   previousLabel: string;
   nextLabel: string;
   playLabel: string;
@@ -90,6 +163,7 @@ const CarouselFullscreenChrome: React.FC<CarouselFullscreenChromeProps> = ({
   slides,
   index,
   remainingMs,
+  remainingClock,
   previousLabel,
   nextLabel,
   playLabel,
@@ -103,12 +177,6 @@ const CarouselFullscreenChrome: React.FC<CarouselFullscreenChromeProps> = ({
   onTogglePlay,
   onHoverChange,
 }) => {
-  const progress = resolveCarouselFullscreenProgress({
-    slides,
-    index,
-    remainingMs,
-    paused,
-  });
   const resumeSeen = useRef(false);
   const [resumeHintOn, setResumeHintOn] = useState(false);
   const [exitTipOn, setExitTipOn] = useState(false);
@@ -216,47 +284,13 @@ const CarouselFullscreenChrome: React.FC<CarouselFullscreenChromeProps> = ({
           ))}
         </div>
       </div>
-      <div
-        className="pointer-events-none absolute inset-x-0 bottom-0 h-[3px] bg-(--carousel-fs-track)"
-        data-testid="carousel-fullscreen-progress"
-        data-progress-mode={progress.mode}
-        data-current-color={progress.currentColor}
-        aria-hidden
-      >
-        {progress.mode === 'segments' ? (
-          <div className="flex h-full gap-0.5">
-            {progress.segments.map((segment, segmentIndex) => (
-              <div
-                key={segmentIndex}
-                className={`relative h-full min-w-0 flex-1 overflow-hidden ${
-                  segment.tone === 'unavailable'
-                    ? 'bg-[repeating-linear-gradient(135deg,rgba(255,255,255,0.28)_0_3px,rgba(255,255,255,0.08)_3px_7px)]'
-                    : 'bg-(--carousel-fs-upcoming)'
-                }`}
-                data-tone={segment.tone}
-                data-fill={segment.fill}
-              >
-                {segment.tone === 'played' || segment.tone === 'current' ? (
-                  <div
-                    className="absolute inset-y-0 left-0 w-full origin-left transition-transform duration-200 ease-linear"
-                    style={{
-                      transform: `scaleX(${segment.fill})`,
-                      backgroundColor: segment.tone === 'played'
-                        ? CAROUSEL_FULLSCREEN_CHROME.played
-                        : progress.currentColor,
-                    }}
-                  />
-                ) : null}
-              </div>
-            ))}
-          </div>
-        ) : (
-          <ContinuousProgress
-            segments={progress.segments}
-            currentColor={progress.currentColor}
-          />
-        )}
-      </div>
+      <CarouselFullscreenProgress
+        slides={slides}
+        index={index}
+        paused={paused}
+        remainingMs={remainingMs}
+        remainingClock={remainingClock}
+      />
     </div>
   );
 };

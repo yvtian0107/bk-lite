@@ -25,6 +25,7 @@ import { useDirectoryApi } from '@/app/ops-analysis/api';
 import useBtnPermissions from '@/hooks/usePermissions';
 import { useCanvasShareAction } from '@/app/ops-analysis/hooks/useCanvasShareAction';
 import { useCanvasPeriodicRefresh } from '@/app/ops-analysis/hooks/useCanvasPeriodicRefresh';
+import { canvasPeriodicRefreshEnabled } from '@/app/ops-analysis/utils/canvasPlaybackRefresh';
 import { canPersistCanvasRefreshInterval, normalizeCanvasRefreshInterval } from '@/app/ops-analysis/utils/canvasRefreshInterval';
 import { shouldSkipIntervalTick } from '@/app/ops-analysis/utils/canvasRefreshTimer';
 import { useNetworkEditor } from './hooks/useNetworkEditor';
@@ -560,7 +561,7 @@ const NetworkTopology = forwardRef<NetworkTopologyRef, NetworkTopologyProps>(
         canvasId,
         savedInterval: savedRefreshInterval,
         canPersist: canPersistRefreshInterval,
-        enabled: !editor.editMode,
+        enabled: canvasPeriodicRefreshEnabled(!editor.editMode, playbackMode),
         patchRefreshInterval: async (interval) => {
           if (!canvasId) {
             return;

@@ -31,6 +31,7 @@ import { useCanvasShareAction } from '@/app/ops-analysis/hooks/useCanvasShareAct
 import { useDirectoryApi } from '@/app/ops-analysis/api';
 import useBtnPermissions from '@/hooks/usePermissions';
 import { useCanvasPeriodicRefresh } from '@/app/ops-analysis/hooks/useCanvasPeriodicRefresh';
+import { canvasPeriodicRefreshEnabled } from '@/app/ops-analysis/utils/canvasPlaybackRefresh';
 import { canPersistCanvasRefreshInterval, normalizeCanvasRefreshInterval } from '@/app/ops-analysis/utils/canvasRefreshInterval';
 import {
   TopologyProps,
@@ -298,7 +299,7 @@ const Topology = forwardRef<TopologyRef, TopologyProps>(
         canvasId: selectedTopology?.data_id,
         savedInterval: savedRefreshInterval,
         canPersist: canPersistRefreshInterval,
-        enabled: !state.isEditMode,
+        enabled: canvasPeriodicRefreshEnabled(!state.isEditMode, playbackMode),
         patchRefreshInterval: async (interval) => {
           if (!selectedTopology?.data_id) {
             return;

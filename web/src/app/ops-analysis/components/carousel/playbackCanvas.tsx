@@ -88,17 +88,33 @@ class PlaybackCanvasBoundary extends React.Component<BoundaryProps, BoundaryStat
   }
 }
 
-export const PlaybackSlideFrame = ({
-  slide,
-  initialDetail,
-  onError,
-  presentFullscreen = false,
-}: {
+interface PlaybackSlideFrameProps {
   slide: PlaybackSlide;
   initialDetail: unknown;
   onError: () => void;
   presentFullscreen?: boolean;
-}) => {
+}
+
+const samePlaybackFrame = (
+  previous: PlaybackSlideFrameProps,
+  next: PlaybackSlideFrameProps,
+): boolean => (
+  previous.slide.key === next.slide.key
+  && previous.slide.resourceType === next.slide.resourceType
+  && previous.slide.canvasId === next.slide.canvasId
+  && previous.slide.name === next.slide.name
+  && previous.slide.available === next.slide.available
+  && previous.initialDetail === next.initialDetail
+  && previous.presentFullscreen === next.presentFullscreen
+  && previous.onError === next.onError
+);
+
+export const PlaybackSlideFrame = React.memo(function PlaybackSlideFrame({
+  slide,
+  initialDetail,
+  onError,
+  presentFullscreen = false,
+}: PlaybackSlideFrameProps) {
   const seeded = React.useMemo(() => ({
     resourceType: slide.resourceType,
     canvasId: slide.canvasId,
@@ -111,6 +127,6 @@ export const PlaybackSlideFrame = ({
       </PlaybackCanvasBoundary>
     </PlaybackInitialDetailProvider>
   );
-};
+}, samePlaybackFrame);
 
 export default PlaybackCanvas;

@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { CanvasType } from '@/app/ops-analysis/constants/canvasTypes';
+import { createCarouselRemainingClock } from '@/app/ops-analysis/utils/carouselRemainingClock';
 import {
   createCarouselPlayerState,
   isCarouselBusinessFailure,
@@ -145,11 +146,63 @@ export const useCarouselPlaybackSession = ({
   const [confirming, setConfirming] = useState(false);
   const [armedVisit, setArmedVisit] = useState<number | null>(null);
   const [initialDetail, setInitialDetail] = useState<unknown>(undefined);
+  const [prefetchLead, setPrefetchLead] = useState(false);
   const confirmingRef = useRef(false);
   const armedVisitRef = useRef<number | null>(null);
   const prefetchDone = useRef<string | null>(null);
+  const prefetchLeadRef = useRef(false);
   const playerRef = useRef(player);
+  const remainingRef = useRef(player.remainingMs);
+  const holdRef = useRef(player.holdMs);
+  const clockRef = useRef<ReturnType<typeof createCarouselRemainingClock> | null>(null);
+  if (clockRef.current === null) {
+    clockRef.current = createCarouselRemainingClock(player.remainingMs);
+  }
+  const clock = clockRef.current;
   playerRef.current = player;
+
+  const readLive = (): CarouselPlayerState => {
+    const current = playerRef.current;
+    if (current.remainingMs === remainingRef.current && current.holdMs === holdRef.current) {
+      return current;
+    }
+    return {
+      ...current,
+      remainingMs: remainingRef.current,
+      holdMs: holdRef.current,
+    };
+  };
+
+  const syncPrefetchLead = () => {
+    const state = playerRef.current;
+    const due = state.index >= 0
+      && !state.paused
+      && holdRef.current <= 0
+      && armedVisitRef.current === state.visit
+      && remainingRef.current <= CAROUSEL_PREFETCH_LEAD_MS;
+    if (due === prefetchLeadRef.current) {
+      return;
+    }
+    prefetchLeadRef.current = due;
+    setPrefetchLead(due);
+  };
+
+  const publish = (next: CarouselPlayerState) => {
+    playerRef.current = next;
+    remainingRef.current = next.remainingMs;
+    holdRef.current = next.holdMs;
+    clock.set(next.remainingMs);
+    return next;
+  };
+
+  const commit = (next: CarouselPlayerState) => {
+    publish(next);
+    setPlayer(next);
+    syncPrefetchLead();
+  };
+
+  const runtimeRef = useRef({ readLive, commit, syncPrefetchLead });
+  runtimeRef.current = { readLive, commit, syncPrefetchLead };
 
   const disarm = () => {
     armedVisitRef.current = null;
@@ -180,19 +233,24 @@ export const useCarouselPlaybackSession = ({
     );
     resetKeyRef.current = resetKey;
     if (!needsReset) {
-      setPlayer((current) => reduceCarouselPlayer(current, {
+      const base = runtimeRef.current.readLive();
+      const next = reduceCarouselPlayer(base, {
         type: 'syncSlides',
         slides: nextSlides.map(toInput),
-      }));
+      });
+      if (next !== base) {
+        runtimeRef.current.commit(next);
+      }
       return;
     }
     disarm();
     confirmingRef.current = false;
     setConfirming(false);
-    setPlayer((current) => reduceCarouselPlayer(current, {
+    const base = runtimeRef.current.readLive();
+    runtimeRef.current.commit(reduceCarouselPlayer(base, {
       type: 'reset',
       slides: nextSlides.map(toInput),
-      preferKey: current.slides[current.index]?.key ?? null,
+      preferKey: base.slides[base.index]?.key ?? null,
       retainUnavailable,
     }));
   }, [playlistSignature, resetKey, retainUnavailable]);
@@ -202,15 +260,36 @@ export const useCarouselPlaybackSession = ({
       return undefined;
     }
     const timer = window.setInterval(() => {
-      setPlayer((current) => {
-        if (confirmingRef.current) {
-          return current;
-        }
-        if (current.index >= 0 && armedVisitRef.current !== current.visit) {
-          return current;
-        }
-        return reduceCarouselPlayer(current, { type: 'tick', deltaMs: CAROUSEL_PLAYBACK_TICK_MS });
-      });
+      const current = runtimeRef.current.readLive();
+      if (current.paused || confirmingRef.current) {
+        return;
+      }
+      if (current.index >= 0 && armedVisitRef.current !== current.visit) {
+        return;
+      }
+      const next = reduceCarouselPlayer(current, { type: 'tick', deltaMs: CAROUSEL_PLAYBACK_TICK_MS });
+      if (next === current) {
+        return;
+      }
+      const sameSlide = next.index === current.index
+        && next.visit === current.visit
+        && next.paused === current.paused
+        && next.slides === current.slides;
+      const keepOffReact = (holdMs: number) => {
+        remainingRef.current = next.remainingMs;
+        holdRef.current = holdMs;
+        clock.set(next.remainingMs);
+      };
+      if (sameSlide && next.holdMs === current.holdMs) {
+        keepOffReact(current.holdMs);
+        runtimeRef.current.syncPrefetchLead();
+        return;
+      }
+      if (sameSlide && next.holdMs > 0) {
+        keepOffReact(next.holdMs);
+        return;
+      }
+      runtimeRef.current.commit(next);
     }, CAROUSEL_PLAYBACK_TICK_MS);
     return () => window.clearInterval(timer);
   }, [enabled]);
@@ -250,7 +329,7 @@ export const useCarouselPlaybackSession = ({
         return;
       }
       if (result.status === 'skip') {
-        setPlayer((state) => reduceCarouselLoad(state, {
+        runtimeRef.current.commit(reduceCarouselLoad(runtimeRef.current.readLive(), {
           key: slide.key,
           phase: 'enter',
           ok: false,
@@ -274,10 +353,8 @@ export const useCarouselPlaybackSession = ({
     player.visit,
   ]);
 
-  const lead = Boolean(current) && !player.paused && player.holdMs <= 0 && armedVisit === player.visit
-    && player.remainingMs <= CAROUSEL_PREFETCH_LEAD_MS;
   useEffect(() => {
-    if (!lead || player.index < 0) {
+    if (!prefetchLead || player.index < 0) {
       return undefined;
     }
     const slide = nextSlide(slidesRef.current, playerRef.current);
@@ -303,7 +380,7 @@ export const useCarouselPlaybackSession = ({
       settled = true;
       prefetchDone.current = mark;
       if (isCarouselBusinessFailure(error)) {
-        setPlayer((state) => reduceCarouselLoad(state, {
+        runtimeRef.current.commit(reduceCarouselLoad(runtimeRef.current.readLive(), {
           key: slide.key,
           phase: 'prefetch',
           ok: false,
@@ -317,10 +394,15 @@ export const useCarouselPlaybackSession = ({
         prefetchDone.current = null;
       }
     };
-  }, [lead, player.index, player.visit]);
+  }, [player.index, player.visit, prefetchLead]);
 
   const dispatch = useCallback((action: Exclude<CarouselPlayerAction, { type: 'tick' } | { type: 'reset' }>) => {
-    setPlayer((currentState) => reduceCarouselPlayer(currentState, action));
+    const base = runtimeRef.current.readLive();
+    const next = reduceCarouselPlayer(base, action);
+    if (next === base) {
+      return;
+    }
+    runtimeRef.current.commit(next);
   }, []);
 
   const ready = !confirming && player.index >= 0 && armedVisit === player.visit;
@@ -331,5 +413,6 @@ export const useCarouselPlaybackSession = ({
     ready,
     dispatch,
     initialDetail: ready ? initialDetail : undefined,
+    remainingClock: clock,
   };
 };

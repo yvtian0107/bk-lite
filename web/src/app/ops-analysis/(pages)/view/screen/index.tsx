@@ -20,6 +20,7 @@ import { useScreenApi } from "@/app/ops-analysis/api/screen";
 import { useDirectoryApi } from "@/app/ops-analysis/api";
 import useBtnPermissions from "@/hooks/usePermissions";
 import { useCanvasPeriodicRefresh } from "@/app/ops-analysis/hooks/useCanvasPeriodicRefresh";
+import { canvasPeriodicRefreshEnabled } from "@/app/ops-analysis/utils/canvasPlaybackRefresh";
 import { canPersistCanvasRefreshInterval, normalizeCanvasRefreshInterval } from "@/app/ops-analysis/utils/canvasRefreshInterval";
 import type { CanvasRuntimeRefreshCause } from "@/app/ops-analysis/utils/canvasRefreshTimer";
 import { useCanvasShareAction } from "@/app/ops-analysis/hooks/useCanvasShareAction";
@@ -806,7 +807,7 @@ const Screen = forwardRef<ScreenRef, ScreenProps>(({
       canvasId: selectedScreen?.data_id,
       savedInterval: savedRefreshInterval,
       canPersist: canPersistRefreshInterval,
-      enabled: !editMode,
+      enabled: canvasPeriodicRefreshEnabled(!editMode, playbackMode),
       patchRefreshInterval: async (interval) => {
         if (!selectedScreen?.data_id) {
           return;
