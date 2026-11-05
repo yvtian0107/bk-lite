@@ -81,6 +81,7 @@ import {
 } from './binding/model';
 import {
   architectureStatusRequestMode,
+  architectureStatusSurface,
   bindingStatusLoading,
   blockResourceOpen,
   STATUS_DOT_COLOR,
@@ -634,6 +635,11 @@ const Architecture = forwardRef<ArchitectureRef, ArchitectureProps>(
       editMode: isEditMode,
       playbackMode,
     });
+    const surface = architectureStatusSurface({
+      shareMode,
+      editMode: isEditMode,
+      playbackMode,
+    });
     const modelNames = useMemo(
       () => Object.fromEntries(modelOptions.map((model) => [model.model_id, model.model_name])),
       [modelOptions],
@@ -707,6 +713,7 @@ const Architecture = forwardRef<ArchitectureRef, ArchitectureProps>(
         onSavedIntervalChange: setSavedRefreshInterval,
       });
     const statusByUuid = requestMode === 'poll' ? viewStatus.byUuid : editStatus.byUuid;
+    const statusPhase = requestMode === 'poll' ? viewStatus.phase : editStatus.phase;
     const drawerStatus = drawerBinding?.binding
       ? editStatus.byUuid[drawerBinding.binding.inst_uuid] ?? null
       : null;
@@ -871,8 +878,8 @@ const Architecture = forwardRef<ArchitectureRef, ArchitectureProps>(
     }, [t]);
 
     const nodeStatus = useMemo(() => {
-      if (requestMode === 'off') return undefined;
-      if (requestMode === 'once') {
+      if (surface === 'off') return undefined;
+      if (surface === 'nameplate') {
         const source = Object.keys(editStatus.byUuid).length
           ? editStatus.byUuid
           : viewStatus.byUuid;
@@ -903,11 +910,11 @@ const Architecture = forwardRef<ArchitectureRef, ArchitectureProps>(
         }
         return Object.keys(next).length ? next : undefined;
       }
-      if (viewStatus.phase === 'idle' && Object.keys(viewStatus.byUuid).length === 0) {
+      if (statusPhase === 'idle' && Object.keys(statusByUuid).length === 0) {
         return undefined;
       }
-      const overlays = buildNodeStatus(diagramViews, viewStatus.byUuid);
-      const plates = buildIconPlates(diagramViews, viewStatus.byUuid, modelNames, iconNames);
+      const overlays = buildNodeStatus(diagramViews, statusByUuid);
+      const plates = buildIconPlates(diagramViews, statusByUuid, modelNames, iconNames);
       const next: Record<string, {
         level: 'normal' | 'warning' | 'critical' | 'unmonitored' | 'unknown' | 'invalid' | 'forbidden';
         count?: number;
@@ -981,18 +988,19 @@ const Architecture = forwardRef<ArchitectureRef, ArchitectureProps>(
       editStatus.byUuid,
       iconNames,
       modelNames,
-      requestMode,
+      statusByUuid,
       statusHintText,
+      statusPhase,
+      surface,
       t,
       viewStatus.byUuid,
-      viewStatus.phase,
     ]);
 
     const rectangleStatus = useMemo(() => {
-      if (requestMode === 'off') return undefined;
-      const viewing = requestMode === 'poll';
-      const source = viewing ? viewStatus.byUuid : editStatus.byUuid;
-      if (viewing && viewStatus.phase === 'idle' && Object.keys(source).length === 0) {
+      if (surface === 'off') return undefined;
+      const viewing = surface === 'runtime';
+      const source = statusByUuid;
+      if (viewing && statusPhase === 'idle' && Object.keys(source).length === 0) {
         return undefined;
       }
       const overlays = buildRectangleOverlays(diagramViews, source, {
@@ -1035,12 +1043,11 @@ const Architecture = forwardRef<ArchitectureRef, ArchitectureProps>(
       return Object.keys(next).length ? next : undefined;
     }, [
       diagramViews,
-      editStatus.byUuid,
       overlayText,
-      requestMode,
+      statusByUuid,
+      statusPhase,
+      surface,
       t,
-      viewStatus.byUuid,
-      viewStatus.phase,
     ]);
 
     const nodeMetrics = useMemo(() => {
@@ -1176,11 +1183,11 @@ const Architecture = forwardRef<ArchitectureRef, ArchitectureProps>(
     }), [t]);
 
     const nodeBinding = useMemo(() => {
-      if (requestMode !== 'once' || !highlightUnbound) return undefined;
+      if (surface !== 'nameplate' || !highlightUnbound) return undefined;
       const marks: Record<string, { unbound: true }> = {};
       for (const id of bindingStats.unboundIds) marks[id] = { unbound: true };
       return Object.keys(marks).length ? marks : undefined;
-    }, [bindingStats, highlightUnbound, requestMode]);
+    }, [bindingStats, highlightUnbound, surface]);
 
     const closeDetail = useCallback(() => {
       setDetail(null);
@@ -1191,7 +1198,7 @@ const Architecture = forwardRef<ArchitectureRef, ArchitectureProps>(
       const action = decideDiagramClick({
         hit: item,
         views: diagramViews,
-        statusByUuid: viewStatus.byUuid,
+        statusByUuid,
       });
       if (action.type === 'toast') {
         const key = action.reason === 'unbound'
@@ -1223,7 +1230,7 @@ const Architecture = forwardRef<ArchitectureRef, ArchitectureProps>(
         return;
       }
       setDetail({ kind: 'connector', connectorId: action.connectorId });
-    }, [closeDetail, diagramViews, t, viewStatus.byUuid]);
+    }, [closeDetail, diagramViews, statusByUuid, t]);
 
     const openResource = useCallback((target: {
       instUuid: string;
@@ -1334,8 +1341,8 @@ const Architecture = forwardRef<ArchitectureRef, ArchitectureProps>(
             editorMode={shareMode || !isEditMode ? 'EXPLORABLE_READONLY' : 'EDITABLE'}
             sceneApiRef={sceneApiRef}
             onItemSelect={isEditMode && !shareMode ? handleItemSelect : undefined}
-            onItemClick={requestMode === 'poll' ? handleItemClick : undefined}
-            highlightedItemId={requestMode === 'poll' ? highlightId : undefined}
+            onItemClick={surface === 'runtime' ? handleItemClick : undefined}
+            highlightedItemId={surface === 'runtime' ? highlightId : undefined}
             nodeStatus={nodeStatus}
             nodeMetrics={nodeMetrics}
             nodeBinding={nodeBinding}
@@ -1387,12 +1394,12 @@ const Architecture = forwardRef<ArchitectureRef, ArchitectureProps>(
               onClose={() => setBindingNodeId(null)}
             />
           ) : null}
-          {requestMode === 'poll' && detail ? (
+          {surface === 'runtime' && detail ? (
             <ResourceDetailDrawer
               detail={detail}
               views={diagramViews}
               items={currentModel?.items ?? diagramData.items}
-              statusByUuid={viewStatus.byUuid}
+              statusByUuid={statusByUuid}
               modelNames={modelNames}
               onClose={closeDetail}
               onBack={backDetail}
