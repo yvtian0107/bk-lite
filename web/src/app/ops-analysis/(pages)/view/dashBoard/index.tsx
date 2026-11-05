@@ -668,6 +668,38 @@ const Dashboard = forwardRef<DashboardRef, DashboardProps>(
     const renderFilterValuesRef = useRef(renderFilterValues);
     renderFilterValuesRef.current = renderFilterValues;
 
+    // 换盘先丢掉上一张的数据源代数和筛选，再让本次加载占用新代数。
+    // 若复位落在播放种子的同步 lookup 之后，完成态会被打回 loading，加载门不再打开。
+    useEffect(() => {
+      resetCanvasDataSourceLookup();
+      collapsedGroupsHydratedKeyRef.current = null;
+      skipCollapsedGroupsPersistRef.current = false;
+      setCollapsedGroupsLayoutReadyId(null);
+      setIsEditMode(false);
+      setAddModalVisible(false);
+      setConfigDrawerVisible(false);
+      setCurrentConfigItem(undefined);
+      setIsNewComponentConfig(false);
+      setGroupNameModalVisible(false);
+      setGroupNameDraft('');
+      setEditingGroupId(null);
+      setIsCreatingGroupName(false);
+      setSaving(false);
+      setDashboardReloadVersion(0);
+      setRefreshCause('initial');
+      setSavedRefreshInterval(0);
+      setFilterSearchVersion(0);
+      setNamespaceSearchVersion(0);
+      setWidgetReloadVersions({});
+      setAppliedFilterDefinitions([]);
+      setAppliedFilterValues({});
+      setNamespaceDraftId(undefined);
+      setAppliedNamespaceId(undefined);
+      setUndoStack([]);
+      setRedoStack([]);
+      setPendingNewWidgetGroupId(null);
+    }, [resetCanvasDataSourceLookup, selectedDashboard?.data_id]);
+
     const commitDashboardPlaybackDocument = useCallback((
       playbackDocument: DashboardPlaybackDocument,
       canvasId: string | number,
@@ -894,37 +926,6 @@ const Dashboard = forwardRef<DashboardRef, DashboardProps>(
       filterValues,
       selectedOrganizationId,
     ]);
-
-    // 监听 selectedDashboard 的变化，重置状态
-    useEffect(() => {
-      resetCanvasDataSourceLookup();
-      collapsedGroupsHydratedKeyRef.current = null;
-      skipCollapsedGroupsPersistRef.current = false;
-      setCollapsedGroupsLayoutReadyId(null);
-      setIsEditMode(false);
-      setAddModalVisible(false);
-      setConfigDrawerVisible(false);
-      setCurrentConfigItem(undefined);
-      setIsNewComponentConfig(false);
-      setGroupNameModalVisible(false);
-      setGroupNameDraft('');
-      setEditingGroupId(null);
-      setIsCreatingGroupName(false);
-      setSaving(false);
-      setDashboardReloadVersion(0);
-      setRefreshCause('initial');
-      setSavedRefreshInterval(0);
-      setFilterSearchVersion(0);
-      setNamespaceSearchVersion(0);
-      setWidgetReloadVersions({});
-      setAppliedFilterDefinitions([]);
-      setAppliedFilterValues({});
-      setNamespaceDraftId(undefined);
-      setAppliedNamespaceId(undefined);
-      setUndoStack([]);
-      setRedoStack([]);
-      setPendingNewWidgetGroupId(null);
-    }, [resetCanvasDataSourceLookup, selectedDashboard?.data_id]);
 
     useEffect(() => {
       const selectedDashboardId = selectedDashboard?.data_id;

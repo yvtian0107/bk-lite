@@ -2,11 +2,19 @@ import { render } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 import type { PlaybackSlide } from '@/app/ops-analysis/components/carousel/playbackCanvas';
 
-const paint = vi.hoisted(() => ({ dashboard: 0, dashboardMounts: 0, screenMounts: 0 }));
+const paint = vi.hoisted(() => ({
+  dashboard: 0,
+  dashboardMounts: 0,
+  screenMounts: 0,
+  explode: false,
+}));
 
 vi.mock('@/app/ops-analysis/(pages)/view/dashBoard', async () => {
   const React = await import('react');
   function DashboardCanvas() {
+    if (paint.explode) {
+      throw new Error('canvas boom');
+    }
     paint.dashboard += 1;
     React.useEffect(() => {
       paint.dashboardMounts += 1;
@@ -124,5 +132,23 @@ describe('PlaybackSlideFrame', () => {
       />,
     );
     expect(paint.screenMounts).toBe(1);
+  });
+
+  it('shows a spinner and reports the error when the canvas throws', () => {
+    paint.explode = true;
+    const onError = vi.fn();
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    const view = render(
+      <PlaybackSlideFrame
+        slide={slide}
+        initialDetail={{ id: 7 }}
+        onError={onError}
+      />,
+    );
+    expect(onError).toHaveBeenCalledTimes(1);
+    expect(view.container.querySelector('.ant-spin')).toBeTruthy();
+    expect(view.container.querySelector('[data-testid="dashboard-canvas"]')).toBeNull();
+    consoleError.mockRestore();
+    paint.explode = false;
   });
 });

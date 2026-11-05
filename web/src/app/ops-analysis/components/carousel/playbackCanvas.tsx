@@ -1,6 +1,7 @@
 'use client';
 
 import React from 'react';
+import { Spin } from 'antd';
 import type { CanvasType } from '@/app/ops-analysis/constants/canvasTypes';
 import type { DirItem } from '@/app/ops-analysis/types';
 import Dashboard from '@/app/ops-analysis/(pages)/view/dashBoard';
@@ -93,7 +94,11 @@ class PlaybackCanvasBoundary extends React.Component<BoundaryProps, BoundaryStat
 
   render() {
     if (this.state.failedKey) {
-      return null;
+      return (
+        <div className="flex h-full items-center justify-center">
+          <Spin />
+        </div>
+      );
     }
     return this.props.children;
   }

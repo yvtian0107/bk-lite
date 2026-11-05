@@ -28,6 +28,27 @@ export const playbackCanvasKey = (
   slide: Pick<PlaybackSlide, 'resourceType' | 'canvasId'>,
 ): string => `${slide.resourceType}:${slide.canvasId}`;
 
+export type PlaybackFrameErrorDecision =
+  | { type: 'release-hold' }
+  | { type: 'mark-unavailable'; key: string };
+
+/**
+ * 保留上一帧时画布出错：撤下保留帧，舞台回到 pending，避免错误边界留白。
+ * 当前帧出错仍标记不可用并跳过。
+ */
+export const reducePlaybackFrameError = (
+  holding: boolean,
+  slideKey: string,
+): PlaybackFrameErrorDecision | null => {
+  if (holding) {
+    return { type: 'release-hold' };
+  }
+  if (!slideKey) {
+    return null;
+  }
+  return { type: 'mark-unavailable', key: slideKey };
+};
+
 const paintFrame = (
   slide: PlaybackSlide,
   detail: unknown,

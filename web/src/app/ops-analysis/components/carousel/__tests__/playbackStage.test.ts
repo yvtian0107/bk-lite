@@ -3,6 +3,7 @@ import type { PlaybackSlide } from '@/app/ops-analysis/components/carousel/playb
 import {
   playbackCanvasKey,
   playbackShellKey,
+  reducePlaybackFrameError,
   resolvePlaybackStage,
   type HeldPlaybackFrame,
 } from '@/app/ops-analysis/components/carousel/playbackStage';
@@ -103,6 +104,15 @@ describe('resolvePlaybackStage', () => {
       cached: { hit: true, detail: { id: 9 } },
       held,
     })).toEqual({ kind: 'unavailable' });
+  });
+
+  it('releases a held frame that errors instead of swallowing it into a blank wall', () => {
+    expect(reducePlaybackFrameError(true, 'dashboard-1')).toEqual({ type: 'release-hold' });
+    expect(reducePlaybackFrameError(false, 'dashboard-2')).toEqual({
+      type: 'mark-unavailable',
+      key: 'dashboard-2',
+    });
+    expect(reducePlaybackFrameError(false, '')).toBeNull();
   });
 
   it('prefers the confirmed detail once the slide is ready', () => {

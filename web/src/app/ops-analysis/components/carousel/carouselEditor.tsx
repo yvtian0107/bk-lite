@@ -58,7 +58,11 @@ import type { CarouselItem } from '@/app/ops-analysis/types/carousel';
 import type { DirItem } from '@/app/ops-analysis/types';
 import { PlaybackSlideFrame, type PlaybackSlide } from './playbackCanvas';
 import CarouselFullscreenChrome from './carouselFullscreenChrome';
-import { resolvePlaybackStage, type HeldPlaybackFrame } from './playbackStage';
+import {
+  reducePlaybackFrameError,
+  resolvePlaybackStage,
+  type HeldPlaybackFrame,
+} from './playbackStage';
 import { useCarouselPlaybackSession } from './useCarouselPlaybackSession';
 import { readCachedCanvasDetail } from '@/app/ops-analysis/utils/canvasDetailCache';
 import {
@@ -373,12 +377,20 @@ const CarouselEditor = forwardRef<CarouselEditorRef, CarouselEditorProps>(({
   const player = session.player;
   const playbackSlideKeyRef = useRef('');
   const heldPlaybackRef = useRef<HeldPlaybackFrame | null>(null);
-  const ignorePlaybackError = useCallback(() => undefined, []);
-  const onPlaybackError = useCallback(() => {
-    const key = playbackSlideKeyRef.current;
-    if (key) {
-      session.dispatch({ type: 'markUnavailable', key });
+  const [heldPlaybackRevision, setHeldPlaybackRevision] = useState(0);
+  const stageHoldingRef = useRef(false);
+  const onPlaybackFrameError = useCallback(() => {
+    const decision = reducePlaybackFrameError(
+      stageHoldingRef.current,
+      playbackSlideKeyRef.current,
+    );
+    if (!decision) return;
+    if (decision.type === 'release-hold') {
+      heldPlaybackRef.current = null;
+      setHeldPlaybackRevision((revision) => revision + 1);
+      return;
     }
+    session.dispatch({ type: 'markUnavailable', key: decision.key });
   }, [session.dispatch]);
   const keysToken = items.map((item) => item.key).join('\u0000');
 
@@ -745,13 +757,15 @@ const CarouselEditor = forwardRef<CarouselEditorRef, CarouselEditorProps>(({
   const cachedPreview = preview?.available
     ? readCachedCanvasDetail(preview.resourceType, preview.canvasId)
     : { hit: false as const };
+  // revision 本身不参与选帧，只保证撤下保留帧后重绘；帧数据仍留在 ref。
   const stage = resolvePlaybackStage({
     slide: preview,
     ready: session.ready,
     confirmedDetail: session.initialDetail,
     cached: cachedPreview,
-    held: heldPlaybackRef.current,
+    held: heldPlaybackRevision < 0 ? null : heldPlaybackRef.current,
   });
+  stageHoldingRef.current = stage.kind === 'frame' && stage.holding;
   if (stage.kind === 'frame' && !stage.holding) {
     heldPlaybackRef.current = { slide: stage.slide, detail: stage.detail };
   }
@@ -936,7 +950,7 @@ const CarouselEditor = forwardRef<CarouselEditorRef, CarouselEditorProps>(({
                 slide={stage.slide}
                 initialDetail={stage.detail}
                 presentFullscreen={stageFullscreen && stage.slide.resourceType === 'screen'}
-                onError={stage.holding ? ignorePlaybackError : onPlaybackError}
+                onError={onPlaybackFrameError}
               />
             </div>
           )}
