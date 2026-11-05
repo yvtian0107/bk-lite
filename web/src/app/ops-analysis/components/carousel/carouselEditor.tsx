@@ -92,7 +92,6 @@ import useBtnPermissions from '@/hooks/usePermissions';
 import { fullscreenPopupContainer } from '@/utils/fullscreenPopupContainer';
 import {
   CAROUSEL_FULLSCREEN_CONTROLS_IDLE_MS,
-  fullscreenStageCursor,
   planFullscreenChrome,
   type FullscreenChromeEvent,
 } from '@/app/ops-analysis/utils/carouselFullscreenChrome';
@@ -910,7 +909,7 @@ const CarouselEditor = forwardRef<CarouselEditorRef, CarouselEditorProps>(({
           ref={stageRef}
           className={`relative min-h-0 flex-1 overflow-hidden ${
             stageFullscreen && stageResourceType === 'screen' ? 'bg-slate-950' : 'bg-[var(--color-bg)]'
-          } ${fullscreenStageCursor(stageFullscreen, controlsVisible) === 'none' ? 'cursor-none' : ''}`}
+          }`}
         >
           <ConfigProvider getPopupContainer={stageFullscreen ? fullscreenPopupContainer : undefined}>
           {items.length === 0 ? (

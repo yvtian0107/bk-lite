@@ -128,9 +128,7 @@ describe('carousel fullscreen chrome', () => {
     expect(planFullscreenChrome('hotzone-leave', paused)).toEqual({ visible: true, armIdleTimer: false });
     expect(planFullscreenChrome('hide-elapsed', paused)).toEqual({ visible: true, armIdleTimer: false });
     expect(planFullscreenChrome('resumed', hovering)).toEqual({ visible: true, armIdleTimer: false });
-    expect(fullscreenStageCursor(true, false)).toBe('none');
-    expect(fullscreenStageCursor(true, true)).toBe('auto');
-    expect(fullscreenStageCursor(false, false)).toBe('auto');
+    expect(fullscreenStageCursor()).toBe('auto');
   });
 
   it('shows the Esc tip once per browser tab', () => {

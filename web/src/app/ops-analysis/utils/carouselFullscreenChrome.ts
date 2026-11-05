@@ -78,12 +78,8 @@ export const planFullscreenChrome = (
   return { visible: pinned, armIdleTimer: false };
 };
 
-export const fullscreenStageCursor = (
-  stageFullscreen: boolean,
-  controlsVisible: boolean,
-): 'auto' | 'none' => (
-  stageFullscreen && !controlsVisible ? 'none' : 'auto'
-);
+/** 全屏轮播舞台始终显示系统光标。三键簇收起时也不隐藏。 */
+export const fullscreenStageCursor = (): 'auto' => 'auto';
 
 export const readFullscreenExitTipSeen = (
   storage: Pick<Storage, 'getItem'> | null,
