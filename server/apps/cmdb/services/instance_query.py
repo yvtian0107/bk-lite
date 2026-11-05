@@ -1,7 +1,13 @@
-"""运营分析用的 CMDB 实例明细查询。
+"""运营分析用的 CMDB 实例查询。
 
-只做一种分析：明细列表。顺序是先按模型和等值条件收窄，再排序、分页。
+一条查询按 analysis_mode 分支：
+- list：明细。先等值过滤，再按实例排序分页。
+- count：数量。先等值过滤，再取该模型的过滤后总数，结果始终是一行摘要。
+- distribution：属性分布。先等值过滤，再按分组字段计数，然后对分组结果排序分页。
+- aggregate 以及 sum/avg/min/max：明确失败，不查图。
+
 权限映射由 NATS 适配层算好后传入。空映射在这里直接拒绝，避免图查询丢掉组织条件后变成全量。
+未选模型直接失败，不会改去查别的模型。
 """
 
 from __future__ import annotations
@@ -20,10 +26,29 @@ MAX_PAGE_SIZE = 200
 DEFAULT_ORDER_FIELD = "inst_name"
 MAX_KEY_ATTRS = 12
 
+ANALYSIS_LIST = "list"
+ANALYSIS_COUNT = "count"
+ANALYSIS_DISTRIBUTION = "distribution"
+IMPLEMENTED_ANALYSIS_MODES = (ANALYSIS_LIST, ANALYSIS_COUNT, ANALYSIS_DISTRIBUTION)
+_UNIMPLEMENTED_ANALYSIS_MODES = frozenset({"aggregate", "sum", "avg", "min", "max"})
+_COUNT_ORDERS = frozenset({"count", "-count", "model_id", "-model_id"})
+_DISTRIBUTION_ORDERS = frozenset({"count", "-count", "group_value", "-group_value"})
+AGGREGATE_UNSUPPORTED_MESSAGE = "数值聚合暂不支持，目前只支持 list（明细）、count（数量）、distribution（属性分布）"
+UNKNOWN_ANALYSIS_MODE_MESSAGE = "不支持的分析方式，目前支持 list（明细）、count（数量）、distribution（属性分布）"
+
 _IDENTITY_FIELDS = (
     {"key": "inst_uuid", "title": "实例UUID", "value_type": "string", "attr_type": "str"},
     {"key": "inst_name", "title": "实例名", "value_type": "string", "attr_type": "str"},
     {"key": "model_id", "title": "模型", "value_type": "string", "attr_type": "str"},
+)
+_COUNT_FIELDS = (
+    {"key": "model_id", "title": "模型", "value_type": "string", "attr_type": "str"},
+    {"key": "count", "title": "数量", "value_type": "number", "attr_type": "int"},
+)
+_DISTRIBUTION_FIELDS = (
+    {"key": "model_id", "title": "模型", "value_type": "string", "attr_type": "str"},
+    {"key": "group_value", "title": "分组值", "value_type": "string", "attr_type": "str"},
+    {"key": "count", "title": "数量", "value_type": "number", "attr_type": "int"},
 )
 _SKIP_ATTR_IDS = frozenset({"organization", "node_id", "monitor_id"})
 _EQUALITY_ATTR_TYPES = frozenset({"str", "enum", "int", "bool"})
@@ -38,6 +63,21 @@ _VALUE_TYPE_BY_ATTR = {
 
 def identity_fields() -> list[dict[str, str]]:
     return [_public_field(item) for item in _IDENTITY_FIELDS]
+
+
+def count_fields() -> list[dict[str, str]]:
+    return [_public_field(item) for item in _COUNT_FIELDS]
+
+
+def distribution_fields(group_attr: dict[str, Any] | None = None) -> list[dict[str, str]]:
+    fields = [_public_field(item) for item in _DISTRIBUTION_FIELDS]
+    if group_attr is not None:
+        fields[1] = {
+            "key": "group_value",
+            "title": str(group_attr.get("attr_name") or "分组值"),
+            "value_type": _VALUE_TYPE_BY_ATTR.get(group_attr.get("attr_type") or "", "string"),
+        }
+    return fields
 
 
 def empty_payload(fields: list[dict[str, str]] | None = None) -> dict[str, Any]:
@@ -55,18 +95,42 @@ def parse_model_id(raw: Any) -> str:
     return text
 
 
-class CmdbInstanceListService:
-    """把模型、等值过滤、排序和分页收成一次实例列表查询。"""
+def parse_analysis_mode(raw: Any) -> str:
+    if raw in (None, ""):
+        raise ValueError("请选择分析方式")
+    if not isinstance(raw, str):
+        raise ValueError("分析方式不正确")
+    mode = raw.strip()
+    if not mode:
+        raise ValueError("请选择分析方式")
+    if mode in _UNIMPLEMENTED_ANALYSIS_MODES:
+        raise ValueError(AGGREGATE_UNSUPPORTED_MESSAGE)
+    if mode not in IMPLEMENTED_ANALYSIS_MODES:
+        raise ValueError(UNKNOWN_ANALYSIS_MODE_MESSAGE)
+    return mode
 
-    def __init__(self, list_instances: Callable[..., tuple[list, int]]):
+
+class CmdbInstanceQueryService:
+    """按分析方式查询指定模型：明细、数量或属性分布。"""
+
+    def __init__(
+        self,
+        list_instances: Callable[..., tuple[list, int]],
+        group_counts: Callable[..., dict],
+    ):
         self.list_instances = list_instances
+        self.group_counts = group_counts
 
     def run(
         self,
         *,
         model_id: str,
         attrs: list[dict[str, Any]] | None,
+        analysis_mode: Any = None,
         attr_filters: Any = "",
+        group_by: Any = "",
+        agg_field: Any = "",
+        agg_func: Any = "",
         order: Any = "",
         page: Any = None,
         page_size: Any = None,
@@ -76,14 +140,28 @@ class CmdbInstanceListService:
         model_id = parse_model_id(model_id)
         if not permission_map:
             raise ValueError("无权查询实例")
+        mode = parse_analysis_mode(analysis_mode)
+        self._reject_unused_inputs(mode, group_by, agg_field, agg_func)
 
         catalog = _attr_catalog(attrs)
-        fields = select_display_fields(catalog)
         filters = compile_equality_filters(attr_filters, catalog)
-        order_field = compile_order(order, catalog)
         page_number = _parse_positive(page, "page", DEFAULT_PAGE, maximum=None)
         size = _parse_positive(page_size, "page_size", DEFAULT_PAGE_SIZE, maximum=MAX_PAGE_SIZE)
+        if mode == ANALYSIS_LIST:
+            return self._list(model_id, catalog, filters, order, page_number, size, permission_map, creator)
+        if mode == ANALYSIS_COUNT:
+            return self._count(model_id, filters, order, page_number, size, permission_map, creator)
+        return self._distribution(model_id, catalog, filters, group_by, order, page_number, size, permission_map, creator)
 
+    def _reject_unused_inputs(self, mode: str, group_by: Any, agg_field: Any, agg_func: Any) -> None:
+        if mode != ANALYSIS_DISTRIBUTION and _present(group_by):
+            raise ValueError("当前分析方式不使用分组字段")
+        if _present(agg_field) or _present(agg_func):
+            raise ValueError("当前分析方式不使用聚合字段，数值聚合暂不支持")
+
+    def _list(self, model_id, catalog, filters, order, page_number, size, permission_map, creator):
+        fields = select_display_fields(catalog)
+        order_field = compile_order(order, catalog)
         instances, count = self.list_instances(
             model_id=model_id,
             params=filters,
@@ -95,6 +173,44 @@ class CmdbInstanceListService:
         )
         rows = [_project_row(item, fields) for item in (instances or []) if isinstance(item, dict)]
         return {"items": rows, "count": _normalize_count(count, len(rows)), "fields": fields}
+
+    def _count(self, model_id, filters, order, page_number, size, permission_map, creator):
+        summary_order = _compile_summary_order(order, _COUNT_ORDERS, "数量结果")
+        _instances, total = self.list_instances(
+            model_id=model_id,
+            params=filters,
+            page=DEFAULT_PAGE,
+            page_size=1,
+            order=DEFAULT_ORDER_FIELD,
+            permission_map=permission_map,
+            creator=creator or "",
+        )
+        row = {"model_id": model_id, "count": _require_total(total)}
+        rows = _sort_summary_rows([row], summary_order)
+        return _page_rows(rows, page_number, size, count_fields())
+
+    def _distribution(self, model_id, catalog, filters, group_by, order, page_number, size, permission_map, creator):
+        group_attr = _parse_group_by(group_by, catalog)
+        summary_order = _compile_summary_order(order, _DISTRIBUTION_ORDERS, "属性分布结果") or "-count"
+        buckets = self.group_counts(
+            group_by_attr=group_attr["attr_id"],
+            permissions_map=permission_map,
+            params=[{"field": "model_id", "type": "str=", "value": model_id}, *filters],
+            creator=creator or "",
+        )
+        if not isinstance(buckets, dict):
+            raise ValueError("属性分布结果不正确")
+        rows = []
+        for key, value in buckets.items():
+            rows.append(
+                {
+                    "model_id": model_id,
+                    "group_value": "" if key is None else key,
+                    "count": _require_total(value),
+                }
+            )
+        rows = _sort_summary_rows(rows, summary_order)
+        return _page_rows(rows, page_number, size, distribution_fields(group_attr))
 
 
 def select_display_fields(catalog: dict[str, dict[str, Any]]) -> list[dict[str, str]]:
@@ -227,6 +343,39 @@ def _compile_one_filter(attr: dict[str, Any], value: str) -> dict[str, Any]:
     return {"field": field, "type": query_type, "value": parsed}
 
 
+def _parse_group_by(raw: Any, catalog: dict[str, dict[str, Any]]) -> dict[str, Any]:
+    if not isinstance(raw, str) or not raw.strip():
+        raise ValueError("属性分布需要填写分组字段")
+    field = raw.strip()
+    attr = catalog.get(field)
+    if attr is None:
+        raise ValueError(f"字段 {field} 不存在，无法分组")
+    if not _is_sortable(attr):
+        raise ValueError(f"不支持按 {attr.get('attr_name') or field} 分组")
+    return attr
+
+
+def _compile_summary_order(raw: Any, allowed: frozenset[str], label: str) -> str:
+    if raw in (None, ""):
+        return ""
+    if not isinstance(raw, str):
+        raise ValueError(f"{label}的排序必须是字段名，降序加 - 前缀")
+    text = raw.strip()
+    if not text:
+        return ""
+    if text not in allowed:
+        raise ValueError(f"{label}不支持按 {text} 排序")
+    return text
+
+
+def _present(raw: Any) -> bool:
+    if raw is None:
+        return False
+    if isinstance(raw, str):
+        return bool(raw.strip())
+    return True
+
+
 def _parse_positive(value: Any, name: str, default: int, maximum: int | None) -> int:
     if value in (None, ""):
         number = default
@@ -314,3 +463,35 @@ def _normalize_count(count: Any, row_count: int) -> int:
     if number < 0:
         return row_count
     return number
+
+
+def _require_total(count: Any) -> int:
+    try:
+        number = int(count)
+    except (TypeError, ValueError) as exc:
+        raise ValueError("数量结果不正确") from exc
+    if isinstance(count, float) and number != count:
+        raise ValueError("数量结果不正确")
+    if number < 0:
+        raise ValueError("数量结果不正确")
+    return number
+
+
+def _sort_summary_rows(rows: list[dict[str, Any]], order: str) -> list[dict[str, Any]]:
+    if not order:
+        return rows
+    descending = order.startswith("-")
+    field = order[1:] if descending else order
+
+    def sort_key(row: dict[str, Any]):
+        value = row.get(field)
+        if field == "count":
+            return (value, str(row.get("group_value", row.get("model_id", ""))))
+        return (str(value), row.get("count", 0))
+
+    return sorted(rows, key=sort_key, reverse=descending)
+
+
+def _page_rows(rows: list[dict[str, Any]], page: int, size: int, fields: list[dict[str, str]]) -> dict[str, Any]:
+    start = (page - 1) * size
+    return {"items": rows[start : start + size], "count": len(rows), "fields": fields}

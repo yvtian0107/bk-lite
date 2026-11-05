@@ -58,8 +58,8 @@ from apps.cmdb.services.classification import ClassificationManage
 from apps.cmdb.services.config_file_service import ConfigFileService
 from apps.cmdb.services.host_zombie_whitelist import ensure_host_zombie_whitelist_attr
 from apps.cmdb.services.instance import InstanceManage
-from apps.cmdb.services.instance_list_query import (
-    CmdbInstanceListService,
+from apps.cmdb.services.instance_query import (
+    CmdbInstanceQueryService,
     empty_payload,
     parse_model_id,
 )
@@ -2547,16 +2547,20 @@ def get_model_options(user_info=None, **kwargs):
 
 
 @nats_client.register
-def list_model_instances(
+def query_model_instances(
     model_id=None,
+    analysis_mode=None,
     attr_filters=None,
+    group_by=None,
+    agg_field=None,
+    agg_func=None,
     order=None,
     page=None,
     page_size=None,
     user_info=None,
     **kwargs,
 ):
-    """指定模型的实例明细。未选模型失败；无权限或不在可见模型内时不扩大查询对象。"""
+    """按分析方式查询指定模型的实例。未选模型失败；无权限或不在可见模型内时不扩大查询对象。"""
     # organization 只经 GetNatsData 收进 user_info.team，不在这里另开组织范围。
     del kwargs
     try:
@@ -2578,10 +2582,17 @@ def list_model_instances(
         return _instance_list_failure("模型不存在或当前权限不可见")
 
     try:
-        data = CmdbInstanceListService(list_instances=InstanceManage.instance_list).run(
+        data = CmdbInstanceQueryService(
+            list_instances=InstanceManage.instance_list,
+            group_counts=InstanceManage.group_inst_count,
+        ).run(
             model_id=selected_model_id,
             attrs=ModelManage.search_model_attr(selected_model_id, language=language),
+            analysis_mode=analysis_mode,
             attr_filters=attr_filters,
+            group_by=group_by,
+            agg_field=agg_field,
+            agg_func=agg_func,
             order=order,
             page=page,
             page_size=page_size,
@@ -2592,13 +2603,13 @@ def list_model_instances(
         return _instance_list_failure(str(exc))
     except Exception as exc:
         logger.error(
-            "event=cmdb_instance_list_query_failed model_id=%s failed_stage=%s error_type=%s",
+            "event=cmdb_instance_query_failed model_id=%s failed_stage=%s error_type=%s",
             selected_model_id,
             "query",
             type(exc).__name__,
             exc_info=safe_exception_info(exc),
         )
-        return _instance_list_failure("实例明细查询失败")
+        return _instance_list_failure("实例查询失败")
     return {"result": True, "data": data, "message": ""}
 
 

@@ -1826,13 +1826,34 @@
     ]
 },
 {
-    "key": "CMDB 实例明细::cmdb/list_model_instances",
-    "name": "CMDB 实例明细",
-    "desc": "按所选模型返回当前权限范围内的实例明细。必须选择模型；属性过滤只支持等值（字段=值，多个用分号分隔），比较、模糊和不认识的字段会失败而不是被忽略。先过滤再排序分页。",
-    "rest_api": "cmdb/list_model_instances",
+    "key": "CMDB 实例查询::cmdb/query_model_instances",
+    "name": "CMDB 实例查询",
+    "desc": "按所选模型和分析方式查询当前权限范围内的实例。必须选择模型。分析方式 list 返回明细（身份列和模型关键展示字段，空结果仍保留列）；count 返回一行，count 列是过滤后的实例总数，不是当前页条数；distribution 先过滤再按分组字段计数，然后对分组结果排序分页，列是 model_id、group_value、count。aggregate 以及 sum/avg/min/max 会失败并提示暂不支持，不会当成明细返回。属性过滤只支持等值（字段=值，多个用分号分隔）。排序留空时，明细默认 inst_name，分布默认 -count；数量和分布不接受明细字段排序。分组字段只在属性分布时填写。聚合字段当前版本填写后会失败。",
+    "rest_api": "cmdb/query_model_instances",
     "tag": ["cmdb"],
     "chart_type": ["table"],
     "params": [
+        {
+            "name": "analysis_mode",
+            "type": "string",
+            "value": "list",
+            "alias_name": "分析方式",
+            "filterType": "params",
+            "required": true,
+            "inputConfig": {
+                "control": "select",
+                "componentSwitch": true,
+                "optionsSource": {
+                    "type": "static",
+                    "staticItems": [
+                        {"label": "明细", "value": "list"},
+                        {"label": "数量", "value": "count"},
+                        {"label": "属性分布", "value": "distribution"},
+                        {"label": "数值聚合", "value": "aggregate"}
+                    ]
+                }
+            }
+        },
         {
             "name": "model_id",
             "type": "string",
@@ -1860,12 +1881,36 @@
             "desc": "只支持等值，形如 ip_addr=10.0.0.1；多个条件用分号分隔。比较、模糊、不存在的字段会失败。"
         },
         {
+            "name": "group_by",
+            "type": "string",
+            "value": "",
+            "alias_name": "分组字段",
+            "filterType": "params",
+            "desc": "属性分布必填，填模型属性标识，如 os_type。明细和数量下填写会失败。"
+        },
+        {
+            "name": "agg_field",
+            "type": "string",
+            "value": "",
+            "alias_name": "聚合字段",
+            "filterType": "params",
+            "desc": "数值聚合暂不支持。填写后当前版本会失败，不会被忽略。"
+        },
+        {
+            "name": "agg_func",
+            "type": "string",
+            "value": "",
+            "alias_name": "聚合函数",
+            "filterType": "params",
+            "desc": "预留 sum、avg、min、max。数值聚合暂不支持，填写后当前版本会失败。"
+        },
+        {
             "name": "order",
             "type": "string",
-            "value": "inst_name",
+            "value": "",
             "alias_name": "排序",
             "filterType": "params",
-            "desc": "字段名升序，-字段名降序。不支持的字段会失败。默认按实例名。"
+            "desc": "留空时明细按 inst_name，属性分布按 -count。数量可按 count 或 model_id。不支持的字段会失败。"
         },
         {"name": "page", "type": "number", "value": 1, "alias_name": "页码", "filterType": "params"},
         {"name": "page_size", "type": "number", "value": 20, "alias_name": "每页数量", "filterType": "params"},
@@ -1881,9 +1926,11 @@
         }
     ],
     "field_schema": [
-        {"key": "inst_uuid", "title": "实例UUID", "value_type": "string", "description": "实例身份"},
-        {"key": "inst_name", "title": "实例名", "value_type": "string", "description": "实例名称"},
-        {"key": "model_id", "title": "模型", "value_type": "string", "description": "模型标识"}
+        {"key": "inst_uuid", "title": "实例UUID", "value_type": "string", "description": "明细模式的实例身份。数量和属性分布不返回此列。"},
+        {"key": "inst_name", "title": "实例名", "value_type": "string", "description": "明细模式的实例名称。数量和属性分布不返回此列。"},
+        {"key": "model_id", "title": "模型", "value_type": "string", "description": "查询限定的模型标识。三种已实现方式都会返回。"},
+        {"key": "group_value", "title": "分组值", "value_type": "string", "description": "仅属性分布。分组字段的取值。"},
+        {"key": "count", "title": "数量", "value_type": "number", "description": "数量模式是过滤后的实例总数；属性分布是该分组的实例数。明细不返回此列。"}
     ]
 }
 ]
