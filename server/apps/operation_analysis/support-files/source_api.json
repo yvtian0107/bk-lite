@@ -1811,5 +1811,79 @@
         {"key": "alert_count", "title": "告警数", "value_type": "number", "description": "与 value 相同，供表格列使用"},
         {"key": "share", "title": "占比", "value_type": "string", "description": "该实例告警数占全部源实例告警数的百分比，形如 21.1%"}
     ]
+},
+{
+    "key": "CMDB 模型列表::cmdb/get_model_options",
+    "name": "CMDB 模型列表（选项）",
+    "desc": "当前用户有权查看的模型，供参数下拉使用，本身不直接出图",
+    "rest_api": "cmdb/get_model_options",
+    "tag": ["cmdb"],
+    "chart_type": [],
+    "params": [],
+    "field_schema": [
+        {"key": "model_id", "title": "模型 ID", "value_type": "string", "description": "模型标识"},
+        {"key": "model_name", "title": "模型名称", "value_type": "string", "description": "当前语言下的模型名称"}
+    ]
+},
+{
+    "key": "CMDB 实例明细::cmdb/list_model_instances",
+    "name": "CMDB 实例明细",
+    "desc": "按所选模型返回当前权限范围内的实例明细。必须选择模型；属性过滤只支持等值（字段=值，多个用分号分隔），比较、模糊和不认识的字段会失败而不是被忽略。先过滤再排序分页。",
+    "rest_api": "cmdb/list_model_instances",
+    "tag": ["cmdb"],
+    "chart_type": ["table"],
+    "params": [
+        {
+            "name": "model_id",
+            "type": "string",
+            "value": "",
+            "alias_name": "模型",
+            "filterType": "params",
+            "required": true,
+            "inputConfig": {
+                "control": "select",
+                "componentSwitch": true,
+                "optionsSource": {
+                    "type": "dynamic",
+                    "sourceRef": {"type": "rest_api", "value": "cmdb/get_model_options"},
+                    "valueField": "model_id",
+                    "labelField": "model_name"
+                }
+            }
+        },
+        {
+            "name": "attr_filters",
+            "type": "string",
+            "value": "",
+            "alias_name": "属性过滤",
+            "filterType": "filter",
+            "desc": "只支持等值，形如 ip_addr=10.0.0.1；多个条件用分号分隔。比较、模糊、不存在的字段会失败。"
+        },
+        {
+            "name": "order",
+            "type": "string",
+            "value": "inst_name",
+            "alias_name": "排序",
+            "filterType": "params",
+            "desc": "字段名升序，-字段名降序。不支持的字段会失败。默认按实例名。"
+        },
+        {"name": "page", "type": "number", "value": 1, "alias_name": "页码", "filterType": "params"},
+        {"name": "page_size", "type": "number", "value": 20, "alias_name": "每页数量", "filterType": "params"},
+        {
+            "name": "organization",
+            "type": "string",
+            "value": "",
+            "alias_name": "组织",
+            "filterType": "filter",
+            "inputConfig": {
+                "control": "organization"
+            }
+        }
+    ],
+    "field_schema": [
+        {"key": "inst_uuid", "title": "实例UUID", "value_type": "string", "description": "实例身份"},
+        {"key": "inst_name", "title": "实例名", "value_type": "string", "description": "实例名称"},
+        {"key": "model_id", "title": "模型", "value_type": "string", "description": "模型标识"}
+    ]
 }
 ]
