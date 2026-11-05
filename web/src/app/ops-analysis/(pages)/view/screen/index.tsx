@@ -1561,7 +1561,7 @@ const Screen = forwardRef<ScreenRef, ScreenProps>(({
               })}
             />
           )}
-          filterBar={playbackMode ? null : filterBarElement}
+          filterBar={filterBarElement}
         >
           {editorOpen ? (
             <div className="relative flex h-full min-h-0 overflow-hidden" data-screen-editor>

@@ -2142,7 +2142,7 @@ const Dashboard = forwardRef<DashboardRef, DashboardProps>(
       isWidgetUnauthorized: viewAuthSnapshot.isWidgetUnauthorized,
     });
 
-    const dashboardFilterBar = !playbackMode && !moduleLicenseCanvasEmpty && !homepageMode && (definitions.length > 0 ||
+    const dashboardFilterBar = !moduleLicenseCanvasEmpty && !homepageMode && (definitions.length > 0 ||
       namespaceSelectorElement) && (
       <UnifiedFilterBar
         definitions={definitions}
@@ -2268,7 +2268,7 @@ const Dashboard = forwardRef<DashboardRef, DashboardProps>(
             titleFallback={t('dashboard.canvasTitle')}
             emptyDescription={t('dashboard.selectDashboardFirst')}
             headerVisible={!isFullscreen && !playbackMode}
-            filterBarVisible
+            filterBarVisible={!playbackMode}
             compactHeader={homepageMode}
             shellClassName={homepageMode && !isDarkTheme ? 'bg-transparent' : undefined}
             toolbar={dashboardToolbar}

@@ -671,7 +671,8 @@ const Topology = forwardRef<TopologyRef, TopologyProps>(
           titleFallback={t('topology.canvasTitle')}
           emptyDescription={t('topology.emptySelect')}
           toolbar={isFullscreen || playbackMode ? undefined : topologyToolbar}
-          filterBar={playbackMode ? null : topologyFilterBar}
+          filterBar={topologyFilterBar}
+          filterBarVisible={!playbackMode}
           headerVisible={!isFullscreen && !playbackMode}
         >
           {topologyCanvasContent}
