@@ -2,6 +2,7 @@ import type { Meta, StoryObj } from '@storybook/nextjs';
 import { expect, waitFor } from 'storybook/test';
 import React from 'react';
 import ComTable from './comTable';
+import EventTable from './eventTable/eventTable';
 
 const rows = Array.from({ length: 16 }, (_, index) => ({
   inst_uuid: `4c4b7918-0798-4c0e-9b2a-${String(index).padStart(4, '0')}`,
@@ -30,18 +31,21 @@ const dataSource = {
   })),
 } as any;
 
+// 画布卡片和配置预览列的类名夹具，不是登录后的 Ant Design Drawer。
 const SavedCard = ({
   width,
   height,
   columns,
   count,
   label,
+  scale = 1,
 }: {
   width: number;
   height: number;
   columns: typeof wideColumns;
   count: number;
   label: string;
+  scale?: number;
 }) => (
   <div
     data-card={label}
@@ -69,9 +73,80 @@ const SavedCard = ({
           }}
           loading={false}
           dataSource={dataSource}
+          screenRenderContext={scale === 1 ? undefined : {
+            enabled: true,
+            fitScale: 1,
+            screenDensity: scale,
+            screenUiScale: scale,
+            widgetDensity: scale,
+            widgetUiScale: scale,
+            layoutMode: 'viewportPixels',
+          }}
           config={{
             chartType: 'table',
+            chartThemeMode: scale === 1 ? 'default' : 'screen-dark',
             tableConfig: { columns },
+          }}
+        />
+      </div>
+    </div>
+  </div>
+);
+
+const eventRows = Array.from({ length: 8 }, (_, index) => ({
+  id: `evt-${index + 1}`,
+  summary: `告警-${index + 1}`,
+}));
+
+const EventSavedCard = ({
+  width,
+  height,
+  label,
+  scale = 1,
+}: {
+  width: number;
+  height: number;
+  label: string;
+  scale?: number;
+}) => (
+  <div
+    data-card={label}
+    className="widget group relative flex h-full flex-col overflow-hidden rounded-lg p-3"
+    style={{
+      width,
+      height,
+      background: 'var(--color-bg-1, #fff)',
+      border: '1px solid var(--color-border-1, #e5e6eb)',
+    }}
+  >
+    <div className="widget-header flex min-w-0 items-start gap-2">
+      <div className="min-w-0 flex-1">
+        <h4 className="truncate text-[14px] font-medium leading-5 text-(--color-text-2)">
+          事件表
+        </h4>
+      </div>
+    </div>
+    <div className="widget-body h-full min-h-0 flex-1" style={{ overflow: 'hidden' }}>
+      <div style={{ position: 'relative', height: '100%' }}>
+        <EventTable
+          rawData={{ items: eventRows, count: 16 }}
+          loading={false}
+          dataSource={dataSource}
+          screenRenderContext={scale === 1 ? undefined : {
+            enabled: true,
+            fitScale: 1,
+            screenDensity: scale,
+            screenUiScale: scale,
+            widgetDensity: scale,
+            widgetUiScale: scale,
+            layoutMode: 'viewportPixels',
+          }}
+          config={{
+            chartType: 'eventTable',
+            chartThemeMode: scale === 1 ? 'default' : 'screen-dark',
+            tableConfig: {
+              columns: [{ key: 'summary', title: '摘要', visible: true, order: 0, width: 420 }],
+            },
           }}
         />
       </div>
@@ -190,6 +265,40 @@ const Gallery = () => {
         count={16}
       />
       <SavedCard
+        label="saved-280"
+        width={770}
+        height={280}
+        columns={wideColumns}
+        count={16}
+      />
+      <SavedCard
+        label="scale-half"
+        width={770}
+        height={519}
+        columns={wideColumns}
+        count={16}
+        scale={0.5}
+      />
+      <SavedCard
+        label="scale-double"
+        width={770}
+        height={519}
+        columns={wideColumns}
+        count={16}
+        scale={2}
+      />
+      <SavedCard
+        label="scale-double-280"
+        width={770}
+        height={280}
+        columns={wideColumns}
+        count={16}
+        scale={2}
+      />
+      <EventSavedCard label="event-280" width={770} height={280} />
+      <EventSavedCard label="event-scale-half" width={770} height={519} scale={0.5} />
+      <EventSavedCard label="event-scale-double" width={770} height={519} scale={2} />
+      <SavedCard
         label="saved-empty"
         width={770}
         height={519}
@@ -239,6 +348,12 @@ export const GalleryStory: Story = {
       expect(narrow?.horizontalOverflow ?? 99).toBeLessThan(20);
       expect(short?.paginationClip).not.toBeNull();
       expect(empty?.paginationClip).toBeNull();
+      for (const label of ['saved-280', 'scale-half', 'scale-double', 'scale-double-280', 'event-280', 'event-scale-half', 'event-scale-double']) {
+        const row = rows.find((item) => item.label === label);
+        expect(row?.paginationClip).toBe(0);
+        expect(row?.pageItemClip).toBe(0);
+        expect(row?.sizeChangerClip).toBe(0);
+      }
     });
   },
 };

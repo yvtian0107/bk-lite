@@ -243,10 +243,11 @@ describe('ViewConfig table preview refresh', () => {
 
     await user.click(await screen.findByTestId('widget-config-preview-button'));
 
+    // 真实 Drawer 会懒加载 WidgetDataRenderer，冷启动可能超过 waitFor 默认 1 秒。
     await waitFor(() => {
       expect(calls.getSourceDataByApiId).toHaveBeenCalled();
       expect(requestedModel(calls.getSourceDataByApiId.mock.calls[0])).toBe('host');
-    });
+    }, { timeout: 8000 });
 
     await user.click(screen.getByText('dashboard.configPreviewRawJson'));
     await waitFor(() => {
@@ -273,5 +274,5 @@ describe('ViewConfig table preview refresh', () => {
     });
     expect(screen.queryByTestId('widget-config-preview-stale')).toBeNull();
     expect(screen.getByTestId('widget-config-preview-refresh').hasAttribute('disabled')).toBe(false);
-  });
+  }, 20000);
 });

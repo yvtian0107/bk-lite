@@ -96,4 +96,114 @@ describe('table card pagination frame', () => {
     expect(measured?.className).toContain('overflow-hidden');
     expect(measured).not.toBe(frame);
   });
+
+  it.each([
+    { parentHeight: 226, scale: 1 },
+    { parentHeight: 400, scale: 0.5 },
+    { parentHeight: 400, scale: 2 },
+  ])(
+    'locks the table to the parent height $parentHeight at scale $scale',
+    ({ parentHeight, scale }) => {
+      const prototype = HTMLElement.prototype;
+      const previousHeight = Object.getOwnPropertyDescriptor(prototype, 'clientHeight');
+      const previousWidth = Object.getOwnPropertyDescriptor(prototype, 'clientWidth');
+      Object.defineProperty(prototype, 'clientHeight', {
+        configurable: true,
+        get() {
+          return parentHeight;
+        },
+      });
+      Object.defineProperty(prototype, 'clientWidth', {
+        configurable: true,
+        get() {
+          return 770;
+        },
+      });
+
+      try {
+        const view = render(
+          <div style={{ width: 770, height: parentHeight + 40 }}>
+            <ComTable
+              rawData={{ items: [{ name: 'bare-01' }], count: 16 }}
+              loading={false}
+              dataSource={dataSource}
+              screenRenderContext={{
+                enabled: scale !== 1,
+                fitScale: 1,
+                screenDensity: scale,
+                screenUiScale: scale,
+                widgetDensity: scale,
+                widgetUiScale: scale,
+                layoutMode: 'viewportPixels',
+              }}
+              config={{
+                chartType: 'table',
+                chartThemeMode: scale === 1 ? 'default' : 'screen-dark',
+                tableConfig: {
+                  columns: [{ key: 'name', title: '名称', visible: true, order: 0 }],
+                },
+              }}
+            />
+          </div>,
+        );
+
+        const locked = view.container.querySelector<HTMLElement>('[class*="customTable"]');
+        expect(locked).not.toBeNull();
+        expect(locked?.style.height).toBe(`${parentHeight}px`);
+        const bodyScroll = locked?.querySelector<HTMLElement>('.ant-table-body');
+        expect(bodyScroll?.style.maxHeight || bodyScroll?.style.height).toBe(`${parentHeight - 47 - 56}px`);
+      } finally {
+        if (previousHeight) Object.defineProperty(prototype, 'clientHeight', previousHeight);
+        else delete (prototype as { clientHeight?: number }).clientHeight;
+        if (previousWidth) Object.defineProperty(prototype, 'clientWidth', previousWidth);
+        else delete (prototype as { clientWidth?: number }).clientWidth;
+      }
+    },
+  );
+
+  it('locks the event table to the same parent height without the 160 floor', () => {
+    const parentHeight = 226;
+    const prototype = HTMLElement.prototype;
+    const previousHeight = Object.getOwnPropertyDescriptor(prototype, 'clientHeight');
+    const previousWidth = Object.getOwnPropertyDescriptor(prototype, 'clientWidth');
+    Object.defineProperty(prototype, 'clientHeight', {
+      configurable: true,
+      get() {
+        return parentHeight;
+      },
+    });
+    Object.defineProperty(prototype, 'clientWidth', {
+      configurable: true,
+      get() {
+        return 770;
+      },
+    });
+
+    try {
+      const view = render(
+        <div style={{ width: 770, height: parentHeight + 40 }}>
+          <EventTable
+            rawData={{ items: [{ id: '1', summary: '告警' }], count: 16 }}
+            loading={false}
+            dataSource={dataSource}
+            config={{
+              chartType: 'eventTable',
+              tableConfig: {
+                columns: [{ key: 'summary', title: '摘要', visible: true, order: 0 }],
+              },
+            }}
+          />
+        </div>,
+      );
+      const locked = view.container.querySelector<HTMLElement>('[class*="customTable"]');
+      expect(locked?.style.height).toBe(`${parentHeight}px`);
+      const bodyScroll = locked?.querySelector<HTMLElement>('.ant-table-body');
+      expect(bodyScroll?.style.maxHeight || bodyScroll?.style.height).toBe(`${parentHeight - 47 - 56}px`);
+    } finally {
+      if (previousHeight) Object.defineProperty(prototype, 'clientHeight', previousHeight);
+      else delete (prototype as { clientHeight?: number }).clientHeight;
+      if (previousWidth) Object.defineProperty(prototype, 'clientWidth', previousWidth);
+      else delete (prototype as { clientWidth?: number }).clientWidth;
+    }
+  });
 });

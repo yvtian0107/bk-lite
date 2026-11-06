@@ -2,7 +2,6 @@ import React, {
   useCallback,
   useEffect,
   useMemo,
-  useRef,
   useState,
 } from 'react';
 import { Tooltip } from 'antd';
@@ -22,7 +21,6 @@ import {
 } from '@/app/ops-analysis/components/ops-analysis-widgets/table-like-data';
 import { useTranslation } from '@/utils/i18n';
 import { supportsServerPagination } from '@/app/ops-analysis/utils/tablePagination';
-import { useTableBodyScrollY } from '@/app/ops-analysis/components/widgets/shared/useTableBodyScrollY';
 import { useInteractionSurface } from '@/app/ops-analysis/context/interactionSurface';
 import { InteractionActionCell, useWidgetDataLink } from '@/app/ops-analysis/components/interactionTitleIcon';
 import {
@@ -62,7 +60,6 @@ const OpsAnalysisEventTable: React.FC<OpsAnalysisEventTableProps> = ({
   const { openPoint } = useWidgetDataLink(config);
   const dataLink = readWidgetInteraction(config);
   const dataLinkName = dataLink?.kind === 'data' ? dataLink.name : '';
-  const containerRef = useRef<HTMLDivElement | null>(null);
   const [expandedRowKeys, setExpandedRowKeys] = useState<React.Key[]>([]);
   const [queryPagination, setQueryPagination] =
     useState<TableLikePaginationState>({
@@ -83,11 +80,6 @@ const OpsAnalysisEventTable: React.FC<OpsAnalysisEventTableProps> = ({
     ),
     [rawData, queryPagination, supportsPaginationParams],
   );
-  const tableScrollY = useTableBodyScrollY({
-    containerRef,
-    hasPagination: isPaginated,
-  });
-
   const configuredColumns = useMemo<TableColumnConfigItem[]>(() => {
     return (config?.tableConfig?.columns || [])
       .filter((col) => col.visible)
@@ -193,7 +185,7 @@ const OpsAnalysisEventTable: React.FC<OpsAnalysisEventTableProps> = ({
     <div
       className="ops-analysis-event-table flex h-full min-h-0 flex-col pt-2"
     >
-      <div ref={containerRef} className="min-h-0 flex-1 overflow-hidden">
+      <div className="min-h-0 flex-1 overflow-hidden">
         <CustomTable
           columns={columns}
           dataSource={rows}
@@ -218,11 +210,7 @@ const OpsAnalysisEventTable: React.FC<OpsAnalysisEventTableProps> = ({
               : false
           }
           onChange={isPaginated ? handleTableChange : undefined}
-          scroll={
-            tableScrollY
-              ? { x: 'max-content', y: tableScrollY }
-              : { x: 'max-content' }
-          }
+          scroll={{ x: 'max-content' }}
           expandable={{
             expandedRowKeys,
             onExpandedRowsChange: (keys) => {

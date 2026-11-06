@@ -262,4 +262,81 @@ describe('table preview loading releases onRawData', () => {
     expect(screen.getByTestId('chart-renderer').getAttribute('data-chart-type')).toBe('line');
     expect(screen.getByTestId('chart-renderer').getAttribute('data-loading')).toBe('false');
   });
+
+  it('keeps a settled table visible during a silent refresh', async () => {
+    let resolveSilent: (value: { currentData: unknown; baselineData: null }) => void = () => undefined;
+    const refreshed = { items: [{ inst_name: 'refreshed' }], count: 1, fields: [] };
+    testState.fetchCompareData
+      .mockResolvedValueOnce({ currentData: itemsEnvelope, baselineData: null })
+      .mockImplementationOnce(() => new Promise((resolve) => {
+        resolveSilent = resolve;
+      }));
+    const onRawData = vi.fn();
+    const view = renderChart({ chartType: 'table', onRawData });
+
+    await waitFor(() => {
+      expect(onRawData).toHaveBeenCalledWith(itemsEnvelope, expect.anything());
+    });
+    onRawData.mockClear();
+    view.rerender(
+      <WidgetWrapper
+        dashboardId="ops"
+        widgetId="config-preview:cmdb"
+        chartType="table"
+        config={{ dataSource: datasource.id, chartType: 'table' }}
+        dataSource={datasource}
+        reloadVersion="2"
+        refreshCause="periodic"
+        sampleTicket={{ widgetId: 'config-preview:cmdb', sequence: 1 }}
+        onRawData={onRawData}
+        runtimeActive
+      />,
+    );
+
+    await waitFor(() => {
+      expect(testState.fetchCompareData).toHaveBeenCalledTimes(2);
+    });
+    expect(screen.getByTestId('chart-renderer').getAttribute('data-loading')).toBe('false');
+    resolveSilent({ currentData: refreshed, baselineData: null });
+    await waitFor(() => {
+      expect(onRawData).toHaveBeenCalledWith(
+        refreshed,
+        { widgetId: 'config-preview:cmdb', sequence: 1 },
+      );
+    });
+  });
+
+  it('keeps the last table payload when a silent refresh fails', async () => {
+    testState.fetchCompareData
+      .mockResolvedValueOnce({ currentData: itemsEnvelope, baselineData: null })
+      .mockRejectedValueOnce(new Error('静默失败'));
+    const onRawData = vi.fn();
+    const view = renderChart({ chartType: 'table', onRawData });
+
+    await waitFor(() => {
+      expect(onRawData).toHaveBeenCalledWith(itemsEnvelope, expect.anything());
+    });
+    onRawData.mockClear();
+    view.rerender(
+      <WidgetWrapper
+        dashboardId="ops"
+        widgetId="config-preview:cmdb"
+        chartType="table"
+        config={{ dataSource: datasource.id, chartType: 'table' }}
+        dataSource={datasource}
+        reloadVersion="2"
+        refreshCause="visibility"
+        sampleTicket={{ widgetId: 'config-preview:cmdb', sequence: 1 }}
+        onRawData={onRawData}
+        runtimeActive
+      />,
+    );
+
+    await waitFor(() => {
+      expect(testState.fetchCompareData).toHaveBeenCalledTimes(2);
+    });
+    expect(screen.queryByText('静默失败')).toBeNull();
+    expect(onRawData.mock.calls.some(([data]) => data === null)).toBe(false);
+    expect(screen.getByTestId('chart-renderer')).toBeTruthy();
+  });
 });
