@@ -232,6 +232,9 @@ export const SingleValueSettingsSection: React.FC<
         ]}
       >
         {displayFieldSelect}
+        {singleValueTreeData.some((node) => String(node.key) === 'items' && node.children?.some((child) => String(child.key).endsWith('scope_count'))) ? (
+          <p className="mt-1 text-xs text-[var(--color-text-3)]">{t('dashboard.instanceCountRecommend')}</p>
+        ) : null}
       </Form.Item>
 
         {showDescriptionField ? (

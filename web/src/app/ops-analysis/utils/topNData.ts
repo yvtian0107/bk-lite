@@ -222,7 +222,12 @@ export const validateTopNPayload = (
     return buildTopNItems(data, options?.labelField, options?.valueField, { scalarFields }).length > 0;
   }
 
-  if (!Array.isArray(data)) {
+  // 标量拆行仍不接受 items 包装。没有标量字段时，分页信封和数组一样按行校验。
+  if (scalarFields.length > 0) {
+    return Array.isArray(data)
+      && buildTopNItems(data, options?.labelField, options?.valueField).length > 0;
+  }
+  if (!Array.isArray(data) && unwrapTopNData(data).length === 0) {
     return false;
   }
 

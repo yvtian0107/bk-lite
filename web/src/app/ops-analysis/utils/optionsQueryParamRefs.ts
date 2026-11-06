@@ -12,6 +12,7 @@ const WHOLE_TOKEN = /^\$([A-Za-z_][\w-]*)(?::(string|number|boolean|date|timeRan
 
 export interface OptionsQueryParamRef {
   ref: string;
+  whenEmpty?: 'omit';
 }
 
 export type OptionsQueryValidationIssue =
@@ -90,7 +91,15 @@ export const resolveBareFilterRef = <T extends { id: string; key: string; enable
 const dynamicOptionsOf = (
   inputConfig: InputControlConfig | undefined,
 ): DynamicOptionsSource | undefined => {
-  if (!inputConfig || (inputConfig.control !== 'select' && inputConfig.control !== 'radio')) {
+  if (
+    !inputConfig
+    || (
+      inputConfig.control !== 'select'
+      && inputConfig.control !== 'radio'
+      && inputConfig.control !== 'condition'
+      && inputConfig.control !== 'fieldGroup'
+    )
+  ) {
     return undefined;
   }
   return inputConfig.optionsSource.type === 'dynamic' ? inputConfig.optionsSource : undefined;
@@ -123,7 +132,7 @@ const rewriteQueryParamRecord = (
     if (!isOptionsQueryParamRef(raw)) return;
     const redirected = redirectRetiredSummaryRef(raw.ref, liveIds);
     if (redirected === raw.ref) return;
-    next[name] = { ref: redirected };
+    next[name] = raw.whenEmpty === 'omit' ? { ref: redirected, whenEmpty: 'omit' } : { ref: redirected };
     changed = true;
   });
   return changed ? next : queryParams;
@@ -188,7 +197,7 @@ export const rewriteBareQueryRefsToDefinitionIds = <T extends {
       if (!isOptionsQueryParamRef(raw)) return;
       const resolved = resolveBareFilterRef(raw.ref, definition.id, definitions, origins);
       if (resolved === raw.ref) return;
-      queryParams[name] = { ref: resolved };
+      queryParams[name] = raw.whenEmpty === 'omit' ? { ref: resolved, whenEmpty: 'omit' } : { ref: resolved };
       queryChanged = true;
     });
     if (!queryChanged) return definition;
@@ -221,7 +230,9 @@ export const stableStringify = (value: unknown): string => {
 export const isOptionsQueryParamRef = (value: unknown): value is OptionsQueryParamRef => {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
   const record = value as Record<string, unknown>;
-  return typeof record.ref === 'string' && record.ref.trim().length > 0 && Object.keys(record).length === 1;
+  if (typeof record.ref !== 'string' || record.ref.trim().length === 0) return false;
+  if (record.whenEmpty !== undefined && record.whenEmpty !== 'omit') return false;
+  return Object.keys(record).every((key) => key === 'ref' || key === 'whenEmpty');
 };
 
 export const parseWholeOptionsQueryToken = (value: string): OptionsQueryParamRef | null => {
@@ -257,7 +268,12 @@ export const normalizeOptionsQueryParamValue = (
   if (typeof value === 'number' || typeof value === 'boolean' || value === null) {
     return { ok: true, value: value as OptionsQueryParamValue };
   }
-  if (isOptionsQueryParamRef(value)) return { ok: true, value: { ref: value.ref } };
+  if (isOptionsQueryParamRef(value)) {
+    return {
+      ok: true,
+      value: value.whenEmpty === 'omit' ? { ref: value.ref, whenEmpty: 'omit' } : { ref: value.ref },
+    };
+  }
   if (typeof value === 'string') {
     if (value.includes('$')) {
       const token = parseWholeOptionsQueryToken(value);
@@ -604,8 +620,10 @@ export const resolveOptionsQueryParams = (
       if (upstream === OPTIONS_QUERY_INVALID) {
         return { blocked: true, blockReason: 'invalid', params: {}, missingRefs: [] };
       }
-      if (isUpstreamValueEmpty(upstream)) missingRefs.push(normalized.value.ref);
-      else params[name] = upstream;
+      if (isUpstreamValueEmpty(upstream)) {
+        if (normalized.value.whenEmpty === 'omit') continue;
+        missingRefs.push(normalized.value.ref);
+      } else params[name] = upstream;
     } else {
       params[name] = normalized.value;
     }
@@ -619,7 +637,15 @@ export const resolveOptionsQueryParams = (
 export const dynamicQueryParamsOf = (
   inputConfig: { control?: string; optionsSource?: { type?: string; queryParams?: Record<string, unknown> } } | undefined,
 ): Record<string, unknown> | undefined => {
-  if (!inputConfig || (inputConfig.control !== 'select' && inputConfig.control !== 'radio')) {
+  if (
+    !inputConfig
+    || (
+      inputConfig.control !== 'select'
+      && inputConfig.control !== 'radio'
+      && inputConfig.control !== 'condition'
+      && inputConfig.control !== 'fieldGroup'
+    )
+  ) {
     return undefined;
   }
   const source = inputConfig.optionsSource;

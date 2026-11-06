@@ -1151,6 +1151,11 @@
     "selectModel": "请选择模型",
     "selectInstance": "请选择实例",
     "dataFormatMismatch": "数据格式不匹配",
+    "pageSliceNotice": "当前只显示本页 {shown} 条，共 {total} 条。百分比和合计按本页计算，不是全体。",
+    "topNSliceNotice": "当前返回 {shown} 条，共 {total} 条；名次根据当前返回数据计算。",
+    "resultRowCount": "结果行数",
+    "instanceCountRecommend": "建议绑定「实例数量」。旁边的「结果行数」是本次返回了多少行，不是实例总数。",
+    "queryParamsBlocked": "查询条件未通过校验，已阻止本次请求",
     "invalidSourceDataResponse": "统一取数响应格式无效",
     "multipleOrgParams": "同一请求不能声明多个组织控件参数",
     "topologyMapEmpty": "暂无拓扑关系",
@@ -2014,6 +2019,7 @@
       "dynamic": "数据源选项"
     },
     "editButton": "配置输入方式",
+    "staleOption": "选项已失效，请重新选择。失效值不会被当成全量。",
     "static": {
       "options": "选项配置",
       "label": "显示文本",
@@ -2132,5 +2138,44 @@
     "duplicateHint": "列表里有重复的画布，移除多余项后即可保存",
     "alreadyContains": "已包含",
     "spaceToResume": "空格继续"
+  },
+  "conditionBuilder": {
+    "and": "并且",
+    "or": "或者",
+    "global": "全局",
+    "addCondition": "添加条件",
+    "addGroup": "添加分组",
+    "remove": "删除",
+    "field": "属性",
+    "operator": "运算符",
+    "preview": "条件预览",
+    "reset": "重新开始",
+    "loading": "正在加载属性",
+    "missing": "已失效",
+    "globalIdentity": "全局条件按「模型 · 属性」选择。同名属性不会自动当成同一个字段；多选才是显式合并，没选到的模型不匹配。",
+    "issue": {
+      "invalid": "条件结构不正确",
+      "staleField": "条件字段已失效，请重新选择",
+      "ambiguousField": "同名属性不是同一个字段，请按模型分别选择",
+      "staleScope": "条件适用范围已失效，请重新选择",
+      "missingValue": "请填写条件值",
+      "unsupportedOperator": "该字段不支持这个运算符",
+      "incompatible": "字段类型或单位不一致，不能合并"
+    }
+  },
+  "fieldGroup": {
+    "add": "添加一项",
+    "sources": "字段",
+    "func": "函数",
+    "label": "显示名",
+    "mergeHint": "同一条里多选字段会按实例合并，只属于这一条指标。平均按全部数值计算，不是把各组平均值再平均。",
+    "groupMergeHint": "默认每个模型分开统计。同一条多选后，文本和数值按原值合并。枚举要相同原始值且显示名一致才合并，对不上会失败。",
+    "issue": {
+      "invalid": "字段配置不正确",
+      "required": "请选择字段",
+      "stale": "字段已失效，请重新选择",
+      "incompatible": "字段类型或单位不一致，不能合并",
+      "enumConflict": "相同原始值的枚举含义不一致，或缺少可核对的显示名，不能合并"
+    }
   }
 }

@@ -74,6 +74,14 @@ export const buildRoleFieldOptions = (
     });
   };
 
+  const responseFields = isPlainRecord(previewRawData) && Array.isArray(previewRawData.fields)
+    ? previewRawData.fields
+    : [];
+  responseFields.forEach((field) => {
+    if (!isPlainRecord(field) || typeof field.key !== 'string') return;
+    appendOption(field.key, typeof field.title === 'string' ? field.title : undefined);
+  });
+
   schemaFields.forEach((field) => {
     appendOption(field.key, field.title);
   });

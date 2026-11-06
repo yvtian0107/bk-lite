@@ -16,7 +16,7 @@ import { buildCsvDocument, buildCsvFilename } from '@/app/ops-analysis/utils/csv
 import { validateMultiValueData } from '@/app/ops-analysis/utils/multiValueData';
 import { resolveRadarSeriesData } from '@/app/ops-analysis/utils/radarData';
 import { resolveTableCellPresentation } from '@/app/ops-analysis/utils/tableCellStyle';
-import { parseTableLikeData, resolveTableLikeColumns } from '@/app/ops-analysis/utils/tableLikeData';
+import { parseTableLikeData, resolveTableLikeColumns, responseFieldsOf } from '@/app/ops-analysis/utils/tableLikeData';
 import {
   applyTableQueryList,
   type TableQueryCondition,
@@ -338,6 +338,7 @@ const exportColumns = (
   config: ValueConfig | undefined,
   dataSource: DatasourceItem | undefined,
   rows: Record<string, unknown>[],
+  rawData?: unknown,
 ): TableColumnConfigItem[] => {
   if (chartType === 'eventTable') {
     return (config?.tableConfig?.columns || [])
@@ -348,6 +349,7 @@ const exportColumns = (
   return resolveTableLikeColumns({
     configuredColumns: config?.tableConfig?.columns,
     schemaFields: dataSource?.field_schema,
+    responseFields: responseFieldsOf(rawData),
     rows,
   }).filter((column) => column.visible && column.columnType !== 'actions');
 };
@@ -384,8 +386,9 @@ export const buildTableCsvTable = (
   rows: Record<string, unknown>[],
   config: ValueConfig | undefined,
   dataSource: DatasourceItem | undefined,
+  rawData?: unknown,
 ): CsvTable & { unconfigured: boolean } => {
-  const columns = exportColumns(chartType, config, dataSource, rows);
+  const columns = exportColumns(chartType, config, dataSource, rows, rawData);
   return {
     unconfigured: chartType === 'eventTable' && columns.length === 0,
     headers: columns.map((column) => column.title || column.key),
@@ -621,7 +624,7 @@ export const createWidgetCsvExport = async (
     let table: CsvTable;
     let truncated = false;
     if (runtime.chartType === 'table' || runtime.chartType === 'eventTable') {
-      const previewColumns = exportColumns(runtime.chartType, runtime.config, runtime.dataSource, []);
+      const previewColumns = exportColumns(runtime.chartType, runtime.config, runtime.dataSource, [], runtime.rawData);
       if (runtime.chartType === 'eventTable' && previewColumns.length === 0) {
         return { kind: 'unconfigured' };
       }
@@ -651,6 +654,7 @@ export const createWidgetCsvExport = async (
         loaded.rows,
         runtime.config,
         runtime.dataSource,
+        runtime.rawData,
       );
       if (built.unconfigured) return { kind: 'unconfigured' };
       table = built;

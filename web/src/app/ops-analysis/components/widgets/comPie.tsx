@@ -29,6 +29,7 @@ import {
   resolveDataLinkTooltipTheme,
   wrapDataLinkTooltipFormatter,
 } from '@/app/ops-analysis/utils/interactionLinkHint';
+import PageSliceNotice from '@/app/ops-analysis/components/pageSliceNotice';
 
 interface OsPieProps {
   rawData: any;
@@ -223,7 +224,9 @@ const OsPie: React.FC<OsPieProps> = ({
   }
 
   return (
-    <div className="h-full flex">
+    <div className="h-full flex flex-col">
+      <PageSliceNotice rawData={rawData} />
+      <div className="flex min-h-0 flex-1">
       {/* 图表区域 */}
       <div className="flex-1 min-w-0">
         <ReactEcharts
@@ -247,6 +250,7 @@ const OsPie: React.FC<OsPieProps> = ({
           onSelectionChange={handleLegendChange}
         />
       )}
+      </div>
     </div>
   );
 };

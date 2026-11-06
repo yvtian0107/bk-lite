@@ -27,6 +27,7 @@ import {
 } from '@/app/ops-analysis/utils/interactionLink';
 import {
   parseTableLikeData,
+  responseFieldsOf,
   resolveTableLikeColumns,
   type TableLikePaginationState,
 } from '@/app/ops-analysis/components/ops-analysis-widgets/table-like-data';
@@ -126,6 +127,7 @@ const OpsAnalysisTable: React.FC<OpsAnalysisTableProps> = ({
     const visible = resolveTableLikeColumns({
       configuredColumns: config?.tableConfig?.columns,
       schemaFields: dataSource?.field_schema,
+      responseFields: responseFieldsOf(rawData),
       rows: tableData,
     }).filter((col) => col.visible);
     return withInteractionActionColumn(visible, dataLink, surface, {
@@ -135,7 +137,7 @@ const OpsAnalysisTable: React.FC<OpsAnalysisTableProps> = ({
       visible: true,
       order: visible.length,
     });
-  }, [config?.tableConfig?.columns, dataLink, dataSource?.field_schema, surface, t, tableData]);
+  }, [config?.tableConfig?.columns, dataLink, dataSource?.field_schema, rawData, surface, t, tableData]);
 
   const antColumns = useMemo((): ColumnsType<TableDataItem> => {
     const colGaugeMax: Record<string, number> = {};

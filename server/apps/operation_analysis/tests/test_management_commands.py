@@ -392,6 +392,43 @@ def test_init_source_api_data_retires_room3d_builtin_datasources(settings, caplo
 
 
 @pytest.mark.django_db
+def test_init_source_api_data_keeps_legacy_instance_detail_source(settings):
+    settings.NATS_SERVERS = "nats://admin:secret@127.0.0.1:4222"
+    call_command("init_default_namespace")
+    legacy = DataSourceAPIModel.objects.create(
+        name="CMDB 实例明细",
+        rest_api="cmdb/list_model_instances",
+        chart_type=["table"],
+        is_build_in=True,
+        is_active=True,
+        build_in_key="CMDB 实例明细::cmdb/list_model_instances",
+        created_by="system",
+        updated_by="system",
+    )
+
+    call_command("init_source_api_data")
+    legacy.refresh_from_db()
+    assert legacy.is_active is True
+    assert legacy.chart_type == ["table"]
+    assert legacy.build_in_key == "CMDB 实例明细::cmdb/list_model_instances"
+
+    call_command("init_source_api_data", rest_api=["cmdb/query_model_instances"])
+    legacy.refresh_from_db()
+    query = DataSourceAPIModel.objects.get(rest_api="cmdb/query_model_instances")
+    assert query.is_active is True
+    assert "table" in query.chart_type
+    assert legacy.is_active is True
+    assert legacy.chart_type == ["table"]
+
+    call_command("init_source_api_data")
+    legacy.refresh_from_db()
+    query.refresh_from_db()
+    assert legacy.is_active is True
+    assert legacy.chart_type == ["table"]
+    assert query.is_active is True
+
+
+@pytest.mark.django_db
 def test_init_source_api_data_creates_cloud_cost_distribution_contract(settings):
     settings.NATS_SERVERS = "nats://admin:secret@127.0.0.1:4222"
     call_command("init_default_namespace")

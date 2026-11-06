@@ -16,6 +16,7 @@ import {
 } from '@/app/ops-analysis/utils/chartTheme';
 import {
   parseTableLikeData,
+  responseFieldsOf,
   resolveTableLikeColumns,
   type TableLikePaginationState,
 } from './shared/tableLikeData';
@@ -185,6 +186,7 @@ const ComTable: React.FC<ComTableProps> = ({
     const visible = resolveTableLikeColumns({
       configuredColumns: config?.tableConfig?.columns,
       schemaFields: dataSource?.field_schema,
+      responseFields: responseFieldsOf(rawData),
       rows: tableData,
     }).filter((col) => col.visible);
     return withInteractionActionColumn(visible, dataLink, surface, {
@@ -194,7 +196,7 @@ const ComTable: React.FC<ComTableProps> = ({
       visible: true,
       order: visible.length,
     });
-  }, [config?.tableConfig?.columns, dataLink, dataSource?.field_schema, surface, t, tableData]);
+  }, [config?.tableConfig?.columns, dataLink, dataSource?.field_schema, rawData, surface, t, tableData]);
 
   const antColumns = useMemo((): ColumnsType<TableDataItem> => {
     return columnConfigs.map((col, columnIndex) => {

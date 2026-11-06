@@ -1151,6 +1151,11 @@
     "selectModel": "Please select model",
     "selectInstance": "Please select instance",
     "dataFormatMismatch": "Data format mismatch",
+    "pageSliceNotice": "This chart shows {shown} of {total} rows on the current page. Percents and totals are for this page only.",
+    "topNSliceNotice": "This ranking received {shown} of {total} rows. Ranks are calculated from the rows in this response.",
+    "resultRowCount": "Result rows",
+    "instanceCountRecommend": "Bind Instance count. Result rows is how many rows came back, not the number of instances.",
+    "queryParamsBlocked": "The query conditions are invalid, so this request was not sent",
     "invalidSourceDataResponse": "The unified data response format is invalid",
     "multipleOrgParams": "A single request cannot declare more than one organization control parameter",
     "topologyMapEmpty": "No topology relationships",
@@ -2014,6 +2019,7 @@
       "dynamic": "Data source options"
     },
     "editButton": "Configure input",
+    "staleOption": "This option is no longer available. Choose it again. An unavailable value is not treated as all.",
     "static": {
       "options": "Options",
       "label": "Label",
@@ -2132,5 +2138,44 @@
     "duplicateHint": "This list has duplicate canvases. Remove the extras before saving",
     "alreadyContains": "Already included",
     "spaceToResume": "Space to continue"
+  },
+  "conditionBuilder": {
+    "and": "AND",
+    "or": "OR",
+    "global": "Global",
+    "addCondition": "Add condition",
+    "addGroup": "Add group",
+    "remove": "Remove",
+    "field": "Attribute",
+    "operator": "Operator",
+    "preview": "Condition preview",
+    "reset": "Start over",
+    "loading": "Loading attributes",
+    "missing": "unavailable",
+    "globalIdentity": "A global condition names a model and attribute. Same attribute names are not the same field; selecting more than one is an explicit merge, and models you do not select do not match.",
+    "issue": {
+      "invalid": "The condition is not valid",
+      "staleField": "This condition field is no longer available",
+      "ambiguousField": "Same-named attributes are different fields. Choose each model field explicitly",
+      "staleScope": "This condition scope is no longer available",
+      "missingValue": "Enter a condition value",
+      "unsupportedOperator": "This field does not support that operator",
+      "incompatible": "Field types or units do not match, so they cannot be merged"
+    }
+  },
+  "fieldGroup": {
+    "add": "Add item",
+    "sources": "Fields",
+    "func": "Function",
+    "label": "Label",
+    "mergeHint": "Selecting multiple fields in one row merges them by instance, and only for that metric. Average uses every value, not the average of each group's average.",
+    "groupMergeHint": "Each model stays separate until one row selects multiple fields. Text and numbers then merge by the stored value. Enum values merge only when the stored value and its label both match.",
+    "issue": {
+      "invalid": "The field setup is not valid",
+      "required": "Choose a field",
+      "stale": "This field is no longer available",
+      "incompatible": "Field types or units do not match, so they cannot be merged",
+      "enumConflict": "These enum values use the same stored value with different meanings, or a label is missing, so they cannot be merged"
+    }
   }
 }

@@ -742,6 +742,9 @@ export const ParamInputConfigEditor: React.FC<ParamInputConfigEditorProps> = ({
       onConfirm({ control: 'organization' });
       return;
     }
+    if (control !== 'select' && control !== 'radio') {
+      return;
+    }
 
     if (sourceType === 'static') {
       const staticItems = staticRows
