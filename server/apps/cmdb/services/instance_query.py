@@ -303,8 +303,13 @@ class CmdbInstanceQueryService:
         return _page_rows(rows, page_number, size, _count_fields())
 
     def _distribution(self, prepared, groups, order, page_number, size, creator, show_not_applicable, show_unfilled):
+        prepared_by_id = {model["model_id"]: (model, catalog, permission, clauses) for model, catalog, permission, clauses in prepared}
+        selected_order = [model["model_id"] for model, _catalog, _permission, _clauses in prepared]
         rows = []
         for spec in groups:
+            if _spec_spans_models(spec):
+                rows.extend(self._distribution_merged(prepared_by_id, selected_order, spec, creator))
+                continue
             for model, catalog, permission, clauses in prepared:
                 rows.extend(self._distribution_model(model, catalog, permission, clauses, spec, creator))
         if len(rows) > MAX_BUCKETS:
@@ -349,9 +354,40 @@ class CmdbInstanceQueryService:
             counts[(kind, raw, label)] = slot + 1
         return [_bucket(model, spec, label, raw, kind, count) for (kind, raw, label), count in counts.items()]
 
+    def _distribution_merged(self, prepared_by_id, selected_order, spec, creator):
+        """一条分组多选才合桶。身份是原始值，显示名不同也不并成同一个值。"""
+        named = _named_model_ids(spec["sources"], selected_order)
+        combined = {}
+        for source in spec["sources"]:
+            model, catalog, permission, clauses = prepared_by_id[source["model_id"]]
+            for bucket in self._distribution_model(model, catalog, permission, clauses, spec, creator):
+                if bucket["group_kind"] == KIND_NA:
+                    continue
+                slot = combined.setdefault((bucket["group_kind"], bucket["group_raw"]), {"count": 0, "labels": {}})
+                slot["count"] += bucket["count"]
+                label = bucket["group_value"]
+                slot["labels"][label] = slot["labels"].get(label, 0) + bucket["count"]
+        identity = _row_identity(named, prepared_by_id)
+        rows = []
+        for (kind, raw), slot in combined.items():
+            rows.append(
+                {
+                    "model_id": identity["model_id"],
+                    "model_name": identity["model_name"],
+                    "field_key": spec["key"],
+                    "field_label": spec["label"],
+                    "group_value": _merged_group_label(slot["labels"], raw, kind),
+                    "group_raw": raw,
+                    "group_kind": kind,
+                    "count": slot["count"],
+                }
+            )
+        return rows
+
     def _aggregate(self, prepared, metrics, order, page_number, size, creator):
-        merged = any(_metric_spans_models(metric) for metric in metrics)
-        if not merged:
+        prepared_by_id = {model["model_id"]: (model, catalog, permission, clauses) for model, catalog, permission, clauses in prepared}
+        selected_order = [model["model_id"] for model, _catalog, _permission, _clauses in prepared]
+        if not any(_metric_spans_models(metric) for metric in metrics):
             rows = []
             for model, catalog, permission, clauses in prepared:
                 row = {"model_id": model["model_id"], "model_name": model["model_name"]}
@@ -361,24 +397,26 @@ class CmdbInstanceQueryService:
                     row[f"{metric['key']}__applicability"] = state
                 rows.append(row)
         else:
-            referenced = []
-            seen_models = set()
+            grains = []
+            seen_grains = set()
             for metric in metrics:
-                for source in metric["sources"]:
-                    if source["model_id"] in seen_models:
+                grain = tuple(_named_model_ids(metric["sources"], selected_order))
+                if grain not in seen_grains:
+                    seen_grains.add(grain)
+                    grains.append(grain)
+            rows = []
+            for grain in grains:
+                row = _row_identity(grain, prepared_by_id)
+                for metric in metrics:
+                    metric_grain = tuple(_named_model_ids(metric["sources"], selected_order))
+                    if metric_grain != grain:
+                        row[metric["key"]] = None
+                        row[f"{metric['key']}__applicability"] = NOT_APPLICABLE
                         continue
-                    seen_models.add(source["model_id"])
-                    referenced.append(source)
-            row = {
-                "model_id": ",".join(source["model_id"] for source in referenced),
-                "model_name": "、".join(source["model_name"] for source in referenced),
-            }
-            prepared_by_id = {model["model_id"]: (model, catalog, permission, clauses) for model, catalog, permission, clauses in prepared}
-            for metric in metrics:
-                value, state = self._merged_metric_value(prepared_by_id, metric, creator)
-                row[metric["key"]] = value
-                row[f"{metric['key']}__applicability"] = state
-            rows = [row]
+                    value, state = self._merged_metric_value(prepared_by_id, metric, creator)
+                    row[metric["key"]] = value
+                    row[f"{metric['key']}__applicability"] = state
+                rows.append(row)
         allowed = {"model_id", "model_name", *[metric["key"] for metric in metrics]}
         rows = _sort_rows(rows, _normalize_order(order, allowed, "model_id"))
         return _page_rows(rows, page_number, size, _aggregate_fields(metrics))
@@ -903,12 +941,17 @@ def _count_fields():
 
 def _distribution_fields(groups):
     title = groups[0]["label"] if len(groups) == 1 else "分组值"
+    merged = any(_spec_spans_models(spec) for spec in groups)
+    model_description = "显式合并时只列出这条分组点名的模型" if merged else "分组所属模型"
+    value_description = "枚举显示中文；不适用和未填写与空字符串分开"
+    if merged:
+        value_description = "按原始值合桶。显示名相同但原始值不同仍是两行；同一原始值的显示名不同时并列写出，不另做值映射"
     return [
-        {"key": "model_id", "title": "模型", "value_type": "string", "role": "dimension"},
+        {"key": "model_id", "title": "模型", "value_type": "string", "role": "dimension", "description": model_description},
         {"key": "model_name", "title": "模型名称", "value_type": "string", "role": "dimension"},
         {"key": "field_label", "title": "分组字段", "value_type": "string", "role": "dimension"},
-        {"key": "group_value", "title": title, "value_type": "string", "role": "dimension", "description": "枚举显示中文；不适用和未填写与空字符串分开"},
-        {"key": "group_raw", "title": "原始值", "value_type": "string", "role": "dimension"},
+        {"key": "group_value", "title": title, "value_type": "string", "role": "dimension", "description": value_description},
+        {"key": "group_raw", "title": "原始值", "value_type": "string", "role": "dimension", "description": "合桶身份。表格用这一列区分同名不同值"},
         {"key": "group_kind", "title": "取值口径", "value_type": "string", "role": "dimension"},
         {"key": "count", "title": "数量", "value_type": "number", "role": "metric", "aggregation": "count"},
     ]
@@ -916,7 +959,13 @@ def _distribution_fields(groups):
 
 def _aggregate_fields(metrics):
     fields = [
-        {"key": "model_id", "title": "模型", "value_type": "string", "role": "dimension"},
+        {
+            "key": "model_id",
+            "title": "模型",
+            "value_type": "string",
+            "role": "dimension",
+            "description": "这一行的指标范围。只属于部分模型的指标在其他行是不适用",
+        },
         {"key": "model_name", "title": "模型名称", "value_type": "string", "role": "dimension"},
     ]
     for metric in metrics:
@@ -947,12 +996,45 @@ def _metric_spans_models(metric):
     return len({source["model_id"] for source in metric["sources"]}) > 1
 
 
+def _spec_spans_models(spec):
+    return len({source["model_id"] for source in spec.get("sources") or []}) > 1
+
+
+def _named_model_ids(sources, selected_order):
+    named = {source["model_id"] for source in sources}
+    return [model_id for model_id in selected_order if model_id in named]
+
+
+def _row_identity(model_ids, prepared_by_id):
+    return {
+        "model_id": ",".join(model_ids),
+        "model_name": "、".join(prepared_by_id[model_id][0]["model_name"] for model_id in model_ids),
+    }
+
+
+def _merged_group_label(labels, raw, kind):
+    if kind == KIND_UNFILLED:
+        return UNFILLED
+    if kind == KIND_EMPTY:
+        return ""
+    if kind == KIND_NA:
+        return NOT_APPLICABLE
+    distinct = sorted({label for label in labels if label})
+    if len(distinct) == 1:
+        return distinct[0]
+    if len(distinct) > 1:
+        return " / ".join(distinct)
+    return raw
+
+
 def _metric_description(metric):
     names = "、".join(f"{source['model_name']} · {source.get('attr_name') or source['attr_id']}" for source in metric["sources"])
     if _metric_spans_models(metric):
-        scope = "显式映射后按实例合并，只包含点名的模型"
+        scope = "显式映射后按实例合并，只出现在这些模型自己的那一行，其他指标的范围不会把这一列带过去"
     else:
-        scope = "按模型分别统计"
+        scope = "按模型分别统计，只出现在该模型自己的那一行"
+    if metric["func"] == "count":
+        return f"count（{scope}）：{names}。计数的是过滤后的实例，未填写和空字符串的实例也计数，不按字段值是否为 0 取舍。"
     average = "平均按全部实例的数值计算，不是把各模型的平均值再平均。" if metric["func"] == "avg" and _metric_spans_models(metric) else ""
     return f"{metric['func']}（{scope}）：{names}。{average}无匹配、未填写和空字符串不记成 0；真实 0 仍会计入。"
 

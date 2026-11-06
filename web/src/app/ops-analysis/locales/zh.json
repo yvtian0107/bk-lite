@@ -1151,7 +1151,7 @@
     "selectModel": "请选择模型",
     "selectInstance": "请选择实例",
     "dataFormatMismatch": "数据格式不匹配",
-    "pageSliceNotice": "当前只显示本页 {shown} 条，共 {total} 条。百分比、合计和名次按本页计算，不是全体。",
+    "pageSliceNotice": "当前只显示本页 {shown} 条，共 {total} 条。百分比和合计按本页计算，不是全体。",
     "resultRowCount": "结果行数",
     "instanceCountRecommend": "建议绑定「实例数量」。旁边的「结果行数」是本次返回了多少行，不是实例总数。",
     "queryParamsBlocked": "查询条件未通过校验，已阻止本次请求",
@@ -2167,7 +2167,8 @@
     "sources": "字段",
     "func": "函数",
     "label": "显示名",
-    "mergeHint": "同一条里多选字段会按实例合并。平均按全部数值计算，不是把各组平均值再平均。",
+    "mergeHint": "同一条里多选字段会按实例合并，只属于这一条指标。平均按全部数值计算，不是把各组平均值再平均。",
+    "groupMergeHint": "默认每个模型分开统计。同一条里多选才按原始值合并成一个桶，不按显示名合并。",
     "issue": {
       "invalid": "字段配置不正确",
       "required": "请选择字段",

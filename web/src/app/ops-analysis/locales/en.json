@@ -1151,7 +1151,7 @@
     "selectModel": "Please select model",
     "selectInstance": "Please select instance",
     "dataFormatMismatch": "Data format mismatch",
-    "pageSliceNotice": "This chart shows {shown} of {total} rows on the current page. Percents, totals, and ranks are for this page only.",
+    "pageSliceNotice": "This chart shows {shown} of {total} rows on the current page. Percents and totals are for this page only.",
     "resultRowCount": "Result rows",
     "instanceCountRecommend": "Bind Instance count. Result rows is how many rows came back, not the number of instances.",
     "queryParamsBlocked": "The query conditions are invalid, so this request was not sent",
@@ -2167,7 +2167,8 @@
     "sources": "Fields",
     "func": "Function",
     "label": "Label",
-    "mergeHint": "Selecting multiple fields in one row merges them by instance. Average uses every value, not the average of each group's average.",
+    "mergeHint": "Selecting multiple fields in one row merges them by instance, and only for that metric. Average uses every value, not the average of each group's average.",
+    "groupMergeHint": "Each model stays separate until one row selects multiple fields. That merges buckets by the stored value, not by the label.",
     "issue": {
       "invalid": "The field setup is not valid",
       "required": "Choose a field",

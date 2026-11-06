@@ -11,8 +11,6 @@ import {
   buildTopNItems,
   resolveConfiguredTopNBarPercent,
 } from '@/app/ops-analysis/utils/topNData';
-import PageSliceNotice from '@/app/ops-analysis/components/pageSliceNotice';
-
 export interface OpsAnalysisTopNProps {
   rawData: any;
   loading?: boolean;
@@ -57,9 +55,6 @@ const OpsAnalysisTopN: React.FC<OpsAnalysisTopNProps> = ({
   }, [isDataReady, loading, onReady]);
 
   return (
-    <div className="flex h-full min-h-0 flex-col">
-      <PageSliceNotice rawData={rawData} />
-      <div className="min-h-0 flex-1">
     <ChartSurface
       loading={loading}
       hasData={isDataReady}
@@ -138,8 +133,6 @@ const OpsAnalysisTopN: React.FC<OpsAnalysisTopNProps> = ({
         })}
       </div>
     </ChartSurface>
-      </div>
-    </div>
   );
 };
 

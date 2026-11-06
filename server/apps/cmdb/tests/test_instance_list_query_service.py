@@ -562,6 +562,149 @@ def test_same_model_or_union_cannot_bypass_the_materialize_limit():
         )
 
 
+def test_mixed_metric_scopes_keep_their_own_rows():
+    vm = {"model_id": "vm", "model_name": "虚拟机", "classification_id": "compute", "classification_name": "计算"}
+    attrs = {
+        "host": [
+            {"attr_id": "cpu_count", "attr_name": "CPU核数", "attr_type": "int", "unit": "核"},
+            {"attr_id": "capacity", "attr_name": "容量", "attr_type": "int", "unit": "GB"},
+        ],
+        "vm": [{"attr_id": "cpu_count", "attr_name": "CPU核数", "attr_type": "int", "unit": "核"}],
+        "app": APP_ATTRS,
+    }
+    service, _calls = _service(
+        rows={
+            "host": [
+                {"inst_uuid": "h1", "cpu_count": 4, "capacity": 8},
+                {"inst_uuid": "h2", "cpu_count": 0, "capacity": ""},
+                {"inst_uuid": "h3"},
+            ],
+            "vm": [{"inst_uuid": "v1", "cpu_count": 6}],
+            "app": [{"inst_uuid": "a1", "capacity": 100}],
+        },
+        counts={"host": 3, "vm": 1, "app": 1},
+    )
+    result = service.run(
+        models=[HOST, vm, APP],
+        attrs_by_model=attrs,
+        model_ids=["host", "vm", "app"],
+        analysis_mode="aggregate",
+        metrics=[
+            {"key": "cpu_sum", "label": "CPU核数", "func": "sum", "sources": ["host:cpu_count", "vm:cpu_count"]},
+            {"key": "capacity_sum", "label": "容量", "func": "sum", "sources": ["host:capacity"]},
+            {"key": "host_count", "label": "主机数量", "func": "count", "sources": ["host:cpu_count"]},
+        ],
+        permission_for=PERM,
+    )
+    by_scope = {row["model_id"]: row for row in result["items"]}
+    assert set(by_scope) == {"host", "host,vm"}
+    assert "app" not in by_scope
+    merged = by_scope["host,vm"]
+    assert merged["model_name"] == "主机、虚拟机"
+    assert merged["cpu_sum"] == 10
+    assert merged["cpu_sum__applicability"] == "有效"
+    assert merged["capacity_sum"] is None
+    assert merged["capacity_sum__applicability"] == "不适用"
+    assert merged["host_count"] is None
+    host = by_scope["host"]
+    assert host["model_name"] == "主机"
+    assert host["capacity_sum"] == 8
+    assert host["capacity_sum__applicability"] == "有效"
+    assert host["cpu_sum"] is None
+    assert host["cpu_sum__applicability"] == "不适用"
+    assert host["host_count"] == 3
+    assert host["host_count__applicability"] == "有效"
+    titles = {field["key"]: field["title"] for field in result["fields"]}
+    assert titles["model_id"] == "模型"
+    assert titles["capacity_sum__applicability"] == "容量·口径"
+    by_key = {field["key"]: field for field in result["fields"]}
+    assert "未填写和空字符串的实例也计数" in by_key["host_count"]["description"]
+    assert "不记成 0" not in by_key["host_count"]["description"]
+    assert "不记成 0" in by_key["capacity_sum"]["description"]
+    assert "真实 0 仍会计入" in by_key["cpu_sum"]["description"]
+    assert "其他指标的范围不会把这一列带过去" in by_key["cpu_sum"]["description"]
+
+
+def test_explicit_distribution_merges_by_raw_value_not_label():
+    vm = {"model_id": "vm", "model_name": "虚拟机", "classification_id": "compute", "classification_name": "计算"}
+    attrs = {
+        "host": [
+            {
+                "attr_id": "os_type",
+                "attr_name": "系统类型",
+                "attr_type": "enum",
+                "enum_options": [{"id": "2", "name": "Linux"}, {"id": "3", "name": "Windows"}],
+            }
+        ],
+        "vm": [
+            {
+                "attr_id": "os_type",
+                "attr_name": "系统类型",
+                "attr_type": "enum",
+                "enum_options": [{"id": "2", "name": "红帽"}, {"id": "4", "name": "Linux"}],
+            }
+        ],
+        "app": APP_ATTRS,
+    }
+    service, calls = _service(
+        counts={"host": 6, "vm": 10, "app": 9},
+        groups={"host": {"2": 5, "3": 1, None: 2, "": 4}, "vm": {"2": 7, "4": 3, None: 1, "": 1}},
+    )
+    result = service.run(
+        models=[HOST, vm, APP],
+        attrs_by_model=attrs,
+        model_ids=["host", "vm", "app"],
+        analysis_mode="distribution",
+        group_by=[{"sources": ["host:os_type", "vm:os_type"], "label": "系统类型"}],
+        page=1,
+        page_size=1,
+        permission_for=PERM,
+    )
+    assert result["count"] == 5
+    assert result["items"] == [
+        {
+            "model_id": "host,vm",
+            "model_name": "主机、虚拟机",
+            "field_key": "host_os_type__vm_os_type",
+            "field_label": "系统类型",
+            "group_value": "Linux / 红帽",
+            "group_raw": "2",
+            "group_kind": "value",
+            "count": 12,
+        }
+    ]
+    full = service.run(
+        models=[HOST, vm, APP],
+        attrs_by_model=attrs,
+        model_ids=["host", "vm", "app"],
+        analysis_mode="distribution",
+        group_by=[{"sources": ["host:os_type", "vm:os_type"], "label": "系统类型"}],
+        page_size=20,
+        permission_for=PERM,
+    )
+    linux_rows = [row for row in full["items"] if row["group_value"] == "Linux"]
+    assert [row["group_raw"] for row in linux_rows] == ["4"]
+    assert linux_rows[0]["count"] == 3
+    assert {row["group_kind"] for row in full["items"]} >= {"value", "unfilled", "empty"}
+    empty = next(row for row in full["items"] if row["group_kind"] == "empty")
+    unfilled = next(row for row in full["items"] if row["group_kind"] == "unfilled")
+    assert empty["count"] == 5
+    assert unfilled["count"] == 3
+    assert all("app" not in row["model_id"] for row in full["items"])
+    assert all(row["group_kind"] != "not_applicable" for row in full["items"])
+    assert "按原始值合桶" in full["fields"][3]["description"]
+    with pytest.raises(ValueError, match="类型或单位不一致"):
+        service.run(
+            models=[HOST, vm, APP],
+            attrs_by_model=attrs,
+            model_ids=["host", "vm", "app"],
+            analysis_mode="distribution",
+            group_by=[{"sources": ["host:os_type", "app:capacity"]}],
+            permission_for=PERM,
+        )
+    assert all(call["params"][0]["value"] in {"host", "vm"} for call in calls["group"])
+
+
 def test_cross_model_detail_and_bucket_limits_fail_closed():
     service, _calls = _service(counts={"host": 3000, "app": 2500}, groups={"host": {str(index): 1 for index in range(MAX_BUCKETS + 1)}})
     with pytest.raises(ValueError, match=MATERIALIZE_LIMIT_MESSAGE):
