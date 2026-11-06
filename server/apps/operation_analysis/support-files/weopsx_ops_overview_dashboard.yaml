@@ -14,7 +14,7 @@ meta:
 dashboards:
 - key: dashboard::运维总览_内置
   name: 运维总览
-  desc: 按所选组织查看资源、监控和告警的当前规模。主机性能和新增关闭趋势跟随所选时间。
+  desc: 按所选组织查看资源、监控和告警的当前规模。主机使用率取最新有效采样，不跟随时间；新增与关闭趋势跟随所选时间。告警应用数是有未恢复监控告警的应用个数，不是业务故障单。
   other:
     gridCols: 24
     timeSelector:
@@ -200,27 +200,23 @@ dashboards:
         x: 20
         y: 0
         id: ops-kpi-nodes
-        name: 节点
+        name: 告警应用数
+        description: 授权应用里，关联主机仍有未恢复监控告警的个数，不是业务故障单。
         itemType: widget
         valueConfig:
           compare: false
           chartType: single
-          dataSource: 节点用法总览::node/get_node_usage_statistics
+          dataSource: 关联告警汇总::monitor/get_cmdb_relation_alert_aggregation
           compareMode: percent
           interaction:
-            url: /node-manager/cloudregion
+            url: /cmdb/views/application
             kind: title
-            name: 节点管理
+            name: 查看应用
             openMode: newTab
-          singleStyle:
-            iconKey: icons/mm-node_Node
-            iconSize: medium
-            showIcon: true
-            iconSource: builtin
           filterBindings:
             organization__string: true
           selectedFields:
-          - node_total
+          - with_alert_count
           thresholdColors:
           - color: '#366ce4'
             value: '70'
@@ -229,6 +225,28 @@ dashboards:
           - color: '#366ce4'
             value: '0'
           dataSourceParams:
+          - name: view
+            type: string
+            value: summary
+            alias_name: 视图
+            filterType: fixed
+          - name: model_id
+            type: string
+            value: application
+            required: true
+            alias_name: 源模型
+            filterType: params
+          - name: model_asst_id
+            type: string
+            value: application_run_host
+            required: true
+            alias_name: 模型关联
+            filterType: params
+          - name: peer_model_id
+            type: string
+            value: host
+            alias_name: 对端模型
+            filterType: params
           - name: organization
             type: string
             value: ''
@@ -248,7 +266,7 @@ dashboards:
     subGridOpts:
       children:
       - h: 8
-        w: 9
+        w: 12
         x: 0
         y: 0
         id: ops-app-top
@@ -307,8 +325,8 @@ dashboards:
             inputConfig:
               control: organization
       - h: 8
-        w: 7
-        x: 9
+        w: 12
+        x: 12
         y: 0
         id: ops-resource-types
         name: 资源类型分布
@@ -343,151 +361,6 @@ dashboards:
             filterType: filter
             inputConfig:
               control: organization
-      - h: 8
-        w: 4
-        x: 16
-        y: 0
-        id: ops-app-total
-        name: 应用总数
-        itemType: widget
-        valueConfig:
-          chartType: single
-          dataSource: 关联告警汇总::monitor/get_cmdb_relation_alert_aggregation
-          filterBindings:
-            organization__string: true
-          selectedFields:
-          - total_count
-          dataSourceParams:
-          - name: model_id
-            type: string
-            value: application
-            alias_name: 源模型
-            filterType: params
-          - name: model_asst_id
-            type: string
-            value: application_run_host
-            alias_name: 模型关联
-            filterType: params
-          - name: peer_model_id
-            type: string
-            value: host
-            alias_name: 对端模型
-            filterType: params
-          - name: organization
-            type: string
-            value: ''
-            alias_name: 组织
-            filterType: filter
-            inputConfig:
-              control: organization
-      - h: 4
-        w: 4
-        x: 20
-        y: 0
-        id: ops-app-with-alert
-        name: 存在关联告警应用
-        itemType: widget
-        valueConfig:
-          compare: false
-          chartType: single
-          dataSource: 关联告警汇总::monitor/get_cmdb_relation_alert_aggregation
-          compareMode: percent
-          filterBindings:
-            organization__string: true
-          selectedFields:
-          - with_alert_count
-          thresholdColors:
-          - color: '#dc2626'
-            value: '70'
-          - color: '#d97706'
-            value: '30'
-          - color: '#2563eb'
-            value: '0'
-          dataSourceParams:
-          - name: view
-            type: string
-            value: summary
-            alias_name: 视图
-            filterType: fixed
-          - name: model_id
-            type: string
-            value: application
-            required: true
-            alias_name: 源模型
-            filterType: params
-          - name: model_asst_id
-            type: string
-            value: application_run_host
-            required: true
-            alias_name: 模型关联
-            filterType: params
-          - name: peer_model_id
-            type: string
-            value: host
-            alias_name: 对端模型
-            filterType: params
-          - name: organization
-            type: string
-            value: ''
-            alias_name: 组织
-            filterType: filter
-            inputConfig:
-              control: organization
-          descriptionField: with_alert_share
-      - h: 4
-        w: 4
-        x: 20
-        y: 4
-        id: ops-app-without-alert
-        name: 无关联告警应用
-        itemType: widget
-        valueConfig:
-          compare: false
-          chartType: single
-          dataSource: 关联告警汇总::monitor/get_cmdb_relation_alert_aggregation
-          compareMode: percent
-          filterBindings:
-            organization__string: true
-          selectedFields:
-          - without_alert_count
-          thresholdColors:
-          - color: '#dc2626'
-            value: '70'
-          - color: '#d97706'
-            value: '30'
-          - color: '#2563eb'
-            value: '0'
-          dataSourceParams:
-          - name: view
-            type: string
-            value: summary
-            alias_name: 视图
-            filterType: fixed
-          - name: model_id
-            type: string
-            value: application
-            required: true
-            alias_name: 源模型
-            filterType: params
-          - name: model_asst_id
-            type: string
-            value: application_run_host
-            required: true
-            alias_name: 模型关联
-            filterType: params
-          - name: peer_model_id
-            type: string
-            value: host
-            alias_name: 对端模型
-            filterType: params
-          - name: organization
-            type: string
-            value: ''
-            alias_name: 组织
-            filterType: filter
-            inputConfig:
-              control: organization
-          descriptionField: without_alert_share
     sizeToContent: true
   - h: 10
     w: 24
@@ -505,10 +378,11 @@ dashboards:
         y: 0
         id: ops-monitor-alerts
         name: 监控异常 TOP5
+        description: 授权范围内未恢复监控告警，按等级从高到低，同级开始更早优先，取前5。记录值是触发或升级时保存的，不是实时采样。
         itemType: widget
         valueConfig:
           chartType: table
-          dataSource: 监控活跃告警::monitor/query_latest_active_alerts
+          dataSource: 监控异常严重度TOP5::monitor/query_latest_active_alerts
           interaction:
             url: /monitor/event/alert
             kind: title
@@ -526,13 +400,16 @@ dashboards:
               visible: true
             - key: value
               order: 2
-              title: 当前值
+              title: 告警记录值
+              visible: true
+            - key: duration_text
+              order: 3
+              title: 持续时长
               visible: true
             - key: level
-              order: 3
-              title: 状态
+              order: 4
+              title: 告警等级
               visible: true
-              cellType: colorBackground
               valueMappings:
               - type: value
                 value: critical
@@ -622,6 +499,16 @@ dashboards:
           filterBindings:
             organization__string: true
           dataSourceParams:
+          - name: order
+            type: string
+            value: severity
+            alias_name: 排序
+            filterType: fixed
+          - name: limit
+            type: number
+            value: 5
+            alias_name: 返回条数
+            filterType: fixed
           - name: organization
             type: string
             value: ''
@@ -635,33 +522,41 @@ dashboards:
         y: 0
         id: ops-host-key-metrics
         name: 主机关键指标
+        description: 授权主机的最新有效采样使用率，一次只看一类，固定前10。缺数不补0，不跟随页面时间。
         itemType: widget
         valueConfig:
-          barMax: 100
           unitId: percent
-          barMode: absolute
           chartType: topN
-          dataSource: 主机资源快照::monitor/get_host_resource_snapshot
+          dataSource: 主机资源使用率Top10::monitor/get_host_resource_top
           interaction:
             url: /monitor/view/dashboard/host
             kind: title
             name: 查看全部
             openMode: newTab
           decimalPlaces: 1
+          topNLabelField: display_name
+          topNValueField: usage_percent
           filterBindings:
-            time__timeRange: true
             organization__string: true
           dataSourceParams:
-          - name: scope
+          - name: metric_type
             type: string
-            value: all_authorized
-            alias_name: 主机范围
+            value: cpu
+            alias_name: 指标类型
             filterType: params
-          - name: time
-            type: timeRange
-            value: 10080
-            alias_name: 时间范围
-            filterType: filter
+            required: true
+            inputConfig:
+              control: select
+              componentSwitch: true
+              optionsSource:
+                type: static
+                staticItems:
+                - label: CPU使用率
+                  value: cpu
+                - label: 内存使用率
+                  value: memory
+                - label: 磁盘使用率
+                  value: disk
           - name: organization
             type: string
             value: ''
@@ -669,13 +564,6 @@ dashboards:
             filterType: filter
             inputConfig:
               control: organization
-          topNScalarFields:
-          - field: avg_cpu
-            label: CPU 使用率
-          - field: avg_memory
-            label: 内存使用率
-          - field: avg_disk
-            label: 磁盘使用率
       - h: 8
         w: 6
         x: 18
@@ -888,7 +776,7 @@ dashboards:
       selectValue: 10080
   refs:
     datasource_keys:
-    - 主机资源快照::monitor/get_host_resource_snapshot
+    - 主机资源使用率Top10::monitor/get_host_resource_top
     - 关联告警 TOP::monitor/get_cmdb_relation_alert_aggregation
     - 关联告警汇总::monitor/get_cmdb_relation_alert_aggregation
     - 分类实例合计::cmdb/get_classification_instance_counts
@@ -898,6 +786,5 @@ dashboards:
     - 模型/实例/分类总数统计::cmdb/get_cmdb_statistics
     - 活跃告警 TOP N::get_active_alert_top
     - 监控中心总览统计::monitor/get_monitor_statistics
-    - 监控活跃告警::monitor/query_latest_active_alerts
-    - 节点用法总览::node/get_node_usage_statistics
+    - 监控异常严重度TOP5::monitor/query_latest_active_alerts
     namespace_keys: []
