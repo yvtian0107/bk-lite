@@ -27,7 +27,8 @@ def test_cmdb_instance_query_is_one_table_source_with_analysis_mode():
     assert mode["required"] is True
     assert mode["value"] == "list"
     assert mode["alias_name"] == "分析方式"
-    assert mode["inputConfig"]["componentSwitch"] is True
+    assert mode["inputConfig"]["control"] == "select"
+    assert "componentSwitch" not in mode["inputConfig"]
     assert mode["inputConfig"]["optionsSource"]["staticItems"] == [
         {"label": "明细", "value": "list"},
         {"label": "数量", "value": "count"},
@@ -39,7 +40,8 @@ def test_cmdb_instance_query_is_one_table_source_with_analysis_mode():
     assert model["required"] is True
     assert model["value"] == ""
     assert model["filterType"] == "params"
-    assert model["inputConfig"]["componentSwitch"] is True
+    assert model["inputConfig"]["control"] == "select"
+    assert "componentSwitch" not in model["inputConfig"]
     options = model["inputConfig"]["optionsSource"]
     assert options["sourceRef"] == {"type": "rest_api", "value": "cmdb/get_model_options"}
     assert options["valueField"] == "model_id"

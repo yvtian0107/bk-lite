@@ -1842,7 +1842,6 @@
             "required": true,
             "inputConfig": {
                 "control": "select",
-                "componentSwitch": true,
                 "optionsSource": {
                     "type": "static",
                     "staticItems": [
@@ -1863,7 +1862,6 @@
             "required": true,
             "inputConfig": {
                 "control": "select",
-                "componentSwitch": true,
                 "optionsSource": {
                     "type": "dynamic",
                     "sourceRef": {"type": "rest_api", "value": "cmdb/get_model_options"},
