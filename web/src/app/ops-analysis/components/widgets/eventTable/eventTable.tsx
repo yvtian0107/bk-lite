@@ -227,13 +227,13 @@ const EventTable: React.FC<EventTableProps> = ({
 
   return (
     <div
-      ref={containerRef}
-      className={`ops-analysis-event-table mt-2 h-full min-h-0 flex flex-col ${
+      className={`ops-analysis-event-table flex h-full min-h-0 flex-col pt-2 ${
         usesScreenTheme ? styles.screenDarkRoot : ''
       }`}
       style={screenTableStyle}
     >
       <div
+        ref={containerRef}
         className={`flex-1 min-h-0 overflow-hidden ${
           usesScreenTheme ? styles.screenDarkTableWrap : ''
         }`}

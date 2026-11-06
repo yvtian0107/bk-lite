@@ -191,10 +191,9 @@ const OpsAnalysisEventTable: React.FC<OpsAnalysisEventTableProps> = ({
 
   return (
     <div
-      ref={containerRef}
-      className="ops-analysis-event-table mt-2 flex h-full min-h-0 flex-col"
+      className="ops-analysis-event-table flex h-full min-h-0 flex-col pt-2"
     >
-      <div className="flex-1 min-h-0 overflow-hidden">
+      <div ref={containerRef} className="min-h-0 flex-1 overflow-hidden">
         <CustomTable
           columns={columns}
           dataSource={rows}
