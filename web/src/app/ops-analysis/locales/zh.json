@@ -1152,6 +1152,7 @@
     "selectInstance": "请选择实例",
     "dataFormatMismatch": "数据格式不匹配",
     "pageSliceNotice": "当前只显示本页 {shown} 条，共 {total} 条。百分比和合计按本页计算，不是全体。",
+    "topNSliceNotice": "当前返回 {shown} 条，共 {total} 条；名次根据当前返回数据计算。",
     "resultRowCount": "结果行数",
     "instanceCountRecommend": "建议绑定「实例数量」。旁边的「结果行数」是本次返回了多少行，不是实例总数。",
     "queryParamsBlocked": "查询条件未通过校验，已阻止本次请求",
@@ -2168,12 +2169,13 @@
     "func": "函数",
     "label": "显示名",
     "mergeHint": "同一条里多选字段会按实例合并，只属于这一条指标。平均按全部数值计算，不是把各组平均值再平均。",
-    "groupMergeHint": "默认每个模型分开统计。同一条里多选才按原始值合并成一个桶，不按显示名合并。",
+    "groupMergeHint": "默认每个模型分开统计。同一条多选后，文本和数值按原值合并。枚举要相同原始值且显示名一致才合并，对不上会失败。",
     "issue": {
       "invalid": "字段配置不正确",
       "required": "请选择字段",
       "stale": "字段已失效，请重新选择",
-      "incompatible": "字段类型或单位不一致，不能合并"
+      "incompatible": "字段类型或单位不一致，不能合并",
+      "enumConflict": "相同原始值的枚举含义不一致，或缺少可核对的显示名，不能合并"
     }
   }
 }

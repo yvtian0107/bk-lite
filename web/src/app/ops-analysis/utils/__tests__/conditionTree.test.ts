@@ -118,4 +118,43 @@ describe('condition tree', () => {
       'metrics',
     )).toBeNull();
   });
+
+  it('rejects an enum group when the same stored value has two meanings', () => {
+    const fields = readFieldCatalog([
+      options[0],
+      {
+        value: 'vm:os_type',
+        label: '虚拟机 · 系统类型',
+        extra: {
+          kind: 'attribute',
+          model_id: 'vm',
+          model_name: '虚拟机',
+          attr_id: 'os_type',
+          attr_type: 'enum',
+          unit: '',
+          options: [{ value: '2', label: 'Windows' }],
+          funcs: [],
+        },
+      },
+    ]);
+    expect(inspectFieldGroup([{ sources: ['host:os_type', 'vm:os_type'] }], fields, true, 'group')).toBe('enumConflict');
+    const compatible = readFieldCatalog([
+      options[0],
+      {
+        value: 'vm:os_type',
+        label: '虚拟机 · 系统类型',
+        extra: {
+          kind: 'attribute',
+          model_id: 'vm',
+          model_name: '虚拟机',
+          attr_id: 'os_type',
+          attr_type: 'enum',
+          unit: '',
+          options: [{ value: '2', label: 'Linux' }, { value: '9', label: 'Linux' }],
+          funcs: [],
+        },
+      },
+    ]);
+    expect(inspectFieldGroup([{ sources: ['host:os_type', 'vm:os_type'] }], compatible, true, 'group')).toBeNull();
+  });
 });

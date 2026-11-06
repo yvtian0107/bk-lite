@@ -1930,7 +1930,7 @@
             "filterType": "params",
             "requiredWhen": {"param": "analysis_mode", "in": ["distribution"]},
             "visibleWhen": {"param": "analysis_mode", "in": ["distribution"]},
-            "desc": "默认每个模型单独成桶。同一条里多选字段才按原始值合并，显示名相同但原始值不同仍分开；类型或单位不兼容会失败。合桶之后再排序分页。没点名的模型不加入这一桶。",
+            "desc": "默认每个模型单独成桶。同一条里多选后，文本和数值按原值合并。枚举的原始值只在各自模型内有身份，相同原始值还要显示名一致才合并；对不上或没有可核对的显示名会失败。不同原始值即使显示名相同也分开。合桶之后再排序分页。结果里的模型是这条分组点名的查询范围，不是这一桶实际贡献实例的模型。没点名的模型不加入。",
             "inputConfig": {
                 "control": "fieldGroup",
                 "variant": "group",

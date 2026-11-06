@@ -355,18 +355,22 @@ class CmdbInstanceQueryService:
         return [_bucket(model, spec, label, raw, kind, count) for (kind, raw, label), count in counts.items()]
 
     def _distribution_merged(self, prepared_by_id, selected_order, spec, creator):
-        """一条分组多选才合桶。身份是原始值，显示名不同也不并成同一个值。"""
+        """一条分组多选才合桶。枚举原始值只在声明含义相同时才能跨模型相加。"""
         named = _named_model_ids(spec["sources"], selected_order)
+        catalogs = {model_id: prepared_by_id[model_id][1] for model_id in named}
+        _assert_shared_enum_meanings(spec["sources"], catalogs)
         combined = {}
+        contributors = {}
         for source in spec["sources"]:
             model, catalog, permission, clauses = prepared_by_id[source["model_id"]]
             for bucket in self._distribution_model(model, catalog, permission, clauses, spec, creator):
                 if bucket["group_kind"] == KIND_NA:
                     continue
-                slot = combined.setdefault((bucket["group_kind"], bucket["group_raw"]), {"count": 0, "labels": {}})
+                key = (bucket["group_kind"], bucket["group_raw"])
+                slot = combined.setdefault(key, {"count": 0})
                 slot["count"] += bucket["count"]
-                label = bucket["group_value"]
-                slot["labels"][label] = slot["labels"].get(label, 0) + bucket["count"]
+                contributors.setdefault(key, set()).add(source["model_id"])
+        _assert_observed_enum_values(spec["sources"], catalogs, contributors)
         identity = _row_identity(named, prepared_by_id)
         rows = []
         for (kind, raw), slot in combined.items():
@@ -376,7 +380,7 @@ class CmdbInstanceQueryService:
                     "model_name": identity["model_name"],
                     "field_key": spec["key"],
                     "field_label": spec["label"],
-                    "group_value": _merged_group_label(slot["labels"], raw, kind),
+                    "group_value": _merged_group_value(spec["sources"], catalogs, raw, kind),
                     "group_raw": raw,
                     "group_kind": kind,
                     "count": slot["count"],
@@ -942,16 +946,19 @@ def _count_fields():
 def _distribution_fields(groups):
     title = groups[0]["label"] if len(groups) == 1 else "分组值"
     merged = any(_spec_spans_models(spec) for spec in groups)
-    model_description = "显式合并时只列出这条分组点名的模型" if merged else "分组所属模型"
+    model_description = "分组所属模型"
     value_description = "枚举显示中文；不适用和未填写与空字符串分开"
+    raw_description = "分组原始值"
     if merged:
-        value_description = "按原始值合桶。显示名相同但原始值不同仍是两行；同一原始值的显示名不同时并列写出，不另做值映射"
+        model_description = "这条分组点名的查询范围，不是这一桶实际贡献实例的模型。没有匹配的模型仍留在身份里，数量只加有实例的部分"
+        value_description = "枚举要原始值和显示名都一致才合并。显示名对不上会失败。不同原始值保持不同的桶。文本和数值按原值合并"
+        raw_description = "这一桶的原始值。枚举原始值只属于各自模型；跨模型合并还要求显示名一致"
     return [
         {"key": "model_id", "title": "模型", "value_type": "string", "role": "dimension", "description": model_description},
         {"key": "model_name", "title": "模型名称", "value_type": "string", "role": "dimension"},
         {"key": "field_label", "title": "分组字段", "value_type": "string", "role": "dimension"},
         {"key": "group_value", "title": title, "value_type": "string", "role": "dimension", "description": value_description},
-        {"key": "group_raw", "title": "原始值", "value_type": "string", "role": "dimension", "description": "合桶身份。表格用这一列区分同名不同值"},
+        {"key": "group_raw", "title": "原始值", "value_type": "string", "role": "dimension", "description": raw_description},
         {"key": "group_kind", "title": "取值口径", "value_type": "string", "role": "dimension"},
         {"key": "count", "title": "数量", "value_type": "number", "role": "metric", "aggregation": "count"},
     ]
@@ -1012,18 +1019,105 @@ def _row_identity(model_ids, prepared_by_id):
     }
 
 
-def _merged_group_label(labels, raw, kind):
+def _declared_enum_label(item):
+    if not isinstance(item, dict):
+        return None, None
+    option_id = item.get("id", item.get("value"))
+    if option_id in (None, ""):
+        return None, None
+    raw = str(option_id)
+    for key in ("name", "label"):
+        if key in item and item[key] not in (None, ""):
+            return raw, str(item[key])
+    return raw, None
+
+
+def _enum_label_map(attr):
+    mapping = {}
+    for item in attr.get("enum_options") or []:
+        raw, label = _declared_enum_label(item)
+        if raw is None:
+            continue
+        if raw in mapping and mapping[raw] != label:
+            mapping[raw] = None
+            continue
+        mapping.setdefault(raw, label)
+    return mapping
+
+
+def _enum_sources(sources, catalogs):
+    found = []
+    for source in sources:
+        attr = catalogs[source["model_id"]][source["attr_id"]]
+        if attr.get("attr_type") == "enum":
+            found.append((source, attr))
+    return found
+
+
+def _enum_conflict_message(raw, entries):
+    parts = []
+    for source, label in entries:
+        shown = label if label else "没有可核对的显示名"
+        parts.append(f"{source['model_name']} · {source['attr_name']}（{shown}）")
+    detail = "；".join(parts)
+    return f"枚举值 {raw} 在这些模型字段上的含义不一致或无法证明相同，不能合并：{detail}"
+
+
+def _assert_shared_enum_meanings(sources, catalogs):
+    """枚举 id 只在各自模型内有身份。相同 id 的显示名对不上，或没有显示名，就拒绝合并。"""
+    enums = _enum_sources(sources, catalogs)
+    if len(enums) < 2:
+        return
+    owners = {}
+    for source, attr in enums:
+        for raw, label in _enum_label_map(attr).items():
+            owners.setdefault(raw, []).append((source, label))
+    for raw, entries in owners.items():
+        if len({source["model_id"] for source, _label in entries}) < 2:
+            continue
+        labels = [label for _source, label in entries]
+        if any(label in (None, "") for label in labels) or len(set(labels)) != 1:
+            raise ValueError(_enum_conflict_message(raw, entries))
+
+
+def _assert_observed_enum_values(sources, catalogs, contributors):
+    enums = _enum_sources(sources, catalogs)
+    if len(enums) < 2:
+        return
+    maps = {source["model_id"]: (source, _enum_label_map(attr)) for source, attr in enums}
+    for (kind, raw), model_ids in contributors.items():
+        if kind != KIND_VALUE:
+            continue
+        ordered = [source["model_id"] for source in sources]
+        present = [model_id for model_id in ordered if model_id in model_ids and model_id in maps]
+        if len(present) < 2:
+            continue
+        entries = []
+        for model_id in present:
+            source, mapping = maps[model_id]
+            entries.append((source, mapping.get(raw) if raw in mapping else None))
+        labels = [label for _source, label in entries]
+        if any(label in (None, "") for label in labels) or len(set(labels)) != 1:
+            raise ValueError(_enum_conflict_message(raw, entries))
+
+
+def _merged_group_value(sources, catalogs, raw, kind):
     if kind == KIND_UNFILLED:
         return UNFILLED
     if kind == KIND_EMPTY:
         return ""
     if kind == KIND_NA:
         return NOT_APPLICABLE
-    distinct = sorted({label for label in labels if label})
-    if len(distinct) == 1:
-        return distinct[0]
-    if len(distinct) > 1:
-        return " / ".join(distinct)
+    enums = _enum_sources(sources, catalogs)
+    if len(enums) >= 2:
+        labels = []
+        for _source, attr in enums:
+            mapping = _enum_label_map(attr)
+            if raw in mapping and mapping[raw]:
+                labels.append(mapping[raw])
+        distinct = sorted(set(labels))
+        if len(distinct) == 1:
+            return distinct[0]
     return raw
 
 
@@ -1194,16 +1288,27 @@ def _normalize_order(raw, allowed, default):
 def _sort_rows(rows, order):
     descending = order.startswith("-")
     field = order[1:] if descending else order
-
-    def sort_key(row):
+    present = []
+    missing = []
+    kinds = set()
+    for row in rows:
         value = row.get(field)
-        if isinstance(value, (int, float)) and not isinstance(value, bool):
-            normalized = value
-        else:
-            normalized = str(value)
-        return (value is None, normalized, str(row.get("model_id") or ""))
+        if value is None:
+            missing.append(row)
+            continue
+        if isinstance(value, bool) or not isinstance(value, (int, float, str)):
+            raise ValueError(f"字段 {field} 的值类型无法排序")
+        kinds.add("number" if isinstance(value, (int, float)) else "text")
+        present.append(row)
+    if len(kinds) > 1:
+        raise ValueError(f"字段 {field} 的值类型不一致，不能排序")
 
-    return sorted(rows, key=sort_key, reverse=descending)
+    def present_key(row):
+        return (row.get(field), str(row.get("model_id") or ""))
+
+    present.sort(key=present_key, reverse=descending)
+    missing.sort(key=lambda row: str(row.get("model_id") or ""))
+    return present + missing
 
 
 def _page_rows(rows, page, size, fields):

@@ -625,30 +625,82 @@ def test_mixed_metric_scopes_keep_their_own_rows():
     assert "其他指标的范围不会把这一列带过去" in by_key["cpu_sum"]["description"]
 
 
-def test_explicit_distribution_merges_by_raw_value_not_label():
+def _os(options):
+    return {"attr_id": "os_type", "attr_name": "系统类型", "attr_type": "enum", "enum_options": options}
+
+
+def test_explicit_distribution_rejects_same_enum_id_with_different_meanings():
     vm = {"model_id": "vm", "model_name": "虚拟机", "classification_id": "compute", "classification_name": "计算"}
     attrs = {
-        "host": [
-            {
-                "attr_id": "os_type",
-                "attr_name": "系统类型",
-                "attr_type": "enum",
-                "enum_options": [{"id": "2", "name": "Linux"}, {"id": "3", "name": "Windows"}],
-            }
-        ],
-        "vm": [
-            {
-                "attr_id": "os_type",
-                "attr_name": "系统类型",
-                "attr_type": "enum",
-                "enum_options": [{"id": "2", "name": "红帽"}, {"id": "4", "name": "Linux"}],
-            }
-        ],
+        "host": [_os([{"id": "1", "name": "Linux"}])],
+        "vm": [_os([{"id": "1", "name": "Windows"}, {"id": "9", "name": "Linux"}])],
+    }
+    service, calls = _service(groups={"host": {"1": 4}, "vm": {"1": 6, "9": 7}})
+    with pytest.raises(ValueError, match="不能合并") as raised:
+        service.run(
+            models=[HOST, vm],
+            attrs_by_model=attrs,
+            model_ids=["host", "vm"],
+            analysis_mode="distribution",
+            group_by=[{"sources": ["host:os_type", "vm:os_type"], "label": "系统类型"}],
+            permission_for=PERM,
+        )
+    message = str(raised.value)
+    assert "枚举值 1" in message
+    assert "主机 · 系统类型（Linux）" in message
+    assert "虚拟机 · 系统类型（Windows）" in message
+    assert calls["group"] == []
+    alias = {
+        "host": [_os([{"id": "1", "name": "Linux"}])],
+        "vm": [_os([{"id": "1", "name": "linux"}])],
+    }
+    with pytest.raises(ValueError, match="不能合并"):
+        service.run(
+            models=[HOST, vm],
+            attrs_by_model=alias,
+            model_ids=["host", "vm"],
+            analysis_mode="distribution",
+            group_by=[{"sources": ["host:os_type", "vm:os_type"]}],
+            permission_for=PERM,
+        )
+    missing = {
+        "host": [_os([{"id": "1", "name": "Linux"}])],
+        "vm": [_os([{"id": "1"}])],
+    }
+    with pytest.raises(ValueError, match="没有可核对的显示名"):
+        service.run(
+            models=[HOST, vm],
+            attrs_by_model=missing,
+            model_ids=["host", "vm"],
+            analysis_mode="distribution",
+            group_by=[{"sources": ["host:os_type", "vm:os_type"]}],
+            permission_for=PERM,
+        )
+    undeclared = _service(groups={"host": {"9": 4}, "vm": {"9": 6}})
+    with pytest.raises(ValueError, match="无法证明相同"):
+        undeclared[0].run(
+            models=[HOST, vm],
+            attrs_by_model={
+                "host": [_os([{"id": "1", "name": "Linux"}])],
+                "vm": [_os([{"id": "1", "name": "Linux"}])],
+            },
+            model_ids=["host", "vm"],
+            analysis_mode="distribution",
+            group_by=[{"sources": ["host:os_type", "vm:os_type"]}],
+            permission_for=PERM,
+        )
+
+
+def test_explicit_distribution_merges_only_compatible_enum_values():
+    vm = {"model_id": "vm", "model_name": "虚拟机", "classification_id": "compute", "classification_name": "计算"}
+    attrs = {
+        "host": [_os([{"id": "2", "name": "Linux"}, {"id": "3", "name": "Windows"}]), {"attr_id": "name", "attr_name": "名称", "attr_type": "str"}],
+        "vm": [_os([{"id": "2", "name": "Linux"}, {"id": "4", "name": "Linux"}]), {"attr_id": "name", "attr_name": "名称", "attr_type": "str"}],
         "app": APP_ATTRS,
     }
     service, calls = _service(
-        counts={"host": 6, "vm": 10, "app": 9},
-        groups={"host": {"2": 5, "3": 1, None: 2, "": 4}, "vm": {"2": 7, "4": 3, None: 1, "": 1}},
+        counts={"host": 12, "vm": 11, "app": 9},
+        groups={"host": {"2": 5, "3": 0, None: 2, "": 4}, "vm": {"2": 7, "4": 3, None: 1, "": 1}},
     )
     result = service.run(
         models=[HOST, vm, APP],
@@ -661,18 +713,10 @@ def test_explicit_distribution_merges_by_raw_value_not_label():
         permission_for=PERM,
     )
     assert result["count"] == 5
-    assert result["items"] == [
-        {
-            "model_id": "host,vm",
-            "model_name": "主机、虚拟机",
-            "field_key": "host_os_type__vm_os_type",
-            "field_label": "系统类型",
-            "group_value": "Linux / 红帽",
-            "group_raw": "2",
-            "group_kind": "value",
-            "count": 12,
-        }
-    ]
+    assert result["items"][0]["group_raw"] == "2"
+    assert result["items"][0]["group_value"] == "Linux"
+    assert result["items"][0]["count"] == 12
+    assert " / " not in result["items"][0]["group_value"]
     full = service.run(
         models=[HOST, vm, APP],
         attrs_by_model=attrs,
@@ -682,17 +726,31 @@ def test_explicit_distribution_merges_by_raw_value_not_label():
         page_size=20,
         permission_for=PERM,
     )
-    linux_rows = [row for row in full["items"] if row["group_value"] == "Linux"]
-    assert [row["group_raw"] for row in linux_rows] == ["4"]
-    assert linux_rows[0]["count"] == 3
-    assert {row["group_kind"] for row in full["items"]} >= {"value", "unfilled", "empty"}
+    by_raw = {row["group_raw"]: row for row in full["items"] if row["group_kind"] == "value"}
+    assert by_raw["2"]["count"] == 12
+    assert by_raw["4"]["group_value"] == "Linux"
+    assert by_raw["4"]["count"] == 3
+    assert by_raw["3"]["count"] == 0
+    assert by_raw["2"]["group_raw"] != by_raw["4"]["group_raw"]
     empty = next(row for row in full["items"] if row["group_kind"] == "empty")
     unfilled = next(row for row in full["items"] if row["group_kind"] == "unfilled")
     assert empty["count"] == 5
     assert unfilled["count"] == 3
-    assert all("app" not in row["model_id"] for row in full["items"])
-    assert all(row["group_kind"] != "not_applicable" for row in full["items"])
-    assert "按原始值合桶" in full["fields"][3]["description"]
+    assert all(row["model_id"] == "host,vm" for row in full["items"])
+    assert "查询范围" in full["fields"][0]["description"]
+    assert "不是这一桶实际贡献" in full["fields"][0]["description"]
+    service_names, _name_calls = _service(groups={"host": {"web": 2, "010": 1}, "vm": {"web": 3, "10": 4}})
+    merged_names = service_names.run(
+        models=[HOST, vm],
+        attrs_by_model=attrs,
+        model_ids=["host", "vm"],
+        analysis_mode="distribution",
+        group_by=[{"sources": ["host:name", "vm:name"], "label": "名称"}],
+        page_size=20,
+        permission_for=PERM,
+    )
+    by_name = {row["group_raw"]: row["count"] for row in merged_names["items"]}
+    assert by_name == {"web": 5, "010": 1, "10": 4}
     with pytest.raises(ValueError, match="类型或单位不一致"):
         service.run(
             models=[HOST, vm, APP],
@@ -703,6 +761,112 @@ def test_explicit_distribution_merges_by_raw_value_not_label():
             permission_for=PERM,
         )
     assert all(call["params"][0]["value"] in {"host", "vm"} for call in calls["group"])
+
+
+def test_distribution_scope_keeps_named_models_when_one_matches_nothing():
+    vm = {"model_id": "vm", "model_name": "虚拟机", "classification_id": "compute", "classification_name": "计算"}
+    attrs = {"host": [_os([{"id": "2", "name": "Linux"}])], "vm": [_os([{"id": "2", "name": "Linux"}])]}
+    service, calls = _service(groups={"vm": {"2": 7}})
+    result = service.run(
+        models=[HOST, vm],
+        attrs_by_model=attrs,
+        model_ids=["host", "vm"],
+        analysis_mode="distribution",
+        conditions={"logic": "and", "children": [{"scope": "global", "sources": ["vm:os_type"], "operator": "list_any[]", "value": ["2"]}]},
+        group_by=[{"sources": ["host:os_type", "vm:os_type"], "label": "系统类型"}],
+        permission_for=PERM,
+    )
+    assert result["items"] == [
+        {
+            "model_id": "host,vm",
+            "model_name": "主机、虚拟机",
+            "field_key": "host_os_type__vm_os_type",
+            "field_label": "系统类型",
+            "group_value": "Linux",
+            "group_raw": "2",
+            "group_kind": "value",
+            "count": 7,
+        }
+    ]
+    assert result["fields"][0]["description"].startswith("这条分组点名的查询范围")
+    assert all(call["params"][0]["value"] == "vm" for call in calls["group"])
+
+
+def test_null_metric_sorts_last_and_zero_stays_in_order():
+    from apps.cmdb.services.instance_query import _sort_rows
+
+    vm = {"model_id": "vm", "model_name": "虚拟机", "classification_id": "compute", "classification_name": "计算"}
+    attrs = {"host": HOST_ATTRS, "vm": [{"attr_id": "cpu_count", "attr_name": "CPU核数", "attr_type": "int", "unit": "核"}]}
+    service, _calls = _service(
+        rows={
+            "host": [{"inst_uuid": "h1", "cpu_count": 10, "capacity": 0}, {"inst_uuid": "h2", "cpu_count": 0}],
+            "vm": [{"inst_uuid": "v1", "cpu_count": 0}],
+        },
+        counts={"host": 2, "vm": 1},
+    )
+    metrics = [
+        {"key": "cpu_avg", "label": "CPU", "func": "avg", "sources": ["host:cpu_count", "vm:cpu_count"]},
+        {"key": "capacity_sum", "label": "容量", "func": "sum", "sources": ["host:capacity"]},
+    ]
+    first = service.run(
+        models=[HOST, vm],
+        attrs_by_model=attrs,
+        model_ids=["host", "vm"],
+        analysis_mode="aggregate",
+        metrics=metrics,
+        order="-cpu_avg",
+        page_size=1,
+        permission_for=PERM,
+    )
+    assert first["count"] == 2
+    assert first["items"][0]["model_id"] == "host,vm"
+    assert first["items"][0]["cpu_avg"] == pytest.approx(10 / 3)
+    assert first["items"][0]["cpu_avg__applicability"] == "有效"
+    ascending = service.run(
+        models=[HOST, vm],
+        attrs_by_model=attrs,
+        model_ids=["host", "vm"],
+        analysis_mode="aggregate",
+        metrics=metrics,
+        order="cpu_avg",
+        page_size=1,
+        permission_for=PERM,
+    )
+    assert ascending["items"][0]["model_id"] == "host,vm"
+    ordered = [
+        row["model_id"]
+        for row in service.run(
+            models=[HOST, vm],
+            attrs_by_model=attrs,
+            model_ids=["host", "vm"],
+            analysis_mode="aggregate",
+            metrics=metrics,
+            order="-cpu_avg",
+            page_size=20,
+            permission_for=PERM,
+        )["items"]
+    ]
+    assert ordered == ["host,vm", "host"]
+    by_zero = service.run(
+        models=[HOST, vm],
+        attrs_by_model=attrs,
+        model_ids=["host", "vm"],
+        analysis_mode="aggregate",
+        metrics=metrics,
+        order="-capacity_sum",
+        page_size=20,
+        permission_for=PERM,
+    )
+    assert [row["model_id"] for row in by_zero["items"]] == ["host", "host,vm"]
+    assert by_zero["items"][0]["capacity_sum"] == 0
+    assert by_zero["items"][1]["capacity_sum"] is None
+    numbers = [{"model_id": "host", "cpu": None}, {"model_id": "vm", "cpu": 0}, {"model_id": "app", "cpu": 5}]
+    assert [row["model_id"] for row in _sort_rows(numbers, "-cpu")] == ["app", "vm", "host"]
+    assert [row["model_id"] for row in _sort_rows(numbers, "cpu")] == ["vm", "app", "host"]
+    with pytest.raises(ValueError, match="类型不一致"):
+        _sort_rows([{"model_id": "a", "cpu": 1}, {"model_id": "b", "cpu": "x"}], "cpu")
+    with pytest.raises(ValueError, match="无法排序"):
+        _sort_rows([{"model_id": "a", "cpu": {"n": 1}}], "cpu")
 
 
 def test_cross_model_detail_and_bucket_limits_fail_closed():

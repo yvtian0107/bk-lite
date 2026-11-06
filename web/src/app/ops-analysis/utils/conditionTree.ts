@@ -54,7 +54,7 @@ export interface FieldGroupItem {
   sources: string[];
 }
 
-export type FieldGroupIssueCode = 'invalid' | 'required' | 'stale' | 'incompatible';
+export type FieldGroupIssueCode = 'invalid' | 'required' | 'stale' | 'incompatible' | 'enumConflict';
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   Boolean(value) && typeof value === 'object' && !Array.isArray(value);
@@ -242,6 +242,23 @@ export const previewCondition = (
 
 const signatureOf = (field: QueryFieldCatalogItem) => `${field.attrType}|${field.unit}`;
 
+const enumValuesConflict = (fields: QueryFieldCatalogItem[]) => {
+  const enums = fields.filter((field) => field.attrType === 'enum');
+  if (enums.length < 2) return false;
+  if (enums.some((field) => field.options.length === 0 || field.options.some((option) => !option.label))) {
+    return true;
+  }
+  const labels = new Map<string, Set<string>>();
+  enums.forEach((field) => {
+    field.options.forEach((option) => {
+      const known = labels.get(option.value) ?? new Set<string>();
+      known.add(option.label);
+      labels.set(option.value, known);
+    });
+  });
+  return [...labels.values()].some((known) => known.size > 1);
+};
+
 export const inspectFieldGroup = (
   value: unknown,
   catalog: QueryFieldCatalogItem[],
@@ -262,6 +279,7 @@ export const inspectFieldGroup = (
       const signatures = new Set(fields.map(signatureOf));
       if (signatures.size > 1) return 'incompatible';
     }
+    if (catalogReady && variant === 'group' && enumValuesConflict(fields)) return 'enumConflict';
   }
   return null;
 };

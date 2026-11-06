@@ -1152,6 +1152,7 @@
     "selectInstance": "Please select instance",
     "dataFormatMismatch": "Data format mismatch",
     "pageSliceNotice": "This chart shows {shown} of {total} rows on the current page. Percents and totals are for this page only.",
+    "topNSliceNotice": "This ranking received {shown} of {total} rows. Ranks are calculated from the rows in this response.",
     "resultRowCount": "Result rows",
     "instanceCountRecommend": "Bind Instance count. Result rows is how many rows came back, not the number of instances.",
     "queryParamsBlocked": "The query conditions are invalid, so this request was not sent",
@@ -2168,12 +2169,13 @@
     "func": "Function",
     "label": "Label",
     "mergeHint": "Selecting multiple fields in one row merges them by instance, and only for that metric. Average uses every value, not the average of each group's average.",
-    "groupMergeHint": "Each model stays separate until one row selects multiple fields. That merges buckets by the stored value, not by the label.",
+    "groupMergeHint": "Each model stays separate until one row selects multiple fields. Text and numbers then merge by the stored value. Enum values merge only when the stored value and its label both match.",
     "issue": {
       "invalid": "The field setup is not valid",
       "required": "Choose a field",
       "stale": "This field is no longer available",
-      "incompatible": "Field types or units do not match, so they cannot be merged"
+      "incompatible": "Field types or units do not match, so they cannot be merged",
+      "enumConflict": "These enum values use the same stored value with different meanings, or a label is missing, so they cannot be merged"
     }
   }
 }
