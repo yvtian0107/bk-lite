@@ -1,5 +1,5 @@
 import React from 'react';
-import { act, cleanup, render } from '@testing-library/react';
+import { act, cleanup, render, screen } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 const chartSpy = vi.hoisted(() => ({
@@ -138,5 +138,25 @@ describe('pie load-time option delivery', () => {
 
     expect(onReady).toHaveBeenCalledTimes(1);
     expect(onReady).toHaveBeenCalledWith(true);
+  });
+
+  it('tells the user a pie page is not the whole population', async () => {
+    render(
+      <OpsAnalysisPie
+        rawData={{
+          count: 5,
+          items: [
+            { group_value: '四', count: 4 },
+            { group_value: '三', count: 3 },
+          ],
+        }}
+        config={{ chartType: 'pie', dimensionField: 'group_value', valueField: 'count' }}
+      />,
+    );
+    await flush();
+    const notice = screen.getByTestId('page-slice-notice');
+    expect(notice.textContent).toContain('dashboard.pageSliceNotice');
+    expect(notice.getAttribute('data-shown')).toBe('2');
+    expect(notice.getAttribute('data-total')).toBe('5');
   });
 });

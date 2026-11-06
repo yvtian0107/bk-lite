@@ -42,6 +42,7 @@ import {
   processDataSourceParams,
 } from '@/app/ops-analysis/utils/widgetDataTransform';
 import { getDateRangeTimezone } from '@/app/ops-analysis/utils/dateRange';
+import { queryParamFieldPaths } from '@/app/ops-analysis/utils/queryParamFields';
 import { dynamicQueryParamsOf } from '@/app/ops-analysis/utils/optionsQueryParamRefs';
 import type { OptionsQueryEditorContext } from '@/app/ops-analysis/utils/optionsQueryCandidates';
 import { optionsSourceSummary } from '@/app/ops-analysis/utils/optionsSourceIdentity';
@@ -688,6 +689,10 @@ const ViewConfig: React.FC<ViewConfigPropsWithManager> = ({
     sampleReadRef.current = ticket;
     setLoadingRoleFields(true);
     try {
+      const paths = queryParamFieldPaths(canonicalSelectedDataSource.params);
+      if (paths.length) {
+        await form.validateFields(paths);
+      }
       const formValues = form.getFieldsValue();
       const userParams = formValues?.params || {};
       const requestParams = processDataSourceParams({
@@ -716,6 +721,10 @@ const ViewConfig: React.FC<ViewConfigPropsWithManager> = ({
         setSuppliedPreviewVersion((version) => version + 1);
       }
     } catch (error) {
+      if (error && typeof error === 'object' && 'errorFields' in error) {
+        message.warning(t('dashboard.queryParamsBlocked'));
+        return;
+      }
       interactionSampleKeyRef.current = clearSampleKeyOnFetchFailure(
         sampleReadRef.current,
         ticket,
@@ -1438,9 +1447,18 @@ const ViewConfig: React.FC<ViewConfigPropsWithManager> = ({
     ? `min(${formDrawerWidth + previewPaneWidth}px, 100vw)`
     : formDrawerWidth;
 
-  const handlePreview = useCallback(() => {
+  const handlePreview = useCallback(async () => {
     if (!isSceneWidget && !effectiveDataSource) {
       message.warning(t('dashboard.configPreviewNeedDataSource'));
+      return;
+    }
+    try {
+      const paths = queryParamFieldPaths(effectiveDataSource?.params);
+      if (paths.length) {
+        await form.validateFields(paths);
+      }
+    } catch {
+      message.warning(t('dashboard.queryParamsBlocked'));
       return;
     }
     const draft = buildCurrentDraftConfig(true);
@@ -1460,6 +1478,7 @@ const ViewConfig: React.FC<ViewConfigPropsWithManager> = ({
     buildCurrentDraftConfig,
     effectiveDataSource,
     effectiveNamespaceId,
+    form,
     isSceneWidget,
     previewFilterDefinitions,
     t,

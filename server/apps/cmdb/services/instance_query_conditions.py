@@ -148,6 +148,37 @@ def _concat(left, right):
     return merged
 
 
+def explicit_field_refs(node):
+    """叶子上写明的「模型:属性」。没有则返回空，调用方不能按属性名自行补齐。"""
+    raw_sources = node.get("sources") if isinstance(node, dict) else None
+    raw_items = raw_sources if isinstance(raw_sources, list) and raw_sources else None
+    if raw_items is None:
+        field_ref = node.get("field_ref") if isinstance(node, dict) else None
+        raw_items = [field_ref] if isinstance(field_ref, str) and field_ref.strip() else []
+    refs = []
+    for item in raw_items:
+        model_id, attr_id = _split_field_ref(item)
+        refs.append((model_id, attr_id))
+    return refs
+
+
+def _split_field_ref(item):
+    if isinstance(item, str) and ":" in item:
+        model_id, attr_id = item.split(":", 1)
+    elif isinstance(item, dict):
+        model_id = str(item.get("model_id") or "")
+        attr_id = str(item.get("attr_id") or "")
+    else:
+        raise ValueError("条件字段需要带上所属模型")
+    model_id = model_id.strip()
+    attr_id = attr_id.strip()
+    if not _MODEL_ID_PATTERN.fullmatch(model_id) or not _MODEL_ID_PATTERN.fullmatch(attr_id):
+        raise ValueError("条件字段标识不正确")
+    if attr_id == "model_id":
+        raise ValueError("模型已由模型参数限定，条件不能改查其他模型")
+    return model_id, attr_id
+
+
 def _compile_leaf(node, model_id, catalog, scope_model_ids, state):
     state["leaves"] += 1
     if state["leaves"] > MAX_LEAVES:
@@ -156,19 +187,34 @@ def _compile_leaf(node, model_id, catalog, scope_model_ids, state):
     if not isinstance(scope, str) or not scope.strip():
         raise ValueError("条件适用范围不正确")
     scope = scope.strip()
-    attr_id = str(node.get("attr_id") or "").strip()
+    refs = explicit_field_refs(node)
+    if scope == "global":
+        if not refs:
+            raise ValueError("全局条件必须指明模型字段，同名属性不会自动当作同一字段")
+        matched = [attr_id for owner, attr_id in refs if owner == model_id]
+        if not matched:
+            if any(owner not in scope_model_ids for owner, _attr_id in refs):
+                raise ValueError("条件引用的模型不在查询范围内")
+            return _UNSAT
+        if len(matched) > 1:
+            raise ValueError("同一模型在一个全局条件里重复")
+        attr = catalog.get(matched[0])
+        if attr is None:
+            raise ValueError(f"字段 {matched[0]} 不存在，无法作为条件")
+        return [[compile_filter(attr, node.get("operator"), node.get("value"))]]
+    attr_id = refs[0][1] if refs else str(node.get("attr_id") or "").strip()
+    if refs and (len(refs) != 1 or refs[0][0] != scope):
+        raise ValueError("模型条件只能使用该模型自己的字段")
     if not attr_id or not _MODEL_ID_PATTERN.fullmatch(attr_id):
         raise ValueError("条件字段不正确")
     if attr_id == "model_id":
         raise ValueError("模型已由模型参数限定，条件不能改查其他模型")
-    if scope != "global" and scope != model_id:
+    if scope != model_id:
         if scope not in scope_model_ids:
             raise ValueError("条件引用的模型不在查询范围内")
         return _ABSENT
     attr = catalog.get(attr_id)
     if attr is None:
-        if scope == "global":
-            return _UNSAT
         raise ValueError(f"字段 {attr_id} 不存在，无法作为条件")
     return [[compile_filter(attr, node.get("operator"), node.get("value"))]]
 

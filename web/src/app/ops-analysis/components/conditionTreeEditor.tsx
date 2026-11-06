@@ -7,6 +7,7 @@ import { useTranslation } from '@/utils/i18n';
 import {
   emptyConditionGroup,
   isConditionGroup,
+  leafFields,
   previewCondition,
   type ConditionGroup,
   type ConditionLeaf,
@@ -43,8 +44,13 @@ const ConditionTreeEditor: React.FC<ConditionTreeEditorProps> = ({
     const fields = node.scope === 'global'
       ? catalog
       : catalog.filter((item) => item.modelId === node.scope);
-    const field = fields.find((item) => item.attrId === node.attr_id) || catalog.find((item) => item.attrId === node.attr_id);
-    const operator = field?.operators.find((item) => item.value === node.operator);
+    const selected = leafFields(catalog, node);
+    const field = selected[0];
+    const operators = selected.length
+      ? selected[0].operators.filter((item) => selected.every((candidate) => candidate.operators.some((choice) => choice.value === item.value)))
+      : [];
+    const operator = operators.find((item) => item.value === node.operator);
+    const globalValue = node.scope === 'global' ? selected.map((item) => item.key) : [];
     const scopeOptions = [
       { value: 'global', label: t('conditionBuilder.global') },
       ...models.map(([id, name]) => ({ value: id, label: name })),
@@ -65,15 +71,35 @@ const ConditionTreeEditor: React.FC<ConditionTreeEditorProps> = ({
           disabled={disabled}
           showSearch
           optionFilterProp="label"
+          mode={node.scope === 'global' ? 'multiple' : undefined}
           className="min-w-44"
           placeholder={t('conditionBuilder.field')}
-          value={node.attr_id || undefined}
-          options={fields.map((item) => ({ value: item.attrId, label: item.label }))}
-          onChange={(attrId) => {
+          value={node.scope === 'global' ? globalValue : (node.attr_id || undefined)}
+          options={fields.map((item) => ({
+            value: node.scope === 'global' ? item.key : item.attrId,
+            label: item.label,
+          }))}
+          onChange={(nextValue) => {
+            if (node.scope === 'global') {
+              const keys = Array.isArray(nextValue) ? nextValue.map(String) : [];
+              const nextFields = catalog.filter((item) => keys.includes(item.key));
+              onLeaf({
+                scope: 'global',
+                sources: keys,
+                field_ref: keys.length === 1 ? keys[0] : undefined,
+                attr_id: nextFields[0]?.attrId || '',
+                operator: nextFields[0]?.operators[0]?.value || '',
+                value: undefined,
+              });
+              return;
+            }
+            const attrId = String(nextValue);
             const nextField = fields.find((item) => item.attrId === attrId);
             onLeaf({
               scope: node.scope,
               attr_id: attrId,
+              field_ref: nextField ? nextField.key : undefined,
+              sources: undefined,
               operator: nextField?.operators[0]?.value || '',
               value: undefined,
             });
@@ -84,7 +110,7 @@ const ConditionTreeEditor: React.FC<ConditionTreeEditorProps> = ({
           className="min-w-28"
           placeholder={t('conditionBuilder.operator')}
           value={node.operator || undefined}
-          options={(field?.operators || []).map((item) => ({ value: item.value, label: item.label }))}
+          options={operators.map((item) => ({ value: item.value, label: item.label }))}
           onChange={(nextOperator) => onLeaf({ ...node, operator: nextOperator, value: undefined })}
         />
         {renderValue(node, operator?.valueKind || 'text', field, onLeaf)}
@@ -256,6 +282,7 @@ const ConditionTreeEditor: React.FC<ConditionTreeEditorProps> = ({
   return (
     <div className="flex flex-col gap-2">
       {catalogReady ? null : <span className="text-[var(--color-text-3)]">{t('conditionBuilder.loading')}</span>}
+      <span className="text-xs text-[var(--color-text-3)]">{t('conditionBuilder.globalIdentity')}</span>
       {renderGroup(group, update, 1)}
       <Input.TextArea
         readOnly

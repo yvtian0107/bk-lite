@@ -24,6 +24,8 @@ export interface ConditionLeaf {
   attr_id: string;
   operator: string;
   value?: unknown;
+  field_ref?: string;
+  sources?: string[];
 }
 
 export interface ConditionGroup {
@@ -36,9 +38,11 @@ export type ConditionNode = ConditionLeaf | ConditionGroup;
 export type ConditionIssueCode =
   | 'invalid'
   | 'staleField'
+  | 'ambiguousField'
   | 'staleScope'
   | 'missingValue'
-  | 'unsupportedOperator';
+  | 'unsupportedOperator'
+  | 'incompatible';
 
 export interface ConditionIssue {
   code: ConditionIssueCode;
@@ -109,9 +113,26 @@ export const conditionDepth = (node: ConditionNode): number => {
   return 1 + Math.max(...node.children.map((child) => conditionDepth(child)));
 };
 
-const fieldFor = (catalog: QueryFieldCatalogItem[], scope: string, attrId: string) => {
-  if (scope === 'global') return catalog.find((item) => item.attrId === attrId);
-  return catalog.find((item) => item.modelId === scope && item.attrId === attrId);
+const explicitKeys = (node: ConditionLeaf): string[] => {
+  if (Array.isArray(node.sources) && node.sources.length) return node.sources.map(String);
+  if (typeof node.field_ref === 'string' && node.field_ref.includes(':')) return [node.field_ref];
+  return [];
+};
+
+export const leafFields = (catalog: QueryFieldCatalogItem[], node: ConditionLeaf): QueryFieldCatalogItem[] => {
+  const keys = explicitKeys(node);
+  if (keys.length) {
+    return keys.flatMap((key) => {
+      const found = catalog.find((item) => item.key === key);
+      return found ? [found] : [];
+    });
+  }
+  if (node.scope !== 'global') {
+    const found = catalog.find((item) => item.modelId === node.scope && item.attrId === node.attr_id);
+    return found ? [found] : [];
+  }
+  const matches = catalog.filter((item) => item.attrId === node.attr_id);
+  return matches.length === 1 ? matches : [];
 };
 
 const valueMissing = (kind: string, value: unknown) => {
@@ -143,16 +164,32 @@ export const inspectCondition = (
     const scope = typeof node.scope === 'string' ? node.scope : '';
     const attrId = typeof node.attr_id === 'string' ? node.attr_id : '';
     const operator = typeof node.operator === 'string' ? node.operator : '';
-    if (!scope || !attrId || !operator) return { code: 'invalid' };
+    const leaf = node as ConditionLeaf;
+    const named = explicitKeys(leaf).length > 0 || Boolean(attrId);
+    if (!scope || !named || !operator) return { code: 'invalid' };
     if (!catalogReady) return null;
     if (scope !== 'global' && !models.has(scope)) return { code: 'staleScope' };
-    const field = fieldFor(catalog, scope, attrId);
-    if (!field) return { code: 'staleField' };
-    const choice = field.operators.find((item) => item.value === operator);
-    if (!choice) return { code: 'unsupportedOperator' };
+    if (scope === 'global' && explicitKeys(leaf).length === 0) {
+      const matches = catalog.filter((item) => item.attrId === attrId);
+      if (matches.length > 1) return { code: 'ambiguousField' };
+    }
+    const fields = leafFields(catalog, leaf);
+    const requested = explicitKeys(leaf);
+    if (requested.length && fields.length !== requested.length) return { code: 'staleField' };
+    if (!fields.length) return { code: 'staleField' };
+    if (fields.length > 1) {
+      const signatures = new Set(fields.map(signatureOf));
+      if (signatures.size > 1) return { code: 'incompatible' };
+    }
+    const choice = fields[0].operators.find((item) => item.value === operator);
+    if (!choice || fields.some((field) => !field.operators.some((item) => item.value === operator))) {
+      return { code: 'unsupportedOperator' };
+    }
     if (choice.valueKind === 'enum' && Array.isArray(node.value)) {
-      const allowed = new Set(field.options.map((item) => item.value));
-      if (node.value.some((item) => !allowed.has(String(item)))) return { code: 'staleField' };
+      if (fields.some((field) => {
+        const allowed = new Set(field.options.map((item) => item.value));
+        return (node.value as unknown[]).some((item) => !allowed.has(String(item)));
+      })) return { code: 'staleField' };
     }
     if (valueMissing(choice.valueKind, node.value)) return { code: 'missingValue' };
     return null;
@@ -177,9 +214,12 @@ const previewNode = (
     const body = node.children.map((child) => previewNode(child, catalog, labels)).join(` ${joiner} `);
     return node.children.length > 1 ? `(${body})` : body || '()';
   }
-  const field = fieldFor(catalog, node.scope, node.attr_id);
+  const fields = leafFields(catalog, node);
+  const field = fields[0];
   const scope = node.scope === 'global' ? labels.global : (field?.modelName || node.scope);
-  const name = field?.label || `${node.attr_id} ${labels.missing}`;
+  const name = fields.length
+    ? fields.map((item) => item.label).join(', ')
+    : `${node.attr_id || explicitKeys(node).join(', ')} ${labels.missing}`;
   const operator = field?.operators.find((item) => item.value === node.operator);
   const operatorLabel = operator?.label || node.operator;
   if (!operator || operator.valueKind === 'none') return `(${scope} ${name} ${operatorLabel})`;

@@ -303,7 +303,7 @@ def test_model_options_follow_permission_and_do_not_expand(monkeypatch):
     monkeypatch.setattr(nats, "_build_nats_model_permission_map", lambda user_info: None)
     monkeypatch.setattr(nats.ModelManage, "search_model", lambda **kwargs: [{"model_id": "host", "model_name": "主机"}])
     empty = nats.get_model_options(user_info={})
-    assert empty == {"result": True, "data": [], "message": ""}
+    assert empty == {"result": False, "data": [], "message": "无权查询实例"}
 
     monkeypatch.setattr(nats, "_build_nats_model_permission_map", lambda user_info: PERMISSION)
     seen = {}
@@ -323,3 +323,19 @@ def test_model_options_follow_permission_and_do_not_expand(monkeypatch):
         ("nginx", "Nginx", "Nginx · nginx"),
         ("host", "主机", "主机 · host"),
     ]
+
+    monkeypatch.setattr(nats.ModelManage, "search_model", lambda **kwargs: [])
+    legitimate_empty = nats.get_model_options(user_info=USER_INFO)
+    assert legitimate_empty == {"result": True, "data": [], "message": ""}
+
+
+def test_instance_query_rejects_non_numeric_team_locally(monkeypatch):
+    def forbidden(**kwargs):
+        raise AssertionError("should not build permissions")
+
+    monkeypatch.setattr(nats, "_build_nats_model_permission_map", forbidden)
+    out = nats.query_model_instances(analysis_mode="count", user_info={"user": "alice", "team": "not-a-number"})
+    assert out["result"] is False
+    assert out["message"] == "组织不正确"
+    options = nats.get_model_options(user_info={"user": "alice", "team": "not-a-number"})
+    assert options == {"result": False, "data": [], "message": "组织不正确"}

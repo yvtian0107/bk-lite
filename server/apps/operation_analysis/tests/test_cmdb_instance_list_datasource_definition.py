@@ -19,7 +19,7 @@ def test_cmdb_instance_query_is_one_source_for_four_modes():
     assert source["chart_type"] == ["table", "single", "bar", "pie", "topN"]
     assert source["tag"] == ["cmdb"]
     assert "暂不支持" not in source["desc"]
-    assert "范围内数量" in source["desc"]
+    assert "实例数量" in source["desc"]
 
     mode = next(item for item in source["params"] if item["name"] == "analysis_mode")
     assert mode["required"] is True
@@ -56,12 +56,20 @@ def test_cmdb_instance_query_is_one_source_for_four_modes():
     assert fields["chart_type"] == []
 
 
-def test_retired_instance_detail_source_is_deactivated_on_init():
+def test_instance_detail_source_is_not_force_retired():
     from apps.operation_analysis.management.commands.init_source_api_data import RETIRED_BUILTIN_DATASOURCES
 
-    retired = next(item for item in RETIRED_BUILTIN_DATASOURCES if item["rest_api"] == "cmdb/list_model_instances")
-    assert retired["build_in_key"] == "CMDB 实例明细::cmdb/list_model_instances"
-    assert retired["name"] == "CMDB 实例明细"
+    assert all(item["rest_api"] != "cmdb/list_model_instances" for item in RETIRED_BUILTIN_DATASOURCES)
+
+
+def test_source_api_json_has_no_duplicate_keys():
+    def reject_duplicate_keys(pairs):
+        keys = [key for key, _value in pairs]
+        duplicates = sorted({key for key in keys if keys.count(key) > 1})
+        assert not duplicates, duplicates
+        return dict(pairs)
+
+    json.loads(SOURCE_API.read_text(encoding="utf-8"), object_pairs_hook=reject_duplicate_keys)
 
 
 def test_cmdb_model_options_datasource_is_option_only():

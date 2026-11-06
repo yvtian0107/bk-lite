@@ -56,6 +56,51 @@ describe('condition tree', () => {
     expect(previewCondition(tree, catalog, labels)).toContain('主机 · 系统类型');
     expect(previewCondition(tree, catalog, labels)).toContain('Global');
     expect(inspectCondition(tree, catalog, true)?.code).toBe('staleField');
+    const sameName = {
+      logic: 'and' as const,
+      children: [{ scope: 'global', attr_id: 'capacity', operator: 'int>', value: 1 }],
+    };
+    const withHost = [
+      ...catalog,
+      {
+        ...catalog[1],
+        key: 'host:capacity',
+        label: '主机 · 容量',
+        modelId: 'host',
+        modelName: '主机',
+      },
+    ];
+    expect(inspectCondition(sameName, withHost, true)?.code).toBe('ambiguousField');
+    expect(inspectCondition({
+      logic: 'and',
+      children: [{
+        scope: 'global',
+        sources: ['host:capacity'],
+        attr_id: 'capacity',
+        operator: 'int>',
+        value: 1,
+      }],
+    }, withHost, true)).toBeNull();
+    expect(previewCondition({
+      logic: 'and',
+      children: [{
+        scope: 'global',
+        sources: ['host:capacity'],
+        attr_id: 'capacity',
+        operator: 'int>',
+        value: 1,
+      }],
+    }, withHost, labels)).toContain('主机 · 容量');
+    expect(previewCondition({
+      logic: 'and',
+      children: [{
+        scope: 'global',
+        sources: ['host:capacity'],
+        attr_id: 'capacity',
+        operator: 'int>',
+        value: 1,
+      }],
+    }, withHost, labels)).not.toContain('应用 · 容量');
     expect(inspectCondition({ logic: 'and', children: [] }, catalog, true)).toBeNull();
   });
 

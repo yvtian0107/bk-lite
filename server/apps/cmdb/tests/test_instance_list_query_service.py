@@ -1,6 +1,13 @@
 import pytest
 
-from apps.cmdb.services.instance_query import MAX_PAGE_SIZE, MAX_SCAN, CmdbInstanceQueryService
+from apps.cmdb.services.instance_query import (
+    BUCKET_LIMIT_MESSAGE,
+    MATERIALIZE_LIMIT_MESSAGE,
+    MAX_BUCKETS,
+    MAX_PAGE_SIZE,
+    MAX_SCAN,
+    CmdbInstanceQueryService,
+)
 
 HOST = {"model_id": "host", "model_name": "主机", "classification_id": "compute", "classification_name": "计算"}
 APP = {"model_id": "app", "model_name": "应用", "classification_id": "biz", "classification_name": "业务"}
@@ -320,9 +327,18 @@ def test_compatible_mapping_merges_one_metric():
         metrics=[{"key": "cpu_sum", "label": "CPU核数", "func": "sum", "sources": ["host:cpu_count", "vm:cpu_count"]}],
         permission_for=PERM,
     )
-    assert [row["cpu_sum"] for row in result["items"]] == [4, 6]
+    assert result["items"] == [
+        {
+            "model_id": "host,vm",
+            "model_name": "主机、虚拟机",
+            "cpu_sum": 10,
+            "cpu_sum__applicability": "有效",
+        }
+    ]
     assert result["fields"][2]["unit"] == "核"
     assert result["fields"][2]["aggregation"] == "sum"
+    assert "按实例合并" in result["fields"][2]["description"]
+    assert "app" not in result["items"][0]["model_id"]
 
 
 def test_removed_condition_field_is_not_dropped():
@@ -339,7 +355,7 @@ def test_removed_condition_field_is_not_dropped():
 
 def test_over_limit_fails_instead_of_scanning_a_prefix():
     service, calls = _service(rows={"host": [{"inst_uuid": "only"}]}, counts={"host": MAX_SCAN + 1})
-    with pytest.raises(ValueError, match="不会只扫描"):
+    with pytest.raises(ValueError, match="不会只使用已取出"):
         _run(
             service,
             model_ids=["host"],
@@ -363,11 +379,192 @@ def test_page_size_above_max_fails_and_legacy_equality_still_filters():
 
 def test_global_condition_rejects_same_attr_with_different_units():
     service, calls = _service()
-    with pytest.raises(ValueError, match="类型或单位不一致"):
+    with pytest.raises(ValueError, match="同名属性默认不是同一字段"):
         _run(
             service,
             model_ids=["host", "app"],
             analysis_mode="count",
             conditions={"logic": "and", "children": [{"scope": "global", "attr_id": "capacity", "operator": "int>", "value": 1}]},
         )
+    with pytest.raises(ValueError, match="类型或单位不一致"):
+        _run(
+            service,
+            model_ids=["host", "app"],
+            analysis_mode="count",
+            conditions={
+                "logic": "and",
+                "children": [
+                    {
+                        "scope": "global",
+                        "sources": ["host:capacity", "app:capacity"],
+                        "operator": "int>",
+                        "value": 1,
+                    }
+                ],
+            },
+        )
     assert calls["list"] == []
+
+
+def test_explicit_mapping_aggregates_each_function_across_instances():
+    vm = {"model_id": "vm", "model_name": "虚拟机", "classification_id": "compute", "classification_name": "计算"}
+    attrs = {
+        "host": [{"attr_id": "cpu_count", "attr_name": "CPU核数", "attr_type": "int", "unit": "核"}],
+        "vm": [{"attr_id": "cpu_count", "attr_name": "CPU核数", "attr_type": "int", "unit": "核"}],
+    }
+    service, _calls = _service(
+        rows={
+            "host": [
+                {"inst_uuid": "h1", "cpu_count": 1},
+                {"inst_uuid": "h2", "cpu_count": 1},
+                {"inst_uuid": "h3", "cpu_count": 1},
+            ],
+            "vm": [{"inst_uuid": "v1", "cpu_count": 10}],
+        },
+        counts={"host": 3, "vm": 1},
+    )
+    metrics = [{"key": "cpu", "label": "CPU", "sources": ["host:cpu_count", "vm:cpu_count"]}]
+    summed = service.run(
+        models=[HOST, vm],
+        attrs_by_model=attrs,
+        model_ids=["host", "vm"],
+        analysis_mode="aggregate",
+        metrics=[{**metrics[0], "func": "sum"}],
+        permission_for=PERM,
+    )
+    assert summed["items"][0]["cpu"] == 13
+    averaged = service.run(
+        models=[HOST, vm],
+        attrs_by_model=attrs,
+        model_ids=["host", "vm"],
+        analysis_mode="aggregate",
+        metrics=[{**metrics[0], "func": "avg"}],
+        permission_for=PERM,
+    )
+    assert averaged["items"][0]["cpu"] == pytest.approx(3.25)
+    assert "不是把各模型的平均值再平均" in averaged["fields"][2]["description"]
+    minimum = service.run(
+        models=[HOST, vm],
+        attrs_by_model=attrs,
+        model_ids=["host", "vm"],
+        analysis_mode="aggregate",
+        metrics=[{**metrics[0], "func": "min"}],
+        permission_for=PERM,
+    )
+    maximum = service.run(
+        models=[HOST, vm],
+        attrs_by_model=attrs,
+        model_ids=["host", "vm"],
+        analysis_mode="aggregate",
+        metrics=[{**metrics[0], "func": "max"}],
+        permission_for=PERM,
+    )
+    counted = service.run(
+        models=[HOST, vm],
+        attrs_by_model=attrs,
+        model_ids=["host", "vm"],
+        analysis_mode="aggregate",
+        metrics=[{**metrics[0], "func": "count"}],
+        permission_for=PERM,
+    )
+    assert minimum["items"][0]["cpu"] == 1
+    assert maximum["items"][0]["cpu"] == 10
+    assert counted["items"][0]["cpu"] == 4
+    assert counted["items"][0]["model_id"] == "host,vm"
+
+
+def test_unmatched_aggregate_is_not_labeled_unfilled():
+    service, _calls = _service(
+        rows={
+            "host": [{"inst_uuid": "h", "cpu_count": 0, "capacity": ""}],
+            "app": [{"inst_uuid": "a", "capacity": None}],
+        },
+        counts={"host": 1, "app": 1},
+    )
+    blocked = {
+        "logic": "and",
+        "children": [{"scope": "global", "sources": ["host:os_type"], "operator": "list_any[]", "value": ["2"]}],
+    }
+    result = _run(
+        service,
+        model_ids=["host", "app"],
+        analysis_mode="aggregate",
+        conditions=blocked,
+        metrics=[{"key": "capacity_sum", "label": "容量", "func": "sum", "sources": ["app:capacity"]}],
+    )
+    app = next(row for row in result["items"] if row["model_id"] == "app")
+    assert app["capacity_sum"] is None
+    assert app["capacity_sum__applicability"] == "无匹配"
+    blank = _run(
+        service,
+        model_ids=["host"],
+        analysis_mode="aggregate",
+        metrics=[{"key": "capacity_sum", "label": "容量", "func": "sum", "sources": ["host:capacity"]}],
+    )
+    assert blank["items"][0]["capacity_sum"] is None
+    assert blank["items"][0]["capacity_sum__applicability"] == "空字符串"
+    zero = _run(
+        service,
+        model_ids=["host"],
+        analysis_mode="aggregate",
+        metrics=[{"key": "cpu_sum", "label": "CPU", "func": "sum", "sources": ["host:cpu_count"]}],
+    )
+    assert zero["items"][0]["cpu_sum"] == 0
+    assert zero["items"][0]["cpu_sum__applicability"] == "有效"
+    missing = _run(
+        service,
+        model_ids=["app"],
+        analysis_mode="aggregate",
+        metrics=[{"key": "capacity_sum", "label": "容量", "func": "sum", "sources": ["app:capacity"]}],
+    )
+    assert missing["items"][0]["capacity_sum"] is None
+    assert missing["items"][0]["capacity_sum__applicability"] == "未填写"
+
+
+def test_graph_aggregation_is_not_capped_by_the_materialize_limit():
+    service, calls = _service(counts={"host": 9000}, groups={"host": {"2": 8000, "3": 1000}})
+    counted = _run(service, model_ids=["host"], analysis_mode="count")
+    assert counted["items"][0]["count"] == 9000
+    assert counted["items"][0]["scope_count"] == 9000
+    distributed = _run(service, model_ids=["host"], analysis_mode="distribution", group_by="os_type")
+    assert sum(row["count"] for row in distributed["items"]) == 9000
+    assert all(call["page_size"] == 1 for call in calls["list"])
+    paged = _run(service, model_ids=["host"], analysis_mode="list", page=2, page_size=20)
+    assert paged["count"] == 9000
+    assert calls["list"][-1]["page"] == 2
+    assert calls["list"][-1]["page_size"] == 20
+
+
+def test_same_model_or_union_cannot_bypass_the_materialize_limit():
+    def list_instances(**kwargs):
+        total = 3000
+        marker = str(kwargs["params"])
+        if kwargs["page_size"] == 1:
+            return [{"inst_uuid": marker}], total
+        base = 0 if "left" in marker else 3000
+        return [{"inst_uuid": f"id-{base + index}", "cpu_count": 1} for index in range(total)], total
+
+    service = CmdbInstanceQueryService(list_instances, lambda **kwargs: {})
+    tree = {
+        "logic": "or",
+        "children": [
+            {"scope": "host", "attr_id": "ip_addr", "operator": "str=", "value": "left"},
+            {"scope": "host", "attr_id": "inst_name", "operator": "str=", "value": "right"},
+        ],
+    }
+    with pytest.raises(ValueError, match=MATERIALIZE_LIMIT_MESSAGE):
+        _run(
+            service,
+            model_ids=["host"],
+            analysis_mode="aggregate",
+            conditions=tree,
+            metrics=[{"key": "cpu_sum", "label": "CPU", "func": "sum", "sources": ["host:cpu_count"]}],
+        )
+
+
+def test_cross_model_detail_and_bucket_limits_fail_closed():
+    service, _calls = _service(counts={"host": 3000, "app": 2500}, groups={"host": {str(index): 1 for index in range(MAX_BUCKETS + 1)}})
+    with pytest.raises(ValueError, match=MATERIALIZE_LIMIT_MESSAGE):
+        _run(service, model_ids=["host", "app"], analysis_mode="list")
+    with pytest.raises(ValueError, match=BUCKET_LIMIT_MESSAGE):
+        _run(service, model_ids=["host"], analysis_mode="distribution", group_by="os_type")

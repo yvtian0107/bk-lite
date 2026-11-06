@@ -1,8 +1,11 @@
 """运营分析用的 CMDB 实例查询。
 
 一条查询覆盖四种分析：明细、数量、属性分布、数值聚合。范围由分类和模型共同决定，
-两者都可以空。条件是结构化树，先过滤再统计，统计结果再排序分页。超过扫描上限时
-直接失败，不用前 N 条冒充全量。
+两者都可以空。条件是结构化树，先过滤再统计，统计结果再排序分页。
+
+5000 是服务内逐条取出后再合并或汇总的上限，不是数量和分组的业务上限。图上能直接
+完成的计数和属性分布不受这 5000 限制。分组桶另有 2000 的上限。超过任一执行上限都
+失败，不用已取出的部分冒充全量。
 """
 
 from __future__ import annotations
@@ -10,7 +13,14 @@ from __future__ import annotations
 import re
 from typing import Any, Callable
 
-from apps.cmdb.services.instance_query_conditions import AGGREGATE_FUNCS, FILTERABLE_TYPES, NUMERIC_FUNCS, model_clauses_or_unsat, operator_choices
+from apps.cmdb.services.instance_query_conditions import (
+    AGGREGATE_FUNCS,
+    FILTERABLE_TYPES,
+    NUMERIC_FUNCS,
+    explicit_field_refs,
+    model_clauses_or_unsat,
+    operator_choices,
+)
 
 _MODEL_ID_PATTERN = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 _INT_PATTERN = re.compile(r"-?\d+")
@@ -22,6 +32,8 @@ DEFAULT_PAGE_SIZE = 20
 MAX_PAGE_SIZE = 200
 MAX_SCAN = 5000
 MAX_BUCKETS = 2000
+MATERIALIZE_LIMIT_MESSAGE = f"需要在服务内逐条取出后再合并或汇总的实例超过 {MAX_SCAN}，请缩小条件后再查询。" "数量和属性分布若能在图上直接算完，不受这个上限约束。" f"系统不会只使用已取出的前 {MAX_SCAN} 条并当成全量结果"
+BUCKET_LIMIT_MESSAGE = f"分组结果超过 {MAX_BUCKETS} 个，请缩小条件或改分组字段。这和实例取出上限不是同一限制"
 MAX_KEY_ATTRS = 12
 DEFAULT_ORDER_FIELD = "inst_name"
 
@@ -33,6 +45,11 @@ ANALYSIS_MODES = (ANALYSIS_LIST, ANALYSIS_COUNT, ANALYSIS_DISTRIBUTION, ANALYSIS
 
 NOT_APPLICABLE = "不适用"
 UNFILLED = "未填写"
+STATE_OK = "有效"
+STATE_UNMATCHED = "无匹配"
+STATE_NO_INSTANCE = "无实例"
+STATE_BLANK = "空字符串"
+STATE_MIXED_EMPTY = "未填写、空字符串"
 KIND_VALUE = "value"
 KIND_EMPTY = "empty"
 KIND_UNFILLED = "unfilled"
@@ -212,8 +229,7 @@ class CmdbInstanceQueryService:
         page_number = _parse_positive(page, "page", DEFAULT_PAGE, maximum=None)
         size = _parse_positive(page_size, "page_size", DEFAULT_PAGE_SIZE, maximum=MAX_PAGE_SIZE)
         catalogs = {model["model_id"]: _attr_catalog(None if attrs_by_model is None else attrs_by_model.get(model["model_id"])) for model in selected}
-        tree = _normalize_conditions(conditions, attr_filters, selected, catalogs)
-        _assert_global_condition_types(tree, selected, catalogs)
+        tree = _bind_condition_fields(_normalize_conditions(conditions, attr_filters, selected, catalogs), selected, catalogs)
         scope_ids = {model["model_id"] for model in selected}
         prepared = []
         for model in selected:
@@ -251,12 +267,15 @@ class CmdbInstanceQueryService:
             rows, total = self._page_model(model, clauses, permission, creator, page_number, size, graph_order)
             return {"items": [_project_list_row(row, model, fields) for row in rows], "count": total, "fields": fields}
         total = 0
-        collected = []
+        counted = []
         for model, _catalog, permission, clauses in prepared:
             count = self._count_model(model, clauses, permission, creator)
             total += count
             if total > MAX_SCAN:
-                raise ValueError(f"匹配实例超过 {MAX_SCAN}，请缩小条件后再查询。系统不会只扫描前 {MAX_SCAN} 条并当成全量结果")
+                raise ValueError(MATERIALIZE_LIMIT_MESSAGE)
+            counted.append((model, permission, clauses, count))
+        collected = []
+        for model, permission, clauses, count in counted:
             fetched, fetched_count = self._page_model(model, clauses, permission, creator, 1, max(count, 1), DEFAULT_ORDER_FIELD)
             if fetched_count != count or len(fetched) < count:
                 raise ValueError("实例结果不完整，已中止，不会用部分结果充当全量")
@@ -289,7 +308,7 @@ class CmdbInstanceQueryService:
             for model, catalog, permission, clauses in prepared:
                 rows.extend(self._distribution_model(model, catalog, permission, clauses, spec, creator))
         if len(rows) > MAX_BUCKETS:
-            raise ValueError(f"分组结果超过 {MAX_BUCKETS} 个，请缩小条件或改分组字段")
+            raise ValueError(BUCKET_LIMIT_MESSAGE)
         if not show_not_applicable:
             rows = [row for row in rows if row["group_kind"] != KIND_NA]
         if not show_unfilled:
@@ -331,48 +350,95 @@ class CmdbInstanceQueryService:
         return [_bucket(model, spec, label, raw, kind, count) for (kind, raw, label), count in counts.items()]
 
     def _aggregate(self, prepared, metrics, order, page_number, size, creator):
-        rows = []
-        for model, catalog, permission, clauses in prepared:
-            row = {"model_id": model["model_id"], "model_name": model["model_name"]}
+        merged = any(_metric_spans_models(metric) for metric in metrics)
+        if not merged:
+            rows = []
+            for model, catalog, permission, clauses in prepared:
+                row = {"model_id": model["model_id"], "model_name": model["model_name"]}
+                for metric in metrics:
+                    value, state = self._metric_value(model, catalog, permission, clauses, metric, creator)
+                    row[metric["key"]] = value
+                    row[f"{metric['key']}__applicability"] = state
+                rows.append(row)
+        else:
+            referenced = []
+            seen_models = set()
             for metric in metrics:
-                value, state = self._metric_value(model, catalog, permission, clauses, metric, creator)
+                for source in metric["sources"]:
+                    if source["model_id"] in seen_models:
+                        continue
+                    seen_models.add(source["model_id"])
+                    referenced.append(source)
+            row = {
+                "model_id": ",".join(source["model_id"] for source in referenced),
+                "model_name": "、".join(source["model_name"] for source in referenced),
+            }
+            prepared_by_id = {model["model_id"]: (model, catalog, permission, clauses) for model, catalog, permission, clauses in prepared}
+            for metric in metrics:
+                value, state = self._merged_metric_value(prepared_by_id, metric, creator)
                 row[metric["key"]] = value
                 row[f"{metric['key']}__applicability"] = state
-            rows.append(row)
+            rows = [row]
         allowed = {"model_id", "model_name", *[metric["key"] for metric in metrics]}
         rows = _sort_rows(rows, _normalize_order(order, allowed, "model_id"))
         return _page_rows(rows, page_number, size, _aggregate_fields(metrics))
 
     def _metric_value(self, model, catalog, permission, clauses, metric, creator):
-        source = next((item for item in metric["sources"] if item["model_id"] == model["model_id"]), None)
-        if source is None:
+        sources = [item for item in metric["sources"] if item["model_id"] == model["model_id"]]
+        if not sources:
             return None, NOT_APPLICABLE
-        if clauses is None:
-            if metric["func"] == "count":
-                return 0, "有效"
-            return None, UNFILLED
+        if len(sources) == 1:
+            return self._source_metric_value(model, catalog, permission, clauses, sources[0], metric, creator)
+        local_metric = dict(metric)
+        local_metric["sources"] = sources
+        return self._merged_metric_value({model["model_id"]: (model, catalog, permission, clauses)}, local_metric, creator)
+
+    def _merged_metric_value(self, prepared_by_id, metric, creator):
+        """只合并这条指标显式点名的模型，不把范围里没被选中的模型加进来。"""
         if metric["func"] == "count":
-            return self._count_model(model, clauses, permission, creator), "有效"
+            total = 0
+            states = []
+            for source in metric["sources"]:
+                model, catalog, permission, clauses = prepared_by_id[source["model_id"]]
+                value, state = self._source_metric_value(model, catalog, permission, clauses, source, metric, creator)
+                total += value
+                states.append(state)
+            return total, _combine_count_states(states)
+        numbers = []
+        states = []
+        attr_type = None
+        for source in metric["sources"]:
+            model, catalog, permission, clauses = prepared_by_id[source["model_id"]]
+            part, state, part_type = self._numeric_parts(model, catalog, permission, clauses, source, creator)
+            numbers.extend(part)
+            states.append(state)
+            attr_type = part_type or attr_type
+        if numbers:
+            return _reduce_numbers(metric["func"], numbers, attr_type), STATE_OK
+        return None, _combine_empty_states(states)
+
+    def _source_metric_value(self, model, catalog, permission, clauses, source, metric, creator):
+        if metric["func"] == "count":
+            return _count_outcome(clauses, self._count_model(model, clauses, permission, creator))
+        numbers, state, attr_type = self._numeric_parts(model, catalog, permission, clauses, source, creator)
+        if not numbers:
+            return None, state
+        return _reduce_numbers(metric["func"], numbers, attr_type), STATE_OK
+
+    def _numeric_parts(self, model, catalog, permission, clauses, source, creator):
         attr = catalog.get(source["attr_id"])
         if attr is None:
             raise ValueError(f"字段 {source['attr_id']} 不存在，无法聚合")
+        if clauses is None:
+            return [], STATE_UNMATCHED, attr.get("attr_type")
         rows, _total = self._load_all(model, clauses, permission, creator)
-        numbers = []
-        for row in rows:
-            raw = row.get(attr["attr_id"])
-            if raw in (None, ""):
-                continue
-            numbers.append(float(raw))
-        if not numbers:
-            return None, UNFILLED
-        func = metric["func"]
-        if func == "sum":
-            return _sum_numbers(numbers, attr["attr_type"]), "有效"
-        if func == "min":
-            return min(numbers), "有效"
-        if func == "max":
-            return max(numbers), "有效"
-        return sum(numbers) / len(numbers), "有效"
+        if not rows:
+            state = STATE_NO_INSTANCE if not clauses else STATE_UNMATCHED
+            return [], state, attr.get("attr_type")
+        numbers, missing, blank = _collect_numbers(rows, attr["attr_id"])
+        if numbers:
+            return numbers, STATE_OK, attr.get("attr_type")
+        return [], _empty_numeric_state(missing, blank), attr.get("attr_type")
 
     def _count_model(self, model, clauses, permission, creator):
         if clauses is None:
@@ -414,7 +480,7 @@ class CmdbInstanceQueryService:
             )
             total = _require_total(total)
             if total > MAX_SCAN:
-                raise ValueError(f"匹配实例超过 {MAX_SCAN}，请缩小条件后再查询。系统不会只扫描前 {MAX_SCAN} 条并当成全量结果")
+                raise ValueError(MATERIALIZE_LIMIT_MESSAGE)
             fetched, fetched_count = self.list_instances(
                 model_id=model["model_id"],
                 params=list(clause),
@@ -429,6 +495,8 @@ class CmdbInstanceQueryService:
             for row in fetched or []:
                 if isinstance(row, dict):
                     seen[str(row.get("inst_uuid") or id(row))] = row
+            if len(seen) > MAX_SCAN:
+                raise ValueError(MATERIALIZE_LIMIT_MESSAGE)
         return list(seen.values()), len(seen)
 
 
@@ -445,35 +513,69 @@ def _requested_models(model_id, model_ids):
     return listed or legacy
 
 
-def _assert_global_condition_types(tree, selected, catalogs):
-    """同一全局属性在多个模型上类型或单位不同时，不能当成同一个条件。"""
-    for attr_id in _global_condition_attrs(tree):
-        signatures = {}
-        for model in selected:
-            attr = catalogs[model["model_id"]].get(attr_id)
-            if not attr:
-                continue
-            signature = (attr.get("attr_type"), str(attr.get("unit") or ""))
-            signatures.setdefault(signature, model["model_name"])
-        if len(signatures) > 1:
-            names = "、".join(signatures.values())
-            raise ValueError(f"全局条件字段 {attr_id} 在 {names} 上的类型或单位不一致")
+def _bind_condition_fields(tree, selected, catalogs):
+    """全局条件必须点名模型字段。同名属性不会因为属性标识相同就变成同一个条件。"""
+    if tree is None:
+        return None
+    if not isinstance(tree, dict):
+        raise ValueError("条件必须是结构化条件树")
+    return _bind_condition_node(tree, selected, catalogs)
 
 
-def _global_condition_attrs(node, found=None):
-    found = set() if found is None else found
+def _bind_condition_node(node, selected, catalogs):
     if not isinstance(node, dict):
-        return found
+        raise ValueError("条件必须是结构化条件树")
     children = node.get("children")
-    if isinstance(children, list):
-        for child in children:
-            _global_condition_attrs(child, found)
-        return found
+    if isinstance(children, list) or (node.get("logic") and "attr_id" not in node and "sources" not in node and "field_ref" not in node):
+        if children in (None, []):
+            return node
+        if not isinstance(children, list):
+            raise ValueError("条件组的 children 必须是列表")
+        bound = dict(node)
+        bound["children"] = [_bind_condition_node(child, selected, catalogs) for child in children]
+        return bound
+    return _bind_condition_leaf(node, selected, catalogs)
+
+
+def _bind_condition_leaf(node, selected, catalogs):
     scope = str(node.get("scope") or "global").strip() or "global"
-    attr_id = str(node.get("attr_id") or "").strip()
-    if scope == "global" and attr_id:
-        found.add(attr_id)
-    return found
+    refs = explicit_field_refs(node)
+    selected_ids = {model["model_id"] for model in selected}
+    if scope != "global":
+        if refs and (len(refs) != 1 or refs[0][0] != scope):
+            raise ValueError("模型条件只能使用该模型自己的字段")
+        return node
+    if not refs:
+        attr_id = str(node.get("attr_id") or "").strip()
+        if not attr_id or not _MODEL_ID_PATTERN.fullmatch(attr_id):
+            raise ValueError("条件字段不正确")
+        owners = [model for model in selected if catalogs[model["model_id"]].get(attr_id)]
+        if not owners:
+            raise ValueError(f"字段 {attr_id} 不存在，无法作为条件")
+        if len(owners) > 1:
+            names = "、".join(model["model_name"] for model in owners)
+            raise ValueError(f"全局条件里的 {attr_id} 同时出现在 {names}。同名属性默认不是同一字段，请按模型分别选择")
+        refs = [(owners[0]["model_id"], attr_id)]
+    _assert_condition_refs(refs, selected_ids, catalogs)
+    bound = dict(node)
+    bound["scope"] = "global"
+    bound["sources"] = [f"{model_id}:{attr_id}" for model_id, attr_id in refs]
+    bound["field_ref"] = bound["sources"][0] if len(refs) == 1 else ""
+    bound["attr_id"] = refs[0][1]
+    return bound
+
+
+def _assert_condition_refs(refs, selected_ids, catalogs):
+    signatures = set()
+    for model_id, attr_id in refs:
+        if model_id not in selected_ids:
+            raise ValueError("条件引用的模型不在查询范围内")
+        attr = catalogs[model_id].get(attr_id)
+        if attr is None:
+            raise ValueError(f"字段 {attr_id} 不存在，无法作为条件")
+        signatures.add((attr.get("attr_type"), str(attr.get("unit") or "")))
+    if len(signatures) > 1:
+        raise ValueError("字段类型或单位不一致，不能合并")
 
 
 def _normalize_conditions(conditions, attr_filters, selected, catalogs):
@@ -637,7 +739,14 @@ def _parse_sources(raw, selected, catalogs, purpose):
         attr = catalogs[model_id].get(attr_id)
         if attr is None:
             raise ValueError(f"字段 {attr_id} 不存在，无法{purpose}")
-        sources.append({"model_id": model_id, "attr_id": attr_id, "model_name": models[model_id]["model_name"]})
+        sources.append(
+            {
+                "model_id": model_id,
+                "attr_id": attr_id,
+                "model_name": models[model_id]["model_name"],
+                "attr_name": str(attr.get("attr_name") or attr_id),
+            }
+        )
     return sources
 
 
@@ -783,11 +892,11 @@ def _count_fields():
         {"key": "count", "title": "数量", "value_type": "number", "role": "metric", "aggregation": "count", "description": "该模型过滤后的实例数"},
         {
             "key": "scope_count",
-            "title": "范围内数量",
+            "title": "实例数量",
             "value_type": "number",
             "role": "metric",
             "aggregation": "count",
-            "description": "当前范围过滤后的实例总数，不是信封上的行数",
+            "description": "当前范围过滤后的实例总数。单值绑定这一列。返回信封上的 count 是结果行数，不是实例数量",
         },
     ]
 
@@ -828,15 +937,24 @@ def _aggregate_fields(metrics):
                 "title": f"{metric['label']}·口径",
                 "value_type": "string",
                 "role": "dimension",
-                "description": "有效、未填写或不适用。不适用不是 0",
+                "description": "有效、无匹配、无实例、未填写、空字符串或不适用。无匹配不是未填写，空字符串和 0 也不是未填写",
             }
         )
     return fields
 
 
+def _metric_spans_models(metric):
+    return len({source["model_id"] for source in metric["sources"]}) > 1
+
+
 def _metric_description(metric):
-    names = "、".join(f"{source['model_name']} · {source['attr_id']}" for source in metric["sources"])
-    return f"{metric['func']}：{names}"
+    names = "、".join(f"{source['model_name']} · {source.get('attr_name') or source['attr_id']}" for source in metric["sources"])
+    if _metric_spans_models(metric):
+        scope = "显式映射后按实例合并，只包含点名的模型"
+    else:
+        scope = "按模型分别统计"
+    average = "平均按全部实例的数值计算，不是把各模型的平均值再平均。" if metric["func"] == "avg" and _metric_spans_models(metric) else ""
+    return f"{metric['func']}（{scope}）：{names}。{average}无匹配、未填写和空字符串不记成 0；真实 0 仍会计入。"
 
 
 def _project_list_row(entity, model, fields):
@@ -1111,6 +1229,83 @@ def _require_total(count):
     if number < 0:
         raise ValueError("数量结果不正确")
     return number
+
+
+def _count_outcome(clauses, count):
+    if clauses is None:
+        return 0, STATE_UNMATCHED
+    if count == 0 and not clauses:
+        return 0, STATE_NO_INSTANCE
+    if count == 0:
+        return 0, STATE_UNMATCHED
+    return count, STATE_OK
+
+
+def _collect_numbers(rows, attr_id):
+    numbers = []
+    missing = 0
+    blank = 0
+    for row in rows:
+        raw = row.get(attr_id, None)
+        if raw is None:
+            missing += 1
+            continue
+        if raw == "":
+            blank += 1
+            continue
+        if isinstance(raw, bool):
+            raise ValueError("聚合值不是数字")
+        try:
+            number = float(raw)
+        except (TypeError, ValueError) as exc:
+            raise ValueError("聚合值不是数字") from exc
+        if number != number or number in (float("inf"), float("-inf")):
+            raise ValueError("聚合值不是数字")
+        numbers.append(number)
+    return numbers, missing, blank
+
+
+def _empty_numeric_state(missing, blank):
+    if missing and blank:
+        return STATE_MIXED_EMPTY
+    if blank:
+        return STATE_BLANK
+    return UNFILLED
+
+
+def _combine_count_states(states):
+    if any(state == STATE_OK for state in states):
+        return STATE_OK
+    if states and all(state == STATE_NO_INSTANCE for state in states):
+        return STATE_NO_INSTANCE
+    return STATE_UNMATCHED
+
+
+def _combine_empty_states(states):
+    unique = set(states)
+    if not unique or unique <= {STATE_UNMATCHED}:
+        return STATE_UNMATCHED
+    if unique <= {STATE_NO_INSTANCE}:
+        return STATE_NO_INSTANCE
+    if unique <= {STATE_UNMATCHED, STATE_NO_INSTANCE}:
+        return STATE_UNMATCHED
+    if STATE_MIXED_EMPTY in unique or {UNFILLED, STATE_BLANK} <= unique:
+        return STATE_MIXED_EMPTY
+    if UNFILLED in unique:
+        return UNFILLED
+    if STATE_BLANK in unique:
+        return STATE_BLANK
+    return STATE_UNMATCHED
+
+
+def _reduce_numbers(func, numbers, attr_type):
+    if func == "sum":
+        return _sum_numbers(numbers, attr_type)
+    if func == "min":
+        return _sum_numbers([min(numbers)], attr_type)
+    if func == "max":
+        return _sum_numbers([max(numbers)], attr_type)
+    return sum(numbers) / len(numbers)
 
 
 def _sum_numbers(numbers, attr_type):

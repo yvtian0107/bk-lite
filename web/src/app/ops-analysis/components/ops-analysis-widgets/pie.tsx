@@ -14,6 +14,7 @@ import type { ValueConfig } from '@/app/ops-analysis/components/ops-analysis-wid
 import { useEchartsFinishedReady } from '@/app/ops-analysis/hooks/useEchartsFinishedReady';
 import { formatVisibleChartValue } from '@/app/ops-analysis/utils/chartValueFormat';
 import { useTranslation } from '@/utils/i18n';
+import PageSliceNotice from '@/app/ops-analysis/components/pageSliceNotice';
 
 export interface OpsAnalysisPieProps {
   rawData: any;
@@ -153,6 +154,9 @@ const OpsAnalysisPie: React.FC<OpsAnalysisPieProps> = ({
   }), [chartColors, chartData, chartTheme, config, legendSelected, pieTotalLabel]);
 
   return (
+    <div className="flex h-full min-h-0 flex-col">
+      <PageSliceNotice rawData={rawData} />
+      <div className="min-h-0 flex-1">
     <ChartWithSidebarLegend
       chart={
         <ReactEcharts
@@ -184,6 +188,8 @@ const OpsAnalysisPie: React.FC<OpsAnalysisPieProps> = ({
         emptyClassName: 'flex h-full w-full items-center justify-center',
       }}
     />
+      </div>
+    </div>
   );
 };
 

@@ -63,5 +63,34 @@ describe('query response fields and hidden params', () => {
     expect(scope?.key).toBe('items.scope_count');
     expect(getValueByPath(payload, 'items.scope_count')).toBe(9);
     expect(getValueByPath(payload, 'count')).toBe(1);
+
+    const labeled = buildTreeData({
+      count: 1,
+      items: [{ scope_count: 9, count: 4 }],
+      fields: [
+        { key: 'scope_count', title: '实例数量', value_type: 'number' },
+        { key: 'count', title: '数量', value_type: 'number' },
+      ],
+    }, [
+      { key: 'scope_count', title: '实例数量', value_type: 'number' },
+      { key: 'count', title: '数量', value_type: 'number' },
+    ], { envelopeCountLabel: '结果行数' });
+    const titleText = (node: { title?: unknown; children?: Array<{ title?: unknown; key?: unknown }> } | undefined): string => {
+      const title = node?.title;
+      if (typeof title === 'string') return title;
+      if (title && typeof title === 'object' && 'props' in title) {
+        const children = (title as { props?: { children?: unknown } }).props?.children;
+        return Array.isArray(children)
+          ? children.map((child) => titleText({ title: child })).join('')
+          : titleText({ title: children });
+      }
+      return '';
+    };
+    expect(titleText(labeled.find((node) => node.key === 'count'))).toContain('结果行数');
+    const itemCount = labeled.find((node) => node.key === 'items')?.children?.find((node) => String(node.key).endsWith('count'));
+    const scopeCount = labeled.find((node) => node.key === 'items')?.children?.find((node) => String(node.key).endsWith('scope_count'));
+    expect(titleText(itemCount)).toContain('数量');
+    expect(titleText(itemCount)).not.toContain('结果行数');
+    expect(titleText(scopeCount)).toContain('实例数量');
   });
 });

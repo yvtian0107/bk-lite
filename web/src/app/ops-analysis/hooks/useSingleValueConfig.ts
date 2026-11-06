@@ -15,6 +15,7 @@ import {
   buildTreeData,
   mergeFieldTrees,
 } from '@/app/ops-analysis/(pages)/view/topology/utils/dataTreeUtils';
+import { queryParamFieldPaths } from '@/app/ops-analysis/utils/queryParamFields';
 import { canEnableCompare } from '@/app/ops-analysis/utils/compareQuery';
 import { getDateRangeTimezone } from '@/app/ops-analysis/utils/dateRange';
 import { responseFieldsOf } from '@/app/ops-analysis/utils/tableLikeData';
@@ -178,7 +179,7 @@ export function useSingleValueConfig({
       setSingleValueTreeData(
         mergeFieldTrees(
           buildSchemaFieldTree(schema),
-          buildTreeData(sampleForTree, titles),
+          buildTreeData(sampleForTree, titles, { envelopeCountLabel: t('dashboard.resultRowCount') }),
         ),
       );
       return;
@@ -192,6 +193,10 @@ export function useSingleValueConfig({
 
     setLoadingSingleValueData(true);
     try {
+      const paths = queryParamFieldPaths(selectedDataSource.params);
+      if (paths.length) {
+        await form.validateFields(paths);
+      }
       const formValues = form.getFieldsValue();
       const userParams = formValues?.params || {};
       const requestParams = processDataSourceParams({
@@ -215,6 +220,10 @@ export function useSingleValueConfig({
       const { data } = await getSourceDataByApiId(resolvedId, requestParams);
       setFetchedSample(data);
     } catch (error) {
+      if (error && typeof error === 'object' && 'errorFields' in error) {
+        message.warning(t('dashboard.queryParamsBlocked'));
+        return;
+      }
       console.error('Failed to fetch data fields:', error);
       message.error(t('dashboard.fetchDataFieldsFailed'));
     } finally {

@@ -50,6 +50,9 @@ const FieldGroupEditor: React.FC<FieldGroupEditorProps> = ({
   return (
     <div className="flex flex-col gap-2">
       {catalogReady ? null : <span className="text-[var(--color-text-3)]">{t('conditionBuilder.loading')}</span>}
+      {variant === 'metrics' ? (
+        <span className="text-xs text-[var(--color-text-3)]">{t('fieldGroup.mergeHint')}</span>
+      ) : null}
       {rows.map((row, index) => {
         const selected = catalog.filter((item) => row.sources.includes(item.key));
         const funcs = selected[0]?.funcs || [];

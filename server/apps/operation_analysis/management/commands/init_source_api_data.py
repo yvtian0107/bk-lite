@@ -17,11 +17,6 @@ RETIRED_BUILTIN_DATASOURCES = (
         "name": "CMDB 3D机房布局",
         "rest_api": "cmdb/get_room3d_layout",
     },
-    {
-        "build_in_key": "CMDB 实例明细::cmdb/list_model_instances",
-        "name": "CMDB 实例明细",
-        "rest_api": "cmdb/list_model_instances",
-    },
 )
 
 ROOM_LIST_BUILTIN = {

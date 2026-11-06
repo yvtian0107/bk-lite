@@ -1819,7 +1819,6 @@
     "rest_api": "cmdb/get_model_options",
     "tag": ["cmdb"],
     "chart_type": [],
-    "params": [],
     "params": [
         {"name": "classification_ids", "type": "string", "value": [], "alias_name": "分类", "filterType": "fixed", "desc": "可空。空列表表示不按分类过滤，返回当前权限内全部可见模型。"}
     ],
@@ -1834,7 +1833,7 @@
 {
     "key": "CMDB 实例查询::cmdb/query_model_instances",
     "name": "CMDB 实例查询",
-    "desc": "查询当前权限内的实例。分类和模型都是多选且可空：都空表示权限内全部模型，只选分类表示该分类下全部可见模型，只选模型表示这些模型，都选表示交集。失效或越权的选择会失败，不会扩大范围。分析方式 list 明细、count 数量、distribution 属性分布、aggregate 数值聚合都会执行。条件是结构化条件树。先全范围过滤和统计，再对统计结果排序分页。超过上限会失败，不会只扫前 N 条当成全量。单值请绑定范围内数量或指标列，不要绑定返回信封上的行数。排名图只对本次返回的行做客户端排序；页码为 1 且按数量降序时，分布结果的前 page_size 行才是全范围前 N 个分组。",
+    "desc": "查询当前权限内的实例。分类和模型都是多选且可空：都空表示权限内全部模型，只选分类表示该分类下全部可见模型，只选模型表示这些模型，都选表示交集。失效或越权的选择会失败，不会扩大范围。分析方式 list 明细、count 数量、distribution 属性分布、aggregate 数值聚合都会执行。条件是结构化条件树，全局条件按模型字段选择，同名属性不会自动合并。先全范围过滤和统计，再对统计结果排序分页。5000 是服务内逐条取出的上限，图上直接完成的数量和属性分布不受它约束；分组桶超过 2000 会失败。单值请绑定实例数量或指标列；信封上的 count 是结果行数。饼图和排名若只拿到当前页，图上会标明百分比和名次不是全体。",
     "rest_api": "cmdb/query_model_instances",
     "tag": ["cmdb"],
     "chart_type": ["table", "single", "bar", "pie", "topN"],
@@ -1957,7 +1956,7 @@
             "filterType": "params",
             "requiredWhen": {"param": "analysis_mode", "in": ["aggregate"]},
             "visibleWhen": {"param": "analysis_mode", "in": ["aggregate"]},
-            "desc": "默认每个字段单独成指标。把多个字段放进同一条指标才合并；类型或单位不兼容会失败。",
+            "desc": "默认每个模型单独成行。把多个字段放进同一条指标才会按实例合并；求和、计数、最小、最大和平均都跨这些字段计算，平均不是各模型平均值再平均。类型或单位不兼容会失败，没点名的模型不会被加进去。",
             "inputConfig": {
                 "control": "fieldGroup",
                 "variant": "metrics",
@@ -2018,8 +2017,8 @@
         {"key": "model_id", "title": "模型", "value_type": "string", "description": "模型标识。"},
         {"key": "model_name", "title": "模型名称", "value_type": "string", "description": "模型中文名。"},
         {"key": "group_value", "title": "分组值", "value_type": "string", "description": "属性分布的分组显示值，含不适用和未填写。"},
-        {"key": "count", "title": "数量", "value_type": "number", "description": "该模型或该分组过滤后的实例数。"},
-        {"key": "scope_count", "title": "范围内数量", "value_type": "number", "description": "当前查询范围的实例总数。单值绑定这一列，而不是信封上的行数。"}
+        {"key": "count", "title": "数量", "value_type": "number", "description": "该模型或该分组过滤后的实例数。返回信封上的 count 是结果行数，不是这一列。"},
+        {"key": "scope_count", "title": "实例数量", "value_type": "number", "description": "当前查询范围的实例总数。单值默认应绑定这一列。"}
     ]
 },
 {

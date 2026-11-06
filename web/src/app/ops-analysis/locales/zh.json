@@ -1151,6 +1151,10 @@
     "selectModel": "请选择模型",
     "selectInstance": "请选择实例",
     "dataFormatMismatch": "数据格式不匹配",
+    "pageSliceNotice": "当前只显示本页 {shown} 条，共 {total} 条。百分比、合计和名次按本页计算，不是全体。",
+    "resultRowCount": "结果行数",
+    "instanceCountRecommend": "建议绑定「实例数量」。旁边的「结果行数」是本次返回了多少行，不是实例总数。",
+    "queryParamsBlocked": "查询条件未通过校验，已阻止本次请求",
     "invalidSourceDataResponse": "统一取数响应格式无效",
     "multipleOrgParams": "同一请求不能声明多个组织控件参数",
     "topologyMapEmpty": "暂无拓扑关系",
@@ -2147,12 +2151,15 @@
     "reset": "重新开始",
     "loading": "正在加载属性",
     "missing": "已失效",
+    "globalIdentity": "全局条件按「模型 · 属性」选择。同名属性不会自动当成同一个字段；多选才是显式合并，没选到的模型不匹配。",
     "issue": {
       "invalid": "条件结构不正确",
       "staleField": "条件字段已失效，请重新选择",
+      "ambiguousField": "同名属性不是同一个字段，请按模型分别选择",
       "staleScope": "条件适用范围已失效，请重新选择",
       "missingValue": "请填写条件值",
-      "unsupportedOperator": "该字段不支持这个运算符"
+      "unsupportedOperator": "该字段不支持这个运算符",
+      "incompatible": "字段类型或单位不一致，不能合并"
     }
   },
   "fieldGroup": {
@@ -2160,6 +2167,7 @@
     "sources": "字段",
     "func": "函数",
     "label": "显示名",
+    "mergeHint": "同一条里多选字段会按实例合并。平均按全部数值计算，不是把各组平均值再平均。",
     "issue": {
       "invalid": "字段配置不正确",
       "required": "请选择字段",

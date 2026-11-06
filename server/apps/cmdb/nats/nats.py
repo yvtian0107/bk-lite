@@ -2524,6 +2524,23 @@ def _instance_list_failure(message: str):
     return {"result": False, "data": empty_payload(), "message": message}
 
 
+def _reject_non_numeric_team(user_info):
+    """本源只拒绝明显不是组织编号的值。共享网关里的 cookie 解析保持原样。"""
+    team = (user_info or {}).get("team")
+    if team is None or team == "":
+        return
+    if isinstance(team, bool):
+        raise ValueError("组织不正确")
+    if isinstance(team, int):
+        return
+    if isinstance(team, str):
+        token = team.strip()
+        digits = token[1:] if token.startswith("-") else token
+        if digits.isdigit() and digits:
+            return
+    raise ValueError("组织不正确")
+
+
 def _creator_from_user_info(user_info):
     user = (user_info or {}).get("user")
     if isinstance(user, str):
@@ -2574,11 +2591,15 @@ def _model_option_row(model):
 def get_model_options(classification_ids=None, user_info=None, **kwargs):
     """当前用户有权查看的模型。不传分类时返回权限内全部可见模型，空分类不是错误。"""
     del kwargs
+    try:
+        _reject_non_numeric_team(user_info)
+    except ValueError as exc:
+        return {"result": False, "data": [], "message": str(exc)}
     language, models = _visible_model_rows(user_info, classification_ids)
     if isinstance(language, Exception):
         return {"result": False, "data": [], "message": str(language)}
     if language is None:
-        return {"result": True, "data": [], "message": ""}
+        return {"result": False, "data": [], "message": "无权查询实例"}
     rows = [row for row in (_model_option_row(model) for model in models) if row]
     rows.sort(key=lambda item: (item["model_name"], item["model_id"]))
     return {"result": True, "data": rows, "message": ""}
@@ -2624,6 +2645,10 @@ def query_model_instances(
     """按分析方式查询权限范围内的实例。分类和模型都可以空；空不是把失效选择当成全量。"""
     # organization 只经 GetNatsData 收进 user_info.team，不在这里另开组织范围。
     del kwargs
+    try:
+        _reject_non_numeric_team(user_info)
+    except ValueError as exc:
+        return _instance_list_failure(str(exc))
     logged_models = _logged_model_ids(model_id, model_ids)
     model_permissions = _build_nats_model_permission_map(user_info)
     if not model_permissions or not _build_nats_permission_map(user_info):
@@ -2704,6 +2729,10 @@ def query_model_instances(
 def get_instance_query_fields(classification_ids=None, model_ids=None, analysis_mode=None, user_info=None, **kwargs):
     """条件、分组和指标用的字段目录。空分类、空模型表示权限内全部可见模型。"""
     del kwargs
+    try:
+        _reject_non_numeric_team(user_info)
+    except ValueError as exc:
+        return {"result": False, "data": [], "message": str(exc)}
     if not _build_nats_model_permission_map(user_info) or not _build_nats_permission_map(user_info):
         return {"result": False, "data": [], "message": "无权查询实例"}
     language, models = _visible_model_rows(user_info, None)
