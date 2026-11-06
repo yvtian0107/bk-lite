@@ -48,6 +48,7 @@ import { optionsSourceSummary } from '@/app/ops-analysis/utils/optionsSourceIden
 import {
   clearComponentParamSwitch,
   findComponentSwitchParams,
+  missingOptionPolicyOf,
   reconcileComponentParamValue,
   supportsComponentSwitch,
 } from '@/app/ops-analysis/utils/componentParamSwitch';
@@ -87,6 +88,7 @@ import {
   buildDisplayColumnsFromSchema,
   isDisplayableDefaultField,
 } from './widgetConfig/utils/columnProbing';
+import { responseFieldsOf } from '@/app/ops-analysis/utils/tableLikeData';
 import { buildRoleFieldOptions, dropRoleValueMissingFrom } from './widgetConfig/utils/chartFieldOptions';
 import { ChartRoleFieldsSection, buildChartRoleFields, chartRoleValuePaths } from './widgetConfig/sections/chartRoleFieldsSection';
 import { PieScalarFieldsSection } from './widgetConfig/sections/pieScalarFieldsSection';
@@ -341,8 +343,10 @@ const ViewConfig: React.FC<ViewConfigPropsWithManager> = ({
   } = dataSourceManager;
 
   const availableFields = useMemo((): ResponseFieldDefinition[] => {
+    const responseFields = responseFieldsOf(previewRawData);
+    if (responseFields.length) return responseFields;
     return selectedDataSource?.field_schema || [];
-  }, [selectedDataSource]);
+  }, [previewRawData, selectedDataSource]);
 
   const getFilteredChartTypes = (
     dataSource: DatasourceItem | undefined,
@@ -550,21 +554,19 @@ const ViewConfig: React.FC<ViewConfigPropsWithManager> = ({
 
       // 如果默认图表类型是 table-like，尝试探测列
       if (defaultChartType === 'table' || defaultChartType === 'eventTable') {
-        const schemaFields = fullItem.field_schema;
-        if (schemaFields && schemaFields.length > 0) {
-          tableConfig.setDetectedDisplayColumns(
-            buildDisplayColumnsFromSchema(schemaFields),
-          );
-        } else {
-          const probedColumns = await tableConfig.probeDefaultDisplayColumns(
-            fullItem,
-            params,
-          );
-          if (!isCurrentConfigRequest(requestId)) {
-            return;
-          }
-          tableConfig.setDetectedDisplayColumns(probedColumns);
+        const probedColumns = await tableConfig.probeDefaultDisplayColumns(
+          fullItem,
+          params,
+        );
+        if (!isCurrentConfigRequest(requestId)) {
+          return;
         }
+        const schemaFields = fullItem.field_schema;
+        tableConfig.setDetectedDisplayColumns(
+          probedColumns.length > 0
+            ? probedColumns
+            : buildDisplayColumnsFromSchema(schemaFields || []),
+        );
       }
     },
     [
@@ -1021,11 +1023,9 @@ const ViewConfig: React.FC<ViewConfigPropsWithManager> = ({
         );
 
         tableConfig.setDetectedDisplayColumns(
-          (targetDataSource?.field_schema || []).length > 0
-            ? buildDisplayColumnsFromSchema(
-              targetDataSource?.field_schema || [],
-            )
-            : probedColumns,
+          probedColumns.length > 0
+            ? probedColumns
+            : buildDisplayColumnsFromSchema(targetDataSource?.field_schema || []),
         );
 
         const fieldTitleMap = new Map<string, string>();
@@ -1035,7 +1035,7 @@ const ViewConfig: React.FC<ViewConfigPropsWithManager> = ({
           }
         });
         probedColumns.forEach((column) => {
-          if (column.key && !fieldTitleMap.has(column.key)) {
+          if (column.key) {
             fieldTitleMap.set(column.key, column.title || column.key);
           }
         });
@@ -1059,26 +1059,20 @@ const ViewConfig: React.FC<ViewConfigPropsWithManager> = ({
         (formValues.chartType === 'table' ||
           formValues.chartType === 'eventTable')
       ) {
-        const schemaFields = targetDataSource?.field_schema;
         const replaceActionOnlyColumns = originalColumns.length > 0;
-        if (schemaFields && schemaFields.length > 0) {
-          const defaults = buildDisplayColumnsFromSchema(schemaFields);
-          tableConfig.setDetectedDisplayColumns(defaults);
-          if (replaceActionOnlyColumns) {
-            tableConfig.setDisplayColumns(defaults);
-          }
-        } else {
-          const probedColumns = await tableConfig.probeDefaultDisplayColumns(
-            targetDataSource,
-            formValues.params || {},
-          );
-          if (!isCurrentConfigRequest(requestId)) {
-            return;
-          }
-          tableConfig.setDetectedDisplayColumns(probedColumns);
-          if (replaceActionOnlyColumns) {
-            tableConfig.setDisplayColumns(probedColumns);
-          }
+        const probedColumns = await tableConfig.probeDefaultDisplayColumns(
+          targetDataSource,
+          formValues.params || {},
+        );
+        if (!isCurrentConfigRequest(requestId)) {
+          return;
+        }
+        const defaults = probedColumns.length > 0
+          ? probedColumns
+          : buildDisplayColumnsFromSchema(targetDataSource?.field_schema || []);
+        tableConfig.setDetectedDisplayColumns(defaults);
+        if (replaceActionOnlyColumns) {
+          tableConfig.setDisplayColumns(defaults);
         }
       }
     } else {
@@ -1148,12 +1142,17 @@ const ViewConfig: React.FC<ViewConfigPropsWithManager> = ({
     (paramName: string, options: InputOption[]) => {
       resolvedParamOptionsRef.current.set(paramName, options);
       const currentParams = form.getFieldValue('params') || {};
-      const nextValue = reconcileComponentParamValue(currentParams[paramName], options);
+      const param = (selectedDataSource?.params || []).find((item) => item.name === paramName);
+      const nextValue = reconcileComponentParamValue(
+        currentParams[paramName],
+        options,
+        missingOptionPolicyOf(param),
+      );
       if (nextValue !== currentParams[paramName]) {
         form.setFieldValue(['params', paramName], nextValue);
       }
     },
-    [form],
+    [form, selectedDataSource],
   );
 
   const handleInputConfigConfirm = (
@@ -1292,6 +1291,7 @@ const ViewConfig: React.FC<ViewConfigPropsWithManager> = ({
           reconciledFormParams[param.name] = reconcileComponentParamValue(
             reconciledFormParams[param.name],
             optionsForParam,
+            missingOptionPolicyOf(param),
           );
         });
         if (

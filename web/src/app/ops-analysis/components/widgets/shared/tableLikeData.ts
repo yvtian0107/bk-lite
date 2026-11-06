@@ -1,6 +1,7 @@
 export {
   getRecordEntries,
   parseTableLikeData,
+  responseFieldsOf,
   resolveTableLikeColumns,
   toDisplayFieldValue,
 } from '@/app/ops-analysis/utils/tableLikeData';

@@ -17,6 +17,7 @@ import {
 } from '@/app/ops-analysis/(pages)/view/topology/utils/dataTreeUtils';
 import { canEnableCompare } from '@/app/ops-analysis/utils/compareQuery';
 import { getDateRangeTimezone } from '@/app/ops-analysis/utils/dateRange';
+import { responseFieldsOf } from '@/app/ops-analysis/utils/tableLikeData';
 
 interface UseSingleValueConfigProps {
   form: FormInstance;
@@ -171,11 +172,13 @@ export function useSingleValueConfig({
 
   useEffect(() => {
     const schema = selectedDataSource?.field_schema;
+    const responseFields = responseFieldsOf(sampleForTree);
+    const titles = responseFields.length ? responseFields : schema;
     if (sampleForTree != null) {
       setSingleValueTreeData(
         mergeFieldTrees(
           buildSchemaFieldTree(schema),
-          buildTreeData(sampleForTree, schema),
+          buildTreeData(sampleForTree, titles),
         ),
       );
       return;

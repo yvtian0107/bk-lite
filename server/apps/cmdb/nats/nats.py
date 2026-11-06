@@ -60,8 +60,11 @@ from apps.cmdb.services.host_zombie_whitelist import ensure_host_zombie_whitelis
 from apps.cmdb.services.instance import InstanceManage
 from apps.cmdb.services.instance_query import (
     CmdbInstanceQueryService,
+    _enrich_enum_options,
+    _requested_models,
+    describe_query_fields,
     empty_payload,
-    parse_model_id,
+    parse_id_list,
 )
 from apps.cmdb.services.model import ModelManage
 from apps.cmdb.services.model_visibility import BusinessModelVisibility
@@ -73,7 +76,8 @@ from apps.cmdb.services.service_tree import expand_systems_to_host_uuids_via_ser
 from apps.cmdb.utils.base import get_default_group_id
 from apps.cmdb.utils.config_file_path import validate_absolute_path
 from apps.cmdb.utils.permission_util import CmdbRulesFormatUtil
-from apps.core.logger import cmdb_logger as logger, safe_exception_info
+from apps.core.logger import cmdb_logger as logger
+from apps.core.logger import safe_exception_info
 from apps.core.openapi.decorators import openapi_expose
 from apps.core.utils.permission_utils import get_permission_rules
 from apps.core.utils.time_util import parse_rfc3339_utc
@@ -2527,76 +2531,159 @@ def _creator_from_user_info(user_info):
     return str(getattr(user, "username", "") or "")
 
 
-@nats_client.register
-def get_model_options(user_info=None, **kwargs):
-    """当前用户有权查看的模型，供运营分析参数下拉使用。无权限时返回空列表，不查全量模型。"""
-    del kwargs
+def _visible_model_rows(user_info, classification_ids=None):
+    """权限内可见模型。classification_ids 为空表示不按分类收窄，不是拒绝查询。"""
     model_permissions = _build_nats_model_permission_map(user_info)
     if not model_permissions:
-        return {"result": True, "data": [], "message": ""}
-
+        return None, []
     language = _resolve_nats_cmdb_language(user_info)
-    rows = []
-    for model in ModelManage.search_model(language=language, permissions_map=model_permissions) or []:
-        model_id = str(model.get("model_id") or "").strip()
-        if not model_id:
-            continue
-        rows.append({"model_id": model_id, "model_name": str(model.get("model_name") or model_id)})
+    try:
+        selected = parse_id_list(classification_ids, "分类")
+    except ValueError as exc:
+        return exc, []
+    if selected:
+        known = {str(item.get("classification_id") or "") for item in ClassificationManage.search_model_classification(language=language) or []}
+        if any(item not in known for item in selected):
+            return ValueError("分类不存在或当前权限不可见"), []
+    search_kwargs = {"language": language, "permissions_map": model_permissions}
+    if selected:
+        search_kwargs["classification_ids"] = selected
+    return language, list(ModelManage.search_model(**search_kwargs) or [])
+
+
+def _model_option_row(model):
+    model_id = str(model.get("model_id") or "").strip()
+    if not model_id:
+        return None
+    model_name = str(model.get("model_name") or model_id)
+    classification_id = str(model.get("classification_id") or "")
+    classification_name = str(model.get("classification_name") or "")
+    label = f"{model_name} · {model_id}"
+    if classification_name:
+        label = f"{classification_name} / {label}"
+    return {
+        "model_id": model_id,
+        "model_name": model_name,
+        "classification_id": classification_id,
+        "classification_name": classification_name,
+        "label": label,
+    }
+
+
+@nats_client.register
+def get_model_options(classification_ids=None, user_info=None, **kwargs):
+    """当前用户有权查看的模型。不传分类时返回权限内全部可见模型，空分类不是错误。"""
+    del kwargs
+    language, models = _visible_model_rows(user_info, classification_ids)
+    if isinstance(language, Exception):
+        return {"result": False, "data": [], "message": str(language)}
+    if language is None:
+        return {"result": True, "data": [], "message": ""}
+    rows = [row for row in (_model_option_row(model) for model in models) if row]
     rows.sort(key=lambda item: (item["model_name"], item["model_id"]))
     return {"result": True, "data": rows, "message": ""}
+
+
+def _logged_model_ids(model_id, model_ids):
+    try:
+        requested = _requested_models(model_id, model_ids)
+    except ValueError:
+        return "-"
+    if not requested:
+        return "-"
+    if len(requested) == 1:
+        return requested[0]
+    return ",".join(requested)[:120]
+
+
+def _query_attrs(model_id, language):
+    rows = ModelManage.search_model_attr(model_id, language=language) or []
+    return [_enrich_enum_options(attr) for attr in rows if isinstance(attr, dict)]
 
 
 @nats_client.register
 def query_model_instances(
     model_id=None,
+    model_ids=None,
+    classification_ids=None,
     analysis_mode=None,
+    conditions=None,
     attr_filters=None,
     group_by=None,
+    metrics=None,
     agg_field=None,
     agg_func=None,
     order=None,
     page=None,
     page_size=None,
+    show_not_applicable=None,
+    show_unfilled=None,
     user_info=None,
     **kwargs,
 ):
-    """按分析方式查询指定模型的实例。未选模型失败；无权限或不在可见模型内时不扩大查询对象。"""
+    """按分析方式查询权限范围内的实例。分类和模型都可以空；空不是把失效选择当成全量。"""
     # organization 只经 GetNatsData 收进 user_info.team，不在这里另开组织范围。
     del kwargs
-    try:
-        selected_model_id = parse_model_id(model_id)
-    except ValueError as exc:
-        return _instance_list_failure(str(exc))
-
+    logged_models = _logged_model_ids(model_id, model_ids)
     model_permissions = _build_nats_model_permission_map(user_info)
-    instance_permissions = _build_nats_permission_map(user_info, model_id=selected_model_id)
-    if not model_permissions or not instance_permissions:
-        return {"result": True, "data": empty_payload(), "message": ""}
+    if not model_permissions or not _build_nats_permission_map(user_info):
+        return _instance_list_failure("无权查询实例")
 
     language = _resolve_nats_cmdb_language(user_info)
-    visible_ids = {
-        str(model.get("model_id") or "")
-        for model in ModelManage.search_model(language=language, permissions_map=model_permissions) or []
-    }
-    if selected_model_id not in visible_ids:
-        return _instance_list_failure("模型不存在或当前权限不可见")
+    try:
+        selected_classifications = parse_id_list(classification_ids, "分类")
+    except ValueError as exc:
+        return _instance_list_failure(str(exc))
+    if selected_classifications:
+        known = {str(item.get("classification_id") or "") for item in ClassificationManage.search_model_classification(language=language) or []}
+        if any(item not in known for item in selected_classifications):
+            return _instance_list_failure("分类不存在或当前权限不可见")
+    visible_models = list(ModelManage.search_model(language=language, permissions_map=model_permissions) or [])
+    classifications = [
+        {
+            "classification_id": str(item.get("classification_id") or ""),
+            "classification_name": str(item.get("classification_name") or ""),
+        }
+        for item in ClassificationManage.search_model_classification(language=language) or []
+    ]
+    attrs_by_model = {}
+
+    def load_attrs(model_key):
+        if model_key not in attrs_by_model:
+            attrs_by_model[model_key] = _query_attrs(model_key, language)
+        return attrs_by_model[model_key]
+
+    class _Attrs(dict):
+        def get(self, key, default=None):
+            if key not in self and key:
+                self[key] = load_attrs(key)
+            value = super().get(key, default)
+            return value
 
     try:
         data = CmdbInstanceQueryService(
             list_instances=InstanceManage.instance_list,
             group_counts=InstanceManage.group_inst_count,
         ).run(
-            model_id=selected_model_id,
-            attrs=ModelManage.search_model_attr(selected_model_id, language=language),
+            models=visible_models,
+            attrs_by_model=_Attrs(),
+            classifications=classifications,
+            classification_ids=selected_classifications,
+            model_id=model_id,
+            model_ids=model_ids,
             analysis_mode=analysis_mode,
+            conditions=conditions,
             attr_filters=attr_filters,
             group_by=group_by,
+            metrics=metrics,
             agg_field=agg_field,
             agg_func=agg_func,
             order=order,
             page=page,
             page_size=page_size,
-            permission_map=instance_permissions,
+            show_not_applicable=show_not_applicable,
+            show_unfilled=show_unfilled,
+            permission_for=lambda selected: _build_nats_permission_map(user_info, model_id=selected),
             creator=_creator_from_user_info(user_info),
         )
     except ValueError as exc:
@@ -2604,13 +2691,43 @@ def query_model_instances(
     except Exception as exc:
         logger.error(
             "event=cmdb_instance_query_failed model_id=%s failed_stage=%s error_type=%s",
-            selected_model_id,
+            logged_models,
             "query",
             type(exc).__name__,
             exc_info=safe_exception_info(exc),
         )
         return _instance_list_failure("实例查询失败")
     return {"result": True, "data": data, "message": ""}
+
+
+@nats_client.register
+def get_instance_query_fields(classification_ids=None, model_ids=None, analysis_mode=None, user_info=None, **kwargs):
+    """条件、分组和指标用的字段目录。空分类、空模型表示权限内全部可见模型。"""
+    del kwargs
+    if not _build_nats_model_permission_map(user_info) or not _build_nats_permission_map(user_info):
+        return {"result": False, "data": [], "message": "无权查询实例"}
+    language, models = _visible_model_rows(user_info, None)
+    if isinstance(language, Exception):
+        return {"result": False, "data": [], "message": str(language)}
+    if language is None:
+        return {"result": False, "data": [], "message": "无权查询实例"}
+    classifications = [
+        {
+            "classification_id": str(item.get("classification_id") or ""),
+            "classification_name": str(item.get("classification_name") or ""),
+        }
+        for item in ClassificationManage.search_model_classification(language=language) or []
+    ]
+    try:
+        from apps.cmdb.services.instance_query import resolve_scope
+
+        selected = resolve_scope(parse_id_list(classification_ids, "分类"), parse_id_list(model_ids, "模型"), models, classifications)
+        mode = analysis_mode if isinstance(analysis_mode, str) and analysis_mode.strip() else "list"
+        attrs_by_model = {model["model_id"]: _query_attrs(model["model_id"], language) for model in selected}
+        rows = describe_query_fields(selected, attrs_by_model, mode)
+    except ValueError as exc:
+        return {"result": False, "data": [], "message": str(exc)}
+    return {"result": True, "data": rows, "message": ""}
 
 
 @nats_client.register

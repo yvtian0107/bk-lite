@@ -208,11 +208,11 @@ export interface ScannableFilterDataSource {
     name: string;
     type?: string;
     alias_name?: string;
-    value?: FilterValue | string | number | boolean | Array<string | number> | [number, number] | null;
+    value?: ParamItem['value'];
     filterType?: string;
     inputMode?: string;
     inputConfig?: InputControlConfig | {
-      control?: 'input' | 'select' | 'radio' | 'organization';
+      control?: 'input' | 'select' | 'radio' | 'organization' | 'condition' | 'fieldGroup';
       multiple?: boolean;
     };
   }>;

@@ -2014,6 +2014,7 @@
       "dynamic": "数据源选项"
     },
     "editButton": "配置输入方式",
+    "staleOption": "选项已失效，请重新选择。失效值不会被当成全量。",
     "static": {
       "options": "选项配置",
       "label": "显示文本",
@@ -2132,5 +2133,38 @@
     "duplicateHint": "列表里有重复的画布，移除多余项后即可保存",
     "alreadyContains": "已包含",
     "spaceToResume": "空格继续"
+  },
+  "conditionBuilder": {
+    "and": "并且",
+    "or": "或者",
+    "global": "全局",
+    "addCondition": "添加条件",
+    "addGroup": "添加分组",
+    "remove": "删除",
+    "field": "属性",
+    "operator": "运算符",
+    "preview": "条件预览",
+    "reset": "重新开始",
+    "loading": "正在加载属性",
+    "missing": "已失效",
+    "issue": {
+      "invalid": "条件结构不正确",
+      "staleField": "条件字段已失效，请重新选择",
+      "staleScope": "条件适用范围已失效，请重新选择",
+      "missingValue": "请填写条件值",
+      "unsupportedOperator": "该字段不支持这个运算符"
+    }
+  },
+  "fieldGroup": {
+    "add": "添加一项",
+    "sources": "字段",
+    "func": "函数",
+    "label": "显示名",
+    "issue": {
+      "invalid": "字段配置不正确",
+      "required": "请选择字段",
+      "stale": "字段已失效，请重新选择",
+      "incompatible": "字段类型或单位不一致，不能合并"
+    }
   }
 }

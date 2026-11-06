@@ -65,10 +65,22 @@ export const reconcileComponentSwitchValue = (
  * 标量与组件切换一致：不在选项里则清空，不落到 options[0]。
  * `options` 未传入表示还在加载，保留现值；空数组表示上游为空或已经没有候选项，清空失效值。
  */
+export type MissingOptionPolicy = 'drop' | 'retain';
+
+export const missingOptionPolicyOf = (
+  param?: Pick<ParamItem, 'inputConfig'>,
+): MissingOptionPolicy => {
+  const config = param?.inputConfig;
+  if (config && config.control === 'select' && config.missingOptionPolicy === 'retain') return 'retain';
+  return 'drop';
+};
+
 export const reconcileComponentParamValue = (
   value: ParamItem['value'] | undefined,
   options?: InputOption[],
+  policy: MissingOptionPolicy = 'drop',
 ): ParamItem['value'] | undefined => {
+  if (policy === 'retain') return value;
   if (options == null) return value;
   if (Array.isArray(value)) {
     const optionKeys = new Set(

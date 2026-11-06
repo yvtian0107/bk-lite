@@ -22,6 +22,7 @@ def _patch_visible_host(monkeypatch, instances, count=None, groups=None, attrs=N
 
     monkeypatch.setattr(nats, "_build_nats_model_permission_map", lambda user_info: PERMISSION)
     monkeypatch.setattr(nats, "_build_nats_permission_map", lambda user_info, model_id="", **kwargs: PERMISSION)
+    monkeypatch.setattr(nats.ClassificationManage, "search_model_classification", lambda *args, **kwargs: [])
 
     def search_model(**kwargs):
         calls["search"] += 1
@@ -49,16 +50,13 @@ def _patch_visible_host(monkeypatch, instances, count=None, groups=None, attrs=N
     return calls
 
 
-def test_missing_model_fails_without_query(monkeypatch):
-    calls = _patch_visible_host(monkeypatch, [])
+def test_empty_model_queries_every_visible_model(monkeypatch):
+    calls = _patch_visible_host(monkeypatch, [], count=0)
     out = nats.query_model_instances(model_id="", analysis_mode="count", user_info=USER_INFO)
-    assert out["result"] is False
-    assert "请选择模型" in out["message"]
-    assert out["data"]["items"] == []
-    assert [field["key"] for field in out["data"]["fields"]] == ["inst_uuid", "inst_name", "model_id"]
-    assert calls["list"] is None
+    assert out["result"] is True
+    assert {row["model_id"] for row in out["data"]["items"]} == {"host", "nginx"}
     assert calls["group"] is None
-    assert calls["search"] == 0
+    assert calls["search"] == 1
 
 
 def test_missing_analysis_mode_fails_without_query(monkeypatch):
@@ -99,9 +97,9 @@ def test_authorized_model_returns_detail_rows(monkeypatch):
     assert out["result"] is True
     assert out["message"] == ""
     assert out["data"]["count"] == 8
-    assert out["data"]["items"] == [
-        {"inst_uuid": "u1", "inst_name": "web", "model_id": "host", "ip_addr": "10.0.0.8"}
-    ]
+    assert out["data"]["items"][0]["inst_name"] == "web"
+    assert out["data"]["items"][0]["host:ip_addr"] == "10.0.0.8"
+    assert any(field["title"] == "主机 · 内网IP" for field in out["data"]["fields"])
     assert calls["group"] is None
     assert calls["list"]["model_id"] == "host"
     assert calls["list"]["permission_map"] == PERMISSION
@@ -127,8 +125,10 @@ def test_count_returns_filtered_total_for_one_model(monkeypatch):
 
     assert out["result"] is True
     assert out["data"]["count"] == 1
-    assert out["data"]["items"] == [{"model_id": "host", "count": 30}]
-    assert [field["key"] for field in out["data"]["fields"]] == ["model_id", "count"]
+    assert out["data"]["items"][0]["model_id"] == "host"
+    assert out["data"]["items"][0]["count"] == 30
+    assert out["data"]["items"][0]["scope_count"] == 30
+    assert "count" in [field["key"] for field in out["data"]["fields"]]
     assert calls["group"] is None
     assert calls["list"]["model_id"] == "host"
     assert calls["list"]["page"] == 1
@@ -151,10 +151,8 @@ def test_distribution_groups_only_the_selected_model(monkeypatch):
 
     assert out["result"] is True
     assert out["data"]["count"] == 2
-    assert out["data"]["items"] == [
-        {"model_id": "host", "group_value": "windows", "count": 5},
-        {"model_id": "host", "group_value": "linux", "count": 2},
-    ]
+    assert [row["group_value"] for row in out["data"]["items"]] == ["windows", "linux"]
+    assert [row["count"] for row in out["data"]["items"]] == [5, 2]
     assert calls["list"] is None
     assert calls["group"]["group_by_attr"] == "os_type"
     assert calls["group"]["permissions_map"] == PERMISSION
@@ -175,7 +173,8 @@ def test_numeric_aggregation_fails_without_query(monkeypatch):
         user_info=USER_INFO,
     )
     assert out["result"] is False
-    assert "数值聚合暂不支持" in out["message"]
+    assert "不存在" in out["message"]
+    assert "暂不支持" not in out["message"]
     assert out["data"]["items"] == []
     assert calls["list"] is None
     assert calls["group"] is None
@@ -192,7 +191,8 @@ def test_empty_result_keeps_fields(monkeypatch):
     assert out["result"] is True
     assert out["data"]["items"] == []
     assert out["data"]["count"] == 0
-    assert [field["key"] for field in out["data"]["fields"]] == ["inst_uuid", "inst_name", "model_id", "ip_addr"]
+    assert "host:ip_addr" in [field["key"] for field in out["data"]["fields"]]
+    assert any(field["title"] == "主机 · 内网IP" for field in out["data"]["fields"])
 
 
 @pytest.mark.parametrize("mode", ["list", "count", "distribution", "aggregate"])
@@ -219,15 +219,16 @@ def test_no_permission_does_not_query_or_widen(monkeypatch, mode):
     out = nats.query_model_instances(model_id="host", analysis_mode=mode, group_by="os_type", user_info={})
 
     assert queried == {"list": False, "search": False, "group": False}
-    assert out["result"] is True
+    assert out["result"] is False
+    assert out["message"] == "无权查询实例"
     assert out["data"]["items"] == []
-    assert [field["key"] for field in out["data"]["fields"]] == ["inst_uuid", "inst_name", "model_id"]
 
 
 def test_invisible_model_does_not_list_instances(monkeypatch):
     queried = {"list": False, "group": False}
     monkeypatch.setattr(nats, "_build_nats_model_permission_map", lambda user_info: PERMISSION)
     monkeypatch.setattr(nats, "_build_nats_permission_map", lambda user_info, model_id="", **kwargs: PERMISSION)
+    monkeypatch.setattr(nats.ClassificationManage, "search_model_classification", lambda *args, **kwargs: [])
     monkeypatch.setattr(nats.ModelManage, "search_model", lambda **kwargs: [{"model_id": "nginx", "model_name": "Nginx"}])
     monkeypatch.setattr(
         nats.InstanceManage,
@@ -318,7 +319,7 @@ def test_model_options_follow_permission_and_do_not_expand(monkeypatch):
     monkeypatch.setattr(nats.ModelManage, "search_model", search_model)
     out = nats.get_model_options(user_info=USER_INFO)
     assert seen["permissions_map"] == PERMISSION
-    assert out["data"] == [
-        {"model_id": "nginx", "model_name": "Nginx"},
-        {"model_id": "host", "model_name": "主机"},
+    assert [(row["model_id"], row["model_name"], row["label"]) for row in out["data"]] == [
+        ("nginx", "Nginx", "Nginx · nginx"),
+        ("host", "主机", "主机 · host"),
     ]

@@ -42,6 +42,13 @@ class Command(BaseCommand):
             dest="force_update",
             help="强制更新已存在的数据源配置",
         )
+        parser.add_argument(
+            "--rest-api",
+            action="append",
+            default=[],
+            dest="rest_api",
+            help="只创建或更新这些 rest_api。不影响其它数据源，也不下架、不回写无关内置源",
+        )
 
     @staticmethod
     def get_default_namespace():
@@ -81,6 +88,7 @@ class Command(BaseCommand):
     def handle(self, *args, **options):
         logger.info("===开始初始化数据源标签和源API数据===")
         force_update = options["force_update"]
+        selected_rest_apis = set(options.get("rest_api") or [])
 
         try:
             # 先初始化标签
@@ -100,6 +108,8 @@ class Command(BaseCommand):
             updated_count = 0
 
             for api_data in source_api_data_list:
+                if selected_rest_apis and api_data.get("rest_api") not in selected_rest_apis:
+                    continue
                 # 提取标签数据,避免在defaults中包含多对多字段
                 tags = api_data.pop("tag", [])
                 # 显式 key 优先，避免改展示名时拖动稳定身份。
@@ -145,7 +155,7 @@ class Command(BaseCommand):
                         obj.tag.set(tag_instances)
                     created_count += 1
                     logger.info("[SourceApiInit] 创建数据源：%s", api_data["name"])
-                elif force_update:
+                elif force_update or api_data["rest_api"] in selected_rest_apis:
                     # build_in_key / rest_api 是内置配置的稳定身份；允许覆盖展示名。
                     for key, value in api_data.items():
                         if key not in ["name", "rest_api"]:
@@ -175,10 +185,11 @@ class Command(BaseCommand):
             self.stdout.write(self.style.SUCCESS(success_msg))
             logger.info("[SourceApiInit] %s", success_msg)
 
-            retired_count = self.retire_scene_internal_datasources()
-            if retired_count:
-                logger.info("[SourceApiInit] 已下架内置场景数据源 %s 个", retired_count)
-            self.restore_room_list_datasource()
+            if not selected_rest_apis:
+                retired_count = self.retire_scene_internal_datasources()
+                if retired_count:
+                    logger.info("[SourceApiInit] 已下架内置场景数据源 %s 个", retired_count)
+                self.restore_room_list_datasource()
 
         except Exception as e:
             error_msg = f"初始化源API数据失败: {e}"

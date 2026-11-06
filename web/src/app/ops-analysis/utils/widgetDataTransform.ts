@@ -26,6 +26,7 @@ import {
   isOrganizationControl,
   ORGANIZATION_PARAM_RUNTIME_KEY,
 } from '@/app/ops-analysis/utils/paramInputConfigUtils';
+import { isParamVisible } from '@/app/ops-analysis/utils/paramVisibility';
 import {
   rewriteBareQueryRefsToDefinitionIds,
   rewriteDefinitionQueryRefs,
@@ -916,8 +917,22 @@ export const processDataSourceParams = ({
     organizationNames.push(name);
   };
 
+  const ruleValues: Record<string, unknown> = {};
+  migratedSourceParams.forEach((param: ParamItem) => {
+    if (Object.prototype.hasOwnProperty.call(userParams, param.name)) {
+      ruleValues[param.name] = userParams[param.name];
+    } else if (param.value !== undefined) {
+      ruleValues[param.name] = param.value;
+    }
+  });
+
   migratedSourceParams.forEach((param: any) => {
     const { name, filterType, value: defaultValue, type } = param;
+    const definition = definitionByName.get(name) || param;
+    if (!isParamVisible(definition, ruleValues)) {
+      delete processedParams[name];
+      return;
+    }
 
     // 优先级：fixed > 统一筛选 > params > 默认值
     switch (filterType) {

@@ -1820,18 +1820,24 @@
     "tag": ["cmdb"],
     "chart_type": [],
     "params": [],
+    "params": [
+        {"name": "classification_ids", "type": "string", "value": [], "alias_name": "分类", "filterType": "fixed", "desc": "可空。空列表表示不按分类过滤，返回当前权限内全部可见模型。"}
+    ],
     "field_schema": [
         {"key": "model_id", "title": "模型 ID", "value_type": "string", "description": "模型标识"},
-        {"key": "model_name", "title": "模型名称", "value_type": "string", "description": "当前语言下的模型名称"}
+        {"key": "model_name", "title": "模型名称", "value_type": "string", "description": "当前语言下的模型名称"},
+        {"key": "label", "title": "选项标签", "value_type": "string", "description": "含分类和模型标识，用来区分同名模型"},
+        {"key": "classification_id", "title": "分类 ID", "value_type": "string", "description": "模型所属分类"},
+        {"key": "classification_name", "title": "分类名称", "value_type": "string", "description": "当前语言下的分类名称"}
     ]
 },
 {
     "key": "CMDB 实例查询::cmdb/query_model_instances",
     "name": "CMDB 实例查询",
-    "desc": "按所选模型和分析方式查询当前权限范围内的实例。必须选择模型。分析方式 list 返回明细（身份列和模型关键展示字段，空结果仍保留列）；count 返回一行，count 列是过滤后的实例总数，不是当前页条数；distribution 先过滤再按分组字段计数，然后对分组结果排序分页，列是 model_id、group_value、count。aggregate 以及 sum/avg/min/max 会失败并提示暂不支持，不会当成明细返回。属性过滤只支持等值（字段=值，多个用分号分隔）。排序留空时，明细默认 inst_name，分布默认 -count；数量和分布不接受明细字段排序。分组字段只在属性分布时填写。聚合字段当前版本填写后会失败。",
+    "desc": "查询当前权限内的实例。分类和模型都是多选且可空：都空表示权限内全部模型，只选分类表示该分类下全部可见模型，只选模型表示这些模型，都选表示交集。失效或越权的选择会失败，不会扩大范围。分析方式 list 明细、count 数量、distribution 属性分布、aggregate 数值聚合都会执行。条件是结构化条件树。先全范围过滤和统计，再对统计结果排序分页。超过上限会失败，不会只扫前 N 条当成全量。单值请绑定范围内数量或指标列，不要绑定返回信封上的行数。排名图只对本次返回的行做客户端排序；页码为 1 且按数量降序时，分布结果的前 page_size 行才是全范围前 N 个分组。",
     "rest_api": "cmdb/query_model_instances",
     "tag": ["cmdb"],
-    "chart_type": ["table"],
+    "chart_type": ["table", "single", "bar", "pie", "topN"],
     "params": [
         {
             "name": "analysis_mode",
@@ -1854,53 +1860,138 @@
             }
         },
         {
-            "name": "model_id",
+            "name": "classification_ids",
             "type": "string",
-            "value": "",
-            "alias_name": "模型",
+            "value": [],
+            "alias_name": "分类",
             "filterType": "params",
-            "required": true,
+            "desc": "可空，多选。空表示不按分类限制。和模型都空时查询当前权限内全部模型实例。",
             "inputConfig": {
                 "control": "select",
+                "multiple": true,
+                "missingOptionPolicy": "retain",
                 "optionsSource": {
                     "type": "dynamic",
-                    "sourceRef": {"type": "rest_api", "value": "cmdb/get_model_options"},
-                    "valueField": "model_id",
-                    "labelField": "model_name"
+                    "sourceRef": {"type": "rest_api", "value": "cmdb/get_model_classification_options"},
+                    "valueField": "classification_id",
+                    "labelField": "classification_name"
                 }
             }
         },
         {
-            "name": "attr_filters",
+            "name": "model_ids",
             "type": "string",
-            "value": "",
-            "alias_name": "属性过滤",
-            "filterType": "filter",
-            "desc": "只支持等值，形如 ip_addr=10.0.0.1；多个条件用分号分隔。比较、模糊、不存在的字段会失败。"
+            "value": [],
+            "alias_name": "模型",
+            "filterType": "params",
+            "desc": "可空，多选。空表示当前分类范围内的全部可见模型。选项会随分类收窄；不选分类时仍加载权限内全部模型。失效模型会保留并阻止提交，不会当成全量。",
+            "inputConfig": {
+                "control": "select",
+                "multiple": true,
+                "missingOptionPolicy": "retain",
+                "optionsSource": {
+                    "type": "dynamic",
+                    "sourceRef": {"type": "rest_api", "value": "cmdb/get_model_options"},
+                    "valueField": "model_id",
+                    "labelField": "label",
+                    "queryParams": {
+                        "classification_ids": {"ref": "classification_ids", "whenEmpty": "omit"}
+                    }
+                }
+            }
+        },
+        {
+            "name": "conditions",
+            "type": "object",
+            "value": {"logic": "and", "children": []},
+            "alias_name": "条件",
+            "filterType": "params",
+            "desc": "结构化条件。全局条件要求实例具备该属性；模型条件只约束该模型，结果取并集。失效条件会阻止查询。",
+            "inputConfig": {
+                "control": "condition",
+                "optionsSource": {
+                    "type": "dynamic",
+                    "sourceRef": {"type": "rest_api", "value": "cmdb/get_instance_query_fields"},
+                    "valueField": "key",
+                    "labelField": "label",
+                    "keepItem": true,
+                    "queryParams": {
+                        "classification_ids": {"ref": "classification_ids", "whenEmpty": "omit"},
+                        "model_ids": {"ref": "model_ids", "whenEmpty": "omit"},
+                        "analysis_mode": {"ref": "analysis_mode"}
+                    }
+                }
+            }
         },
         {
             "name": "group_by",
-            "type": "string",
-            "value": "",
-            "alias_name": "分组字段",
+            "type": "object",
+            "value": [],
+            "alias_name": "分布字段",
             "filterType": "params",
-            "desc": "属性分布必填，填模型属性标识，如 os_type。明细和数量下填写会失败。"
+            "requiredWhen": {"param": "analysis_mode", "in": ["distribution"]},
+            "visibleWhen": {"param": "analysis_mode", "in": ["distribution"]},
+            "desc": "属性分布使用。同一条里选多个字段表示显式合并，类型和单位必须兼容。",
+            "inputConfig": {
+                "control": "fieldGroup",
+                "variant": "group",
+                "optionsSource": {
+                    "type": "dynamic",
+                    "sourceRef": {"type": "rest_api", "value": "cmdb/get_instance_query_fields"},
+                    "valueField": "key",
+                    "labelField": "label",
+                    "keepItem": true,
+                    "queryParams": {
+                        "classification_ids": {"ref": "classification_ids", "whenEmpty": "omit"},
+                        "model_ids": {"ref": "model_ids", "whenEmpty": "omit"},
+                        "analysis_mode": {"ref": "analysis_mode"}
+                    }
+                }
+            }
         },
         {
-            "name": "agg_field",
-            "type": "string",
-            "value": "",
-            "alias_name": "聚合字段",
+            "name": "metrics",
+            "type": "object",
+            "value": [],
+            "alias_name": "聚合指标",
             "filterType": "params",
-            "desc": "数值聚合暂不支持。填写后当前版本会失败，不会被忽略。"
+            "requiredWhen": {"param": "analysis_mode", "in": ["aggregate"]},
+            "visibleWhen": {"param": "analysis_mode", "in": ["aggregate"]},
+            "desc": "默认每个字段单独成指标。把多个字段放进同一条指标才合并；类型或单位不兼容会失败。",
+            "inputConfig": {
+                "control": "fieldGroup",
+                "variant": "metrics",
+                "optionsSource": {
+                    "type": "dynamic",
+                    "sourceRef": {"type": "rest_api", "value": "cmdb/get_instance_query_fields"},
+                    "valueField": "key",
+                    "labelField": "label",
+                    "keepItem": true,
+                    "queryParams": {
+                        "classification_ids": {"ref": "classification_ids", "whenEmpty": "omit"},
+                        "model_ids": {"ref": "model_ids", "whenEmpty": "omit"},
+                        "analysis_mode": {"ref": "analysis_mode"}
+                    }
+                }
+            }
         },
         {
-            "name": "agg_func",
-            "type": "string",
-            "value": "",
-            "alias_name": "聚合函数",
+            "name": "show_not_applicable",
+            "type": "boolean",
+            "value": true,
+            "alias_name": "显示不适用",
             "filterType": "params",
-            "desc": "预留 sum、avg、min、max。数值聚合暂不支持，填写后当前版本会失败。"
+            "visibleWhen": {"param": "analysis_mode", "in": ["distribution"]},
+            "desc": "属性不适用于该模型时单独成桶，不并进空值。"
+        },
+        {
+            "name": "show_unfilled",
+            "type": "boolean",
+            "value": true,
+            "alias_name": "显示未填写",
+            "filterType": "params",
+            "visibleWhen": {"param": "analysis_mode", "in": ["distribution"]},
+            "desc": "属性存在但没有值时单独成桶，不和空字符串合并。"
         },
         {
             "name": "order",
@@ -1908,7 +1999,7 @@
             "value": "",
             "alias_name": "排序",
             "filterType": "params",
-            "desc": "留空时明细按 inst_name，属性分布按 -count。数量可按 count 或 model_id。不支持的字段会失败。"
+            "desc": "留空时明细按 inst_name，分布按 -count，数量和聚合按 model_id。降序加 -。不支持的字段会失败。"
         },
         {"name": "page", "type": "number", "value": 1, "alias_name": "页码", "filterType": "params"},
         {"name": "page_size", "type": "number", "value": 20, "alias_name": "每页数量", "filterType": "params"},
@@ -1918,17 +2009,35 @@
             "value": "",
             "alias_name": "组织",
             "filterType": "filter",
-            "inputConfig": {
-                "control": "organization"
-            }
+            "inputConfig": {"control": "organization"}
         }
     ],
     "field_schema": [
-        {"key": "inst_uuid", "title": "实例UUID", "value_type": "string", "description": "明细模式的实例身份。数量和属性分布不返回此列。"},
-        {"key": "inst_name", "title": "实例名", "value_type": "string", "description": "明细模式的实例名称。数量和属性分布不返回此列。"},
-        {"key": "model_id", "title": "模型", "value_type": "string", "description": "查询限定的模型标识。三种已实现方式都会返回。"},
-        {"key": "group_value", "title": "分组值", "value_type": "string", "description": "仅属性分布。分组字段的取值。"},
-        {"key": "count", "title": "数量", "value_type": "number", "description": "数量模式是过滤后的实例总数；属性分布是该分组的实例数。明细不返回此列。"}
+        {"key": "inst_uuid", "title": "实例UUID", "value_type": "string", "description": "明细的实例身份。实际列以返回的 fields 为准。"},
+        {"key": "inst_name", "title": "实例名", "value_type": "string", "description": "明细的实例名称。"},
+        {"key": "model_id", "title": "模型", "value_type": "string", "description": "模型标识。"},
+        {"key": "model_name", "title": "模型名称", "value_type": "string", "description": "模型中文名。"},
+        {"key": "group_value", "title": "分组值", "value_type": "string", "description": "属性分布的分组显示值，含不适用和未填写。"},
+        {"key": "count", "title": "数量", "value_type": "number", "description": "该模型或该分组过滤后的实例数。"},
+        {"key": "scope_count", "title": "范围内数量", "value_type": "number", "description": "当前查询范围的实例总数。单值绑定这一列，而不是信封上的行数。"}
+    ]
+},
+{
+    "key": "CMDB 实例查询字段::cmdb/get_instance_query_fields",
+    "name": "CMDB 实例查询字段（选项）",
+    "desc": "当前查询范围内可过滤、可分组、可聚合的属性。空分类和空模型返回权限内全部可见模型的字段。本身不直接出图。",
+    "rest_api": "cmdb/get_instance_query_fields",
+    "tag": ["cmdb"],
+    "chart_type": [],
+    "params": [
+        {"name": "classification_ids", "type": "string", "value": [], "alias_name": "分类", "filterType": "fixed"},
+        {"name": "model_ids", "type": "string", "value": [], "alias_name": "模型", "filterType": "fixed"},
+        {"name": "analysis_mode", "type": "string", "value": "list", "alias_name": "分析方式", "filterType": "fixed"}
+    ],
+    "field_schema": [
+        {"key": "key", "title": "字段键", "value_type": "string", "description": "模型标识与属性标识"},
+        {"key": "label", "title": "字段名", "value_type": "string", "description": "模型中文名 · 属性中文名"},
+        {"key": "attr_type", "title": "属性类型", "value_type": "string", "description": "决定运算符和聚合函数"}
     ]
 }
 ]

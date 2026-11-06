@@ -2014,6 +2014,7 @@
       "dynamic": "Data source options"
     },
     "editButton": "Configure input",
+    "staleOption": "This option is no longer available. Choose it again. An unavailable value is not treated as all.",
     "static": {
       "options": "Options",
       "label": "Label",
@@ -2132,5 +2133,38 @@
     "duplicateHint": "This list has duplicate canvases. Remove the extras before saving",
     "alreadyContains": "Already included",
     "spaceToResume": "Space to continue"
+  },
+  "conditionBuilder": {
+    "and": "AND",
+    "or": "OR",
+    "global": "Global",
+    "addCondition": "Add condition",
+    "addGroup": "Add group",
+    "remove": "Remove",
+    "field": "Attribute",
+    "operator": "Operator",
+    "preview": "Condition preview",
+    "reset": "Start over",
+    "loading": "Loading attributes",
+    "missing": "unavailable",
+    "issue": {
+      "invalid": "The condition is not valid",
+      "staleField": "This condition field is no longer available",
+      "staleScope": "This condition scope is no longer available",
+      "missingValue": "Enter a condition value",
+      "unsupportedOperator": "This field does not support that operator"
+    }
+  },
+  "fieldGroup": {
+    "add": "Add item",
+    "sources": "Fields",
+    "func": "Function",
+    "label": "Label",
+    "issue": {
+      "invalid": "The field setup is not valid",
+      "required": "Choose a field",
+      "stale": "This field is no longer available",
+      "incompatible": "Field types or units do not match, so they cannot be merged"
+    }
   }
 }

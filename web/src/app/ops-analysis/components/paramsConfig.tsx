@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { useDebouncedOptionsQueryValues } from '@/app/ops-analysis/hooks/useDebouncedOptionsQueryValues';
 import { isFreeTextOptionsParam } from '@/app/ops-analysis/utils/optionsQueryTextDebounce';
 import TimeSelector from '@/components/time-selector';
@@ -19,7 +19,10 @@ import type {
 } from '@/app/ops-analysis/types/dataSource';
 import CompactEmptyState from '@/components/compact-empty-state';
 import { ParamInputControl } from '@/app/ops-analysis/components/paramInputControl';
+import { CatalogParamEditor } from '@/app/ops-analysis/components/catalogParamEditor';
 import { normalizeInputConfig } from '@/app/ops-analysis/utils/paramInputConfigUtils';
+import { isParamConditionallyRequired, isParamVisible } from '@/app/ops-analysis/utils/paramVisibility';
+import { inspectCondition, inspectFieldGroup, readFieldCatalog } from '@/app/ops-analysis/utils/conditionTree';
 import { getDataSourceFormParamInitialValue } from '@/app/ops-analysis/utils/dataSourceFormParams';
 import { readComponentOptionsQueryUpstream } from '@/app/ops-analysis/utils/optionsQueryCandidates';
 import {
@@ -181,6 +184,7 @@ const DataSourceParamsConfig: React.FC<DataSourceParamsConfigProps> = ({
 }) => {
   const { t } = useTranslation();
   const [mounted, setMounted] = useState(false);
+  const resolvedOptionsRef = useRef(new Map<string, InputOption[]>());
   const form = Form.useFormInstance();
   // useWatch 负责在未注册字段变化时重渲染；当次渲染读 store，避免订阅值晚一拍。
   const watchedParams = Form.useWatch(fieldPrefix, { form, preserve: true }) as Record<string, unknown> | undefined;
@@ -297,6 +301,25 @@ const DataSourceParamsConfig: React.FC<DataSourceParamsConfigProps> = ({
       globalFilterValues,
     });
 
+    const rememberOptions = (resolvedOptions: InputOption[]) => {
+      resolvedOptionsRef.current.set(param.name, resolvedOptions);
+      onParamOptionsResolved?.(param, resolvedOptions);
+    };
+
+    if (inputConfig.control === 'condition' || inputConfig.control === 'fieldGroup') {
+      return (
+        <CatalogParamEditor
+          inputConfig={inputConfig}
+          disabled={isDisabled}
+          resolvedQueryParams={optionsQuery?.resolution.params}
+          optionsBlocked={optionsQuery?.resolution.blocked}
+          optionsBlockReason={optionsQuery?.resolution.blockReason}
+          optionsQuerySignature={optionsQuery?.signature}
+          onOptionsResolved={rememberOptions}
+        />
+      );
+    }
+
     return (
       <ParamInputControl
         inputConfig={inputConfig}
@@ -307,9 +330,7 @@ const DataSourceParamsConfig: React.FC<DataSourceParamsConfigProps> = ({
         optionsBlocked={optionsQuery?.resolution.blocked}
         optionsBlockReason={optionsQuery?.resolution.blockReason}
         optionsQuerySignature={optionsQuery?.signature}
-        onOptionsResolved={(resolvedOptions) =>
-          onParamOptionsResolved?.(param, resolvedOptions)
-        }
+        onOptionsResolved={rememberOptions}
       />
     );
   };
@@ -359,9 +380,13 @@ const DataSourceParamsConfig: React.FC<DataSourceParamsConfigProps> = ({
           };
         };
 
+        const visible = isParamVisible(param, formParams || {});
+        const required = visible && isParamConditionallyRequired(param, formParams || {});
+        const inputConfig = normalizeInputConfig(param);
         return (
           <Form.Item
             key={`${selectedDataSource?.id || 'default'}-${param.name}`}
+            hidden={!visible}
             label={
               <div className="flex items-center justify-start gap-1">
                 <div style={getLabelStyle()} title={labelText}>
@@ -387,11 +412,32 @@ const DataSourceParamsConfig: React.FC<DataSourceParamsConfigProps> = ({
             initialValue={!preserveValues && mounted ? initialValue : undefined}
             tooltip={param.desc || undefined}
             style={{ marginBottom: isVeryLongText ? 20 : 16 }}
-            rules={[
-              { required: param.required, message: t('dataSource.paramRequired', '请配置{label}', { label: labelText }) },
-            ]}
+            rules={visible ? [
+              { required, message: t('dataSource.paramRequired', '请配置{label}', { label: labelText }) },
+              {
+                validator: async (_rule, current) => {
+                  if (inputConfig?.control === 'select' && inputConfig.missingOptionPolicy === 'retain') {
+                    const options = resolvedOptionsRef.current.get(param.name);
+                    if (!options) return;
+                    const selected = Array.isArray(current) ? current : current == null || current === '' ? [] : [current];
+                    const stale = selected.some((item) => !options.some((option) => String(option.value) === String(item)));
+                    if (stale) throw new Error(t('paramInput.staleOption'));
+                  }
+                  if (inputConfig?.control === 'condition') {
+                    const options = resolvedOptionsRef.current.get(param.name);
+                    const issue = inspectCondition(current, readFieldCatalog(options), options !== undefined);
+                    if (issue) throw new Error(t(`conditionBuilder.issue.${issue.code}`));
+                  }
+                  if (inputConfig?.control === 'fieldGroup' && inputConfig.variant) {
+                    const options = resolvedOptionsRef.current.get(param.name);
+                    const issue = inspectFieldGroup(current, readFieldCatalog(options), options !== undefined, inputConfig.variant);
+                    if (issue) throw new Error(t(`fieldGroup.issue.${issue}`));
+                  }
+                },
+              },
+            ] : []}
           >
-            {renderParamInput(param)}
+            {visible ? renderParamInput(param) : null}
           </Form.Item>
         );
       })}

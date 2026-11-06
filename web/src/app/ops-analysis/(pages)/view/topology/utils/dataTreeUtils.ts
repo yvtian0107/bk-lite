@@ -48,12 +48,22 @@ export const buildSchemaFieldTree = (
     }];
   });
 
+const collectLeafKeys = (nodes: TreeNode[], found = new Set<string>()) => {
+  nodes.forEach((node) => {
+    const key = String(node.key || '');
+    const leaf = key.split('.').pop();
+    if (leaf) found.add(leaf);
+    if (node.children?.length) collectLeafKeys(node.children, found);
+  });
+  return found;
+};
+
 export const mergeFieldTrees = (
   schemaTree: TreeNode[],
   sampleTree: TreeNode[],
 ): TreeNode[] => {
-  const sampleKeys = new Set(sampleTree.map((node) => String(node.key)));
-  const schemaOnly = schemaTree.filter((node) => !sampleKeys.has(String(node.key)));
+  const sampleKeys = collectLeafKeys(sampleTree);
+  const schemaOnly = schemaTree.filter((node) => !sampleKeys.has(String(node.key).split('.').pop()));
   return [...schemaOnly, ...sampleTree];
 };
 
@@ -83,6 +93,22 @@ export const buildTreeData = (obj: unknown, fieldSchema?: ResponseFieldDefinitio
   // 普通对象处理
   Object.keys(obj).forEach((key) => {
     const value = (obj as Record<string, unknown>)[key];
+
+    if (Array.isArray(value) && value.length > 0 && value[0] && typeof value[0] === 'object') {
+      const children = buildTreeData(value[0], fieldSchema);
+      if (children.length > 0) {
+        treeNodes.push({
+          title: getDisplayTitle(key, fieldSchema),
+          key,
+          children: children.map((child) => ({
+            ...child,
+            key: `${key}.${child.key}`,
+            value: `${key}.${child.value || child.key}`,
+          })),
+        });
+        return;
+      }
+    }
 
     if (
       typeof value === 'object' &&

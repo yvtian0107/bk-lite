@@ -114,10 +114,16 @@ export const extractDataSourceItems = (
   return [];
 };
 
+export const isCatalogControl = (
+  config?: InputControlConfig,
+): config is Extract<InputControlConfig, { control: 'condition' | 'fieldGroup' }> =>
+  config?.control === 'condition' || config?.control === 'fieldGroup';
+
 export const mapDynamicItems = (
   items: Record<string, unknown>[],
   valueField: string,
   labelField: string,
+  options?: { keepItem?: boolean },
 ): InputOption[] => {
   return items
     .filter((item): item is Record<string, unknown> => {
@@ -127,10 +133,12 @@ export const mapDynamicItems = (
       const value = item[valueField];
       if (value === undefined || value === null) return null;
       if (typeof value !== 'string' && typeof value !== 'number') return null;
-      return {
+      const option: InputOption = {
         value,
         label: String(item[labelField] ?? ''),
       };
+      if (options?.keepItem) option.extra = item;
+      return option;
     })
     .filter((item): item is InputOption => item !== null);
 };
