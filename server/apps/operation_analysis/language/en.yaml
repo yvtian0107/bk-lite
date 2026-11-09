@@ -645,7 +645,6 @@ dashboards:
         name: Monitor Instances
       ops-kpi-nodes:
         name: Alerted Applications
-        description: Count of authorized applications whose related hosts still have unrecovered monitor alerts. This is not a business incident count.
       ops-kpi-open-alerts:
         name: Open Alerts
       ops-kpi-severe:
@@ -662,7 +661,6 @@ dashboards:
         name: Monitor Access
       ops-host-key-metrics:
         name: Host Key Metrics
-        description: Latest valid CPU, memory, or disk usage for authorized hosts. One metric at a time, fixed top 10. Missing samples stay missing and do not follow the page time range.
         params:
           metric_type:
             name: Metric
@@ -670,10 +668,10 @@ dashboards:
               cpu: CPU usage
               memory: Memory usage
               disk: Disk usage
+          instance_ids: Host
           organization: Organization
       ops-monitor-alerts:
         name: Monitor Anomalies TOP 5
-        description: Unrecovered monitor alerts in the authorized scope, highest severity first. The same severity keeps the earlier start first. The recorded value is saved at trigger or escalation, not a live sample.
         columns:
           monitor_instance_name: Object
           metric_name: Metric

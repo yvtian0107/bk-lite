@@ -645,7 +645,6 @@ dashboards:
         name: 监控实例
       ops-kpi-nodes:
         name: 告警应用数
-        description: 授权应用里，关联主机仍有未恢复监控告警的个数，不是业务故障单。
       ops-kpi-open-alerts:
         name: 未关闭告警
       ops-kpi-severe:
@@ -662,7 +661,6 @@ dashboards:
         name: 监控接入概况
       ops-host-key-metrics:
         name: 主机关键指标
-        description: 授权主机的最新有效采样使用率，一次只看一类，固定前10。缺数不补0，不跟随页面时间。
         params:
           metric_type:
             name: 指标类型
@@ -670,10 +668,10 @@ dashboards:
               cpu: CPU使用率
               memory: 内存使用率
               disk: 磁盘使用率
+          instance_ids: 主机
           organization: 组织
       ops-monitor-alerts:
         name: 监控异常 TOP5
-        description: 授权范围内未恢复监控告警，按等级从高到低，同级开始更早优先，取前5。记录值是触发或升级时保存的，不是实时采样。
         columns:
           monitor_instance_name: 监控对象
           metric_name: 监控项

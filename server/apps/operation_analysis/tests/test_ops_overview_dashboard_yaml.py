@@ -1,5 +1,9 @@
 """运维总览内置画布：复用已有数据源，组织筛选与时间后缀跟其他 WeOpsX 画布一致。"""
 
+import base64
+import hashlib
+import json
+import struct
 from pathlib import Path
 
 import yaml
@@ -123,11 +127,13 @@ def test_ops_overview_yaml_binds_organization_time_and_reusable_widgets():
         assert len(style["iconImage"]) == icon_length
     node = by_id["ops-kpi-nodes"]
     assert node["name"] == "告警应用数"
-    assert "业务故障" in node["description"]
+    assert "description" not in node
     assert (node["x"], node["y"], node["w"], node["h"]) == (20, 0, 4, 5)
     assert node["valueConfig"]["dataSource"] == "关联告警汇总::monitor/get_cmdb_relation_alert_aggregation"
     assert node["valueConfig"]["selectedFields"] == ["with_alert_count"]
-    assert "singleStyle" not in node["valueConfig"]
+    assert set(node["valueConfig"]["singleStyle"]) == {"showIcon", "iconSource", "iconImage"}
+    assert node["valueConfig"]["singleStyle"]["showIcon"] is True
+    assert node["valueConfig"]["singleStyle"]["iconSource"] == "upload"
     assert node["valueConfig"]["interaction"] == {
         "kind": "title",
         "name": "查看应用",
@@ -156,7 +162,7 @@ def test_ops_overview_yaml_binds_organization_time_and_reusable_widgets():
     assert "ops-gauge-disk" not in by_id
     host_metrics = by_id["ops-host-key-metrics"]
     assert host_metrics["name"] == "主机关键指标"
-    assert "不跟随页面时间" in host_metrics["description"]
+    assert "description" not in host_metrics
     assert (host_metrics["x"], host_metrics["y"], host_metrics["w"], host_metrics["h"]) == (10, 0, 8, 8)
     assert host_metrics["valueConfig"]["chartType"] == "topN"
     assert host_metrics["valueConfig"]["dataSource"] == "主机资源使用率Top10::monitor/get_host_resource_top"
@@ -169,8 +175,11 @@ def test_ops_overview_yaml_binds_organization_time_and_reusable_widgets():
     assert host_metrics["valueConfig"]["interaction"]["url"] == "/monitor/view/dashboard/host"
     metric_type = next(param for param in host_metrics["valueConfig"]["dataSourceParams"] if param["name"] == "metric_type")
     assert metric_type["value"] == "cpu"
+    assert metric_type["inputConfig"]["control"] == "radio"
     assert metric_type["inputConfig"]["componentSwitch"] is True
     assert {item["value"] for item in metric_type["inputConfig"]["optionsSource"]["staticItems"]} == {"cpu", "memory", "disk"}
+    assert host_metrics["valueConfig"]["filterBindings"]["instance_ids__string"] is False
+    assert host_metrics["valueConfig"]["filterBindings"]["organization__string"] is True
     assert [param["type"] for param in host_metrics["valueConfig"]["dataSourceParams"] if param["type"] in {"timeRange", "dateRange"}] == []
     assert "time__timeRange" not in host_metrics["valueConfig"]["filterBindings"]
     trend = by_id["ops-alert-trend"]["valueConfig"]
@@ -193,7 +202,7 @@ def test_ops_overview_yaml_binds_organization_time_and_reusable_widgets():
     ]
     monitor_alerts = by_id["ops-monitor-alerts"]
     assert monitor_alerts["valueConfig"]["dataSource"] == "监控异常严重度TOP5::monitor/query_latest_active_alerts"
-    assert "同级开始更早优先" in monitor_alerts["description"]
+    assert "description" not in monitor_alerts
     monitor_order = {param["name"]: param for param in monitor_alerts["valueConfig"]["dataSourceParams"]}
     assert monitor_order["order"]["value"] == "severity"
     assert monitor_order["order"]["filterType"] == "fixed"
@@ -220,7 +229,7 @@ def test_ops_overview_yaml_binds_organization_time_and_reusable_widgets():
         "level",
         "created_at",
     ]
-    assert alert_columns[2]["cellType"] == "colorBackground"
+    assert "cellType" not in alert_columns[2]
     assert any(item["value"] == "严重" and item["result"]["color"] == "#F43B2C" for item in alert_columns[2]["valueMappings"])
     assert by_id["ops-kpi-resources"]["valueConfig"]["interaction"]["url"] == "/cmdb/assetOverview"
     assert by_id["ops-app-top"]["valueConfig"]["interaction"]["name"] == "查看全部"
@@ -278,3 +287,186 @@ def test_ops_overview_survives_builtin_merge():
     assert host_org["value"] in ("", None)
     assert host_org["filterType"] == "filter"
     assert (host_org.get("inputConfig") or {}).get("control") == "organization"
+
+
+OVERVIEW_NODE_IDS = (
+    "group-kpi",
+    "ops-kpi-resources",
+    "ops-kpi-monitor",
+    "ops-kpi-open-alerts",
+    "ops-kpi-severe",
+    "ops-kpi-nodes",
+    "group-resource",
+    "ops-app-top",
+    "ops-resource-types",
+    "group-monitor",
+    "ops-monitor-alerts",
+    "ops-host-key-metrics",
+    "ops-monitor-ring",
+    "group-alert",
+    "ops-alert-top",
+    "ops-alert-trend",
+    "ops-alert-level",
+)
+
+
+def _iter_nodes(view_sets):
+    for item in view_sets:
+        yield item
+        if item.get("itemType") == "group":
+            yield from _iter_nodes((item.get("subGridOpts") or {}).get("children") or [])
+
+
+def _description_paths(value, path=""):
+    found = []
+    if isinstance(value, dict):
+        for key, child in value.items():
+            next_path = f"{path}.{key}" if path else key
+            if key in {"description", "desc"}:
+                found.append((next_path, child))
+            found.extend(_description_paths(child, next_path))
+    elif isinstance(value, list):
+        for index, child in enumerate(value):
+            found.extend(_description_paths(child, f"{path}[{index}]"))
+    return found
+UNCHANGED_WIDGET_SHA256 = {
+    "ops-kpi-resources": "cb0311087646353ff127565ae8b9b15a7c63f78d56530bf5cc489ca5d6875bfc",
+    "ops-kpi-monitor": "25feb4745e3546cde6b66f269159b0c3e5995e0e5c8e3cf78a9b5086c0fde6f2",
+    "ops-kpi-open-alerts": "654caf5d730471d5f7bc89930421ada98e47c26425b3d58de8b772c4e7fb1a95",
+    "ops-kpi-severe": "1a6ce51dc3efb0907d86e2a3ffd998342d3abad65df8a13f15d62b1dbc344456",
+    "ops-app-top": "c14407cfd6aa1708b81f06661d65b88867d7043a69799b9170f883e7fe8fc759",
+    "ops-resource-types": "74fbcca1952c1fbac557218633b76252c3e64a85b6ad6952ed015fb3d6a13b63",
+    "ops-monitor-ring": "115e3af3106c294fcd068803623319131a25a5ff699f95701f2caa43d04fddb4",
+    "ops-alert-trend": "f38d458fc1fc1f6aa5e54b5f2b77b4cc24fcd0eadef4ce7d8dad2650820e22fd",
+    "ops-alert-level": "7e56f6c0990b344d992983319a05470a992f18c805a8ea709b2421287c964ab1",
+}
+DASHBOARD_META_SHA256 = "eb851050246b16a7dcf4ce7f0450b25ec87e853c757156762b7a22ddf0b88ff7"
+MONITOR_ALERTS_VALUE_CONFIG_SHA256 = "0df97225f57605c3c07c5353f5b8035134afef10447a53f2b01fccd33c366396"
+ALERT_TOP_VALUE_CONFIG_SHA256 = "1725b5f04fe56eaee9e4db26507b34f1bce440b86974e607388eb0ded197a528"
+
+
+def _canonical_sha256(value):
+    blob = json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+    return hashlib.sha256(blob.encode()).hexdigest()
+
+
+def _language_widgets(filename):
+    catalog = yaml.safe_load((SUPPORT_DIR.parent / "language" / filename).read_text(encoding="utf-8"))
+    return catalog["dashboards"]["dashboard::运维总览_内置"]["widgets"]
+
+
+def test_ops_overview_syncs_dashboard80_display_without_touching_other_widgets():
+    sample = _load_sample()
+    dashboard = sample["dashboards"][0]
+    meta = {key: value for key, value in dashboard.items() if key != "view_sets"}
+    assert _canonical_sha256(meta) == DASHBOARD_META_SHA256
+    assert [item["key"] for item in dashboard["filters"]] == ["organization", "time"]
+
+    widgets = list(_iter_widgets(dashboard["view_sets"]))
+    by_id = {widget["id"]: widget for widget in widgets}
+    assert len(widgets) == 13
+    assert set(UNCHANGED_WIDGET_SHA256) | {
+        "ops-kpi-nodes",
+        "ops-host-key-metrics",
+        "ops-monitor-alerts",
+        "ops-alert-top",
+    } == set(by_id)
+    for widget_id, digest in UNCHANGED_WIDGET_SHA256.items():
+        assert _canonical_sha256(by_id[widget_id]) == digest
+
+    nodes = list(_iter_nodes(dashboard["view_sets"]))
+    assert [item["id"] for item in nodes] == list(OVERVIEW_NODE_IDS)
+    for item in nodes:
+        assert _description_paths(item) == []
+
+    node = by_id["ops-kpi-nodes"]
+    style = node["valueConfig"]["singleStyle"]
+    assert style == {
+        "showIcon": True,
+        "iconSource": "upload",
+        **{"iconImage": style["iconImage"]},
+    }
+    prefix = "data:image/png;base64,"
+    assert style["iconImage"].startswith(prefix)
+    raw = base64.b64decode(style["iconImage"][len(prefix):], validate=True)
+    assert len(raw) == 7375
+    assert raw.startswith(b"\x89PNG\r\n\x1a\n")
+    width, height, bit_depth, color_type = struct.unpack(">IIBB", raw[16:26])
+    assert raw[12:16] == b"IHDR"
+    assert (width, height, bit_depth, color_type) == (256, 256, 8, 6)
+    assert node["valueConfig"]["dataSource"] == "关联告警汇总::monitor/get_cmdb_relation_alert_aggregation"
+
+    host = by_id["ops-host-key-metrics"]
+    assert host["valueConfig"]["dataSource"] == "主机资源使用率Top10::monitor/get_host_resource_top"
+    assert host["valueConfig"]["filterBindings"] == {
+        "instance_ids__string": False,
+        "organization__string": True,
+    }
+    params = {param["name"]: param for param in host["valueConfig"]["dataSourceParams"]}
+    assert list(params) == ["metric_type", "instance_ids", "organization"]
+    assert params["metric_type"]["inputConfig"]["control"] == "radio"
+    assert params["metric_type"]["filterType"] == "params"
+    instance_ids = params["instance_ids"]
+    assert instance_ids["filterType"] == "filter"
+    assert instance_ids["alias_name"] == "主机"
+    assert instance_ids["value"] == []
+    source_ref = instance_ids["inputConfig"]["optionsSource"]["sourceRef"]
+    assert source_ref == {"type": "rest_api", "value": "monitor/get_host_instance_list"}
+    assert "id" not in source_ref
+    assert not str(source_ref["value"]).isdigit()
+
+    monitor = by_id["ops-monitor-alerts"]
+    assert _canonical_sha256(monitor["valueConfig"]) == MONITOR_ALERTS_VALUE_CONFIG_SHA256
+    assert monitor["valueConfig"]["dataSource"] == "监控异常严重度TOP5::monitor/query_latest_active_alerts"
+
+    alert = by_id["ops-alert-top"]
+    assert _canonical_sha256(alert["valueConfig"]) == ALERT_TOP_VALUE_CONFIG_SHA256
+    level = next(column for column in alert["valueConfig"]["tableConfig"]["columns"] if column["key"] == "level")
+    assert "cellType" not in level
+    assert any(item["result"]["color"] == "#F43B2C" and item["result"]["text"] == "严重" for item in level["valueMappings"])
+
+    for filename in ("zh-Hans.yaml", "en.yaml"):
+        catalog = yaml.safe_load((SUPPORT_DIR.parent / "language" / filename).read_text(encoding="utf-8"))
+        entry = catalog["dashboards"]["dashboard::运维总览_内置"]
+        assert isinstance(entry["desc"], str) and entry["desc"].strip()
+        entries = entry["widgets"]
+        assert set(entries) == set(OVERVIEW_NODE_IDS)
+        for widget_id in OVERVIEW_NODE_IDS:
+            assert "description" not in entries[widget_id]
+            assert "desc" not in entries[widget_id]
+        assert entries["ops-host-key-metrics"]["params"]["instance_ids"] in {"主机", "Host"}
+
+    from apps.core.utils.loader import clear_language_cache
+    from apps.operation_analysis.services.builtin_i18n import overlay_canvas_payload
+
+    clear_language_cache("operation_analysis")
+
+    class _Builtin:
+        is_build_in = True
+        build_in_key = "dashboard::运维总览_内置"
+
+    for language in ("zh-Hans", "en"):
+        overlaid = overlay_canvas_payload(
+            {"name": dashboard["name"], "desc": dashboard["desc"], "view_sets": dashboard["view_sets"]},
+            _Builtin(),
+            language,
+        )
+        assert isinstance(overlaid["desc"], str) and overlaid["desc"].strip()
+        overlaid_by_id = {item["id"]: item for item in _iter_nodes(overlaid["view_sets"])}
+        for item in overlaid_by_id.values():
+            assert _description_paths(item) == []
+        assert overlaid_by_id["ops-host-key-metrics"]["valueConfig"]["filterBindings"]["instance_ids__string"] is False
+        assert overlaid_by_id["ops-kpi-nodes"]["valueConfig"]["singleStyle"]["iconImage"].startswith("data:image/png;base64,")
+        stored_null = {
+            "name": "告警应用数",
+            "description": None,
+            "valueConfig": {"description": None},
+        }
+        injected = overlay_canvas_payload(
+            {"name": dashboard["name"], "view_sets": [stored_null | {"id": "ops-kpi-nodes"}]},
+            _Builtin(),
+            language,
+        )
+        node = injected["view_sets"][0]
+        assert "description" not in node or node["description"] in (None, "")
+        assert node["valueConfig"].get("description") in (None, "")
