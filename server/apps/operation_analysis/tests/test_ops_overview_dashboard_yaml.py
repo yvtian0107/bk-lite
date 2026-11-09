@@ -128,7 +128,7 @@ def test_ops_overview_yaml_binds_organization_time_and_reusable_widgets():
     node = by_id["ops-kpi-nodes"]
     assert node["name"] == "告警应用数"
     assert "description" not in node
-    assert (node["x"], node["y"], node["w"], node["h"]) == (20, 0, 4, 5)
+    assert (node["x"], node["y"], node["w"], node["h"]) == (10, 0, 4, 5)
     assert node["valueConfig"]["dataSource"] == "关联告警汇总::monitor/get_cmdb_relation_alert_aggregation"
     assert node["valueConfig"]["selectedFields"] == ["with_alert_count"]
     assert set(node["valueConfig"]["singleStyle"]) == {"showIcon", "iconSource", "iconImage"}
@@ -150,10 +150,11 @@ def test_ops_overview_yaml_binds_organization_time_and_reusable_widgets():
         for widget_id in (
             "ops-kpi-resources",
             "ops-kpi-monitor",
+            "ops-kpi-nodes",
             "ops-kpi-open-alerts",
             "ops-kpi-severe",
         )
-    ] == [(0, 5, 5), (5, 5, 5), (10, 5, 5), (15, 5, 5)]
+    ] == [(0, 5, 5), (5, 5, 5), (10, 4, 5), (14, 5, 5), (19, 5, 5)]
     assert (by_id["ops-resource-types"]["x"], by_id["ops-resource-types"]["w"], by_id["ops-resource-types"]["h"]) == (12, 12, 8)
     assert (by_id["ops-app-top"]["x"], by_id["ops-app-top"]["w"], by_id["ops-app-top"]["h"]) == (0, 12, 8)
     assert by_id["ops-monitor-ring"]["valueConfig"]["pieScalarFields"][0]["field"] == "monitor_instance_active"
@@ -293,9 +294,9 @@ OVERVIEW_NODE_IDS = (
     "group-kpi",
     "ops-kpi-resources",
     "ops-kpi-monitor",
+    "ops-kpi-nodes",
     "ops-kpi-open-alerts",
     "ops-kpi-severe",
-    "ops-kpi-nodes",
     "group-resource",
     "ops-app-top",
     "ops-resource-types",
@@ -329,11 +330,28 @@ def _description_paths(value, path=""):
         for index, child in enumerate(value):
             found.extend(_description_paths(child, f"{path}[{index}]"))
     return found
+KPI_ROW_ORDER = (
+    "ops-kpi-resources",
+    "ops-kpi-monitor",
+    "ops-kpi-nodes",
+    "ops-kpi-open-alerts",
+    "ops-kpi-severe",
+)
+KPI_ROW_BOXES = {
+    "ops-kpi-resources": (0, 0, 5, 5),
+    "ops-kpi-monitor": (5, 0, 5, 5),
+    "ops-kpi-nodes": (10, 0, 4, 5),
+    "ops-kpi-open-alerts": (14, 0, 5, 5),
+    "ops-kpi-severe": (19, 0, 5, 5),
+}
+KPI_EXCEPT_X_SHA256 = {
+    "ops-kpi-resources": "804e7a1e344d7203d9a60e3d119eb570a7bac88bda0738b633c891b036c7dc64",
+    "ops-kpi-monitor": "588a5d6a057a24e343c02c2487e7364a74975cfd0045396a500e5c340965467e",
+    "ops-kpi-nodes": "4cc2216e150f4c92e184b46158e8e1c995a9d6cf7669903ca4fa64d5409360f9",
+    "ops-kpi-open-alerts": "e9d9c107f376e06c6ccd826f73c4851811f3874c53995db0423ebba79152a823",
+    "ops-kpi-severe": "81a159c901d335c4672c5e8b40d6fa4c277e05b1ab2da1ef5d5081937cda50ab",
+}
 UNCHANGED_WIDGET_SHA256 = {
-    "ops-kpi-resources": "cb0311087646353ff127565ae8b9b15a7c63f78d56530bf5cc489ca5d6875bfc",
-    "ops-kpi-monitor": "25feb4745e3546cde6b66f269159b0c3e5995e0e5c8e3cf78a9b5086c0fde6f2",
-    "ops-kpi-open-alerts": "654caf5d730471d5f7bc89930421ada98e47c26425b3d58de8b772c4e7fb1a95",
-    "ops-kpi-severe": "1a6ce51dc3efb0907d86e2a3ffd998342d3abad65df8a13f15d62b1dbc344456",
     "ops-app-top": "c14407cfd6aa1708b81f06661d65b88867d7043a69799b9170f883e7fe8fc759",
     "ops-resource-types": "74fbcca1952c1fbac557218633b76252c3e64a85b6ad6952ed015fb3d6a13b63",
     "ops-monitor-ring": "115e3af3106c294fcd068803623319131a25a5ff699f95701f2caa43d04fddb4",
@@ -365,8 +383,7 @@ def test_ops_overview_syncs_dashboard80_display_without_touching_other_widgets()
     widgets = list(_iter_widgets(dashboard["view_sets"]))
     by_id = {widget["id"]: widget for widget in widgets}
     assert len(widgets) == 13
-    assert set(UNCHANGED_WIDGET_SHA256) | {
-        "ops-kpi-nodes",
+    assert set(UNCHANGED_WIDGET_SHA256) | set(KPI_ROW_ORDER) | {
         "ops-host-key-metrics",
         "ops-monitor-alerts",
         "ops-alert-top",
@@ -470,3 +487,34 @@ def test_ops_overview_syncs_dashboard80_display_without_touching_other_widgets()
         node = injected["view_sets"][0]
         assert "description" not in node or node["description"] in (None, "")
         assert node["valueConfig"].get("description") in (None, "")
+
+
+def test_ops_overview_kpi_row_places_alerted_applications_after_monitor_instances():
+    dashboard = _load_sample()["dashboards"][0]
+    group = next(item for item in dashboard["view_sets"] if item["id"] == "group-kpi")
+    children = group["subGridOpts"]["children"]
+    assert [item["id"] for item in children] == list(KPI_ROW_ORDER)
+    assert (group["x"], group["y"], group["w"], group["h"]) == (0, 0, 24, 7)
+
+    occupied = []
+    for item in children:
+        assert (item["x"], item["y"], item["w"], item["h"]) == KPI_ROW_BOXES[item["id"]]
+        assert "description" not in item
+        body = {key: value for key, value in item.items() if key != "x"}
+        assert _canonical_sha256(body) == KPI_EXCEPT_X_SHA256[item["id"]]
+        occupied.append((item["x"], item["x"] + item["w"]))
+    occupied.sort()
+    assert occupied[0][0] == 0
+    assert occupied[-1][1] == group["w"]
+    for (start, end), (next_start, _) in zip(occupied, occupied[1:]):
+        assert end == next_start
+
+    others = [item for item in _iter_widgets(dashboard["view_sets"]) if item["id"] not in KPI_ROW_ORDER]
+    assert {item["id"] for item in others} == set(UNCHANGED_WIDGET_SHA256) | {
+        "ops-host-key-metrics",
+        "ops-monitor-alerts",
+        "ops-alert-top",
+    }
+    for widget_id, digest in UNCHANGED_WIDGET_SHA256.items():
+        widget = next(item for item in others if item["id"] == widget_id)
+        assert _canonical_sha256(widget) == digest
