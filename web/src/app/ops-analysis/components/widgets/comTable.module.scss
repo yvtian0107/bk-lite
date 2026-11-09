@@ -34,15 +34,21 @@
     flex: 0 0 auto;
   }
 
-  // 数字 y 只负责让 antd 拆出表头和表体。真实表头、折行分页和字号放大后的高度
-  // 由这条 flex 链收口，避免按 47/56 预留把横向滚动条压到分页上。
+  // 只锁纵向。overflow 简写会盖过 CustomTable 的 noHorizontalScroll，
+  // 纵条占位使列宽总和略大于 clientWidth 时就会露出一条假横条。
   > :global([class*="customTable"]) > :global(.ant-table-wrapper) :global(.ant-table-body),
   > :global([class*="customTable"]) > :global(.ant-table-wrapper) :global(.ant-table-content) {
     flex: 1 1 auto;
     min-height: 0;
     height: auto !important;
     max-height: none !important;
-    overflow: auto !important;
+    overflow-y: auto !important;
+  }
+
+  // hidden 仍允许脚本把 scrollLeft 拨过纵条占位。clip 才让未超宽的表停在 0。
+  > :global([class*="customTable"][class*="noHorizontalScroll"]) :global(.ant-table-body),
+  > :global([class*="customTable"][class*="noHorizontalScroll"]) :global(.ant-table-content) {
+    overflow-x: clip !important;
   }
 
   > :global([class*="customTable"]) > :global(.absolute.right-0.bottom-0) {
@@ -99,7 +105,12 @@
     min-height: 0;
     height: auto !important;
     max-height: none !important;
-    overflow: auto !important;
+    overflow-y: auto !important;
+  }
+
+  > :global([class*="customTable"][class*="noHorizontalScroll"]) :global(.ant-table-body),
+  > :global([class*="customTable"][class*="noHorizontalScroll"]) :global(.ant-table-content) {
+    overflow-x: clip !important;
   }
 
   > :global([class*="customTable"]) > :global(.absolute.right-0.bottom-0) {

@@ -75,13 +75,26 @@ for (const [name, source] of [
 ] as const) {
   assert.match(source, /opsTableScroll/, `${name}的滚动口必须留在卡片 flex 槽里`);
 }
+const tableScrollStyle = readFileSync(
+  new URL('../src/app/ops-analysis/components/widgets/comTable.module.scss', import.meta.url),
+  'utf8',
+);
+const customTableStyle = readFileSync(
+  new URL('../src/components/custom-table/index.module.scss', import.meta.url),
+  'utf8',
+);
+assert.match(tableScrollStyle, /height:\s*auto\s*!important/, '表体不能被数字 y 的像素高度钉死');
+assert.match(tableScrollStyle, /overflow-y:\s*auto\s*!important/, '卡片内表体要保留纵向滚动');
+assert.match(tableScrollStyle, /overflow-x:\s*clip\s*!important/, '列未超出时要剪掉纵条占位造成的横向滚动');
+assert.doesNotMatch(
+  tableScrollStyle,
+  /overflow:\s*auto\s*!important/,
+  '不能用 overflow 简写盖住列未溢出时的横向隐藏',
+);
 assert.match(
-  readFileSync(
-    new URL('../src/app/ops-analysis/components/widgets/comTable.module.scss', import.meta.url),
-    'utf8',
-  ),
-  /height:\s*auto\s*!important/,
-  '表体不能被数字 y 的像素高度钉死',
+  customTableStyle,
+  /\.noHorizontalScroll[^{]*\{[^}]*overflow-x:\s*hidden\s*!important/,
+  '列未超出时仍由 noHorizontalScroll 关掉横向滚动',
 );
 assert.equal(
   resolveTableBodyScrollY({ containerHeight: 320, headerHeight: 39, paginationHeight: 0 }),
