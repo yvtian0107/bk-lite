@@ -20,6 +20,8 @@ def test_cmdb_instance_query_is_one_source_for_four_modes():
     assert source["tag"] == ["cmdb"]
     assert "暂不支持" not in source["desc"]
     assert "实例数量" in source["desc"]
+    assert "模型多选且必填" in source["desc"]
+    assert "都空表示权限内全部模型" not in source["desc"]
 
     mode = next(item for item in source["params"] if item["name"] == "analysis_mode")
     assert mode["required"] is True
@@ -34,7 +36,7 @@ def test_cmdb_instance_query_is_one_source_for_four_modes():
     classification = next(item for item in source["params"] if item["name"] == "classification_ids")
     model = next(item for item in source["params"] if item["name"] == "model_ids")
     assert classification.get("required") is not True
-    assert model.get("required") is not True
+    assert model.get("required") is True
     assert model["inputConfig"]["multiple"] is True
     assert model["inputConfig"]["missingOptionPolicy"] == "retain"
     options = model["inputConfig"]["optionsSource"]
@@ -54,6 +56,12 @@ def test_cmdb_instance_query_is_one_source_for_four_modes():
 
     fields = next(item for item in entries if item.get("rest_api") == "cmdb/get_instance_query_fields")
     assert fields["chart_type"] == []
+    assert {item["name"]: item["filterType"] for item in fields["params"]} == {
+        "classification_ids": "params",
+        "model_ids": "params",
+        "analysis_mode": "params",
+    }
+    assert "空模型不会展开" in fields["desc"]
 
 
 def test_instance_detail_source_is_not_force_retired():
@@ -79,6 +87,8 @@ def test_cmdb_model_options_datasource_is_option_only():
     assert source["name"] == "CMDB 模型列表（选项）"
     assert source["chart_type"] == []
     assert source["params"][0]["name"] == "classification_ids"
+    assert source["params"][0]["filterType"] == "params"
+    assert source["params"][0]["value"] == []
     assert "空" in source["params"][0]["desc"]
     assert {field["key"] for field in source["field_schema"]} >= {"model_id", "model_name", "label"}
 

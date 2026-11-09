@@ -50,13 +50,67 @@ def _patch_visible_host(monkeypatch, instances, count=None, groups=None, attrs=N
     return calls
 
 
-def test_empty_model_queries_every_visible_model(monkeypatch):
-    calls = _patch_visible_host(monkeypatch, [], count=0)
-    out = nats.query_model_instances(model_id="", analysis_mode="count", user_info=USER_INFO)
-    assert out["result"] is True
-    assert {row["model_id"] for row in out["data"]["items"]} == {"host", "nginx"}
+@pytest.mark.parametrize("mode", ["list", "count", "distribution", "aggregate"])
+@pytest.mark.parametrize("model_ids", [None, [], "", ["", " "]])
+def test_empty_model_fails_before_metadata_or_instances(monkeypatch, mode, model_ids):
+    calls = _patch_visible_host(monkeypatch, [{"inst_uuid": "u1"}], count=9, groups={"linux": 9})
+    out = nats.query_model_instances(
+        model_id="",
+        model_ids=model_ids,
+        analysis_mode=mode,
+        classification_ids=["host_manage"],
+        group_by="os_type",
+        user_info=USER_INFO,
+    )
+    assert out["result"] is False
+    assert out["message"] == "请选择模型"
+    assert out["data"]["items"] == []
+    assert calls["search"] == 0
+    assert calls["attrs"] is None
+    assert calls["list"] is None
     assert calls["group"] is None
-    assert calls["search"] == 1
+
+
+@pytest.mark.parametrize(
+    "model_ids, message",
+    [(12, "格式不正确"), (["bad id"], "不合法")],
+)
+def test_invalid_model_list_fails_before_metadata_or_instances(monkeypatch, model_ids, message):
+    calls = _patch_visible_host(monkeypatch, [])
+    out = nats.query_model_instances(model_ids=model_ids, analysis_mode="list", user_info=USER_INFO)
+    assert out["result"] is False
+    assert message in out["message"]
+    assert calls["search"] == 0
+    assert calls["list"] is None
+
+
+def test_explicit_model_ids_run_every_mode(monkeypatch):
+    calls = _patch_visible_host(
+        monkeypatch,
+        [{"inst_uuid": "u1", "inst_name": "web", "model_id": "host", "cpu_count": 4, "_id": 3}],
+        groups={"linux": 2},
+        attrs=HOST_ATTRS + [{"attr_id": "cpu_count", "attr_name": "CPU核数", "attr_type": "int", "unit": "核"}],
+    )
+    listed = nats.query_model_instances(model_ids=["host"], analysis_mode="list", user_info=USER_INFO)
+    counted = nats.query_model_instances(model_ids=["host", "nginx"], analysis_mode="count", user_info=USER_INFO)
+    distributed = nats.query_model_instances(
+        model_ids=["host"],
+        analysis_mode="distribution",
+        group_by="os_type",
+        user_info=USER_INFO,
+    )
+    aggregated = nats.query_model_instances(
+        model_ids=["host"],
+        analysis_mode="aggregate",
+        metrics=[{"key": "cpu_sum", "label": "CPU核数", "func": "sum", "sources": ["host:cpu_count"]}],
+        user_info=USER_INFO,
+    )
+    assert listed["result"] is True and listed["data"]["items"][0]["inst_name"] == "web"
+    assert counted["result"] is True
+    assert {row["model_id"] for row in counted["data"]["items"]} == {"host", "nginx"}
+    assert distributed["result"] is True and distributed["data"]["items"][0]["count"] == 2
+    assert aggregated["result"] is True and aggregated["data"]["items"][0]["cpu_sum"] == 4
+    assert calls["search"] > 0
 
 
 def test_missing_analysis_mode_fails_without_query(monkeypatch):

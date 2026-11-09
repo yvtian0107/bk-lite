@@ -1820,7 +1820,7 @@
     "tag": ["cmdb"],
     "chart_type": [],
     "params": [
-        {"name": "classification_ids", "type": "string", "value": [], "alias_name": "分类", "filterType": "fixed", "desc": "可空。空列表表示不按分类过滤，返回当前权限内全部可见模型。"}
+        {"name": "classification_ids", "type": "string", "value": [], "alias_name": "分类", "filterType": "params", "desc": "可空。空列表表示不按分类过滤，返回当前权限内全部可见模型。请求里的分类会原样传入，不会被默认空列表覆盖。"}
     ],
     "field_schema": [
         {"key": "model_id", "title": "模型 ID", "value_type": "string", "description": "模型标识"},
@@ -1833,7 +1833,7 @@
 {
     "key": "CMDB 实例查询::cmdb/query_model_instances",
     "name": "CMDB 实例查询",
-    "desc": "查询当前权限内的实例。分类和模型都是多选且可空：都空表示权限内全部模型，只选分类表示该分类下全部可见模型，只选模型表示这些模型，都选表示交集。失效或越权的选择会失败，不会扩大范围。分析方式 list 明细、count 数量、distribution 属性分布、aggregate 数值聚合都会执行。条件是结构化条件树，全局条件按模型字段选择，同名属性不会自动合并。先全范围过滤和统计，再对统计结果排序分页。5000 是服务内逐条取出的上限，图上直接完成的数量和属性分布不受它约束；分组桶超过 2000 会失败。单值请绑定实例数量或指标列；信封上的 count 是结果行数。饼图如果只拿到当前页，会标明百分比和合计不是全体。排名默认按数量取全范围的前几名，不把名次说成只在页内重排。",
+    "desc": "查询当前权限内的实例。分类多选且可空；模型多选且必填，不自动全选，也不自动选第一项。未选模型不会查询，以前保存的空模型需要补选后才能取数，不会自动填成全部模型。分类空时按所选模型查询；分类和模型都选时取交集。未知、越权或不属于所选分类会失败，不会扩大范围。分析方式 list 明细、count 数量、distribution 属性分布、aggregate 数值聚合都会执行。条件是结构化条件树，全局条件按模型字段选择，同名属性不会自动合并。先全范围过滤和统计，再对统计结果排序分页。5000 是服务内逐条取出的上限，图上直接完成的数量和属性分布不受它约束；分组桶超过 2000 会失败。单值请绑定实例数量或指标列；信封上的 count 是结果行数。饼图如果只拿到当前页，会标明百分比和合计不是全体。排名默认按数量取全范围的前几名，不把名次说成只在页内重排。",
     "rest_api": "cmdb/query_model_instances",
     "tag": ["cmdb"],
     "chart_type": ["table", "single", "bar", "pie", "topN"],
@@ -1864,7 +1864,7 @@
             "value": [],
             "alias_name": "分类",
             "filterType": "params",
-            "desc": "可空，多选。空表示不按分类限制。和模型都空时查询当前权限内全部模型实例。",
+            "desc": "可空，多选。空表示不按分类限制。模型仍须另选，分类为空不会变成查询全部模型。",
             "inputConfig": {
                 "control": "select",
                 "multiple": true,
@@ -1883,7 +1883,8 @@
             "value": [],
             "alias_name": "模型",
             "filterType": "params",
-            "desc": "可空，多选。空表示当前分类范围内的全部可见模型。选项会随分类收窄；不选分类时仍加载权限内全部模型。失效模型会保留并阻止提交，不会当成全量。",
+            "required": true,
+            "desc": "必填，多选。不自动全选，也不自动选第一项。未选择时不能预览或查询。分类为空时下拉仍列出权限内全部可见模型；选了分类后按下拉并集收窄。换分类后失效模型会保留并阻止提交，不会清空成更大范围。以前保存的空模型需要补选，不会自动填成全部模型。",
             "inputConfig": {
                 "control": "select",
                 "multiple": true,
@@ -2024,14 +2025,14 @@
 {
     "key": "CMDB 实例查询字段::cmdb/get_instance_query_fields",
     "name": "CMDB 实例查询字段（选项）",
-    "desc": "当前查询范围内可过滤、可分组、可聚合的属性。空分类和空模型返回权限内全部可见模型的字段。本身不直接出图。",
+    "desc": "当前已选模型可过滤、可分组、可聚合的属性。分类可空；模型必填，空模型不会展开全部模型的字段。分类和模型都传入时取交集。本身不直接出图。",
     "rest_api": "cmdb/get_instance_query_fields",
     "tag": ["cmdb"],
     "chart_type": [],
     "params": [
-        {"name": "classification_ids", "type": "string", "value": [], "alias_name": "分类", "filterType": "fixed"},
-        {"name": "model_ids", "type": "string", "value": [], "alias_name": "模型", "filterType": "fixed"},
-        {"name": "analysis_mode", "type": "string", "value": "list", "alias_name": "分析方式", "filterType": "fixed"}
+        {"name": "classification_ids", "type": "string", "value": [], "alias_name": "分类", "filterType": "params"},
+        {"name": "model_ids", "type": "string", "value": [], "alias_name": "模型", "filterType": "params"},
+        {"name": "analysis_mode", "type": "string", "value": "list", "alias_name": "分析方式", "filterType": "params"}
     ],
     "field_schema": [
         {"key": "key", "title": "字段键", "value_type": "string", "description": "模型标识与属性标识"},

@@ -106,7 +106,20 @@ def parse_id_list(raw: Any, label: str) -> list[str]:
     return values
 
 
+MODEL_REQUIRED_MESSAGE = "请选择模型"
+
+
+def require_explicit_models(model_id, model_ids) -> list[str]:
+    """模型必填。空列表、缺省和空字符串都不是全量，调用方应在展开目录或取实例前调用。"""
+    requested = _requested_models(model_id, model_ids)
+    if not requested:
+        raise ValueError(MODEL_REQUIRED_MESSAGE)
+    return requested
+
+
 def resolve_scope(classification_ids: list[str], model_ids: list[str], models: list[dict[str, Any]], classifications: list[dict[str, Any]] | None):
+    if not model_ids:
+        raise ValueError(MODEL_REQUIRED_MESSAGE)
     catalog = []
     for model in models or []:
         model_id = str(model.get("model_id") or "").strip()
@@ -141,12 +154,6 @@ def resolve_scope(classification_ids: list[str], model_ids: list[str], models: l
     else:
         pool = list(catalog)
     pool_ids = {item["model_id"] for item in pool}
-    if not model_ids:
-        if not pool:
-            if classification_ids:
-                raise ValueError("所选分类下没有可查询的模型")
-            raise ValueError("当前权限下没有可查询的模型")
-        return pool
     selected = []
     for model_id in model_ids:
         model = by_id.get(model_id)

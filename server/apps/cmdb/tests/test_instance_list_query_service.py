@@ -185,13 +185,18 @@ def test_numeric_aggregate_sums_real_values():
     assert "暂不支持" not in str(result)
 
 
-def test_empty_scope_means_authorized_models_and_permission_failure_is_explicit():
+def test_model_is_required_before_instance_reads_and_classification_still_intersects():
     service, calls = _service(counts={"host": 2, "app": 5})
-    result = _run(service, analysis_mode="count")
-    assert {row["model_id"] for row in result["items"]} == {"host", "app"}
-    assert result["items"][0]["scope_count"] == 7
-    classified = _run(service, classification_ids=["biz"], analysis_mode="count")
-    assert [row["model_id"] for row in classified["items"]] == ["app"]
+    for mode in ("list", "count", "distribution", "aggregate"):
+        for raw in (None, [], ""):
+            with pytest.raises(ValueError, match="请选择模型"):
+                _run(service, model_ids=raw, analysis_mode=mode, classification_ids=["compute"])
+    with pytest.raises(ValueError, match="格式不正确"):
+        _run(service, model_ids=5, analysis_mode="list")
+    with pytest.raises(ValueError, match="不合法"):
+        _run(service, model_ids=["bad id"], analysis_mode="count")
+    assert calls["list"] == []
+    assert calls["group"] == []
     models_only = _run(service, model_ids=["host"], analysis_mode="count")
     assert [row["model_id"] for row in models_only["items"]] == ["host"]
     both = _run(service, classification_ids=["compute"], model_ids=["host"], analysis_mode="count")

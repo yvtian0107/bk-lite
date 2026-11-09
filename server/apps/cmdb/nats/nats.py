@@ -65,6 +65,7 @@ from apps.cmdb.services.instance_query import (
     describe_query_fields,
     empty_payload,
     parse_id_list,
+    require_explicit_models,
 )
 from apps.cmdb.services.model import ModelManage
 from apps.cmdb.services.model_visibility import BusinessModelVisibility
@@ -2642,7 +2643,7 @@ def query_model_instances(
     user_info=None,
     **kwargs,
 ):
-    """按分析方式查询权限范围内的实例。分类和模型都可以空；空不是把失效选择当成全量。"""
+    """按分析方式查询权限范围内的实例。分类可空；模型必填，空模型在展开目录和取实例之前失败。"""
     # organization 只经 GetNatsData 收进 user_info.team，不在这里另开组织范围。
     del kwargs
     try:
@@ -2653,6 +2654,10 @@ def query_model_instances(
     model_permissions = _build_nats_model_permission_map(user_info)
     if not model_permissions or not _build_nats_permission_map(user_info):
         return _instance_list_failure("无权查询实例")
+    try:
+        require_explicit_models(model_id, model_ids)
+    except ValueError as exc:
+        return _instance_list_failure(str(exc))
 
     language = _resolve_nats_cmdb_language(user_info)
     try:
@@ -2727,7 +2732,7 @@ def query_model_instances(
 
 @nats_client.register
 def get_instance_query_fields(classification_ids=None, model_ids=None, analysis_mode=None, user_info=None, **kwargs):
-    """条件、分组和指标用的字段目录。空分类、空模型表示权限内全部可见模型。"""
+    """条件、分组和指标用的字段目录。分类可空；模型必填，空模型不展开全部模型的属性。"""
     del kwargs
     try:
         _reject_non_numeric_team(user_info)
@@ -2735,6 +2740,10 @@ def get_instance_query_fields(classification_ids=None, model_ids=None, analysis_
         return {"result": False, "data": [], "message": str(exc)}
     if not _build_nats_model_permission_map(user_info) or not _build_nats_permission_map(user_info):
         return {"result": False, "data": [], "message": "无权查询实例"}
+    try:
+        require_explicit_models(None, model_ids)
+    except ValueError as exc:
+        return {"result": False, "data": [], "message": str(exc)}
     language, models = _visible_model_rows(user_info, None)
     if isinstance(language, Exception):
         return {"result": False, "data": [], "message": str(language)}
