@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { DatePicker, Input, Select, Tooltip } from 'antd';
 import { SearchOutlined } from '@ant-design/icons';
 import type { ColumnsType } from 'antd/es/table';
@@ -32,6 +32,7 @@ import {
 } from '@/app/ops-analysis/components/ops-analysis-widgets/table-like-data';
 import { supportsServerPagination } from '@/app/ops-analysis/utils/tablePagination';
 import { useTableBodyScrollY } from '@/app/ops-analysis/components/widgets/shared/useTableBodyScrollY';
+import styles from '@/app/ops-analysis/components/widgets/comTable.module.scss';
 import {
   applyTableRowFilters,
   buildTableQueryList,
@@ -91,9 +92,7 @@ const OpsAnalysisTable: React.FC<OpsAnalysisTableProps> = ({
       isPaginated: parsed.isPaginated,
     };
   }, [rawData, queryPagination.current, queryPagination.pageSize, supportsPaginationParams]);
-  const tableSlotRef = useRef<HTMLDivElement>(null);
-  const tableScrollY = useTableBodyScrollY({
-    containerRef: tableSlotRef,
+  const { slotRef: tableSlotRef, tableScrollY } = useTableBodyScrollY({
     hasPagination: isPaginated,
   });
   const displayedTableData = useMemo(
@@ -452,7 +451,7 @@ const OpsAnalysisTable: React.FC<OpsAnalysisTableProps> = ({
     <div className="flex h-full min-h-0 flex-col pt-2">
       {renderFilters()}
 
-      <div ref={tableSlotRef} className="min-h-0 flex-1 overflow-hidden">
+      <div ref={tableSlotRef} className={`${styles.opsTableScroll} min-h-0 flex-1 overflow-hidden`}>
         <CustomTable
           columns={antColumns}
           dataSource={displayedTableData}

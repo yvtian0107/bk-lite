@@ -2,7 +2,6 @@ import React, {
   useCallback,
   useEffect,
   useMemo,
-  useRef,
   useState,
 } from 'react';
 import { Tooltip } from 'antd';
@@ -120,9 +119,7 @@ const EventTable: React.FC<EventTableProps> = ({
     ),
     [rawData, queryPagination, supportsPaginationParams],
   );
-  const tableSlotRef = useRef<HTMLDivElement>(null);
-  const tableScrollY = useTableBodyScrollY({
-    containerRef: tableSlotRef,
+  const { slotRef: tableSlotRef, tableScrollY } = useTableBodyScrollY({
     hasPagination: isPaginated,
   });
   const configuredColumns = useMemo<TableColumnConfigItem[]>(() => {
@@ -232,7 +229,7 @@ const EventTable: React.FC<EventTableProps> = ({
     >
       <div
         ref={tableSlotRef}
-        className={`flex-1 min-h-0 overflow-hidden ${
+        className={`${styles.opsTableScroll} flex-1 min-h-0 overflow-hidden ${
           usesScreenTheme ? styles.screenDarkTableWrap : ''
         }`}
       >

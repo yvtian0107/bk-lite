@@ -62,20 +62,41 @@ assert.doesNotMatch(
   /widgetUiScale|widgetScale/,
   '测高钩子不能读取或再乘 widgetUiScale',
 );
-assert.equal(
-  resolveTableBodyScrollY({ containerHeight: 320, hasPagination: false }),
-  273,
-  '无分页表格应使用 widget 剩余高度减去表头高度',
+assert.match(scrollHookCode, /offsetHeight/, '测高必须读取真实表头和分页高度');
+assert.match(scrollHookCode, /ant-table-header/, '测高必须能读到拆分后的表头');
+assert.match(scrollHookCode, /ant-pagination/, '测高必须能读到分页');
+assert.match(scrollHookCode, /setContainer/, '槽位晚挂载时要重新测量');
+assert.doesNotMatch(scrollHookCode, /\b47\b|\b56\b/, '不能再按固定 47/56 预留');
+for (const [name, source] of [
+  ['运行时表格', runtimeTableSource],
+  ['组件展示表格', showcaseTableSource],
+  ['运行时事件表', runtimeEventSource],
+  ['组件展示事件表', showcaseEventSource],
+] as const) {
+  assert.match(source, /opsTableScroll/, `${name}的滚动口必须留在卡片 flex 槽里`);
+}
+assert.match(
+  readFileSync(
+    new URL('../src/app/ops-analysis/components/widgets/comTable.module.scss', import.meta.url),
+    'utf8',
+  ),
+  /height:\s*auto\s*!important/,
+  '表体不能被数字 y 的像素高度钉死',
 );
 assert.equal(
-  resolveTableBodyScrollY({ containerHeight: 320, hasPagination: true }),
-  217,
-  '有分页表格还应为分页栏预留高度',
+  resolveTableBodyScrollY({ containerHeight: 320, headerHeight: 39, paginationHeight: 0 }),
+  281,
+  '无分页表格应减去当时量到的表头',
 );
 assert.equal(
-  resolveTableBodyScrollY({ containerHeight: 226, hasPagination: true }),
-  123,
-  '矮容器不能把表体抬到 160，否则锁定高度会超过父级',
+  resolveTableBodyScrollY({ containerHeight: 320, headerHeight: 39, paginationHeight: 72 }),
+  209,
+  '折成两行的分页按 72 预留，而不是 56',
+);
+assert.equal(
+  resolveTableBodyScrollY({ containerHeight: 280, headerHeight: 57, paginationHeight: 72 }),
+  151,
+  '放大后的表头按 57 预留，且不再乘一次缩放',
 );
 assert.equal(
   resolveTableDimensions({

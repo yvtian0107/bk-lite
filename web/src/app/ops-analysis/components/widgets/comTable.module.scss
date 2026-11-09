@@ -1,3 +1,58 @@
+.opsTableScroll {
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
+
+  > :global([class*="customTable"]) {
+    display: flex;
+    flex-direction: column;
+    height: 100% !important;
+    min-height: 0;
+    max-height: 100%;
+  }
+
+  > :global([class*="customTable"]) > :global(.ant-table-wrapper) {
+    display: flex;
+    flex: 1 1 auto;
+    flex-direction: column;
+    min-height: 0;
+    overflow: hidden;
+  }
+
+  > :global([class*="customTable"]) > :global(.ant-table-wrapper) :global(.ant-spin-nested-loading),
+  > :global([class*="customTable"]) > :global(.ant-table-wrapper) :global(.ant-spin-container),
+  > :global([class*="customTable"]) > :global(.ant-table-wrapper) :global(.ant-table),
+  > :global([class*="customTable"]) > :global(.ant-table-wrapper) :global(.ant-table-container) {
+    display: flex;
+    flex: 1 1 auto;
+    flex-direction: column;
+    min-height: 0;
+    height: 100%;
+  }
+
+  > :global([class*="customTable"]) > :global(.ant-table-wrapper) :global(.ant-table-header) {
+    flex: 0 0 auto;
+  }
+
+  // 数字 y 只负责让 antd 拆出表头和表体。真实表头、折行分页和字号放大后的高度
+  // 由这条 flex 链收口，避免按 47/56 预留把横向滚动条压到分页上。
+  > :global([class*="customTable"]) > :global(.ant-table-wrapper) :global(.ant-table-body),
+  > :global([class*="customTable"]) > :global(.ant-table-wrapper) :global(.ant-table-content) {
+    flex: 1 1 auto;
+    min-height: 0;
+    height: auto !important;
+    max-height: none !important;
+    overflow: auto !important;
+  }
+
+  > :global([class*="customTable"]) > :global(.absolute.right-0.bottom-0) {
+    position: static !important;
+    flex: 0 0 auto;
+    width: 100%;
+    justify-content: flex-end;
+  }
+}
+
 .screenDarkRoot {
   color: var(--ops-screen-table-text);
 }
@@ -38,9 +93,11 @@
     flex: 0 0 auto;
   }
 
-  > :global([class*="customTable"]) > :global(.ant-table-wrapper) :global(.ant-table-body) {
+  > :global([class*="customTable"]) > :global(.ant-table-wrapper) :global(.ant-table-body),
+  > :global([class*="customTable"]) > :global(.ant-table-wrapper) :global(.ant-table-content) {
     flex: 1 1 auto;
     min-height: 0;
+    height: auto !important;
     max-height: none !important;
     overflow: auto !important;
   }
