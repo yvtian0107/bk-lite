@@ -34,6 +34,13 @@
     flex: 0 0 auto;
   }
 
+  // 表体已经到顶仍继续上滚时，Chrome 会把容器里高出滚动口的 table
+  // 算进 document.scrollHeight，整页竖条闪一下。卡片高度并不变。
+  // translateZ(0) 让这个容器成为包含块，那段溢出不再计入文档。
+  > :global([class*="customTable"]) > :global(.ant-table-wrapper) :global(.ant-table-container) {
+    transform: translateZ(0);
+  }
+
   // 只锁纵向。overflow 简写会盖过 CustomTable 的 noHorizontalScroll，
   // 纵条占位使列宽总和略大于 clientWidth 时就会露出一条假横条。
   > :global([class*="customTable"]) > :global(.ant-table-wrapper) :global(.ant-table-body),
@@ -97,6 +104,10 @@
 
   > :global([class*="customTable"]) > :global(.ant-table-wrapper) :global(.ant-table-header) {
     flex: 0 0 auto;
+  }
+
+  > :global([class*="customTable"]) > :global(.ant-table-wrapper) :global(.ant-table-container) {
+    transform: translateZ(0);
   }
 
   > :global([class*="customTable"]) > :global(.ant-table-wrapper) :global(.ant-table-body),

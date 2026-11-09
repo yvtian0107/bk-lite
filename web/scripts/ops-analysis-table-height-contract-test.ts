@@ -86,6 +86,11 @@ const customTableStyle = readFileSync(
 assert.match(tableScrollStyle, /height:\s*auto\s*!important/, '表体不能被数字 y 的像素高度钉死');
 assert.match(tableScrollStyle, /overflow-y:\s*auto\s*!important/, '卡片内表体要保留纵向滚动');
 assert.match(tableScrollStyle, /overflow-x:\s*clip\s*!important/, '列未超出时要剪掉纵条占位造成的横向滚动');
+assert.equal(
+  tableScrollStyle.match(/\.ant-table-container\)\s*\{[^}]*transform:\s*translateZ\(0\)/g)?.length,
+  2,
+  '普通槽和大屏槽的表容器都要挡住到顶继续上滚时的文档高度闪动',
+);
 assert.doesNotMatch(
   tableScrollStyle,
   /overflow:\s*auto\s*!important/,
