@@ -3,6 +3,7 @@ import React, {
   useState,
   useMemo,
   useCallback,
+  useRef,
 } from 'react';
 import { Input, Select, DatePicker, Tooltip } from 'antd';
 import { SearchOutlined } from '@ant-design/icons';
@@ -19,6 +20,7 @@ import {
   resolveTableLikeColumns,
   type TableLikePaginationState,
 } from './shared/tableLikeData';
+import { useTableBodyScrollY } from './shared/useTableBodyScrollY';
 import styles from './comTable.module.scss';
 import type { DatasourceItem } from '@/app/ops-analysis/types/dataSource';
 import type {
@@ -148,6 +150,12 @@ const ComTable: React.FC<ComTableProps> = ({
       isPaginated: parsed.isPaginated,
     };
   }, [rawData, queryPagination.current, queryPagination.pageSize, supportsPaginationParams]);
+  const tableSlotRef = useRef<HTMLDivElement>(null);
+  // 量到的是槽位像素高度，不能再乘 widgetUiScale。数字 y 不会被抬到 160。
+  const tableScrollY = useTableBodyScrollY({
+    containerRef: tableSlotRef,
+    hasPagination: isPaginated,
+  });
   const displayedTableData = useMemo(
     () => applyTableRowFilters(tableData, filters),
     [filters, tableData],
@@ -484,6 +492,7 @@ const ComTable: React.FC<ComTableProps> = ({
       {renderFilters()}
 
       <div
+        ref={tableSlotRef}
         className={`flex-1 min-h-0 ${
           usesScreenTheme
             ? `overflow-hidden ${styles.screenDarkTableWrap}`
@@ -522,10 +531,12 @@ const ComTable: React.FC<ComTableProps> = ({
               : false
           }
           onChange={isPaginated ? handleTableChange : undefined}
-          // 不把预先乘过 widgetScale 的像素高度传进去。CustomTable 会按固定的
-          // 47px 表头和 56px 分页加回高度，并把表体抬到至少 160px；那两步都会让
-          // 锁定高度超过 overflow:hidden 的父级。省略 y 后它按父容器回填。
-          scroll={{ x: 'max-content' }}
+          // y 是槽位量到的表体像素，未乘 widgetUiScale。省略时无分页表格按内容撑高，
+          // 会被卡片 overflow:hidden 裁掉且没有滚动条。
+          scroll={{
+            x: 'max-content',
+            y: tableScrollY,
+          }}
         />
       </div>
     </div>

@@ -8,8 +8,8 @@ interface UseTableBodyScrollYOptions {
 /**
  * 与 CustomTable size="small" 加回的高度相同：表头 47、分页 56。
  * widgetUiScale 已经用在大屏字号和单元格 padding 上，这里不能再乘一次。
- * 公共表格收到显式 scroll.y 时还会把表体抬到至少 160，所以运营分析表格
- * 不把这个返回值传给 CustomTable，只让它按父容器回填。
+ * 返回值是数字，交给 CustomTable 的 scroll.y。数字不再被抬到 160。
+ * 无分页时省略 y 会让表体按内容撑高，再被卡片 overflow:hidden 裁掉且无法滚动。
  */
 export const resolveTableBodyScrollY = ({
   containerHeight,
@@ -26,32 +26,36 @@ export const resolveTableBodyScrollY = ({
 export const useTableBodyScrollY = ({
   containerRef,
   hasPagination,
-}: UseTableBodyScrollYOptions): string | undefined => {
-  const [tableScrollY, setTableScrollY] = useState<string>();
+}: UseTableBodyScrollYOptions): number | undefined => {
+  const [tableScrollY, setTableScrollY] = useState<number>();
 
   useEffect(() => {
     const container = containerRef.current;
     if (!container) return;
 
     const updateScrollY = () => {
+      if (container.clientHeight <= 0) return;
       const nextHeight = resolveTableBodyScrollY({
         containerHeight: container.clientHeight,
         hasPagination,
       });
-      setTableScrollY(`${nextHeight}px`);
+      setTableScrollY((previous) => (previous === nextHeight ? previous : nextHeight));
     };
 
     updateScrollY();
 
-    const resizeObserver = new ResizeObserver(updateScrollY);
-    resizeObserver.observe(container);
-    if (container.parentElement) {
-      resizeObserver.observe(container.parentElement);
+    let resizeObserver: ResizeObserver | undefined;
+    if (typeof ResizeObserver !== 'undefined') {
+      resizeObserver = new ResizeObserver(updateScrollY);
+      resizeObserver.observe(container);
+      if (container.parentElement) {
+        resizeObserver.observe(container.parentElement);
+      }
     }
     window.addEventListener('resize', updateScrollY);
 
     return () => {
-      resizeObserver.disconnect();
+      resizeObserver?.disconnect();
       window.removeEventListener('resize', updateScrollY);
     };
   }, [containerRef, hasPagination]);

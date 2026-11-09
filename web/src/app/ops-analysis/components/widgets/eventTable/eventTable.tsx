@@ -2,6 +2,7 @@ import React, {
   useCallback,
   useEffect,
   useMemo,
+  useRef,
   useState,
 } from 'react';
 import { Tooltip } from 'antd';
@@ -24,6 +25,7 @@ import {
   parseTableLikeData,
   type TableLikePaginationState,
 } from '../shared/tableLikeData';
+import { useTableBodyScrollY } from '../shared/useTableBodyScrollY';
 import { getScreenWidgetScale } from '../shared/screenMetrics';
 import styles from '../comTable.module.scss';
 import WidgetState from '@/app/ops-analysis/components/widget-state';
@@ -118,6 +120,11 @@ const EventTable: React.FC<EventTableProps> = ({
     ),
     [rawData, queryPagination, supportsPaginationParams],
   );
+  const tableSlotRef = useRef<HTMLDivElement>(null);
+  const tableScrollY = useTableBodyScrollY({
+    containerRef: tableSlotRef,
+    hasPagination: isPaginated,
+  });
   const configuredColumns = useMemo<TableColumnConfigItem[]>(() => {
     return (config?.tableConfig?.columns || [])
       .filter((col) => col.visible)
@@ -224,6 +231,7 @@ const EventTable: React.FC<EventTableProps> = ({
       style={screenTableStyle}
     >
       <div
+        ref={tableSlotRef}
         className={`flex-1 min-h-0 overflow-hidden ${
           usesScreenTheme ? styles.screenDarkTableWrap : ''
         }`}
@@ -253,7 +261,10 @@ const EventTable: React.FC<EventTableProps> = ({
               : false
           }
           onChange={isPaginated ? handleTableChange : undefined}
-          scroll={{ x: 'max-content' }}
+          scroll={{
+            x: 'max-content',
+            y: tableScrollY,
+          }}
           expandable={{
             expandedRowKeys,
             onExpandedRowsChange: (keys) => {
