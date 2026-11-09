@@ -185,7 +185,7 @@
       {
         "name": "instance_ids",
         "type": "string",
-        "value": [],
+        "value": null,
         "alias_name": "主机",
         "filterType": "filter",
         "inputConfig": {

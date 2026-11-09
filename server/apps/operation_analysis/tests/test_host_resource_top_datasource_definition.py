@@ -23,6 +23,7 @@ def test_host_resource_top_data_source_supports_topn_table_and_metric_switch():
     assert organization["filterType"] == "filter"
     assert organization["inputConfig"]["control"] == "organization"
     assert "required" not in organization
+    assert instance_ids["value"] is None
     assert instance_ids["type"] == "string"
     assert instance_ids["filterType"] == "filter"
     assert instance_ids["inputConfig"]["multiple"] is True

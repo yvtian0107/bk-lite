@@ -426,7 +426,7 @@ def test_ops_overview_syncs_dashboard80_display_without_touching_other_widgets()
     instance_ids = params["instance_ids"]
     assert instance_ids["filterType"] == "filter"
     assert instance_ids["alias_name"] == "主机"
-    assert instance_ids["value"] == []
+    assert instance_ids["value"] is None
     source_ref = instance_ids["inputConfig"]["optionsSource"]["sourceRef"]
     assert source_ref == {"type": "rest_api", "value": "monitor/get_host_instance_list"}
     assert "id" not in source_ref
