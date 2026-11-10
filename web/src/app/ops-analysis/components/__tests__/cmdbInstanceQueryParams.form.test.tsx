@@ -220,7 +220,7 @@ describe('CMDB instance query parameter form', () => {
   it('keeps a saved scope and one field identity, and omits metrics while the mode is list', async () => {
     const view = render(<QueryForm initialParams={savedParams} />);
     await waitFor(() => {
-      expect(screen.getByText('conditionBuilder.legacyKept')).toBeTruthy();
+      expect(screen.getByText(/已有筛选会原样保留/)).toBeTruthy();
     });
     expect(readParams().classification_ids).toEqual(['compute', 'biz']);
     expect(readParams().model_ids).toEqual([]);
@@ -244,7 +244,7 @@ describe('CMDB instance query parameter form', () => {
     const validateButton = screen.getByRole('button', { name: 'validate' });
     validateButton.click();
     await waitFor(() => {
-      expect(screen.queryByText('conditionBuilder.issue.ambiguousField')).toBeNull();
+      expect(screen.queryByText('同名属性不是同一个字段，请按模型分别选择')).toBeNull();
     });
   });
 
@@ -257,11 +257,11 @@ describe('CMDB instance query parameter form', () => {
       },
     }} />);
     await waitFor(() => {
-      expect(screen.getByText('conditionBuilder.legacyKept')).toBeTruthy();
+      expect(screen.getByText(/已有筛选会原样保留/)).toBeTruthy();
     });
     screen.getByRole('button', { name: 'validate' }).click();
     await waitFor(() => {
-      expect(screen.getByText('conditionBuilder.issue.ambiguousField')).toBeTruthy();
+      expect(screen.getByText('同名属性不是同一个字段，请按模型分别选择')).toBeTruthy();
     });
     const submitted = processDataSourceParams({
       sourceParams: fixtureSource.params,
@@ -277,13 +277,11 @@ describe('CMDB instance query parameter form', () => {
   it('accepts empty conditions and explains the empty state before a model is chosen', async () => {
     const user = userEvent.setup();
     render(<QueryForm initialParams={{ ...savedParams, model_ids: [], conditions: undefined }} />);
-    expect(screen.getByText('conditionBuilder.emptyHint')).toBeTruthy();
-    await user.click(screen.getByText('conditionBuilder.emptyHint'));
-    expect((screen.getByRole('button', { name: 'conditionBuilder.addCard' }) as HTMLButtonElement).disabled).toBe(true);
-    expect(screen.getByText('conditionBuilder.needModel')).toBeTruthy();
+    expect(screen.getByText('请先选择模型')).toBeTruthy();
+    expect(screen.queryByRole('button', { name: '添加一条' })).toBeNull();
     await user.click(screen.getByRole('button', { name: 'validate' }));
     await waitFor(() => {
-      expect(screen.queryByText('conditionBuilder.issue.invalid')).toBeNull();
+      expect(screen.queryByText('条件结构不正确')).toBeNull();
     });
   });
 
@@ -298,13 +296,13 @@ describe('CMDB instance query parameter form', () => {
     };
     render(<QueryForm initialParams={{ ...savedParams, model_ids: ['host'], conditions }} />);
     await waitFor(() => {
-      expect(screen.getAllByText(/应用（conditionBuilder.staleModel）/).length).toBeGreaterThan(0);
+      expect(screen.getAllByText(/应用（已失效，不会按全部实例查询）/).length).toBeGreaterThan(0);
     });
-    expect(screen.queryByText(/应用（conditionBuilder.allInstances）/)).toBeNull();
-    expect(screen.getAllByText(/主机（conditionBuilder.allInstances）/).length).toBeGreaterThan(0);
+    expect(screen.queryByText(/全部应用/)).toBeNull();
+    expect(screen.getAllByText(/全部主机/).length).toBeGreaterThan(0);
     expect(readParams().conditions).toEqual(conditions);
     await user.click(screen.getByRole('button', { name: 'validate' }));
-    expect(await screen.findByText('conditionBuilder.issue.staleScope')).toBeTruthy();
+    expect((await screen.findAllByText(/不会按全部实例查询/)).length).toBeGreaterThan(0);
     expect(readParams().conditions).toEqual(conditions);
   });
 
@@ -315,13 +313,14 @@ describe('CMDB instance query parameter form', () => {
       model_ids: ['host', 'app'],
       conditions: { logic: 'and', children: [] },
     }} />);
-    await user.click(screen.getByText(/conditionBuilder.allInstances/));
-    await user.click(screen.getByRole('button', { name: 'conditionBuilder.addCard' }));
-    expect(screen.getByText('conditionBuilder.pickModel')).toBeTruthy();
-    expect(readParams().conditions).toEqual({
-      logic: 'and',
-      children: [{ logic: 'and', model_id: '', children: [] }],
-    });
+    expect(screen.getByText('全部主机')).toBeTruthy();
+    expect(screen.getByText('全部应用')).toBeTruthy();
+    expect(screen.queryByText('选择模型')).toBeNull();
+    await user.click(screen.getByText('全部主机'));
+    expect(screen.getAllByText('未限制条件，返回该模型全部实例').length).toBeGreaterThan(0);
+    await user.click(screen.getAllByRole('button', { name: '添加一条' })[0]);
+    const conditions = readParams().conditions as { children?: Array<{ model_id?: string }> };
+    expect(conditions.children?.map((item) => item.model_id)).toEqual(['host']);
   });
 
   it('writes sort as a field and direction instead of free text', async () => {

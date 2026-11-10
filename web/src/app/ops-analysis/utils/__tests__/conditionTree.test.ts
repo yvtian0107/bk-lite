@@ -2,12 +2,17 @@ import { describe, expect, it } from 'vitest';
 
 import type { InputOption } from '@/app/ops-analysis/types/dataSource';
 import {
+  appendCopiedCondition,
+  copyModelCondition,
   describeFieldGroupIssue,
+  explainFieldCopy,
   inspectCondition,
   inspectFieldGroup,
   inspectOrder,
+  isLegacyConditionTree,
   metricOrderKey,
   previewCondition,
+  readConditionCards,
   readFieldCatalog,
   readOrderChoices,
   summarizeConditionCards,
@@ -160,8 +165,11 @@ describe('condition tree', () => {
         children: [{ scope: 'app', attr_id: 'capacity', operator: 'int>', value: 1 }],
       }],
       catalog,
-      { and: '并且', or: '或者', all: '全部', unfinished: '未完成', stale: '已失效' },
-    )).toBe('主机（全部） ∪ 应用（应用 · 容量 大于 1）');
+      {
+        and: '并且', or: '或者', all: '全部', unfinished: '未完成', stale: '已失效，不会按全部实例查询',
+        match: '符合', lead: '返回', join: '，以及', of: '的',
+      },
+    )).toBe('返回全部主机，以及符合应用 · 容量 大于 1的应用');
   });
 
   it('rejects an enum group when the same stored value has two meanings', () => {
@@ -204,7 +212,10 @@ describe('condition tree', () => {
   });
 
   it('marks an unselected empty card as stale and keeps a selected empty card as all instances', () => {
-    const labels = { and: '并且', or: '或者', all: '全部', unfinished: '未完成', stale: '已失效' };
+    const labels = {
+      and: '并且', or: '或者', all: '全部', unfinished: '未完成', stale: '已失效，不会按全部实例查询',
+      match: '符合', lead: '返回', join: '，以及', of: '的',
+    };
     const cards = [
       { modelId: 'host', logic: 'and' as const, children: [] },
       { modelId: 'app', logic: 'and' as const, children: [] },
@@ -214,12 +225,13 @@ describe('condition tree', () => {
       cards,
       catalog,
       labels,
-    )).toBe('主机（全部） ∪ 应用（已失效）');
-    const tree = writeConditionCards(cards);
-    expect(inspectCondition(tree, catalog, true, ['host'])).toMatchObject({ code: 'staleScope', cardIndex: 1 });
+    )).toBe('返回全部主机，以及应用（已失效，不会按全部实例查询）');
+    const tree = writeConditionCards(cards, ['host']);
+    expect(tree.children.map((child) => ('model_id' in child ? child.model_id : ''))).toEqual(['app']);
+    expect(inspectCondition(tree, catalog, true, ['host'])).toMatchObject({ code: 'staleScope', cardIndex: 0 });
     const hostOnly = writeConditionCards([{ modelId: 'host', logic: 'and', children: [] }]);
     expect(inspectCondition(hostOnly, catalog, true, ['host'])).toBeNull();
-    expect(summarizeConditionCards([{ id: 'host', name: '主机' }], [{ modelId: 'host', logic: 'and', children: [] }], catalog, labels)).toBe('主机（全部）');
+    expect(summarizeConditionCards([{ id: 'host', name: '主机' }], [{ modelId: 'host', logic: 'and', children: [] }], catalog, labels)).toBe('返回全部主机');
   });
 
   it('keeps a saved aggregate metric order and a count scope_count order', () => {
@@ -249,5 +261,84 @@ describe('condition tree', () => {
     expect(inspectOrder('', choices, true)).toBeNull();
     expect(inspectOrder('-inst_name', choices, true)).toBeNull();
     expect(inspectOrder('inst_name / -count', choices, true)).toBe('stale');
+  });
+
+  it('keeps a nested model condition editable and leaves a global tree unchanged', () => {
+    const nested = {
+      logic: 'and' as const,
+      children: [{
+        logic: 'and' as const,
+        model_id: 'host',
+        children: [
+          { scope: 'host', attr_id: 'ip_addr', operator: 'str=', value: '10.' },
+          {
+            logic: 'or' as const,
+            children: [
+              { scope: 'host', attr_id: 'os_type', operator: 'list_any[]', value: ['2'] },
+              { scope: 'host', attr_id: 'os_type', operator: 'list_any[]', value: ['3'] },
+            ],
+          },
+        ],
+      }],
+    };
+    expect(isLegacyConditionTree(nested)).toBe(false);
+    const again = readConditionCards(writeConditionCards(readConditionCards(nested), ['host']));
+    expect(again[0].modelId).toBe('host');
+    expect(again[0].children[1]).toMatchObject({ logic: 'or' });
+    const globalTree = {
+      logic: 'and' as const,
+      children: [{ scope: 'global', sources: ['host:os_type'], attr_id: 'os_type', operator: 'list_any[]', value: ['2'] }],
+    };
+    expect(isLegacyConditionTree(globalTree)).toBe(true);
+    expect(readConditionCards(globalTree)).toEqual([]);
+    const mixed = {
+      logic: 'or' as const,
+      children: [{
+        logic: 'and' as const,
+        children: [
+          { scope: 'host', attr_id: 'os_type', operator: 'list_any[]', value: ['2'] },
+          { scope: 'app', attr_id: 'capacity', operator: 'int>', value: 1 },
+        ],
+      }],
+    };
+    expect(isLegacyConditionTree(mixed)).toBe(true);
+  });
+
+  it('refuses a copy when type, unit, or enum meaning does not match and appends without dropping existing leaves', () => {
+    const hostOs = catalog[0];
+    const appCapacity = catalog[1];
+    const vmOs = {
+      ...hostOs,
+      key: 'vm:os_type',
+      modelId: 'vm',
+      modelName: '虚拟机',
+      label: '虚拟机 · 系统类型',
+      options: [{ value: '2', label: 'Windows' }],
+    };
+    const vmSame = { ...vmOs, options: [{ value: '2', label: 'Linux' }] };
+    expect(explainFieldCopy(hostOs, appCapacity, 'list_any[]', ['2'])).toBe('type');
+    expect(explainFieldCopy(hostOs, { ...vmSame, unit: '台' }, 'list_any[]', ['2'])).toBe('unit');
+    expect(explainFieldCopy(hostOs, { ...vmSame, operators: [{ value: 'str=', label: '等于', valueKind: 'text' }] }, 'list_any[]', ['2'])).toBe('operator');
+    expect(explainFieldCopy(hostOs, vmOs, 'list_any[]', ['2'])).toBe('enum-meaning');
+    expect(explainFieldCopy(hostOs, { ...vmSame, options: [] }, 'list_any[]', ['2'])).toBe('enum-unknown');
+    const source = {
+      modelId: 'host',
+      logic: 'and' as const,
+      children: [{ scope: 'host', attr_id: 'os_type', operator: 'list_any[]', value: ['2'] }],
+    };
+    expect(copyModelCondition(source, 'app', { os_type: 'capacity' }, catalog).ok).toBe(false);
+    expect(copyModelCondition(source, 'vm', {}, [hostOs, vmSame]).ok).toBe(false);
+    const copied = copyModelCondition(source, 'vm', { os_type: 'os_type' }, [hostOs, vmSame]);
+    expect(copied.ok).toBe(true);
+    const appended = appendCopiedCondition({
+      modelId: 'vm',
+      logic: 'or',
+      children: [{ scope: 'vm', attr_id: 'os_type', operator: 'list_any[]', value: ['2'] }],
+    }, copied.ok ? copied.node : { logic: 'and', children: [] });
+    expect(appended.ok).toBe(true);
+    if (appended.ok) {
+      expect(appended.card.logic).toBe('and');
+      expect(appended.card.children).toHaveLength(2);
+    }
   });
 });

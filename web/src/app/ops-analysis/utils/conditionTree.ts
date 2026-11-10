@@ -51,6 +51,7 @@ export interface ConditionIssue {
   code: ConditionIssueCode;
   cardIndex?: number;
   leafIndex?: number;
+  path?: number[];
 }
 
 export interface FieldGroupItem {
@@ -70,7 +71,7 @@ export interface FieldGroupIssue {
 export interface ConditionCard {
   modelId: string;
   logic: 'and' | 'or';
-  children: ConditionLeaf[];
+  children: ConditionNode[];
 }
 
 export interface OrderChoice {
@@ -134,26 +135,50 @@ export const isEmptyConditionValue = (value: unknown): boolean => {
 
 const leafIsGlobal = (leaf: ConditionLeaf) => !leaf.scope || leaf.scope === 'global';
 
-/** 含全局范围或更深嵌套的旧树保持原样，不在编辑时改写成卡片。 */
+const visitNodes = (node: ConditionNode, visit: (node: ConditionNode, isRoot: boolean) => void, isRoot = true) => {
+  visit(node, isRoot);
+  if (isConditionGroup(node)) node.children.forEach((child) => visitNodes(child, visit, false));
+};
+
+const modelIdsIn = (node: ConditionNode): string[] => {
+  const ids = new Set<string>();
+  visitNodes(node, (current) => {
+    if (!isConditionGroup(current) && current.scope && current.scope !== 'global') ids.add(current.scope);
+  });
+  return [...ids];
+};
+
+export const hasConditionLeaves = (node: unknown): boolean => {
+  if (!node || typeof node !== 'object') return false;
+  if (!isConditionGroup(node)) return true;
+  return node.children.some((child) => hasConditionLeaves(child));
+};
+
+/**
+ * 全局叶子，或同一个非根组里混了多个模型，保持原树。
+ * 同一模型内部的嵌套组是有效模型条件，可以继续编辑。
+ */
 export const isLegacyConditionTree = (value: unknown): boolean => {
   if (!isConditionGroup(value) || value.children.length === 0) return false;
-  return value.children.some((child) => {
-    if (isConditionGroup(child)) {
-      if (child.children.some((item) => isConditionGroup(item))) return true;
-      return child.children.some((item) => !isConditionGroup(item) && leafIsGlobal(item));
+  let legacy = false;
+  visitNodes(value, (node, isRoot) => {
+    if (!isConditionGroup(node)) {
+      if (leafIsGlobal(node)) legacy = true;
+      return;
     }
-    return leafIsGlobal(child);
+    if (!isRoot && modelIdsIn(node).length > 1) legacy = true;
   });
+  return legacy;
 };
 
 export const readConditionCards = (value: unknown): ConditionCard[] => {
   if (!isConditionGroup(value) || isLegacyConditionTree(value)) return [];
   return value.children.flatMap((child) => {
     if (isConditionGroup(child)) {
-      const leaves = child.children.filter((item): item is ConditionLeaf => !isConditionGroup(item));
-      const scoped = leaves.find((leaf) => leaf.scope && leaf.scope !== 'global')?.scope || '';
-      const modelId = typeof child.model_id === 'string' ? child.model_id : scoped;
-      return [{ modelId, logic: child.logic, children: leaves }];
+      const models = modelIdsIn(child);
+      const declared = typeof child.model_id === 'string' ? child.model_id : '';
+      const modelId = declared || models[0] || '';
+      return [{ modelId, logic: child.logic === 'or' ? 'or' as const : 'and' as const, children: child.children }];
     }
     if (child.scope && child.scope !== 'global') {
       return [{ modelId: child.scope, logic: 'and' as const, children: [child] }];
@@ -162,16 +187,40 @@ export const readConditionCards = (value: unknown): ConditionCard[] => {
   });
 };
 
-export const writeConditionCards = (cards: ConditionCard[]): ConditionGroup => ({
+const rewriteModelNode = (node: ConditionNode, modelId: string): ConditionNode => {
+  if (isConditionGroup(node)) {
+    return {
+      logic: node.logic === 'or' ? 'or' : 'and',
+      children: node.children.map((child) => rewriteModelNode(child, modelId)),
+    };
+  }
+  const next: ConditionLeaf = {
+    scope: modelId,
+    attr_id: node.attr_id,
+    operator: node.operator,
+    value: node.value,
+  };
+  if (node.attr_id) next.field_ref = `${modelId}:${node.attr_id}`;
+  return next;
+};
+
+export const writeConditionCards = (
+  cards: ConditionCard[],
+  selectedIds?: readonly string[],
+): ConditionGroup => ({
   logic: 'and',
-  children: cards.map((card) => ({
-    logic: card.logic,
-    model_id: card.modelId,
-    children: card.children.map((leaf) => ({
-      ...leaf,
-      scope: card.modelId || leaf.scope,
-    })),
-  })),
+  children: cards.flatMap((card) => {
+    if (!card.modelId) return [];
+    const children = card.children.map((child) => rewriteModelNode(child, card.modelId));
+    const node: ConditionGroup = {
+      logic: card.logic === 'or' ? 'or' : 'and',
+      model_id: card.modelId,
+      children,
+    };
+    const outside = selectedIds ? !selectedIds.includes(card.modelId) : false;
+    if (!hasConditionLeaves(node) && !outside) return [];
+    return [node];
+  }),
 });
 
 const ORDER_KEY = /^[A-Za-z_][A-Za-z0-9_]*$/;
@@ -286,9 +335,11 @@ const valueMissing = (kind: string, value: unknown) => {
 const locate = (
   code: ConditionIssueCode,
   cardIndex: number,
-  leafIndex?: number,
+  path?: number[],
 ): ConditionIssue => (
-  leafIndex === undefined ? { code, cardIndex } : { code, cardIndex, leafIndex }
+  path && path.length
+    ? { code, cardIndex, path, leafIndex: path[path.length - 1] }
+    : { code, cardIndex }
 );
 
 const inspectLeaf = (
@@ -297,39 +348,39 @@ const inspectLeaf = (
   catalogReady: boolean,
   models: Set<string>,
   cardIndex: number,
-  leafIndex: number,
+  path: number[],
 ): ConditionIssue | null => {
-  if (!isRecord(node)) return locate('invalid', cardIndex, leafIndex);
+  if (!isRecord(node)) return locate('invalid', cardIndex, path);
   const scope = typeof node.scope === 'string' ? node.scope : '';
   const attrId = typeof node.attr_id === 'string' ? node.attr_id : '';
   const operator = typeof node.operator === 'string' ? node.operator : '';
   const named = explicitKeys(node).length > 0 || Boolean(attrId);
-  if (!scope || !named || !operator) return locate('invalid', cardIndex, leafIndex);
+  if (!scope || !named || !operator) return locate('invalid', cardIndex, path);
   if (!catalogReady) return null;
-  if (scope !== 'global' && models.size > 0 && !models.has(scope)) return locate('staleScope', cardIndex, leafIndex);
+  if (scope !== 'global' && models.size > 0 && !models.has(scope)) return locate('staleScope', cardIndex, path);
   if (scope === 'global' && explicitKeys(node).length === 0) {
     const matches = catalog.filter((item) => item.attrId === attrId);
-    if (matches.length > 1) return locate('ambiguousField', cardIndex, leafIndex);
+    if (matches.length > 1) return locate('ambiguousField', cardIndex, path);
   }
   const fields = leafFields(catalog, node);
   const requested = explicitKeys(node);
-  if (requested.length && fields.length !== requested.length) return locate('staleField', cardIndex, leafIndex);
-  if (!fields.length) return locate('staleField', cardIndex, leafIndex);
+  if (requested.length && fields.length !== requested.length) return locate('staleField', cardIndex, path);
+  if (!fields.length) return locate('staleField', cardIndex, path);
   if (fields.length > 1) {
     const signatures = new Set(fields.map(signatureOf));
-    if (signatures.size > 1) return locate('incompatible', cardIndex, leafIndex);
+    if (signatures.size > 1) return locate('incompatible', cardIndex, path);
   }
   const choice = fields[0].operators.find((item) => item.value === operator);
   if (!choice || fields.some((field) => !field.operators.some((item) => item.value === operator))) {
-    return locate('unsupportedOperator', cardIndex, leafIndex);
+    return locate('unsupportedOperator', cardIndex, path);
   }
   if (choice.valueKind === 'enum' && Array.isArray(node.value)) {
     if (fields.some((field) => {
       const allowed = new Set(field.options.map((item) => item.value));
       return (node.value as unknown[]).some((item) => !allowed.has(String(item)));
-    })) return locate('staleField', cardIndex, leafIndex);
+    })) return locate('staleField', cardIndex, path);
   }
-  if (valueMissing(choice.valueKind, node.value)) return locate('missingValue', cardIndex, leafIndex);
+  if (valueMissing(choice.valueKind, node.value)) return locate('missingValue', cardIndex, path);
   return null;
 };
 
@@ -352,11 +403,21 @@ export const inspectCondition = (
         }
         return null;
       }
-      return inspectLeaf(node, catalog, catalogReady, models, cardIndex, 0);
+      return inspectLeaf(node, catalog, catalogReady, models, cardIndex, [0]);
     };
     return walk(value, 0);
   }
   const selectedIds = selectedModelIds ? new Set(selectedModelIds.filter(Boolean)) : null;
+  const walkEditable = (node: ConditionNode, cardIndex: number, path: number[]): ConditionIssue | null => {
+    if (isConditionGroup(node)) {
+      for (let index = 0; index < node.children.length; index += 1) {
+        const issue = walkEditable(node.children[index], cardIndex, [...path, index]);
+        if (issue) return issue;
+      }
+      return null;
+    }
+    return inspectLeaf(node, catalog, catalogReady, models, cardIndex, path);
+  };
   for (let cardIndex = 0; cardIndex < value.children.length; cardIndex += 1) {
     const child = value.children[cardIndex];
     if (isConditionGroup(child)) {
@@ -364,18 +425,14 @@ export const inspectCondition = (
       if (selectedIds && modelId && !selectedIds.has(modelId)) {
         return locate('staleScope', cardIndex);
       }
-      if (catalogReady && modelId && models.size > 0 && !models.has(modelId) && child.children.length > 0) {
+      if (catalogReady && modelId && models.size > 0 && !models.has(modelId) && hasConditionLeaves(child)) {
         return locate('staleScope', cardIndex);
       }
-      for (let leafIndex = 0; leafIndex < child.children.length; leafIndex += 1) {
-        const leaf = child.children[leafIndex];
-        if (isConditionGroup(leaf)) return locate('invalid', cardIndex, leafIndex);
-        const issue = inspectLeaf(leaf, catalog, catalogReady, models, cardIndex, leafIndex);
-        if (issue) return issue;
-      }
+      const issue = walkEditable(child, cardIndex, []);
+      if (issue) return issue;
       continue;
     }
-    const issue = inspectLeaf(child, catalog, catalogReady, models, cardIndex, 0);
+    const issue = inspectLeaf(child, catalog, catalogReady, models, cardIndex, [0]);
     if (issue) return issue;
   }
   return null;
@@ -387,6 +444,10 @@ export interface SummaryLabels {
   all: string;
   unfinished: string;
   stale: string;
+  match: string;
+  lead: string;
+  join: string;
+  of: string;
 }
 
 const summaryValue = (leaf: ConditionLeaf, field: QueryFieldCatalogItem | undefined): string => {
@@ -402,18 +463,23 @@ const summaryValue = (leaf: ConditionLeaf, field: QueryFieldCatalogItem | undefi
   return '';
 };
 
-const summarizeLeaf = (
-  leaf: ConditionLeaf,
+const summarizeNode = (
+  node: ConditionNode,
   catalog: QueryFieldCatalogItem[],
   labels: SummaryLabels,
 ): string => {
-  const field = leafFields(catalog, leaf)[0];
-  const operator = field?.operators.find((item) => item.value === leaf.operator);
-  const shown = summaryValue(leaf, field);
-  if (operator?.valueKind === 'enum' && Array.isArray(leaf.value) && leaf.value.length === 1 && shown) {
+  if (isConditionGroup(node)) {
+    const joiner = node.logic === 'or' ? labels.or : labels.and;
+    const body = node.children.map((child) => summarizeNode(child, catalog, labels)).join(joiner);
+    return node.children.length > 1 ? `(${body})` : body;
+  }
+  const field = leafFields(catalog, node)[0];
+  const operator = field?.operators.find((item) => item.value === node.operator);
+  const shown = summaryValue(node, field);
+  if (operator?.valueKind === 'enum' && Array.isArray(node.value) && node.value.length === 1 && shown) {
     return shown;
   }
-  const name = field?.label || leaf.attr_id || labels.unfinished;
+  const name = field?.label || node.attr_id || labels.unfinished;
   if (!operator) return labels.unfinished;
   return shown ? `${name} ${operator.label} ${shown}` : name;
 };
@@ -442,14 +508,130 @@ export const summarizeConditionCards = (
     }
   });
   if (!listed.length) return '';
-  return listed.map((model) => {
+  const parts = listed.map((model) => {
     if (model.outside) return `${model.name}（${labels.stale}）`;
-    const leaves = model.card?.children || [];
-    if (!leaves.length) return `${model.name}（${labels.all}）`;
-    const joiner = model.card?.logic === 'or' ? labels.or : labels.and;
-    const body = leaves.map((leaf) => summarizeLeaf(leaf, catalog, labels)).join(joiner);
-    return `${model.name}（${body}）`;
-  }).join(' ∪ ');
+    if (!model.card || !hasConditionLeaves(model.card)) return `${labels.all}${model.name}`;
+    return `${labels.match}${summarizeNode(model.card, catalog, labels)}${labels.of}${model.name}`;
+  });
+  return `${labels.lead}${parts.join(labels.join)}`;
+};
+
+export type CopyBlockReason =
+  | 'unmapped'
+  | 'type'
+  | 'unit'
+  | 'operator'
+  | 'enum-unknown'
+  | 'enum-value'
+  | 'enum-meaning'
+  | 'incomplete'
+  | 'depth'
+  | 'too-many';
+
+export const sourceAttrIds = (node: unknown): string[] => {
+  const ids: string[] = [];
+  if (!isConditionGroup(node) && !(node && typeof node === 'object' && 'logic' in node)) return ids;
+  visitNodes(node as ConditionNode, (current) => {
+    if (!isConditionGroup(current) && current.attr_id && !ids.includes(current.attr_id)) ids.push(current.attr_id);
+  });
+  return ids;
+};
+
+export const explainFieldCopy = (
+  source: QueryFieldCatalogItem | undefined,
+  target: QueryFieldCatalogItem | undefined,
+  operator: string,
+  value: unknown,
+): CopyBlockReason | null => {
+  if (!source || !target) return 'unmapped';
+  if (!source.attrId || !operator) return 'incomplete';
+  if (source.attrType !== target.attrType) return 'type';
+  if (source.unit !== target.unit) return 'unit';
+  const choice = source.operators.find((item) => item.value === operator);
+  if (!choice || !target.operators.some((item) => item.value === operator)) return 'operator';
+  if (choice.valueKind === 'enum' || source.attrType === 'enum' || target.attrType === 'enum') {
+    if (!source.options.length || !target.options.length) return 'enum-unknown';
+    const tokens = Array.isArray(value) ? value.map(String) : [];
+    if (!tokens.length) return 'incomplete';
+    for (const token of tokens) {
+      const from = source.options.find((item) => item.value === token);
+      const to = target.options.find((item) => item.value === token);
+      if (!from || !to) return 'enum-value';
+      if (from.label !== to.label) return 'enum-meaning';
+    }
+  }
+  return null;
+};
+
+const cloneForModel = (
+  node: ConditionNode,
+  sourceModelId: string,
+  targetModelId: string,
+  mapping: Record<string, string>,
+  catalog: QueryFieldCatalogItem[],
+): ConditionNode => {
+  if (isConditionGroup(node)) {
+    return {
+      logic: node.logic === 'or' ? 'or' : 'and',
+      children: node.children.map((child) => cloneForModel(child, sourceModelId, targetModelId, mapping, catalog)),
+    };
+  }
+  const targetAttr = mapping[node.attr_id] || '';
+  const target = catalog.find((item) => item.modelId === targetModelId && item.attrId === targetAttr);
+  return {
+    scope: targetModelId,
+    attr_id: targetAttr,
+    operator: node.operator,
+    value: node.value,
+    field_ref: target ? target.key : undefined,
+  };
+};
+
+export const copyModelCondition = (
+  source: ConditionCard,
+  targetModelId: string,
+  mapping: Record<string, string>,
+  catalog: QueryFieldCatalogItem[],
+): { ok: true; node: ConditionGroup } | { ok: false; reasons: Array<{ attrId: string; reason: CopyBlockReason }> } => {
+  const reasons: Array<{ attrId: string; reason: CopyBlockReason }> = [];
+  visitNodes(source, (node) => {
+    if (isConditionGroup(node) || !node.attr_id) return;
+    const from = catalog.find((item) => item.modelId === source.modelId && item.attrId === node.attr_id);
+    const targetAttr = mapping[node.attr_id];
+    const to = catalog.find((item) => item.modelId === targetModelId && item.attrId === targetAttr);
+    const reason = explainFieldCopy(from, to, node.operator, node.value);
+    if (reason && !reasons.some((item) => item.attrId === node.attr_id && item.reason === reason)) {
+      reasons.push({ attrId: node.attr_id, reason });
+    }
+  });
+  if (reasons.length) return { ok: false, reasons };
+  const cloned = cloneForModel(source, source.modelId, targetModelId, mapping, catalog);
+  if (!isConditionGroup(cloned)) return { ok: false, reasons: [{ attrId: '', reason: 'incomplete' }] };
+  return { ok: true, node: { ...cloned, model_id: targetModelId } };
+};
+
+export const appendCopiedCondition = (
+  existing: ConditionCard | undefined,
+  copied: ConditionGroup,
+): { ok: true; card: ConditionCard } | { ok: false; reason: 'depth' | 'too-many' } => {
+  const modelId = copied.model_id || existing?.modelId || '';
+  let card: ConditionCard;
+  if (!existing || !hasConditionLeaves(existing)) {
+    card = { modelId, logic: copied.logic, children: copied.children };
+  } else {
+    card = {
+      modelId,
+      logic: 'and',
+      children: [
+        { logic: existing.logic, children: existing.children },
+        { logic: copied.logic, children: copied.children },
+      ],
+    };
+  }
+  const stored = writeConditionCards([card], [modelId]);
+  if (conditionDepth(stored) > 4) return { ok: false, reason: 'depth' };
+  if (countConditionLeaves(stored) > 10) return { ok: false, reason: 'too-many' };
+  return { ok: true, card };
 };
 
 export interface PreviewLabels {

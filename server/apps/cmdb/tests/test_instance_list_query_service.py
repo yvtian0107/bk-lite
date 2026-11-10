@@ -119,6 +119,45 @@ def test_order_candidates_follow_the_columns_each_mode_accepts():
     assert distribution_keys == {"model_id", "model_name", "count", "group_value", "field_label", "group_kind"}
 
 
+def test_nested_model_condition_filters_only_that_model():
+    service, calls = _service(
+        rows={
+            "host": [{"inst_uuid": "h1"}, {"inst_uuid": "h2"}],
+            "app": [{"inst_uuid": f"a{index}"} for index in range(6)],
+        },
+        counts={"host": 2, "app": 6},
+    )
+    tree = {
+        "logic": "and",
+        "children": [
+            {
+                "logic": "and",
+                "model_id": "host",
+                "children": [
+                    {"scope": "host", "attr_id": "ip_addr", "operator": "str=", "value": "10.0.0.8"},
+                    {
+                        "logic": "or",
+                        "children": [
+                            {"scope": "host", "attr_id": "os_type", "operator": "list_any[]", "value": ["2"]},
+                            {"scope": "host", "attr_id": "os_type", "operator": "list_any[]", "value": ["3"]},
+                        ],
+                    },
+                ],
+            }
+        ],
+    }
+    result = _run(service, model_ids=["host", "app"], analysis_mode="count", conditions=tree)
+    counts = {row["model_id"]: row["count"] for row in result["items"]}
+    assert counts == {"host": 2, "app": 6}
+    host_params = [call["params"] for call in calls["list"] if call["model_id"] == "host" and call["page_size"] != 1]
+    assert {"field": "ip_addr", "type": "str=", "value": "10.0.0.8"} in host_params[0]
+    assert {"field": "os_type", "type": "list_any[]", "value": ["2"]} in host_params[0] or any(
+        {"field": "os_type", "type": "list_any[]", "value": ["2"]} in params for params in host_params
+    )
+    assert any({"field": "os_type", "type": "list_any[]", "value": ["3"]} in params for params in host_params)
+    assert [call["params"] for call in calls["list"] if call["model_id"] == "app"] == [[]]
+
+
 @pytest.mark.parametrize("conditions", [None, [], {}, "", {"logic": "and", "children": []}])
 def test_empty_conditions_keep_every_selected_model(conditions):
     service, calls = _service(
