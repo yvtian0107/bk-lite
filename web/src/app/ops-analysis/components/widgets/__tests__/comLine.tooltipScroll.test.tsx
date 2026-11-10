@@ -8,6 +8,7 @@ const chartSpy = vi.hoisted(() => ({
       enterable?: boolean;
       confine?: boolean;
       hideDelay?: number;
+      trigger?: string;
       position?: (
         point: number[],
         params: unknown,
@@ -20,19 +21,32 @@ const chartSpy = vi.hoisted(() => ({
       symbol?: string;
       symbolSize?: number;
       showSymbol?: boolean;
+      smooth?: number;
+      areaStyle?: unknown;
+      type?: string;
     }>;
   } | null,
+  notMerge: undefined as boolean | undefined,
+  replaceMerge: undefined as string[] | undefined,
 }));
 
 vi.mock('echarts-for-react', () => {
   const MockEcharts = React.forwardRef(
     (
-      { option }: { option?: (typeof chartSpy)['option'] },
+      {
+        option,
+        notMerge,
+        replaceMerge,
+      }: {
+        option?: (typeof chartSpy)['option'];
+        notMerge?: boolean;
+        replaceMerge?: string[];
+      },
       _ref: React.ForwardedRef<unknown>,
     ) => {
-      React.useEffect(() => {
-        chartSpy.option = option ?? null;
-      }, [option]);
+      chartSpy.option = option ?? null;
+      chartSpy.notMerge = notMerge;
+      chartSpy.replaceMerge = replaceMerge;
       return <div data-testid="line-chart" />;
     },
   );
@@ -40,8 +54,10 @@ vi.mock('echarts-for-react', () => {
   return { default: MockEcharts };
 });
 
+const translate = (key: string) => key;
+
 vi.mock('@/utils/i18n', () => ({
-  useTranslation: () => ({ t: (key: string) => key }),
+  useTranslation: () => ({ t: translate }),
 }));
 
 vi.mock('@/app/ops-analysis/components/widget-state', () => ({
@@ -67,6 +83,8 @@ beforeAll(() => {
 afterEach(() => {
   cleanup();
   chartSpy.option = null;
+  chartSpy.notMerge = undefined;
+  chartSpy.replaceMerge = undefined;
 });
 
 describe('ComLine multi-series tooltip', () => {
@@ -132,5 +150,24 @@ describe('ComLine multi-series tooltip', () => {
       symbol: 'none',
       symbolSize: 0,
     });
+  });
+
+  it('keeps the line option stable and merges series instead of replacing the chart', () => {
+    const { rerender } = render(<ComLine rawData={multiSeriesData} loading={false} />);
+    const first = chartSpy.option;
+
+    expect(first?.tooltip?.trigger).toBe('axis');
+    expect(first?.tooltip?.enterable).toBe(true);
+    expect(first?.series?.[0]).toMatchObject({
+      type: 'line',
+      smooth: 0.36,
+    });
+    expect(first?.series?.[0]?.areaStyle).toBeTruthy();
+    expect(chartSpy.notMerge).toBe(false);
+    expect(chartSpy.replaceMerge).toEqual(['series', 'xAxis', 'yAxis']);
+
+    rerender(<ComLine rawData={multiSeriesData} loading={false} />);
+
+    expect(chartSpy.option).toBe(first);
   });
 });
