@@ -1841,5 +1841,2469 @@
         {"key": "alert_count", "title": "告警数", "value_type": "number", "description": "与 value 相同，供表格列使用"},
         {"key": "share", "title": "占比", "value_type": "string", "description": "该实例告警数占全部源实例告警数的百分比，形如 21.1%"}
     ]
-}
+},
+{
+        "key": "CMDB 模型列表::cmdb/list_cmdb_model_options",
+        "name": "CMDB 模型列表（选项）",
+        "desc": "当前可见的 CMDB 模型，供通用查询下拉使用，本身不直接出图",
+        "rest_api": "cmdb/list_cmdb_model_options",
+        "tag": [
+            "cmdb"
+        ],
+        "chart_type": [],
+        "params": [
+            {
+                "name": "classification_id",
+                "type": "string",
+                "value": "",
+                "alias_name": "模型分类",
+                "filterType": "params"
+            }
+        ],
+        "field_schema": [
+            {
+                "key": "model_id",
+                "title": "模型标识",
+                "value_type": "string"
+            },
+            {
+                "key": "model_name",
+                "title": "模型名称",
+                "value_type": "string"
+            },
+            {
+                "key": "classification_id",
+                "title": "模型分类",
+                "value_type": "string"
+            }
+        ]
+    },
+    {
+        "key": "CMDB 模型属性列表::cmdb/list_cmdb_attr_options",
+        "name": "CMDB 模型属性列表（选项）",
+        "desc": "指定模型的属性，供分组、聚合和属性过滤使用，本身不直接出图",
+        "rest_api": "cmdb/list_cmdb_attr_options",
+        "tag": [
+            "cmdb"
+        ],
+        "chart_type": [],
+        "params": [
+            {
+                "name": "model_id",
+                "type": "string",
+                "value": "",
+                "alias_name": "模型",
+                "filterType": "params",
+                "required": true
+            }
+        ],
+        "field_schema": [
+            {
+                "key": "attr_id",
+                "title": "属性标识",
+                "value_type": "string"
+            },
+            {
+                "key": "attr_name",
+                "title": "属性名称",
+                "value_type": "string"
+            },
+            {
+                "key": "attr_type",
+                "title": "属性类型",
+                "value_type": "string"
+            }
+        ]
+    },
+    {
+        "key": "模型关联列表（按模型）::cmdb/get_model_association_options",
+        "name": "模型关联列表（按所选模型）",
+        "desc": "一端为所选模型的具名关联。与固定主机的关联选项源分开，避免覆盖旧默认值",
+        "rest_api": "cmdb/get_model_association_options",
+        "tag": [
+            "cmdb"
+        ],
+        "chart_type": [],
+        "params": [
+            {
+                "name": "model_id",
+                "type": "string",
+                "value": "",
+                "alias_name": "模型",
+                "filterType": "params",
+                "required": true
+            }
+        ],
+        "field_schema": [
+            {
+                "key": "model_asst_id",
+                "title": "模型关联 ID",
+                "value_type": "string"
+            },
+            {
+                "key": "label",
+                "title": "关联",
+                "value_type": "string"
+            },
+            {
+                "key": "src_model_id",
+                "title": "源模型",
+                "value_type": "string"
+            },
+            {
+                "key": "dst_model_id",
+                "title": "目标模型",
+                "value_type": "string"
+            }
+        ]
+    },
+    {
+        "key": "监控对象列表::monitor/monitor_objects",
+        "name": "监控对象列表（选项）",
+        "desc": "监控对象，供通用查询下拉使用，本身不直接出图",
+        "rest_api": "monitor/monitor_objects",
+        "tag": [
+            "monitor"
+        ],
+        "chart_type": [],
+        "params": [],
+        "field_schema": [
+            {
+                "key": "id",
+                "title": "监控对象 ID",
+                "value_type": "string"
+            },
+            {
+                "key": "name",
+                "title": "监控对象",
+                "value_type": "string"
+            }
+        ]
+    },
+    {
+        "key": "监控指标列表::monitor/monitor_metrics",
+        "name": "监控指标列表（选项）",
+        "desc": "所选监控对象下的指标，供单指标查询使用，本身不直接出图",
+        "rest_api": "monitor/monitor_metrics",
+        "tag": [
+            "monitor"
+        ],
+        "chart_type": [],
+        "params": [
+            {
+                "name": "monitor_obj_id",
+                "type": "string",
+                "value": "",
+                "alias_name": "监控对象",
+                "filterType": "params",
+                "required": true
+            }
+        ],
+        "field_schema": [
+            {
+                "key": "id",
+                "title": "指标 ID",
+                "value_type": "string"
+            },
+            {
+                "key": "display_name",
+                "title": "指标",
+                "value_type": "string"
+            },
+            {
+                "key": "name",
+                "title": "指标名",
+                "value_type": "string"
+            },
+            {
+                "key": "unit",
+                "title": "单位",
+                "value_type": "string"
+            }
+        ]
+    },
+    {
+        "key": "告警来源列表::alert/list_alert_source_options",
+        "name": "告警来源列表（选项）",
+        "desc": "启用中的告警来源，供告警中心查询使用，本身不直接出图",
+        "rest_api": "alert/list_alert_source_options",
+        "tag": [
+            "alerts"
+        ],
+        "chart_type": [],
+        "params": [],
+        "field_schema": [
+            {
+                "key": "source_id",
+                "title": "来源标识",
+                "value_type": "string"
+            },
+            {
+                "key": "name",
+                "title": "来源名称",
+                "value_type": "string"
+            }
+        ]
+    },
+    {
+        "key": "CMDB 模型通用查询::cmdb/query_cmdb_models",
+        "name": "CMDB 模型通用查询",
+        "desc": "按分类和模型查询可见模型。零实例模型保留为 0。TOP5、非空模型数、空模型数和分类汇总都由分析方式与结果筛选配置出来",
+        "rest_api": "cmdb/query_cmdb_models",
+        "tag": [
+            "cmdb"
+        ],
+        "chart_type": [
+            "table",
+            "topN",
+            "single",
+            "bar",
+            "pie"
+        ],
+        "params": [
+            {
+                "name": "classification_id",
+                "type": "string",
+                "value": "",
+                "alias_name": "模型分类",
+                "filterType": "params",
+                "inputConfig": {
+                    "control": "select",
+                    "optionsSource": {
+                        "type": "dynamic",
+                        "sourceRef": {
+                            "type": "rest_api",
+                            "value": "cmdb/get_model_classification_options"
+                        },
+                        "valueField": "classification_id",
+                        "labelField": "classification_name"
+                    }
+                }
+            },
+            {
+                "name": "model_id",
+                "type": "string",
+                "value": "",
+                "alias_name": "模型",
+                "filterType": "params",
+                "inputConfig": {
+                    "control": "select",
+                    "optionsSource": {
+                        "type": "dynamic",
+                        "sourceRef": {
+                            "type": "rest_api",
+                            "value": "cmdb/list_cmdb_model_options"
+                        },
+                        "valueField": "model_id",
+                        "labelField": "model_name"
+                    }
+                }
+            },
+            {
+                "name": "analysis_mode",
+                "type": "string",
+                "value": "detail",
+                "alias_name": "分析方式",
+                "filterType": "params",
+                "required": true,
+                "inputConfig": {
+                    "control": "select",
+                    "optionsSource": {
+                        "type": "static",
+                        "staticItems": [
+                            {
+                                "label": "明细",
+                                "value": "detail",
+                                "charts": [
+                                    "table",
+                                    "topN"
+                                ],
+                                "result": {
+                                    "structure": "table"
+                                }
+                            },
+                            {
+                                "label": "计数",
+                                "value": "count",
+                                "charts": [
+                                    "single"
+                                ],
+                                "result": {
+                                    "structure": "value"
+                                }
+                            },
+                            {
+                                "label": "分布",
+                                "value": "distribution",
+                                "charts": [
+                                    "bar",
+                                    "pie"
+                                ],
+                                "result": {
+                                    "structure": "category"
+                                }
+                            }
+                        ]
+                    }
+                }
+            },
+            {
+                "name": "result_op",
+                "type": "string",
+                "value": "",
+                "alias_name": "结果比较",
+                "filterType": "params",
+                "inputConfig": {
+                    "control": "select",
+                    "optionsSource": {
+                        "type": "static",
+                        "staticItems": [
+                            {
+                                "label": "大于",
+                                "value": "gt"
+                            },
+                            {
+                                "label": "大于等于",
+                                "value": "gte"
+                            },
+                            {
+                                "label": "等于",
+                                "value": "eq"
+                            },
+                            {
+                                "label": "小于",
+                                "value": "lt"
+                            },
+                            {
+                                "label": "小于等于",
+                                "value": "lte"
+                            },
+                            {
+                                "label": "不等于",
+                                "value": "ne"
+                            }
+                        ]
+                    }
+                },
+                "visible_modes": [
+                    "detail",
+                    "count"
+                ]
+            },
+            {
+                "name": "result_value",
+                "type": "number",
+                "value": null,
+                "alias_name": "结果比较值",
+                "filterType": "params",
+                "visible_modes": [
+                    "detail",
+                    "count"
+                ]
+            },
+            {
+                "name": "order",
+                "type": "string",
+                "value": "",
+                "alias_name": "排序",
+                "filterType": "params",
+                "visible_modes": [
+                    "detail",
+                    "distribution"
+                ]
+            },
+            {
+                "name": "page",
+                "type": "number",
+                "value": null,
+                "alias_name": "页码",
+                "filterType": "params",
+                "visible_modes": [
+                    "detail"
+                ]
+            },
+            {
+                "name": "page_size",
+                "type": "number",
+                "value": null,
+                "alias_name": "每页条数",
+                "filterType": "params",
+                "visible_modes": [
+                    "detail"
+                ]
+            },
+            {
+                "name": "organization",
+                "type": "string",
+                "value": "",
+                "alias_name": "组织",
+                "filterType": "filter",
+                "inputConfig": {
+                    "control": "organization"
+                }
+            }
+        ],
+        "field_schema": [
+            {
+                "key": "model_id",
+                "title": "模型标识",
+                "value_type": "string"
+            },
+            {
+                "key": "model_name",
+                "title": "模型名称",
+                "value_type": "string"
+            },
+            {
+                "key": "name",
+                "title": "名称",
+                "value_type": "string",
+                "description": "与模型名称相同，供 TOP 图使用"
+            },
+            {
+                "key": "classification_id",
+                "title": "分类标识",
+                "value_type": "string"
+            },
+            {
+                "key": "classification_name",
+                "title": "分类",
+                "value_type": "string"
+            },
+            {
+                "key": "instance_count",
+                "title": "实例数",
+                "value_type": "number",
+                "description": "可见但零实例的模型为 0"
+            },
+            {
+                "key": "value",
+                "title": "值",
+                "value_type": "number",
+                "description": "明细为实例数；计数为模型数；分布为分类实例合计"
+            },
+            {
+                "key": "unit",
+                "title": "单位",
+                "value_type": "string"
+            },
+            {
+                "key": "aggregation",
+                "title": "聚合口径",
+                "value_type": "string"
+            },
+            {
+                "key": "status",
+                "title": "结果状态",
+                "value_type": "string",
+                "description": "ok、empty、missing、forbidden 或 failed"
+            }
+        ]
+    },
+    {
+        "key": "CMDB 实例通用查询::cmdb/query_cmdb_instances",
+        "name": "CMDB 实例通用查询",
+        "desc": "按模型查询实例明细、数量、属性分布或数值聚合。机房、应用系统等实例选项也复用本查询并翻页，不另做只取第一页的列表",
+        "rest_api": "cmdb/query_cmdb_instances",
+        "tag": [
+            "cmdb"
+        ],
+        "chart_type": [
+            "table",
+            "single",
+            "bar",
+            "pie",
+            "topN"
+        ],
+        "params": [
+            {
+                "name": "model_id",
+                "type": "string",
+                "value": "",
+                "alias_name": "模型",
+                "filterType": "params",
+                "inputConfig": {
+                    "control": "select",
+                    "optionsSource": {
+                        "type": "dynamic",
+                        "sourceRef": {
+                            "type": "rest_api",
+                            "value": "cmdb/list_cmdb_model_options"
+                        },
+                        "valueField": "model_id",
+                        "labelField": "model_name"
+                    }
+                },
+                "required": true
+            },
+            {
+                "name": "analysis_mode",
+                "type": "string",
+                "value": "detail",
+                "alias_name": "分析方式",
+                "filterType": "params",
+                "required": true,
+                "inputConfig": {
+                    "control": "select",
+                    "optionsSource": {
+                        "type": "static",
+                        "staticItems": [
+                            {
+                                "label": "明细",
+                                "value": "detail",
+                                "charts": [
+                                    "table",
+                                    "topN"
+                                ],
+                                "result": {
+                                    "structure": "table"
+                                }
+                            },
+                            {
+                                "label": "计数",
+                                "value": "count",
+                                "charts": [
+                                    "single"
+                                ],
+                                "result": {
+                                    "structure": "value"
+                                }
+                            },
+                            {
+                                "label": "分布",
+                                "value": "distribution",
+                                "charts": [
+                                    "bar",
+                                    "pie"
+                                ],
+                                "result": {
+                                    "structure": "category"
+                                }
+                            },
+                            {
+                                "label": "数值聚合",
+                                "value": "aggregate",
+                                "charts": [
+                                    "single"
+                                ],
+                                "result": {
+                                    "structure": "value"
+                                }
+                            }
+                        ]
+                    }
+                }
+            },
+            {
+                "name": "filter_field",
+                "type": "string",
+                "value": "",
+                "alias_name": "过滤属性",
+                "filterType": "params",
+                "inputConfig": {
+                    "control": "select",
+                    "optionsSource": {
+                        "type": "dynamic",
+                        "sourceRef": {
+                            "type": "rest_api",
+                            "value": "cmdb/list_cmdb_attr_options"
+                        },
+                        "valueField": "attr_id",
+                        "labelField": "attr_name",
+                        "queryParams": {
+                            "model_id": {
+                                "ref": "model_id"
+                            }
+                        }
+                    }
+                }
+            },
+            {
+                "name": "filter_op",
+                "type": "string",
+                "value": "",
+                "alias_name": "过滤运算符",
+                "filterType": "params",
+                "inputConfig": {
+                    "control": "select",
+                    "optionsSource": {
+                        "type": "static",
+                        "staticItems": [
+                            {
+                                "label": "等于",
+                                "value": "eq"
+                            },
+                            {
+                                "label": "不等于",
+                                "value": "ne"
+                            },
+                            {
+                                "label": "包含",
+                                "value": "contains"
+                            },
+                            {
+                                "label": "属于",
+                                "value": "in"
+                            },
+                            {
+                                "label": "大于",
+                                "value": "gt"
+                            },
+                            {
+                                "label": "小于",
+                                "value": "lt"
+                            }
+                        ]
+                    }
+                }
+            },
+            {
+                "name": "filter_value",
+                "type": "string",
+                "value": "",
+                "alias_name": "过滤值",
+                "filterType": "params"
+            },
+            {
+                "name": "group_by",
+                "type": "string",
+                "value": "",
+                "alias_name": "分组属性",
+                "filterType": "params",
+                "inputConfig": {
+                    "control": "select",
+                    "optionsSource": {
+                        "type": "dynamic",
+                        "sourceRef": {
+                            "type": "rest_api",
+                            "value": "cmdb/list_cmdb_attr_options"
+                        },
+                        "valueField": "attr_id",
+                        "labelField": "attr_name",
+                        "queryParams": {
+                            "model_id": {
+                                "ref": "model_id"
+                            }
+                        }
+                    }
+                },
+                "visible_modes": [
+                    "distribution"
+                ]
+            },
+            {
+                "name": "aggregate_field",
+                "type": "string",
+                "value": "",
+                "alias_name": "聚合属性",
+                "filterType": "params",
+                "inputConfig": {
+                    "control": "select",
+                    "optionsSource": {
+                        "type": "dynamic",
+                        "sourceRef": {
+                            "type": "rest_api",
+                            "value": "cmdb/list_cmdb_attr_options"
+                        },
+                        "valueField": "attr_id",
+                        "labelField": "attr_name",
+                        "queryParams": {
+                            "model_id": {
+                                "ref": "model_id"
+                            }
+                        }
+                    }
+                },
+                "visible_modes": [
+                    "aggregate"
+                ]
+            },
+            {
+                "name": "aggregate_op",
+                "type": "string",
+                "value": "",
+                "alias_name": "聚合方式",
+                "filterType": "params",
+                "inputConfig": {
+                    "control": "select",
+                    "optionsSource": {
+                        "type": "static",
+                        "staticItems": [
+                            {
+                                "label": "求和",
+                                "value": "sum"
+                            },
+                            {
+                                "label": "平均",
+                                "value": "avg"
+                            },
+                            {
+                                "label": "最大",
+                                "value": "max"
+                            },
+                            {
+                                "label": "最小",
+                                "value": "min"
+                            }
+                        ]
+                    }
+                },
+                "visible_modes": [
+                    "aggregate"
+                ]
+            },
+            {
+                "name": "order",
+                "type": "string",
+                "value": "",
+                "alias_name": "排序",
+                "filterType": "params",
+                "visible_modes": [
+                    "detail",
+                    "distribution"
+                ]
+            },
+            {
+                "name": "page",
+                "type": "number",
+                "value": null,
+                "alias_name": "页码",
+                "filterType": "params",
+                "visible_modes": [
+                    "detail"
+                ]
+            },
+            {
+                "name": "page_size",
+                "type": "number",
+                "value": null,
+                "alias_name": "每页条数",
+                "filterType": "params",
+                "visible_modes": [
+                    "detail"
+                ]
+            },
+            {
+                "name": "organization",
+                "type": "string",
+                "value": "",
+                "alias_name": "组织",
+                "filterType": "filter",
+                "inputConfig": {
+                    "control": "organization"
+                }
+            }
+        ],
+        "field_schema": [
+            {
+                "key": "inst_uuid",
+                "title": "实例标识",
+                "value_type": "string"
+            },
+            {
+                "key": "inst_name",
+                "title": "实例名称",
+                "value_type": "string"
+            },
+            {
+                "key": "name",
+                "title": "名称",
+                "value_type": "string",
+                "description": "分布分组名；明细可配合实例名"
+            },
+            {
+                "key": "value",
+                "title": "值",
+                "value_type": "number"
+            },
+            {
+                "key": "unit",
+                "title": "单位",
+                "value_type": "string"
+            },
+            {
+                "key": "aggregation",
+                "title": "聚合口径",
+                "value_type": "string"
+            },
+            {
+                "key": "status",
+                "title": "结果状态",
+                "value_type": "string",
+                "description": "ok 为零值；empty 为没有可聚合实例；missing 为缺数据"
+            }
+        ]
+    },
+    {
+        "key": "CMDB 一跳关联通用查询::cmdb/query_cmdb_one_hop",
+        "name": "CMDB 一跳关联通用查询",
+        "desc": "按具名关系只跨一层。计数按起点计，同一起点落到多个终点时各计 1 次，各柱之和等于合计",
+        "rest_api": "cmdb/query_cmdb_one_hop",
+        "tag": [
+            "cmdb"
+        ],
+        "chart_type": [
+            "table",
+            "single",
+            "bar",
+            "pie",
+            "topN"
+        ],
+        "params": [
+            {
+                "name": "start_model_id",
+                "type": "string",
+                "value": "",
+                "alias_name": "起点模型",
+                "filterType": "params",
+                "inputConfig": {
+                    "control": "select",
+                    "optionsSource": {
+                        "type": "dynamic",
+                        "sourceRef": {
+                            "type": "rest_api",
+                            "value": "cmdb/list_cmdb_model_options"
+                        },
+                        "valueField": "model_id",
+                        "labelField": "model_name"
+                    }
+                },
+                "required": true
+            },
+            {
+                "name": "filter_field",
+                "type": "string",
+                "value": "",
+                "alias_name": "起点过滤属性",
+                "filterType": "params",
+                "inputConfig": {
+                    "control": "select",
+                    "optionsSource": {
+                        "type": "dynamic",
+                        "sourceRef": {
+                            "type": "rest_api",
+                            "value": "cmdb/list_cmdb_attr_options"
+                        },
+                        "valueField": "attr_id",
+                        "labelField": "attr_name",
+                        "queryParams": {
+                            "model_id": {
+                                "ref": "start_model_id"
+                            }
+                        }
+                    }
+                }
+            },
+            {
+                "name": "filter_op",
+                "type": "string",
+                "value": "",
+                "alias_name": "起点过滤运算符",
+                "filterType": "params",
+                "inputConfig": {
+                    "control": "select",
+                    "optionsSource": {
+                        "type": "static",
+                        "staticItems": [
+                            {
+                                "label": "等于",
+                                "value": "eq"
+                            },
+                            {
+                                "label": "不等于",
+                                "value": "ne"
+                            },
+                            {
+                                "label": "包含",
+                                "value": "contains"
+                            },
+                            {
+                                "label": "属于",
+                                "value": "in"
+                            },
+                            {
+                                "label": "大于",
+                                "value": "gt"
+                            },
+                            {
+                                "label": "小于",
+                                "value": "lt"
+                            }
+                        ]
+                    }
+                }
+            },
+            {
+                "name": "filter_value",
+                "type": "string",
+                "value": "",
+                "alias_name": "起点过滤值",
+                "filterType": "params"
+            },
+            {
+                "name": "model_asst_id",
+                "type": "string",
+                "value": "",
+                "alias_name": "关系",
+                "filterType": "params",
+                "inputConfig": {
+                    "control": "select",
+                    "optionsSource": {
+                        "type": "dynamic",
+                        "sourceRef": {
+                            "type": "rest_api",
+                            "value": "模型关联列表（按所选模型）::cmdb/get_model_association_options"
+                        },
+                        "valueField": "model_asst_id",
+                        "labelField": "label",
+                        "queryParams": {
+                            "model_id": {
+                                "ref": "start_model_id"
+                            }
+                        }
+                    }
+                },
+                "required": true
+            },
+            {
+                "name": "direction",
+                "type": "string",
+                "value": "out",
+                "alias_name": "方向",
+                "filterType": "params",
+                "inputConfig": {
+                    "control": "select",
+                    "optionsSource": {
+                        "type": "static",
+                        "staticItems": [
+                            {
+                                "label": "向外",
+                                "value": "out"
+                            },
+                            {
+                                "label": "向内",
+                                "value": "in"
+                            }
+                        ]
+                    }
+                },
+                "required": true
+            },
+            {
+                "name": "end_filter_field",
+                "type": "string",
+                "value": "",
+                "alias_name": "终点过滤属性",
+                "filterType": "params"
+            },
+            {
+                "name": "end_filter_op",
+                "type": "string",
+                "value": "eq",
+                "alias_name": "终点过滤运算符",
+                "filterType": "params",
+                "inputConfig": {
+                    "control": "select",
+                    "optionsSource": {
+                        "type": "static",
+                        "staticItems": [
+                            {
+                                "label": "等于",
+                                "value": "eq"
+                            },
+                            {
+                                "label": "包含",
+                                "value": "contains"
+                            }
+                        ]
+                    }
+                }
+            },
+            {
+                "name": "end_filter_value",
+                "type": "string",
+                "value": "",
+                "alias_name": "终点过滤值",
+                "filterType": "params"
+            },
+            {
+                "name": "analysis_mode",
+                "type": "string",
+                "value": "detail",
+                "alias_name": "分析方式",
+                "filterType": "params",
+                "required": true,
+                "inputConfig": {
+                    "control": "select",
+                    "optionsSource": {
+                        "type": "static",
+                        "staticItems": [
+                            {
+                                "label": "明细",
+                                "value": "detail",
+                                "charts": [
+                                    "table",
+                                    "topN"
+                                ],
+                                "result": {
+                                    "structure": "table"
+                                }
+                            },
+                            {
+                                "label": "计数",
+                                "value": "count",
+                                "charts": [
+                                    "single"
+                                ],
+                                "result": {
+                                    "structure": "value"
+                                }
+                            },
+                            {
+                                "label": "分布",
+                                "value": "distribution",
+                                "charts": [
+                                    "bar",
+                                    "pie"
+                                ],
+                                "result": {
+                                    "structure": "category"
+                                }
+                            }
+                        ]
+                    }
+                }
+            },
+            {
+                "name": "order",
+                "type": "string",
+                "value": "",
+                "alias_name": "排序",
+                "filterType": "params",
+                "visible_modes": [
+                    "detail",
+                    "distribution"
+                ]
+            },
+            {
+                "name": "page",
+                "type": "number",
+                "value": null,
+                "alias_name": "页码",
+                "filterType": "params",
+                "visible_modes": [
+                    "detail"
+                ]
+            },
+            {
+                "name": "page_size",
+                "type": "number",
+                "value": null,
+                "alias_name": "每页条数",
+                "filterType": "params",
+                "visible_modes": [
+                    "detail"
+                ]
+            },
+            {
+                "name": "organization",
+                "type": "string",
+                "value": "",
+                "alias_name": "组织",
+                "filterType": "filter",
+                "inputConfig": {
+                    "control": "organization"
+                }
+            }
+        ],
+        "field_schema": [
+            {
+                "key": "start_uuid",
+                "title": "起点标识",
+                "value_type": "string"
+            },
+            {
+                "key": "start_name",
+                "title": "起点名称",
+                "value_type": "string"
+            },
+            {
+                "key": "start_model_id",
+                "title": "起点模型",
+                "value_type": "string"
+            },
+            {
+                "key": "end_uuid",
+                "title": "终点标识",
+                "value_type": "string"
+            },
+            {
+                "key": "end_name",
+                "title": "终点名称",
+                "value_type": "string"
+            },
+            {
+                "key": "end_model_id",
+                "title": "终点模型",
+                "value_type": "string"
+            },
+            {
+                "key": "name",
+                "title": "名称",
+                "value_type": "string",
+                "description": "分布时为终点名称"
+            },
+            {
+                "key": "value",
+                "title": "值",
+                "value_type": "number",
+                "description": "按起点计数，同一起点关联多个终点时分别计数"
+            },
+            {
+                "key": "unit",
+                "title": "单位",
+                "value_type": "string"
+            },
+            {
+                "key": "aggregation",
+                "title": "聚合口径",
+                "value_type": "string",
+                "description": "按起点计数，不做全局去重"
+            }
+        ]
+    },
+    {
+        "key": "监控实例通用查询::monitor/query_monitor_instances",
+        "name": "监控实例通用查询",
+        "desc": "按监控对象查询实例明细、数量或状态分布，保留实例身份和 CMDB 绑定状态",
+        "rest_api": "monitor/query_monitor_instances",
+        "tag": [
+            "monitor"
+        ],
+        "chart_type": [
+            "table",
+            "topN",
+            "single",
+            "bar",
+            "pie"
+        ],
+        "params": [
+            {
+                "name": "monitor_object_id",
+                "type": "string",
+                "value": "",
+                "alias_name": "监控对象",
+                "filterType": "params",
+                "inputConfig": {
+                    "control": "select",
+                    "optionsSource": {
+                        "type": "dynamic",
+                        "sourceRef": {
+                            "type": "rest_api",
+                            "value": "monitor/monitor_objects"
+                        },
+                        "valueField": "id",
+                        "labelField": "name"
+                    }
+                },
+                "required": true
+            },
+            {
+                "name": "analysis_mode",
+                "type": "string",
+                "value": "detail",
+                "alias_name": "分析方式",
+                "filterType": "params",
+                "required": true,
+                "inputConfig": {
+                    "control": "select",
+                    "optionsSource": {
+                        "type": "static",
+                        "staticItems": [
+                            {
+                                "label": "明细",
+                                "value": "detail",
+                                "charts": [
+                                    "table",
+                                    "topN"
+                                ],
+                                "result": {
+                                    "structure": "table"
+                                }
+                            },
+                            {
+                                "label": "计数",
+                                "value": "count",
+                                "charts": [
+                                    "single"
+                                ],
+                                "result": {
+                                    "structure": "value"
+                                }
+                            },
+                            {
+                                "label": "分布",
+                                "value": "distribution",
+                                "charts": [
+                                    "bar",
+                                    "pie"
+                                ],
+                                "result": {
+                                    "structure": "category"
+                                }
+                            }
+                        ]
+                    }
+                }
+            },
+            {
+                "name": "instance_ids",
+                "type": "string",
+                "value": [],
+                "alias_name": "实例范围",
+                "filterType": "params",
+                "inputConfig": {
+                    "control": "select",
+                    "optionsSource": {
+                        "type": "dynamic",
+                        "sourceRef": {
+                            "type": "rest_api",
+                            "value": "monitor/query_monitor_instances"
+                        },
+                        "valueField": "instance_id",
+                        "labelField": "name",
+                        "queryParams": {
+                            "monitor_object_id": {
+                                "ref": "monitor_object_id"
+                            },
+                            "analysis_mode": "detail",
+                            "page": 1,
+                            "page_size": 100
+                        }
+                    },
+                    "multiple": true
+                }
+            },
+            {
+                "name": "status",
+                "type": "string",
+                "value": "all",
+                "alias_name": "状态",
+                "filterType": "params",
+                "inputConfig": {
+                    "control": "select",
+                    "optionsSource": {
+                        "type": "static",
+                        "staticItems": [
+                            {
+                                "label": "全部",
+                                "value": "all"
+                            },
+                            {
+                                "label": "启用",
+                                "value": "active"
+                            },
+                            {
+                                "label": "停用",
+                                "value": "inactive"
+                            }
+                        ]
+                    }
+                }
+            },
+            {
+                "name": "filter_field",
+                "type": "string",
+                "value": "",
+                "alias_name": "过滤字段",
+                "filterType": "params",
+                "inputConfig": {
+                    "control": "select",
+                    "optionsSource": {
+                        "type": "static",
+                        "staticItems": [
+                            {
+                                "label": "名称",
+                                "value": "name"
+                            },
+                            {
+                                "label": "IP",
+                                "value": "ip"
+                            },
+                            {
+                                "label": "CMDB 标识",
+                                "value": "cmdb_id"
+                            }
+                        ]
+                    }
+                }
+            },
+            {
+                "name": "filter_op",
+                "type": "string",
+                "value": "",
+                "alias_name": "过滤运算符",
+                "filterType": "params",
+                "inputConfig": {
+                    "control": "select",
+                    "optionsSource": {
+                        "type": "static",
+                        "staticItems": [
+                            {
+                                "label": "等于",
+                                "value": "eq"
+                            },
+                            {
+                                "label": "包含",
+                                "value": "contains"
+                            }
+                        ]
+                    }
+                }
+            },
+            {
+                "name": "filter_value",
+                "type": "string",
+                "value": "",
+                "alias_name": "过滤值",
+                "filterType": "params"
+            },
+            {
+                "name": "group_by",
+                "type": "string",
+                "value": "status",
+                "alias_name": "分组",
+                "filterType": "params",
+                "inputConfig": {
+                    "control": "select",
+                    "optionsSource": {
+                        "type": "static",
+                        "staticItems": [
+                            {
+                                "label": "状态",
+                                "value": "status"
+                            },
+                            {
+                                "label": "启用",
+                                "value": "is_active"
+                            },
+                            {
+                                "label": "云区域",
+                                "value": "cloud_region_id"
+                            }
+                        ]
+                    }
+                },
+                "visible_modes": [
+                    "distribution"
+                ]
+            },
+            {
+                "name": "order",
+                "type": "string",
+                "value": "",
+                "alias_name": "排序",
+                "filterType": "params",
+                "visible_modes": [
+                    "detail"
+                ]
+            },
+            {
+                "name": "page",
+                "type": "number",
+                "value": null,
+                "alias_name": "页码",
+                "filterType": "params",
+                "visible_modes": [
+                    "detail"
+                ]
+            },
+            {
+                "name": "page_size",
+                "type": "number",
+                "value": null,
+                "alias_name": "每页条数",
+                "filterType": "params",
+                "visible_modes": [
+                    "detail"
+                ]
+            },
+            {
+                "name": "organization",
+                "type": "string",
+                "value": "",
+                "alias_name": "组织",
+                "filterType": "filter",
+                "inputConfig": {
+                    "control": "organization"
+                }
+            }
+        ],
+        "field_schema": [
+            {
+                "key": "instance_id",
+                "title": "实例标识",
+                "value_type": "string"
+            },
+            {
+                "key": "name",
+                "title": "名称",
+                "value_type": "string"
+            },
+            {
+                "key": "ip",
+                "title": "IP",
+                "value_type": "string"
+            },
+            {
+                "key": "cmdb_id",
+                "title": "CMDB 标识",
+                "value_type": "string"
+            },
+            {
+                "key": "cmdb_bind_status",
+                "title": "CMDB 绑定",
+                "value_type": "string",
+                "description": "bound 或 unbound，未绑定仍返回该行"
+            },
+            {
+                "key": "monitor_object_id",
+                "title": "监控对象",
+                "value_type": "string"
+            },
+            {
+                "key": "status",
+                "title": "状态",
+                "value_type": "string"
+            },
+            {
+                "key": "value",
+                "title": "值",
+                "value_type": "number"
+            },
+            {
+                "key": "unit",
+                "title": "单位",
+                "value_type": "string"
+            },
+            {
+                "key": "aggregation",
+                "title": "聚合口径",
+                "value_type": "string"
+            }
+        ]
+    },
+    {
+        "key": "监控指标通用查询::monitor/query_monitor_metric",
+        "name": "监控指标通用查询",
+        "desc": "查询单个指标。必须指定实例范围。点数超过 500 时报错，不自动加大步长，也不截断",
+        "rest_api": "monitor/query_monitor_metric",
+        "tag": [
+            "monitor"
+        ],
+        "chart_type": [
+            "line",
+            "bar",
+            "single"
+        ],
+        "params": [
+            {
+                "name": "monitor_object_id",
+                "type": "string",
+                "value": "",
+                "alias_name": "监控对象",
+                "filterType": "params",
+                "inputConfig": {
+                    "control": "select",
+                    "optionsSource": {
+                        "type": "dynamic",
+                        "sourceRef": {
+                            "type": "rest_api",
+                            "value": "monitor/monitor_objects"
+                        },
+                        "valueField": "id",
+                        "labelField": "name"
+                    }
+                },
+                "required": true
+            },
+            {
+                "name": "metric_id",
+                "type": "string",
+                "value": "",
+                "alias_name": "指标",
+                "filterType": "params",
+                "inputConfig": {
+                    "control": "select",
+                    "optionsSource": {
+                        "type": "dynamic",
+                        "sourceRef": {
+                            "type": "rest_api",
+                            "value": "monitor/monitor_metrics"
+                        },
+                        "valueField": "id",
+                        "labelField": "display_name",
+                        "queryParams": {
+                            "monitor_obj_id": {
+                                "ref": "monitor_object_id"
+                            }
+                        }
+                    }
+                },
+                "required": true
+            },
+            {
+                "name": "instance_ids",
+                "type": "string",
+                "value": [],
+                "alias_name": "实例范围",
+                "filterType": "params",
+                "inputConfig": {
+                    "control": "select",
+                    "optionsSource": {
+                        "type": "dynamic",
+                        "sourceRef": {
+                            "type": "rest_api",
+                            "value": "monitor/query_monitor_instances"
+                        },
+                        "valueField": "instance_id",
+                        "labelField": "name",
+                        "queryParams": {
+                            "monitor_object_id": {
+                                "ref": "monitor_object_id"
+                            },
+                            "analysis_mode": "detail",
+                            "page": 1,
+                            "page_size": 100
+                        }
+                    },
+                    "multiple": true
+                },
+                "required": true
+            },
+            {
+                "name": "analysis_mode",
+                "type": "string",
+                "value": "series",
+                "alias_name": "分析方式",
+                "filterType": "params",
+                "required": true,
+                "inputConfig": {
+                    "control": "select",
+                    "optionsSource": {
+                        "type": "static",
+                        "staticItems": [
+                            {
+                                "label": "时间序列",
+                                "value": "series",
+                                "charts": [
+                                    "line",
+                                    "bar"
+                                ],
+                                "result": {
+                                    "structure": "series"
+                                }
+                            },
+                            {
+                                "label": "聚合值",
+                                "value": "value",
+                                "charts": [
+                                    "single"
+                                ],
+                                "result": {
+                                    "structure": "value"
+                                }
+                            }
+                        ]
+                    }
+                }
+            },
+            {
+                "name": "time_range",
+                "type": "timeRange",
+                "value": null,
+                "alias_name": "时间范围",
+                "filterType": "params",
+                "required": true
+            },
+            {
+                "name": "step",
+                "type": "string",
+                "value": "5m",
+                "alias_name": "步长",
+                "filterType": "params",
+                "required": true
+            },
+            {
+                "name": "dimension_label",
+                "type": "string",
+                "value": "",
+                "alias_name": "维度名",
+                "filterType": "params"
+            },
+            {
+                "name": "dimension_operator",
+                "type": "string",
+                "value": "=",
+                "alias_name": "维度运算符",
+                "filterType": "params",
+                "inputConfig": {
+                    "control": "select",
+                    "optionsSource": {
+                        "type": "static",
+                        "staticItems": [
+                            {
+                                "label": "等于",
+                                "value": "="
+                            },
+                            {
+                                "label": "不等于",
+                                "value": "!="
+                            },
+                            {
+                                "label": "正则匹配",
+                                "value": "=~"
+                            },
+                            {
+                                "label": "正则排除",
+                                "value": "!~"
+                            }
+                        ]
+                    }
+                }
+            },
+            {
+                "name": "dimension_value",
+                "type": "string",
+                "value": "",
+                "alias_name": "维度值",
+                "filterType": "params"
+            },
+            {
+                "name": "aggregation",
+                "type": "string",
+                "value": "",
+                "alias_name": "聚合方式",
+                "filterType": "params",
+                "inputConfig": {
+                    "control": "select",
+                    "optionsSource": {
+                        "type": "static",
+                        "staticItems": [
+                            {
+                                "label": "平均",
+                                "value": "avg"
+                            },
+                            {
+                                "label": "求和",
+                                "value": "sum"
+                            },
+                            {
+                                "label": "最大",
+                                "value": "max"
+                            },
+                            {
+                                "label": "最小",
+                                "value": "min"
+                            },
+                            {
+                                "label": "计数",
+                                "value": "count"
+                            }
+                        ]
+                    }
+                },
+                "visible_modes": [
+                    "value"
+                ]
+            },
+            {
+                "name": "organization",
+                "type": "string",
+                "value": "",
+                "alias_name": "组织",
+                "filterType": "filter",
+                "inputConfig": {
+                    "control": "organization"
+                }
+            }
+        ],
+        "field_schema": [
+            {
+                "key": "time",
+                "title": "时间",
+                "value_type": "datetime"
+            },
+            {
+                "key": "value",
+                "title": "值",
+                "value_type": "number"
+            },
+            {
+                "key": "unit",
+                "title": "单位",
+                "value_type": "string",
+                "description": "指标单位，写在每个点或单值对象上"
+            },
+            {
+                "key": "aggregation",
+                "title": "聚合口径",
+                "value_type": "string"
+            },
+            {
+                "key": "status",
+                "title": "结果状态",
+                "value_type": "string",
+                "description": "没有样本时为 missing，数值 0 为 ok"
+            }
+        ]
+    },
+    {
+        "key": "监控告警通用查询::monitor/query_monitor_alerts",
+        "name": "监控告警通用查询",
+        "desc": "查询监控告警明细、数量或分布。时间范围可选，一旦填写最长 90 天",
+        "rest_api": "monitor/query_monitor_alerts",
+        "tag": [
+            "monitor"
+        ],
+        "chart_type": [
+            "table",
+            "single",
+            "bar",
+            "pie",
+            "topN"
+        ],
+        "params": [
+            {
+                "name": "monitor_object_id",
+                "type": "string",
+                "value": "",
+                "alias_name": "监控对象",
+                "filterType": "params",
+                "inputConfig": {
+                    "control": "select",
+                    "optionsSource": {
+                        "type": "dynamic",
+                        "sourceRef": {
+                            "type": "rest_api",
+                            "value": "monitor/monitor_objects"
+                        },
+                        "valueField": "id",
+                        "labelField": "name"
+                    }
+                },
+                "required": true
+            },
+            {
+                "name": "analysis_mode",
+                "type": "string",
+                "value": "detail",
+                "alias_name": "分析方式",
+                "filterType": "params",
+                "required": true,
+                "inputConfig": {
+                    "control": "select",
+                    "optionsSource": {
+                        "type": "static",
+                        "staticItems": [
+                            {
+                                "label": "明细",
+                                "value": "detail",
+                                "charts": [
+                                    "table",
+                                    "topN"
+                                ],
+                                "result": {
+                                    "structure": "table"
+                                }
+                            },
+                            {
+                                "label": "计数",
+                                "value": "count",
+                                "charts": [
+                                    "single"
+                                ],
+                                "result": {
+                                    "structure": "value"
+                                }
+                            },
+                            {
+                                "label": "分布",
+                                "value": "distribution",
+                                "charts": [
+                                    "bar",
+                                    "pie"
+                                ],
+                                "result": {
+                                    "structure": "category"
+                                }
+                            }
+                        ]
+                    }
+                }
+            },
+            {
+                "name": "instance_id",
+                "type": "string",
+                "value": "",
+                "alias_name": "实例",
+                "filterType": "params",
+                "inputConfig": {
+                    "control": "select",
+                    "optionsSource": {
+                        "type": "dynamic",
+                        "sourceRef": {
+                            "type": "rest_api",
+                            "value": "monitor/query_monitor_instances"
+                        },
+                        "valueField": "instance_id",
+                        "labelField": "name",
+                        "queryParams": {
+                            "monitor_object_id": {
+                                "ref": "monitor_object_id"
+                            },
+                            "analysis_mode": "detail",
+                            "page": 1,
+                            "page_size": 100
+                        }
+                    }
+                }
+            },
+            {
+                "name": "level",
+                "type": "string",
+                "value": "",
+                "alias_name": "级别",
+                "filterType": "params",
+                "inputConfig": {
+                    "control": "select",
+                    "optionsSource": {
+                        "type": "static",
+                        "staticItems": [
+                            {
+                                "label": "信息",
+                                "value": "info"
+                            },
+                            {
+                                "label": "警告",
+                                "value": "warning"
+                            },
+                            {
+                                "label": "错误",
+                                "value": "error"
+                            },
+                            {
+                                "label": "严重",
+                                "value": "critical"
+                            },
+                            {
+                                "label": "无数据",
+                                "value": "no_data"
+                            }
+                        ]
+                    }
+                }
+            },
+            {
+                "name": "status",
+                "type": "string",
+                "value": "",
+                "alias_name": "状态",
+                "filterType": "params",
+                "inputConfig": {
+                    "control": "select",
+                    "optionsSource": {
+                        "type": "static",
+                        "staticItems": [
+                            {
+                                "label": "新告警",
+                                "value": "new"
+                            },
+                            {
+                                "label": "已关闭",
+                                "value": "closed"
+                            },
+                            {
+                                "label": "已恢复",
+                                "value": "recovered"
+                            }
+                        ]
+                    }
+                }
+            },
+            {
+                "name": "alert_type",
+                "type": "string",
+                "value": "",
+                "alias_name": "告警类型",
+                "filterType": "params",
+                "inputConfig": {
+                    "control": "select",
+                    "optionsSource": {
+                        "type": "static",
+                        "staticItems": [
+                            {
+                                "label": "告警",
+                                "value": "alert"
+                            },
+                            {
+                                "label": "无数据",
+                                "value": "no_data"
+                            }
+                        ]
+                    }
+                }
+            },
+            {
+                "name": "time_field",
+                "type": "string",
+                "value": "",
+                "alias_name": "时间字段",
+                "filterType": "params",
+                "inputConfig": {
+                    "control": "select",
+                    "optionsSource": {
+                        "type": "static",
+                        "staticItems": [
+                            {
+                                "label": "开始时间",
+                                "value": "start_event_time"
+                            },
+                            {
+                                "label": "结束时间",
+                                "value": "end_event_time"
+                            },
+                            {
+                                "label": "创建时间",
+                                "value": "created_at"
+                            },
+                            {
+                                "label": "更新时间",
+                                "value": "updated_at"
+                            }
+                        ]
+                    }
+                }
+            },
+            {
+                "name": "time_range",
+                "type": "timeRange",
+                "value": null,
+                "alias_name": "时间范围",
+                "filterType": "params"
+            },
+            {
+                "name": "group_by",
+                "type": "string",
+                "value": "level",
+                "alias_name": "分组",
+                "filterType": "params",
+                "inputConfig": {
+                    "control": "select",
+                    "optionsSource": {
+                        "type": "static",
+                        "staticItems": [
+                            {
+                                "label": "级别",
+                                "value": "level"
+                            },
+                            {
+                                "label": "状态",
+                                "value": "status"
+                            },
+                            {
+                                "label": "告警类型",
+                                "value": "alert_type"
+                            },
+                            {
+                                "label": "实例",
+                                "value": "monitor_instance_id"
+                            }
+                        ]
+                    }
+                },
+                "visible_modes": [
+                    "distribution"
+                ]
+            },
+            {
+                "name": "order",
+                "type": "string",
+                "value": "",
+                "alias_name": "排序",
+                "filterType": "params",
+                "visible_modes": [
+                    "detail"
+                ]
+            },
+            {
+                "name": "page",
+                "type": "number",
+                "value": null,
+                "alias_name": "页码",
+                "filterType": "params",
+                "visible_modes": [
+                    "detail"
+                ]
+            },
+            {
+                "name": "page_size",
+                "type": "number",
+                "value": null,
+                "alias_name": "每页条数",
+                "filterType": "params",
+                "visible_modes": [
+                    "detail"
+                ]
+            },
+            {
+                "name": "organization",
+                "type": "string",
+                "value": "",
+                "alias_name": "组织",
+                "filterType": "filter",
+                "inputConfig": {
+                    "control": "organization"
+                }
+            }
+        ],
+        "field_schema": [
+            {
+                "key": "id",
+                "title": "告警标识",
+                "value_type": "string"
+            },
+            {
+                "key": "monitor_instance_id",
+                "title": "实例标识",
+                "value_type": "string"
+            },
+            {
+                "key": "monitor_instance_name",
+                "title": "实例名称",
+                "value_type": "string"
+            },
+            {
+                "key": "level",
+                "title": "级别",
+                "value_type": "string"
+            },
+            {
+                "key": "status",
+                "title": "状态",
+                "value_type": "string"
+            },
+            {
+                "key": "alert_type",
+                "title": "告警类型",
+                "value_type": "string"
+            },
+            {
+                "key": "value",
+                "title": "值",
+                "value_type": "number"
+            },
+            {
+                "key": "name",
+                "title": "名称",
+                "value_type": "string"
+            },
+            {
+                "key": "start_event_time",
+                "title": "开始时间",
+                "value_type": "datetime"
+            },
+            {
+                "key": "unit",
+                "title": "单位",
+                "value_type": "string"
+            },
+            {
+                "key": "aggregation",
+                "title": "聚合口径",
+                "value_type": "string"
+            }
+        ]
+    },
+    {
+        "key": "告警中心通用查询::alert/query_alert_center",
+        "name": "告警中心通用查询",
+        "desc": "告警和事件分开查询，不混在同一结果里。时间范围必填，最长 90 天",
+        "rest_api": "alert/query_alert_center",
+        "tag": [
+            "alerts"
+        ],
+        "chart_type": [
+            "table",
+            "single",
+            "bar",
+            "pie",
+            "topN"
+        ],
+        "params": [
+            {
+                "name": "query_object",
+                "type": "string",
+                "value": "alert",
+                "alias_name": "查询对象",
+                "filterType": "params",
+                "inputConfig": {
+                    "control": "select",
+                    "optionsSource": {
+                        "type": "static",
+                        "staticItems": [
+                            {
+                                "label": "告警",
+                                "value": "alert"
+                            },
+                            {
+                                "label": "事件",
+                                "value": "event"
+                            }
+                        ]
+                    }
+                },
+                "required": true
+            },
+            {
+                "name": "analysis_mode",
+                "type": "string",
+                "value": "detail",
+                "alias_name": "分析方式",
+                "filterType": "params",
+                "required": true,
+                "inputConfig": {
+                    "control": "select",
+                    "optionsSource": {
+                        "type": "static",
+                        "staticItems": [
+                            {
+                                "label": "明细",
+                                "value": "detail",
+                                "charts": [
+                                    "table",
+                                    "topN"
+                                ],
+                                "result": {
+                                    "structure": "table"
+                                }
+                            },
+                            {
+                                "label": "计数",
+                                "value": "count",
+                                "charts": [
+                                    "single"
+                                ],
+                                "result": {
+                                    "structure": "value"
+                                }
+                            },
+                            {
+                                "label": "分布",
+                                "value": "distribution",
+                                "charts": [
+                                    "bar",
+                                    "pie"
+                                ],
+                                "result": {
+                                    "structure": "category"
+                                }
+                            }
+                        ]
+                    }
+                }
+            },
+            {
+                "name": "source",
+                "type": "string",
+                "value": "",
+                "alias_name": "来源",
+                "filterType": "params",
+                "inputConfig": {
+                    "control": "select",
+                    "optionsSource": {
+                        "type": "dynamic",
+                        "sourceRef": {
+                            "type": "rest_api",
+                            "value": "alert/list_alert_source_options"
+                        },
+                        "valueField": "source_id",
+                        "labelField": "name"
+                    }
+                }
+            },
+            {
+                "name": "level",
+                "type": "string",
+                "value": "",
+                "alias_name": "级别",
+                "filterType": "params",
+                "inputConfig": {
+                    "control": "select",
+                    "optionsSource": {
+                        "type": "static",
+                        "staticItems": [
+                            {
+                                "label": "提醒",
+                                "value": "remain"
+                            },
+                            {
+                                "label": "预警",
+                                "value": "warning"
+                            },
+                            {
+                                "label": "严重",
+                                "value": "severity"
+                            },
+                            {
+                                "label": "致命",
+                                "value": "fatal"
+                            }
+                        ]
+                    }
+                }
+            },
+            {
+                "name": "status",
+                "type": "string",
+                "value": "",
+                "alias_name": "状态",
+                "filterType": "params",
+                "inputConfig": {
+                    "control": "select",
+                    "optionsSource": {
+                        "type": "static",
+                        "staticItems": [
+                            {
+                                "label": "待响应",
+                                "value": "pending"
+                            },
+                            {
+                                "label": "处理中",
+                                "value": "processing"
+                            },
+                            {
+                                "label": "已处理",
+                                "value": "resolved"
+                            },
+                            {
+                                "label": "已关闭",
+                                "value": "closed"
+                            },
+                            {
+                                "label": "已屏蔽",
+                                "value": "shield"
+                            },
+                            {
+                                "label": "已接收",
+                                "value": "received"
+                            },
+                            {
+                                "label": "未分派",
+                                "value": "unassigned"
+                            },
+                            {
+                                "label": "自动关闭",
+                                "value": "auto_close"
+                            },
+                            {
+                                "label": "自动恢复",
+                                "value": "auto_recovery"
+                            }
+                        ]
+                    }
+                }
+            },
+            {
+                "name": "time_field",
+                "type": "string",
+                "value": "",
+                "alias_name": "时间字段",
+                "filterType": "params",
+                "inputConfig": {
+                    "control": "select",
+                    "optionsSource": {
+                        "type": "static",
+                        "staticItems": [
+                            {
+                                "label": "创建时间",
+                                "value": "created_at"
+                            },
+                            {
+                                "label": "更新时间",
+                                "value": "updated_at"
+                            },
+                            {
+                                "label": "首次事件时间",
+                                "value": "first_event_time"
+                            },
+                            {
+                                "label": "最近事件时间",
+                                "value": "last_event_time"
+                            },
+                            {
+                                "label": "关闭时间",
+                                "value": "closed_at"
+                            },
+                            {
+                                "label": "接收时间",
+                                "value": "received_at"
+                            },
+                            {
+                                "label": "开始时间",
+                                "value": "start_time"
+                            },
+                            {
+                                "label": "结束时间",
+                                "value": "end_time"
+                            }
+                        ]
+                    }
+                },
+                "required": true
+            },
+            {
+                "name": "time_range",
+                "type": "timeRange",
+                "value": null,
+                "alias_name": "时间范围",
+                "filterType": "params",
+                "required": true
+            },
+            {
+                "name": "group_by",
+                "type": "string",
+                "value": "level",
+                "alias_name": "分组",
+                "filterType": "params",
+                "inputConfig": {
+                    "control": "select",
+                    "optionsSource": {
+                        "type": "static",
+                        "staticItems": [
+                            {
+                                "label": "级别",
+                                "value": "level"
+                            },
+                            {
+                                "label": "状态",
+                                "value": "status"
+                            },
+                            {
+                                "label": "来源名称",
+                                "value": "source_name"
+                            },
+                            {
+                                "label": "来源标识",
+                                "value": "source_id"
+                            }
+                        ]
+                    }
+                },
+                "visible_modes": [
+                    "distribution"
+                ]
+            },
+            {
+                "name": "order",
+                "type": "string",
+                "value": "",
+                "alias_name": "排序",
+                "filterType": "params",
+                "visible_modes": [
+                    "detail"
+                ]
+            },
+            {
+                "name": "page",
+                "type": "number",
+                "value": null,
+                "alias_name": "页码",
+                "filterType": "params",
+                "visible_modes": [
+                    "detail"
+                ]
+            },
+            {
+                "name": "page_size",
+                "type": "number",
+                "value": null,
+                "alias_name": "每页条数",
+                "filterType": "params",
+                "visible_modes": [
+                    "detail"
+                ]
+            },
+            {
+                "name": "organization",
+                "type": "string",
+                "value": "",
+                "alias_name": "组织",
+                "filterType": "filter",
+                "inputConfig": {
+                    "control": "organization"
+                }
+            }
+        ],
+        "field_schema": [
+            {
+                "key": "alert_id",
+                "title": "告警标识",
+                "value_type": "string",
+                "description": "查询对象为告警时返回"
+            },
+            {
+                "key": "event_id",
+                "title": "事件标识",
+                "value_type": "string",
+                "description": "查询对象为事件时返回"
+            },
+            {
+                "key": "title",
+                "title": "标题",
+                "value_type": "string"
+            },
+            {
+                "key": "level",
+                "title": "级别",
+                "value_type": "string"
+            },
+            {
+                "key": "status",
+                "title": "状态",
+                "value_type": "string"
+            },
+            {
+                "key": "source_name",
+                "title": "来源名称",
+                "value_type": "string"
+            },
+            {
+                "key": "source_id",
+                "title": "来源标识",
+                "value_type": "string"
+            },
+            {
+                "key": "name",
+                "title": "名称",
+                "value_type": "string"
+            },
+            {
+                "key": "value",
+                "title": "值",
+                "value_type": "number"
+            },
+            {
+                "key": "unit",
+                "title": "单位",
+                "value_type": "string"
+            },
+            {
+                "key": "aggregation",
+                "title": "聚合口径",
+                "value_type": "string",
+                "description": "告警与事件的口径分开"
+            }
+        ]
+    }
 ]

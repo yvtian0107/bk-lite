@@ -5,6 +5,11 @@ import type {
 } from '@/app/ops-analysis/types/dashBoard';
 import type { InputOption, ParamItem } from '@/app/ops-analysis/types/dataSource';
 import { supportsComponentSwitch } from '@/app/ops-analysis/utils/componentParamSwitch';
+import {
+  findAnalysisModeParam,
+  isParamVisibleForAnalysisMode,
+  resolveAnalysisModeValue,
+} from '@/app/ops-analysis/utils/analysisMode';
 import { formatOpsRequestTime } from '@/app/ops-analysis/utils/dateTime';
 import { buildTableQueryParams } from '@/app/ops-analysis/utils/tablePagination';
 import {
@@ -669,6 +674,7 @@ export const buildWidgetRequestParams = ({
   filterBindings,
   filterDefinitions,
   resolutionContext = createDateRangeResolutionContext(),
+  chartType,
   t,
 }: {
   config: any;
@@ -678,6 +684,7 @@ export const buildWidgetRequestParams = ({
   filterBindings?: FilterBindings;
   filterDefinitions?: UnifiedFilterDefinition[];
   resolutionContext?: DateRangeResolutionContext;
+  chartType?: string;
   t?: WidgetMessage;
 }) => {
   const rawParams =
@@ -700,6 +707,7 @@ export const buildWidgetRequestParams = ({
     filterBindings,
     filterDefinitions,
     resolutionContext,
+    chartType,
     t,
   });
 
@@ -714,6 +722,7 @@ export const buildWidgetRequestSignatureParams = ({
   filterBindings,
   filterDefinitions,
   resolutionContext = createDateRangeResolutionContext(),
+  chartType,
   t,
 }: {
   config: any;
@@ -723,6 +732,7 @@ export const buildWidgetRequestSignatureParams = ({
   filterBindings?: FilterBindings;
   filterDefinitions?: UnifiedFilterDefinition[];
   resolutionContext?: DateRangeResolutionContext;
+  chartType?: string;
   t?: WidgetMessage;
 }) => {
   const rawParams =
@@ -746,6 +756,7 @@ export const buildWidgetRequestSignatureParams = ({
     filterDefinitions,
     resolutionContext,
     timeRangeFormatter: formatTimeRangeForSignature,
+    chartType,
     t,
   });
 
@@ -761,6 +772,7 @@ export const processDataSourceParams = ({
   filterDefinitions,
   resolutionContext = createDateRangeResolutionContext(),
   timeRangeFormatter = formatTimeRange,
+  chartType,
   t: translate,
 }: {
   sourceParams: any;
@@ -771,6 +783,7 @@ export const processDataSourceParams = ({
   filterDefinitions?: UnifiedFilterDefinition[];
   resolutionContext?: DateRangeResolutionContext;
   timeRangeFormatter?: (timeParams: any) => unknown;
+  chartType?: string;
   t?: WidgetMessage;
 }) => {
   const t: WidgetMessage =
@@ -1011,6 +1024,25 @@ export const processDataSourceParams = ({
   }
   if (organizationNames.length === 1) {
     processedParams[ORGANIZATION_PARAM_RUNTIME_KEY] = organizationNames[0];
+  }
+
+  const catalogParams = definitionByName.size
+    ? Array.from(definitionByName.values())
+    : migratedSourceParams;
+  if (findAnalysisModeParam(catalogParams)) {
+    const mode = resolveAnalysisModeValue({
+      params: catalogParams,
+      selected: processedParams[findAnalysisModeParam(catalogParams)?.name || ''],
+      chartType,
+    });
+    if (mode) {
+      processedParams.analysis_mode = mode;
+    }
+    catalogParams.forEach((param) => {
+      if (!isParamVisibleForAnalysisMode(param, mode, catalogParams)) {
+        delete processedParams[param.name];
+      }
+    });
   }
 
   return Object.fromEntries(

@@ -1,0 +1,230 @@
+"""监控通用查询 NATS handler。统计在监控模块内完成，不把全量样本交回运营分析。"""
+
+import nats_client
+from apps.core.logger import monitor_logger as logger
+from apps.monitor.models.monitor_object import MonitorObject
+from apps.monitor.models.monitor_policy import MonitorAlert
+from apps.monitor.nats.monitor import (
+    _filter_nats_visible_alerts,
+    _get_authorized_instance_queryset,
+    _get_monitor_instance_permission,
+    _get_nats_accessible_policy_queryset,
+    _get_nats_actor_scope,
+    _normalize_permission_user,
+)
+from apps.monitor.services.authorized_metric_query import AuthorizedMetricQueryError, AuthorizedMetricQueryService
+from apps.monitor.services.generic_query import (
+    GenericQueryError,
+    build_metric_result,
+    ensure_payload_limit,
+    query_alerts,
+    query_instances,
+    validate_metric_request,
+)
+from apps.monitor.utils.victoriametrics_api import VictoriaMetricsAPI
+
+
+def _ok(data) -> dict:
+    ensure_payload_limit(data)
+    return {"result": True, "data": data, "message": ""}
+
+
+def _fail(message: str, status: str = "failed") -> dict:
+    return {"result": False, "data": {"status": status}, "message": message}
+
+
+def _guard(stage: str):
+    def decorate(func):
+        def wrapped(*args, **kwargs):
+            try:
+                return func(*args, **kwargs)
+            except GenericQueryError as exc:
+                return _fail(exc.message, exc.status)
+            except AuthorizedMetricQueryError as exc:
+                status = "forbidden" if str(exc.code).endswith("forbidden") else "failed"
+                return _fail(str(exc), status)
+            except Exception as exc:
+                logger.exception(
+                    "event=monitor_generic_query_failed failed_stage=%s error_type=%s",
+                    stage,
+                    type(exc).__name__,
+                )
+                return _fail("查询失败", "failed")
+
+        wrapped.__name__ = func.__name__
+        return wrapped
+
+    return decorate
+
+
+def _authorized_instances(user_info, monitor_object_id: str):
+    if not monitor_object_id:
+        raise GenericQueryError("监控对象不能为空")
+    if not MonitorObject.objects.filter(id=monitor_object_id).exists():
+        raise GenericQueryError("监控对象不存在或无权访问", status="forbidden")
+    _user, _team, _children, scope_ids, _superuser, scope_error = _get_nats_actor_scope(user_info or {})
+    if scope_error:
+        raise GenericQueryError(scope_error.get("message") or "无权限", status="forbidden")
+    permission, error = _get_monitor_instance_permission(str(monitor_object_id), user_info or {})
+    if error:
+        raise GenericQueryError(error.get("message") or "无权限", status="forbidden")
+    if not (permission or {}).get("instance") and not (permission or {}).get("team"):
+        raise GenericQueryError("无权限", status="forbidden")
+    return _get_authorized_instance_queryset(permission, scope_ids).filter(monitor_object_id=monitor_object_id, is_deleted=False).distinct()
+
+
+@nats_client.register
+@_guard("query_monitor_instances")
+def query_monitor_instances(
+    monitor_object_id=None,
+    analysis_mode=None,
+    status=None,
+    filter_field=None,
+    filter_op=None,
+    filter_value=None,
+    instance_ids=None,
+    group_by=None,
+    order=None,
+    page=None,
+    page_size=None,
+    user_info=None,
+    **kwargs,
+):
+    del kwargs
+    queryset = _authorized_instances(user_info, monitor_object_id)
+    data = query_instances(
+        queryset,
+        analysis_mode=analysis_mode or "detail",
+        status=status,
+        filter_field=filter_field,
+        filter_op=filter_op,
+        filter_value=filter_value,
+        instance_ids=instance_ids,
+        group_by=group_by,
+        order=order,
+        page=page,
+        page_size=page_size,
+    )
+    return _ok(data)
+
+
+@nats_client.register
+@_guard("query_monitor_metric")
+def query_monitor_metric(
+    monitor_object_id=None,
+    metric_id=None,
+    instance_ids=None,
+    time_range=None,
+    step=None,
+    analysis_mode=None,
+    aggregation=None,
+    dimension_label=None,
+    dimension_operator=None,
+    dimension_value=None,
+    filters=None,
+    user_info=None,
+    **kwargs,
+):
+    del kwargs
+    mode = str(analysis_mode or "series")
+    if mode not in {"series", "value"}:
+        raise GenericQueryError("分析方式不受支持")
+    if metric_id in (None, ""):
+        raise GenericQueryError("指标不能为空")
+    if mode == "value" and aggregation in (None, ""):
+        raise GenericQueryError("聚合方式不能为空")
+    checked = validate_metric_request(instance_ids=instance_ids, time_range=time_range, step=step)
+    user = _normalize_permission_user((user_info or {}).get("user"), domain=(user_info or {}).get("domain"))
+    if user is None or (user_info or {}).get("team") in (None, ""):
+        raise GenericQueryError("无权限", status="forbidden")
+    query_filters = list(filters) if isinstance(filters, list) else []
+    if dimension_label not in (None, ""):
+        query_filters.append(
+            {
+                "label": dimension_label,
+                "operator": dimension_operator or "=",
+                "value": dimension_value,
+            }
+        )
+    prepared = AuthorizedMetricQueryService(
+        user=user,
+        current_team=user_info.get("team"),
+        include_children=bool((user_info or {}).get("include_children", False)),
+    ).prepare(
+        {
+            "monitor_object_id": monitor_object_id,
+            "metric_id": metric_id,
+            "instance_ids": checked["instance_ids"],
+            "start": int(checked["start"].timestamp() * 1000),
+            "end": int(checked["end"].timestamp() * 1000),
+            "step": checked["step"],
+            "aggregation": str(aggregation).upper() if aggregation else None,
+            "filters": query_filters,
+        }
+    )
+    response = VictoriaMetricsAPI().query_range(
+        prepared.query,
+        checked["start"].timestamp(),
+        checked["end"].timestamp(),
+        checked["step"],
+    )
+    metric = prepared.metric
+    unit = getattr(metric, "unit", "") or ""
+    data = build_metric_result(
+        mode=mode,
+        response=response,
+        unit=unit,
+        aggregation=str(aggregation or ""),
+        requested_ids=checked["instance_ids"],
+    )
+    return _ok(data)
+
+
+@nats_client.register
+@_guard("query_monitor_alerts")
+def query_monitor_alerts(
+    monitor_object_id=None,
+    analysis_mode=None,
+    instance_id=None,
+    level=None,
+    status=None,
+    alert_type=None,
+    time_field=None,
+    time_range=None,
+    group_by=None,
+    order=None,
+    page=None,
+    page_size=None,
+    user_info=None,
+    **kwargs,
+):
+    del kwargs
+    queryset = _authorized_instances(user_info, monitor_object_id)
+    if instance_id not in (None, ""):
+        if not queryset.filter(id=str(instance_id)).exists():
+            raise GenericQueryError("指定实例不存在或无权访问", status="forbidden")
+        alert_base = MonitorAlert.objects.filter(monitor_instance_id=str(instance_id))
+    else:
+        alert_base = MonitorAlert.objects.filter(monitor_instance_id__in=queryset.values("id"))
+    _user, _team, _children, scope_ids, _superuser, scope_error = _get_nats_actor_scope(user_info or {})
+    if scope_error:
+        raise GenericQueryError(scope_error.get("message") or "无权限", status="forbidden")
+    policies, policy_error = _get_nats_accessible_policy_queryset(user_info or {})
+    if policy_error:
+        raise GenericQueryError(policy_error.get("message") or "无权限", status="forbidden")
+    alerts = _filter_nats_visible_alerts(alert_base, scope_ids, policies)
+    data = query_alerts(
+        alerts,
+        analysis_mode=analysis_mode or "detail",
+        level=level,
+        status=status,
+        alert_type=alert_type,
+        instance_id=instance_id,
+        time_field=time_field,
+        time_range=time_range,
+        group_by=group_by,
+        order=order,
+        page=page,
+        page_size=page_size,
+    )
+    return _ok(data)

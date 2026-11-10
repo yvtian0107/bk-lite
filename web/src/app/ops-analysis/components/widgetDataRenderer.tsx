@@ -296,7 +296,15 @@ const WidgetWrapper: React.FC<WidgetWrapperProps> = ({
     if (!dataSource?.params?.length) return overrides;
     return dataSource.params.map((param) => {
       const override = overrides.find((item) => item.name === param.name);
-      return override ? { ...param, ...override } : param;
+      if (!override) return param;
+      if (param.name === 'analysis_mode') {
+        return { ...param, value: override.value ?? param.value };
+      }
+      return {
+        ...param,
+        ...override,
+        visible_modes: param.visible_modes,
+      };
     });
   }, [config?.dataSourceParams, dataSource?.params]);
   const componentSwitchParam = useMemo(
@@ -617,6 +625,7 @@ const WidgetWrapper: React.FC<WidgetWrapperProps> = ({
       filterBindings: config?.filterBindings,
       filterDefinitions,
       resolutionContext: dateRangeResolutionContext,
+      chartType,
       t,
     });
   }, [
@@ -627,6 +636,7 @@ const WidgetWrapper: React.FC<WidgetWrapperProps> = ({
     unifiedFilterValues,
     filterDefinitions,
     dateRangeResolutionContext,
+    chartType,
     t,
   ]);
 
@@ -643,6 +653,7 @@ const WidgetWrapper: React.FC<WidgetWrapperProps> = ({
       filterBindings: config?.filterBindings,
       filterDefinitions,
       resolutionContext: dateRangeResolutionContext,
+      chartType,
       t,
     });
   }, [
@@ -653,6 +664,7 @@ const WidgetWrapper: React.FC<WidgetWrapperProps> = ({
     unifiedFilterValues,
     filterDefinitions,
     dateRangeResolutionContext,
+    chartType,
     t,
   ]);
 

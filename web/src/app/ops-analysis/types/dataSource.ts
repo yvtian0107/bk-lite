@@ -126,9 +126,17 @@ export type DataSourceParamFilterType =
   | 'filter'
   | 'fixed'
   | 'params';
+export interface AnalysisModeResult {
+  structure: 'table' | 'value' | 'category' | 'series';
+}
+
 export interface InputOption {
   label: string;
   value: string | number;
+  /** 分析方式选项适配的图表。只出现在内置数据源的 analysis_mode 上。 */
+  charts?: string[];
+  /** 分析方式选项的返回结构。 */
+  result?: AnalysisModeResult;
 }
 
 export interface RestApiSourceRef {
@@ -200,4 +208,9 @@ export interface ParamItem {
    * 兼容只读：旧组织筛旁路字段。读取时归一为 inputConfig.control=organization。
    */
   inputMode?: string;
+  /**
+   * 该参数在哪些 analysis_mode 下显示。缺省表示始终显示。
+   * 显隐以数据源最新 params 为准，不读组件保存的副本。
+   */
+  visible_modes?: string[];
 }

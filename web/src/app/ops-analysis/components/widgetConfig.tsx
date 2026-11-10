@@ -51,6 +51,11 @@ import {
   reconcileComponentParamValue,
   supportsComponentSwitch,
 } from '@/app/ops-analysis/utils/componentParamSwitch';
+import {
+  analysisModeOptions,
+  filterChartTypesForAnalysisMode,
+  resolveAnalysisModeValue,
+} from '@/app/ops-analysis/utils/analysisMode';
 import type {
   DatasourceItem,
   InputControlConfig,
@@ -344,18 +349,35 @@ const ViewConfig: React.FC<ViewConfigPropsWithManager> = ({
     return selectedDataSource?.field_schema || [];
   }, [selectedDataSource]);
 
+  const watchedAnalysisMode = Form.useWatch(['params', 'analysis_mode'], form) as unknown;
   const getFilteredChartTypes = (
     dataSource: DatasourceItem | undefined,
-  ): ChartTypeItem[] =>
-    resolveDatasourceChartTypes({
+    mode: unknown = watchedAnalysisMode,
+  ): ChartTypeItem[] => {
+    const available = resolveDatasourceChartTypes({
       chartTypes: dataSource?.chart_type || [],
       chartTypeDefinitions: getChartTypeList(),
       surface,
     });
+    const knownMode = analysisModeOptions(dataSource?.params).some(
+      (item) => item.value === String(mode ?? ''),
+    );
+    const resolvedMode = resolveAnalysisModeValue({
+      params: dataSource?.params,
+      selected: knownMode ? mode : '',
+      chartType,
+    });
+    const compatible = filterChartTypesForAnalysisMode(
+      available,
+      dataSource?.params,
+      resolvedMode,
+    );
+    return compatible.length ? compatible : available;
+  };
 
   const getDataSourceChartTypes = useMemo(() => {
-    return getFilteredChartTypes(selectedDataSource);
-  }, [selectedDataSource, surface]);
+    return getFilteredChartTypes(selectedDataSource, watchedAnalysisMode);
+  }, [selectedDataSource, surface, watchedAnalysisMode, chartType]);
 
   const canonicalSelectedDataSource = useMemo(
     () => (
@@ -890,6 +912,26 @@ const ViewConfig: React.FC<ViewConfigPropsWithManager> = ({
     await tableConfig.handleChartTypeChange(newChartType);
   };
 
+  useEffect(() => {
+    const options = analysisModeOptions(selectedDataSource?.params);
+    const current = String(watchedAnalysisMode ?? '');
+    if (!options.some((item) => item.value === current)) return;
+    const available = resolveDatasourceChartTypes({
+      chartTypes: selectedDataSource?.chart_type || [],
+      chartTypeDefinitions: getChartTypeList(),
+      surface,
+    });
+    const compatible = filterChartTypesForAnalysisMode(
+      available,
+      selectedDataSource?.params,
+      current,
+    );
+    if (!compatible.length || compatible.some((item) => item.value === chartType)) return;
+    const nextChart = compatible[0]?.value;
+    if (!nextChart) return;
+    void handleChartTypeChange({ target: { value: nextChart } });
+  }, [selectedDataSource, watchedAnalysisMode, chartType, surface]);
+
   const initializeItemForm = async (
     widgetItem: ViewConfigItem,
     requestId: number,
@@ -1210,9 +1252,10 @@ const ViewConfig: React.FC<ViewConfigPropsWithManager> = ({
       ...canonicalSelectedDataSource,
       params: sourceParams.map((p) => {
         const override = widgetParamOverrides.find((o) => o.name === p.name);
-        return override?.inputConfig !== undefined
-          ? { ...p, inputConfig: override.inputConfig }
-          : p;
+        if (p.name === 'analysis_mode' || override?.inputConfig === undefined) {
+          return { ...p, visible_modes: p.visible_modes };
+        }
+        return { ...p, inputConfig: override.inputConfig, visible_modes: p.visible_modes };
       }),
     };
   }, [canonicalSelectedDataSource, widgetParamOverrides]);
@@ -1308,8 +1351,8 @@ const ViewConfig: React.FC<ViewConfigPropsWithManager> = ({
         );
         next.dataSourceParams = processed.map((param) => {
           const override = widgetParamOverrides.find((o) => o.name === param.name);
-          return override?.inputConfig !== undefined
-            ? { ...param, inputConfig: override.inputConfig }
+          return override?.inputConfig !== undefined && param.name !== 'analysis_mode'
+            ? { ...param, inputConfig: override.inputConfig, visible_modes: param.visible_modes }
             : param;
         });
         delete next.params;

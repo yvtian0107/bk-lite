@@ -67,6 +67,9 @@ EXPECTED_MONITOR_NATS_HANDLER_NAMES = frozenset(
         "summarize_metric_trend",
         "query_metric_range_scoped",
         "query_metric_series",
+        "query_monitor_alerts",
+        "query_monitor_instances",
+        "query_monitor_metric",
         "search_monitor_policies",
         "get_monitor_instance_alert_ranking",
     }

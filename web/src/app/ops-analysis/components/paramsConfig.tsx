@@ -28,6 +28,10 @@ import {
   stableStringify,
   type ResolvedOptionsQuery,
 } from '@/app/ops-analysis/utils/optionsQueryParamRefs';
+import {
+  isParamVisibleForAnalysisMode,
+  resolveAnalysisModeValue,
+} from '@/app/ops-analysis/utils/analysisMode';
 import DateRangeSelector from './dateRangeSelector';
 import {
   getTimeSelectorDefaultValue,
@@ -186,6 +190,7 @@ const DataSourceParamsConfig: React.FC<DataSourceParamsConfigProps> = ({
   const watchedParams = Form.useWatch(fieldPrefix, { form, preserve: true }) as Record<string, unknown> | undefined;
   const storedParams = form.getFieldsValue(true)?.[fieldPrefix] as Record<string, unknown> | undefined;
   const formParams = storedParams ?? watchedParams;
+  const chartType = Form.useWatch('chartType', { form, preserve: true }) as string | undefined;
   const resolveOptionsQuery = globalFilters !== undefined;
 
   useEffect(() => {
@@ -202,8 +207,15 @@ const DataSourceParamsConfig: React.FC<DataSourceParamsConfigProps> = ({
   );
   // 表单控件仍读 form 的即时值。选项查询只吃防抖后的文本/数字。
   const optionsQueryFormParams = useDebouncedOptionsQueryValues(formParams ?? {}, typedParamNames);
+  const analysisMode = resolveAnalysisModeValue({
+    params: sourceParams,
+    selected: formParams?.analysis_mode,
+    chartType,
+  });
   const configParams = sourceParams.filter(
-    (param: ParamItem) => includeFilterTypes.includes(param.filterType || 'fixed'),
+    (param: ParamItem) =>
+      includeFilterTypes.includes(param.filterType || 'fixed')
+      && isParamVisibleForAnalysisMode(param, analysisMode, sourceParams),
   );
 
   if (configParams.length === 0) {
