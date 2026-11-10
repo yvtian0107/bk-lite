@@ -1,4 +1,3 @@
-import React from 'react';
 import { act, cleanup, render } from '@testing-library/react';
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 
@@ -31,25 +30,20 @@ const chartSpy = vi.hoisted(() => ({
 }));
 
 vi.mock('echarts-for-react', () => {
-  const MockEcharts = React.forwardRef(
-    (
-      {
-        option,
-        notMerge,
-        replaceMerge,
-      }: {
-        option?: (typeof chartSpy)['option'];
-        notMerge?: boolean;
-        replaceMerge?: string[];
-      },
-      _ref: React.ForwardedRef<unknown>,
-    ) => {
-      chartSpy.option = option ?? null;
-      chartSpy.notMerge = notMerge;
-      chartSpy.replaceMerge = replaceMerge;
-      return <div data-testid="line-chart" />;
-    },
-  );
+  const MockEcharts = ({
+    option,
+    notMerge,
+    replaceMerge,
+  }: {
+    option?: (typeof chartSpy)['option'];
+    notMerge?: boolean;
+    replaceMerge?: string[];
+  }) => {
+    chartSpy.option = option ?? null;
+    chartSpy.notMerge = notMerge;
+    chartSpy.replaceMerge = replaceMerge;
+    return <div data-testid="line-chart" />;
+  };
   MockEcharts.displayName = 'MockEcharts';
   return { default: MockEcharts };
 });
@@ -164,7 +158,7 @@ describe('ComLine multi-series tooltip', () => {
     });
     expect(first?.series?.[0]?.areaStyle).toBeTruthy();
     expect(chartSpy.notMerge).toBe(false);
-    expect(chartSpy.replaceMerge).toEqual(['series', 'xAxis', 'yAxis']);
+    expect(chartSpy.replaceMerge).toEqual(['series', 'xAxis', 'yAxis', 'legend']);
 
     rerender(<ComLine rawData={multiSeriesData} loading={false} />);
 

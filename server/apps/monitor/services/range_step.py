@@ -17,7 +17,7 @@ from __future__ import annotations
 MAX_AUTO_RANGE_POINTS = 1000
 
 # 5m 是历史默认值，也是自动档的下限。15m 用来接住 7 天：10m 的闭区间点数是
-# 1008，会越过上限；若直接跳到 30m 只剩 337 点，峰值损失更大。
+# floor(604800/600)+1 = 1009，会越过上限；若直接跳到 30m 只剩 337 点，峰值损失更大。
 _AUTO_RANGE_STEP_LADDER: tuple[tuple[int, str], ...] = (
     (300, "5m"),
     (600, "10m"),

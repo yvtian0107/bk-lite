@@ -30,7 +30,8 @@ export interface OpsAnalysisBarProps {
   dataSource?: DatasourceItem;
 }
 
-const LINE_BAR_REPLACE_MERGE = ['series', 'xAxis', 'yAxis'];
+// 全部显示时 selected 是 {}。不整段替换 legend，合并会留下之前的 false。
+const LINE_BAR_REPLACE_MERGE = ['series', 'xAxis', 'yAxis', 'legend'];
 
 const OpsAnalysisBar: React.FC<OpsAnalysisBarProps> = ({
   rawData,
