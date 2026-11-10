@@ -122,6 +122,7 @@ from apps.monitor.services.nats_query_contract import normalize_time_value as _n
 from apps.monitor.services.nats_query_contract import paginate_items as _paginate_items
 from apps.monitor.services.network_device_resource_top import NetworkDeviceResourceTopService
 from apps.monitor.services.network_device_resource_top import validate_metric_type as validate_network_metric_type
+from apps.monitor.services.range_step import explicit_range_step as _explicit_range_step
 from apps.monitor.services.range_step import resolve_range_step as _resolve_range_step
 from apps.monitor.services.zombie_host_query import ZombieHostQueryError, count_successful_logins, load_hosts_for_systems, load_selected_hosts
 from apps.monitor.services.zombie_host_report import (
@@ -2240,8 +2241,7 @@ def get_host_metric_range(*args, **kwargs):
         return {"result": True, "data": {}, "message": ""}
 
     try:
-        explicit_step = kwargs.get("step")
-        step = _normalize_step(explicit_step) if explicit_step not in (None, "") else None
+        step = _explicit_range_step(kwargs.get("step"))
         data = HostMetricRangeService(vm_api=VictoriaMetricsAPI()).run(
             metric_type=metric_type,
             time_range=kwargs.get("time"),
