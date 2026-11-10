@@ -75,6 +75,23 @@ export const missingOptionPolicyOf = (
   return 'drop';
 };
 
+/** 只有下拉和单选按选项列表对齐。条件、字段分组、排序以及其它控件保持原值。 */
+export const isOptionBackedParam = (
+  param?: Pick<ParamItem, 'inputConfig'>,
+): boolean => {
+  const control = param?.inputConfig?.control;
+  return control === 'select' || control === 'radio';
+};
+
+export const reconcileParamValueWithOptions = (
+  param: Pick<ParamItem, 'inputConfig'> | undefined,
+  value: ParamItem['value'] | undefined,
+  options?: InputOption[],
+): ParamItem['value'] | undefined => {
+  if (!isOptionBackedParam(param)) return value;
+  return reconcileComponentParamValue(value, options, missingOptionPolicyOf(param));
+};
+
 export const reconcileComponentParamValue = (
   value: ParamItem['value'] | undefined,
   options?: InputOption[],

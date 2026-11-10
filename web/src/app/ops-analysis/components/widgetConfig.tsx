@@ -49,8 +49,7 @@ import { optionsSourceSummary } from '@/app/ops-analysis/utils/optionsSourceIden
 import {
   clearComponentParamSwitch,
   findComponentSwitchParams,
-  missingOptionPolicyOf,
-  reconcileComponentParamValue,
+  reconcileParamValueWithOptions,
   supportsComponentSwitch,
 } from '@/app/ops-analysis/utils/componentParamSwitch';
 import type {
@@ -1154,10 +1153,10 @@ const ViewConfig: React.FC<ViewConfigPropsWithManager> = ({
       resolvedParamOptionsRef.current.set(paramName, options);
       const currentParams = form.getFieldValue('params') || {};
       const param = (selectedDataSource?.params || []).find((item) => item.name === paramName);
-      const nextValue = reconcileComponentParamValue(
+      const nextValue = reconcileParamValueWithOptions(
+        param,
         currentParams[paramName],
         options,
-        missingOptionPolicyOf(param),
       );
       if (nextValue !== currentParams[paramName]) {
         form.setFieldValue(['params', paramName], nextValue);
@@ -1316,10 +1315,10 @@ const ViewConfig: React.FC<ViewConfigPropsWithManager> = ({
         effectiveDataSource.params.forEach((param) => {
           const optionsForParam = resolvedParamOptionsRef.current.get(param.name);
           if (optionsForParam == null) return;
-          reconciledFormParams[param.name] = reconcileComponentParamValue(
+          reconciledFormParams[param.name] = reconcileParamValueWithOptions(
+            param,
             reconciledFormParams[param.name],
             optionsForParam,
-            missingOptionPolicyOf(param),
           );
         });
         if (
