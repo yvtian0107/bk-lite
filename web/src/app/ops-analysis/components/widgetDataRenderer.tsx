@@ -90,6 +90,7 @@ import {
   resolveOptionsQueryParams,
 } from "@/app/ops-analysis/utils/optionsQueryParamRefs";
 import { readComponentOptionsQueryUpstream } from "@/app/ops-analysis/utils/optionsQueryCandidates";
+import { localizeOptionLoadError } from "@/app/ops-analysis/utils/paramInputOptionsLoader";
 
 const validateTopNData = (
   data: unknown,
@@ -1043,8 +1044,10 @@ const WidgetWrapper: React.FC<WidgetWrapperProps> = ({
       setTableLoading(false);
       hasSettledRequestRef.current = true;
       setHasSettledRequest(true);
-      const optionsLoadErrorMessage =
-        optionState.status === "error" ? optionState.errorMessage : undefined;
+      const optionsLoadErrorMessage = localizeOptionLoadError(
+        optionState.status === "error" ? optionState.errorMessage : undefined,
+        t,
+      );
       if (optionsLoadErrorMessage) {
         setDataValidation((previous) => {
           if (

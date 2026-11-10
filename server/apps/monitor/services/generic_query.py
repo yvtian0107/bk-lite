@@ -114,7 +114,7 @@ def validate_metric_request(*, instance_ids, time_range, step) -> dict:
     start, end = _parse_range(time_range)
     points = (end - start).total_seconds() / step_seconds
     if points > METRIC_POINTS_MAX:
-        raise GenericQueryError("单条序列超过 500 个点，请缩短时间范围或加大步长")
+        raise GenericQueryError("单条序列超过 500 个点（点数包含起止两端），请缩短时间范围或加大步长")
     return {
         "instance_ids": ids,
         "start": start,
@@ -139,7 +139,7 @@ def build_metric_result(*, mode: str, response: dict, unit: str, aggregation: st
     for index, series in enumerate(result):
         values = series.get("values") or []
         if len(values) > METRIC_POINTS_MAX:
-            raise GenericQueryError("单条序列超过 500 个点，请缩短时间范围或加大步长")
+            raise GenericQueryError("单条序列超过 500 个点（点数包含起止两端），请缩短时间范围或加大步长")
         labels = series.get("metric") or {}
         instance_id = str(labels.get("instance_id") or labels.get("bk_inst_id") or "")
         if instance_id:
@@ -190,19 +190,15 @@ def build_metric_result(*, mode: str, response: dict, unit: str, aggregation: st
             "aggregation": aggregation,
             "unbound_instance_ids": missing,
         }
-    if not series_payload:
-        return {
-            "structure": "series",
-            "status": "missing",
-            "unit": unit,
-            "aggregation": aggregation,
-            "series": {},
-            "unbound_instance_ids": missing or requested_ids,
-        }
-    for points in series_payload.values():
-        for point in points:
-            point["unbound_instance_ids"] = missing
-    return series_payload
+    has_value = any(point.get("value") is not None for points in series_payload.values() for point in points)
+    return {
+        "structure": "series",
+        "status": "ok" if has_value else "missing",
+        "unit": unit,
+        "aggregation": aggregation,
+        "series": series_payload,
+        "unbound_instance_ids": missing or requested_ids,
+    }
 
 
 def query_alerts(

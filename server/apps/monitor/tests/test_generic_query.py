@@ -71,7 +71,7 @@ def test_metric_point_and_instance_limits_fail_before_query():
     start = datetime(2026, 1, 1, tzinfo=timezone.utc)
     step_seconds = 60
     too_long = start + timedelta(seconds=step_seconds * (METRIC_POINTS_MAX + 1))
-    with pytest.raises(GenericQueryError, match="500"):
+    with pytest.raises(GenericQueryError, match="两端"):
         validate_metric_request(
             instance_ids=["host-1"],
             time_range=[start.isoformat(), too_long.isoformat()],
@@ -117,6 +117,48 @@ def test_metric_series_over_limit_missing_and_zero_are_distinct():
     assert zero["status"] == "ok"
     assert zero["value"] == 0
     assert zero["unit"] == "%"
+
+    partial = build_metric_result(
+        mode="series",
+        response={
+            "status": "success",
+            "data": {"result": [{"metric": {"instance_id": "a"}, "values": [[1, "1"], [2, "NaN"], [3, "0"]]}]},
+        },
+        unit="%",
+        aggregation="avg",
+        requested_ids=["a", "b"],
+    )
+    assert partial["structure"] == "series"
+    assert partial["status"] == "ok"
+    assert [point["value"] for point in partial["series"]["a"]] == [1.0, None, 0.0]
+    assert partial["unbound_instance_ids"] == ["b"]
+    missing_series = build_metric_result(
+        mode="series",
+        response={"status": "success", "data": {"result": []}},
+        unit="%",
+        aggregation="avg",
+        requested_ids=["a"],
+    )
+    assert missing_series["structure"] == "series"
+    assert missing_series["status"] == "missing"
+    assert missing_series["series"] == {}
+
+
+def test_metric_handler_rejects_non_list_filters():
+    from apps.monitor.nats.generic_query import query_monitor_instances, query_monitor_metric
+
+    instances = query_monitor_instances(monitor_object_id="1", filters={"label": "cpu"})
+    assert instances["result"] is False
+    assert "filters" in instances["message"]
+    metric = query_monitor_metric(
+        metric_id="cpu",
+        instance_ids=["host-1"],
+        time_range=["2026-01-01T00:00:00+00:00", "2026-01-01T01:00:00+00:00"],
+        step="60s",
+        filters={"label": "cpu"},
+    )
+    assert metric["result"] is False
+    assert "filters" in metric["message"]
 
 
 def test_monitor_alert_range_is_capped_at_90_days_and_failure_is_explicit():

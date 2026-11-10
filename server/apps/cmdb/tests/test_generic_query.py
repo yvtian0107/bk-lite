@@ -286,3 +286,165 @@ def test_generic_query_handlers_accept_unknown_kwargs(monkeypatch):
     assert result["result"] is True
     assert result["data"]["value"] == 1
     assert "unexpected" not in result["data"]
+
+
+def test_one_hop_distribution_uses_order():
+    graph_result = {
+        "pair_count": 3,
+        "groups": [
+            {"end_uuid": "b", "end_name": "B", "value": 2},
+            {"end_uuid": "a", "end_name": "A", "value": 1},
+        ],
+        "pairs": [],
+    }
+    by_name = query_one_hop_relations(
+        analysis_mode="distribution",
+        start_instances=[{"inst_uuid": "h1"}],
+        start_total=1,
+        graph_result=graph_result,
+        order="name",
+    )
+    by_value = query_one_hop_relations(
+        analysis_mode="distribution",
+        start_instances=[{"inst_uuid": "h1"}],
+        start_total=1,
+        graph_result=graph_result,
+        order="-value",
+    )
+
+    assert [item["name"] for item in by_name["items"]] == ["A", "B"]
+    assert [item["value"] for item in by_value["items"]] == [2, 1]
+
+
+def test_instance_detail_validates_sort_field_before_instance_list(monkeypatch):
+    called = {}
+
+    def fake_list(**kwargs):
+        called["order"] = kwargs["order"]
+        return [{"inst_name": "a"}], 1
+
+    monkeypatch.setattr("apps.cmdb.services.generic_query.InstanceManage.instance_list", fake_list)
+    with pytest.raises(GenericQueryError, match="不支持的排序字段"):
+        query_instances(
+            model_id="host",
+            analysis_mode="detail",
+            attr_types={"inst_name": "string", "os-type": "string"},
+            permission_map={"1": {"inst_names": []}},
+            order="os-type",
+        )
+    assert called == {}
+
+    listed = query_instances(
+        model_id="host",
+        analysis_mode="detail",
+        attr_types={"inst_name": "string"},
+        permission_map={"1": {"inst_names": []}},
+        order="-inst_name",
+    )
+    assert called["order"] == "-inst_name"
+    assert listed["items"] == [{"inst_name": "a"}]
+
+
+def test_one_hop_filters_endpoints_in_graph_and_fails_closed(monkeypatch):
+    from apps.cmdb.graph.falkordb import FalkorDBClient
+    from apps.cmdb.graph.format_type import ParameterCollector
+    from apps.cmdb.services.generic_query_graph import GenericQueryGraphError, query_one_hop
+
+    queries = []
+
+    class Client:
+        ENABLE_PARAMETERIZATION = True
+        _param_collector = ParameterCollector()
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+        def format_search_params(self, *args, **kwargs):
+            return FalkorDBClient.format_search_params(self, *args, **kwargs)
+
+    def fake_run(_client, query, params):
+        queries.append((query, dict(params)))
+        if "pair_count" in query:
+            return [{"pair_count": 1}]
+        if "AS value" in query:
+            return [{"end_uuid": "visible", "end_name": "可见", "value": 1}]
+        return [
+            {
+                "start_uuid": "s1",
+                "start_name": "起点",
+                "start_model_id": "host",
+                "end_uuid": "visible",
+                "end_name": "可见",
+                "end_model_id": "app",
+            }
+        ]
+
+    monkeypatch.setattr("apps.cmdb.services.generic_query_graph.GraphClient", Client)
+    monkeypatch.setattr("apps.cmdb.services.generic_query_graph._run", fake_run)
+
+    result = query_one_hop(
+        start_uuids=["s1"],
+        model_asst_id="host_belong_app",
+        direction="out",
+        end_model_id="app",
+        permission_map={1: {"inst_names": ["可见"]}},
+    )
+    assert result["pair_count"] == 1
+    assert result["pairs"][0]["end_name"] == "可见"
+    assert queries
+    for query, params in queries:
+        assert "t.inst_name" in query
+        assert "organization" in query
+        assert ["可见"] in params.values()
+        assert [1] in params.values()
+
+    over_limit = []
+
+    def fake_over_limit(_client, query, params):
+        over_limit.append(query)
+        return [{"pair_count": 201}]
+
+    monkeypatch.setattr("apps.cmdb.services.generic_query_graph._run", fake_over_limit)
+    blocked = query_one_hop(
+        start_uuids=["s1"],
+        model_asst_id="host_belong_app",
+        direction="out",
+        end_model_id="app",
+        permission_map={1: {"inst_names": []}},
+    )
+    assert blocked["pairs"] is None
+    assert len(over_limit) == 1
+    assert "organization" in over_limit[0]
+
+    with pytest.raises(GenericQueryGraphError, match="权限范围"):
+        query_one_hop(
+            start_uuids=["s1"],
+            model_asst_id="host_belong_app",
+            direction="out",
+            end_model_id="app",
+            permission_map={},
+        )
+
+
+def test_unsupported_filters_fail_instead_of_being_dropped(monkeypatch):
+    from apps.cmdb.nats.generic_query import query_cmdb_instances, query_cmdb_models
+
+    monkeypatch.setattr(
+        "apps.cmdb.nats.generic_query._visible_models",
+        lambda user_info: ([_model("host", "主机", "compute", "计算")], {"1": {"inst_names": []}}, {"compute": "计算"}),
+    )
+    dropped = query_cmdb_models(analysis_mode="count", user_info={"user": "demo"}, filters={"field": "model_id"})
+    assert dropped["result"] is False
+    assert "filters" in dropped["message"]
+
+    invalid = query_cmdb_instances(
+        model_id="host",
+        analysis_mode="count",
+        user_info={"user": "demo"},
+        filters={"field": "inst_name"},
+    )
+    assert invalid["result"] is False
+    assert "filters" in invalid["message"]

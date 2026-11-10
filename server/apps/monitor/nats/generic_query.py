@@ -57,6 +57,20 @@ def _guard(stage: str):
     return decorate
 
 
+def _reject_unsupported_filters(kwargs: dict) -> None:
+    filters = kwargs.get("filters") if isinstance(kwargs, dict) else None
+    if filters not in (None, "", []):
+        raise GenericQueryError("当前查询不支持 filters")
+
+
+def _require_filter_list(filters) -> list:
+    if filters in (None, "", []):
+        return []
+    if not isinstance(filters, list):
+        raise GenericQueryError("filters 必须是列表")
+    return list(filters)
+
+
 def _authorized_instances(user_info, monitor_object_id: str):
     if not monitor_object_id:
         raise GenericQueryError("监控对象不能为空")
@@ -90,6 +104,7 @@ def query_monitor_instances(
     user_info=None,
     **kwargs,
 ):
+    _reject_unsupported_filters(kwargs)
     del kwargs
     queryset = _authorized_instances(user_info, monitor_object_id)
     data = query_instances(
@@ -125,6 +140,7 @@ def query_monitor_metric(
     user_info=None,
     **kwargs,
 ):
+    _reject_unsupported_filters(kwargs)
     del kwargs
     mode = str(analysis_mode or "series")
     if mode not in {"series", "value"}:
@@ -133,11 +149,11 @@ def query_monitor_metric(
         raise GenericQueryError("指标不能为空")
     if mode == "value" and aggregation in (None, ""):
         raise GenericQueryError("聚合方式不能为空")
+    query_filters = _require_filter_list(filters)
     checked = validate_metric_request(instance_ids=instance_ids, time_range=time_range, step=step)
     user = _normalize_permission_user((user_info or {}).get("user"), domain=(user_info or {}).get("domain"))
     if user is None or (user_info or {}).get("team") in (None, ""):
         raise GenericQueryError("无权限", status="forbidden")
-    query_filters = list(filters) if isinstance(filters, list) else []
     if dimension_label not in (None, ""):
         query_filters.append(
             {
@@ -198,6 +214,7 @@ def query_monitor_alerts(
     user_info=None,
     **kwargs,
 ):
+    _reject_unsupported_filters(kwargs)
     del kwargs
     queryset = _authorized_instances(user_info, monitor_object_id)
     if instance_id not in (None, ""):

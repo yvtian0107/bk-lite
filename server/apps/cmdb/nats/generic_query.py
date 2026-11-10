@@ -51,6 +51,20 @@ def _guard(stage: str):
     return decorate
 
 
+def _reject_unsupported_filters(kwargs: dict) -> None:
+    filters = kwargs.get("filters") if isinstance(kwargs, dict) else None
+    if filters not in (None, "", []):
+        raise GenericQueryError("当前查询不支持 filters")
+
+
+def _require_filter_list(filters):
+    if filters in (None, "", []):
+        return None
+    if not isinstance(filters, list):
+        raise GenericQueryError("filters 必须是列表")
+    return filters
+
+
 def _text_list(value) -> list[str]:
     if value in (None, ""):
         return []
@@ -108,6 +122,7 @@ def query_cmdb_models(
     **kwargs,
 ):
     """CMDB 模型查询。kwargs 接收运营分析透传的未知参数，不因此报错。"""
+    _reject_unsupported_filters(kwargs)
     del kwargs
     models, instance_permissions, names = _visible_models(user_info)
     if classification_id and str(classification_id) not in names:
@@ -149,7 +164,9 @@ def query_cmdb_instances(
     user_info=None,
     **kwargs,
 ):
+    _reject_unsupported_filters(kwargs)
     del kwargs
+    parsed_filters = _require_filter_list(filters)
     _models, instance_permissions, _names = _visible_models(user_info)
     visible_ids = {str(item.get("model_id")) for item in _models}
     if str(model_id or "") not in visible_ids:
@@ -162,7 +179,7 @@ def query_cmdb_instances(
         filter_field=filter_field,
         filter_op=filter_op,
         filter_value=filter_value,
-        filters=filters if isinstance(filters, list) else None,
+        filters=parsed_filters,
         group_by=group_by,
         aggregate_field=aggregate_field,
         aggregate_op=aggregate_op,
@@ -192,6 +209,7 @@ def query_cmdb_one_hop(
     user_info=None,
     **kwargs,
 ):
+    _reject_unsupported_filters(kwargs)
     del kwargs
     if not start_model_id or not model_asst_id or not direction:
         raise GenericQueryError("起点模型、关系和方向不能为空")
@@ -247,6 +265,7 @@ def query_cmdb_one_hop(
         model_asst_id=str(model_asst_id),
         direction=direction,
         end_model_id=str(end_model_id),
+        permission_map=instance_permissions,
         end_field=end_filter_field,
         end_op=end_filter_op or "eq",
         end_value=end_filter_value,

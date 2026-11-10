@@ -32,6 +32,7 @@ import {
   isParamVisibleForAnalysisMode,
   resolveAnalysisModeValue,
 } from '@/app/ops-analysis/utils/analysisMode';
+import { narrowInputConfigForQueryObject } from '@/app/ops-analysis/utils/queryObjectOptions';
 import DateRangeSelector from './dateRangeSelector';
 import {
   getTimeSelectorDefaultValue,
@@ -227,7 +228,9 @@ const DataSourceParamsConfig: React.FC<DataSourceParamsConfigProps> = ({
   const renderParamInput = (param: ParamItem) => {
     const { type = 'string', filterType, options } = param;
     const isDisabled = readonly || filterType === 'fixed';
-    const inputConfig = normalizeInputConfig(param);
+    const queryObject = formParams?.query_object
+      ?? sourceParams.find((item) => item.name === 'query_object')?.value;
+    const inputConfig = narrowInputConfigForQueryObject(normalizeInputConfig(param), queryObject);
 
     const fallbackInput = (() => {
       if (options && options.length > 0) {

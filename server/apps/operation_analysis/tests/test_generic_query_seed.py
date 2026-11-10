@@ -73,3 +73,18 @@ def test_generic_query_seed_enums_match_module_constants():
     alert_statuses = _option_values(_param(sources["alert/query_alert_center"], "status"))
     allowed_status = {value for value, _label in EventStatus.CHOICES + AlertStatus.CHOICES}
     assert alert_statuses <= allowed_status
+
+    center = sources["alert/query_alert_center"]
+
+    def objects_for(param_name, value):
+        item = next(option for option in _param(center, param_name)["inputConfig"]["optionsSource"]["staticItems"] if option["value"] == value)
+        return set(item.get("query_objects") or ["alert", "event"])
+
+    assert objects_for("status", "received") == {"event"}
+    assert objects_for("status", "unassigned") == {"alert"}
+    assert objects_for("status", "pending") == {"alert", "event"}
+    assert objects_for("time_field", "created_at") == {"alert"}
+    assert objects_for("time_field", "received_at") == {"event"}
+    assert objects_for("group_by", "source_name") == {"alert"}
+    assert objects_for("group_by", "source_id") == {"event"}
+    assert objects_for("group_by", "level") == {"alert", "event"}

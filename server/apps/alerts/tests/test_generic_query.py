@@ -151,6 +151,153 @@ def test_alert_center_page_group_and_empty_results():
         )
 
 
+def test_alert_source_filter_does_not_multiply_distribution_count():
+    source = _source()
+    other = AlertSource.objects.create(name="other", source_id="src-2", source_type=AlertsSourceTypes.WEBHOOK)
+    alert = _alert("ALERT-1", created_at=START + timedelta(hours=1))
+    first = _event("EVENT-1", source)
+    second = _event("EVENT-2", source)
+    outsider = _event("EVENT-3", other)
+    alert.events.add(first, second, outsider)
+    _alert("ALERT-2", level="fatal", created_at=START + timedelta(hours=2))
+    day = _range(24 * 60 * 60)
+
+    counted = query_alert_center(
+        Alert.objects.all(),
+        query_object="alert",
+        analysis_mode="count",
+        source="src-1",
+        time_field="created_at",
+        time_range=day,
+    )
+    grouped = query_alert_center(
+        Alert.objects.all(),
+        query_object="alert",
+        analysis_mode="distribution",
+        source="src-1",
+        time_field="created_at",
+        time_range=day,
+        group_by="level",
+    )
+
+    assert counted["value"] == 1
+    assert grouped["items"] == [{"name": "warning", "value": 1}]
+
+
+def test_status_options_follow_query_object():
+    _alert("ALERT-1", created_at=START + timedelta(hours=1))
+    day = _range(24 * 60 * 60)
+    with pytest.raises(GenericQueryError, match="状态不受支持"):
+        query_alert_center(
+            Alert.objects.all(),
+            query_object="alert",
+            analysis_mode="count",
+            status="received",
+            time_field="created_at",
+            time_range=day,
+        )
+    with pytest.raises(GenericQueryError, match="状态不受支持"):
+        query_alert_center(
+            Event.objects.all(),
+            query_object="event",
+            analysis_mode="count",
+            status="unassigned",
+            time_field="start_time",
+            time_range=day,
+        )
+
+
+def test_event_queryset_follows_event_rules_and_is_empty_without_rules(monkeypatch):
+    from apps.alerts.nats.generic_query import query_alert_center as handler
+
+    source = _source()
+    own = _event("EVENT-OWN", source)
+    Event.objects.create(
+        source=source,
+        raw_data={},
+        title="other-org",
+        description="",
+        level="warning",
+        start_time=START + timedelta(hours=1),
+        event_id="EVENT-OTHER",
+        team=[2],
+    )
+    rules = {"team": [], "instance": []}
+
+    def fake_rules(user, current_team, app_name, permission_key, include_children=False):
+        assert app_name == "alerts"
+        assert permission_key == "event"
+        assert current_team == 1
+        return rules
+
+    monkeypatch.setattr("apps.alerts.nats.generic_query.get_permission_rules", fake_rules)
+    user_info = {
+        "user": "alice",
+        "domain": "example.com",
+        "team": 1,
+        "permission": {"alarm": ["Integration-View"]},
+    }
+    day = _range(24 * 60 * 60)
+
+    empty = handler(
+        query_object="event",
+        analysis_mode="count",
+        time_field="start_time",
+        time_range=day,
+        user_info=user_info,
+    )
+    assert empty["result"] is True
+    assert empty["data"]["value"] == 0
+
+    rules = {"team": [1], "instance": []}
+    scoped = handler(
+        query_object="event",
+        analysis_mode="detail",
+        time_field="start_time",
+        time_range=day,
+        user_info=user_info,
+    )
+    assert [item["event_id"] for item in scoped["data"]["items"]] == ["EVENT-OWN"]
+
+    rules = {"team": [], "instance": [{"id": own.id}]}
+    by_instance = handler(
+        query_object="event",
+        analysis_mode="count",
+        time_field="start_time",
+        time_range=day,
+        user_info=user_info,
+    )
+    assert by_instance["data"]["value"] == 1
+
+    denied = handler(
+        query_object="event",
+        analysis_mode="count",
+        time_field="start_time",
+        time_range=day,
+        user_info={**user_info, "permission": {"alarm": ["Alarms-Edit"]}},
+    )
+    assert denied["result"] is False
+    assert denied["message"] == "权限不足"
+
+    allowed = handler(
+        query_object="event",
+        analysis_mode="count",
+        time_field="start_time",
+        time_range=day,
+        user_info={**user_info, "permission": {"alarm": ["Alarms-View"]}},
+    )
+    assert allowed["result"] is True
+    assert allowed["data"]["value"] == 1
+
+
+def test_handler_rejects_unsupported_filters():
+    from apps.alerts.nats.generic_query import query_alert_center as handler
+
+    result = handler(query_object="alert", analysis_mode="count", user_info={}, filters=[{"field": "level"}])
+    assert result["result"] is False
+    assert "filters" in result["message"]
+
+
 def test_handler_rejects_unknown_query_object_and_keeps_extra_kwargs():
     from apps.alerts.nats.generic_query import query_alert_center as handler
 

@@ -56,11 +56,12 @@ def query_one_hop(
     model_asst_id: str,
     direction: str,
     end_model_id: str,
+    permission_map: dict,
     end_field: str | None = None,
     end_op: str | None = None,
     end_value=None,
 ) -> dict:
-    """一跳关系统计。先在图内计数，超过结果上限时不把边拉回内存。"""
+    """一跳关系统计。终点权限写进图查询，计数和结果上限都按过滤后的边计算。"""
     if direction not in {"out", "in"}:
         raise GenericQueryGraphError("关系方向不受支持")
     if not start_uuids:
@@ -88,11 +89,13 @@ def query_one_hop(
         else:
             raise GenericQueryGraphError("终点过滤运算符不受支持")
         params["end_value"] = end_value
-    where_sql = " AND ".join(where)
-    count_query = (
-        f"MATCH {pattern} " f"WHERE {where_sql} " "WITH DISTINCT s.inst_uuid AS start_uuid, t.inst_uuid AS end_uuid " "RETURN count(*) AS pair_count"
-    )
     with GraphClient() as client:
+        permission_sql, permission_params = _permission_clause(client, permission_map, alias="t")
+        params.update(permission_params)
+        where_sql = " AND ".join([*where, permission_sql])
+        count_query = (
+            f"MATCH {pattern} WHERE {where_sql} " "WITH DISTINCT s.inst_uuid AS start_uuid, t.inst_uuid AS end_uuid " "RETURN count(*) AS pair_count"
+        )
         count_rows = _run(client, count_query, params)
         pair_count = int((count_rows[0].get("pair_count") if count_rows else 0) or 0)
         if pair_count == 0:
@@ -119,6 +122,37 @@ def query_one_hop(
         groups = _run(client, group_query, params)
         pairs = _run(client, pair_query, params)
     return {"pair_count": pair_count, "pairs": pairs, "groups": groups}
+
+
+def _permission_clause(client, permission_map: dict, alias: str) -> tuple[str, dict]:
+    """把实例权限写成图条件。权限范围为空时失败关闭，不退回全量终点。"""
+    if not permission_map:
+        raise GenericQueryGraphError("缺少权限范围，已拒绝查询")
+    collector = ParameterCollector()
+    permission = InstanceManage._build_format_permission_dict(permission_map or {}, "")
+    permission_parts = []
+    for organization_id, query_list in permission.items():
+        org_params = [{"field": "organization", "type": "list[]", "value": [organization_id]}]
+        org_str, _ignored = client.format_search_params(
+            org_params,
+            param_type="AND",
+            param_collector=collector,
+            alias=alias,
+        )
+        extra_str, _ignored = client.format_search_params(
+            query_list or [],
+            param_type="OR",
+            param_collector=collector,
+            alias=alias,
+        )
+        if org_str and extra_str:
+            permission_parts.append(f"({org_str} AND {extra_str})")
+        elif org_str:
+            permission_parts.append(org_str)
+    if not permission_parts:
+        raise GenericQueryGraphError("缺少权限范围，已拒绝查询")
+    joined = permission_parts[0] if len(permission_parts) == 1 else "(" + " OR ".join(permission_parts) + ")"
+    return joined, collector.get_params()
 
 
 def _where_clause(client, params: list, permission_map: dict, alias: str) -> tuple[str, dict]:

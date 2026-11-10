@@ -4092,23 +4092,38 @@
                             },
                             {
                                 "label": "已屏蔽",
-                                "value": "shield"
+                                "value": "shield",
+                                "query_objects": [
+                                    "event"
+                                ]
                             },
                             {
                                 "label": "已接收",
-                                "value": "received"
+                                "value": "received",
+                                "query_objects": [
+                                    "event"
+                                ]
                             },
                             {
                                 "label": "未分派",
-                                "value": "unassigned"
+                                "value": "unassigned",
+                                "query_objects": [
+                                    "alert"
+                                ]
                             },
                             {
                                 "label": "自动关闭",
-                                "value": "auto_close"
+                                "value": "auto_close",
+                                "query_objects": [
+                                    "alert"
+                                ]
                             },
                             {
                                 "label": "自动恢复",
-                                "value": "auto_recovery"
+                                "value": "auto_recovery",
+                                "query_objects": [
+                                    "alert"
+                                ]
                             }
                         ]
                     }
@@ -4127,35 +4142,59 @@
                         "staticItems": [
                             {
                                 "label": "创建时间",
-                                "value": "created_at"
+                                "value": "created_at",
+                                "query_objects": [
+                                    "alert"
+                                ]
                             },
                             {
                                 "label": "更新时间",
-                                "value": "updated_at"
+                                "value": "updated_at",
+                                "query_objects": [
+                                    "alert"
+                                ]
                             },
                             {
                                 "label": "首次事件时间",
-                                "value": "first_event_time"
+                                "value": "first_event_time",
+                                "query_objects": [
+                                    "alert"
+                                ]
                             },
                             {
                                 "label": "最近事件时间",
-                                "value": "last_event_time"
+                                "value": "last_event_time",
+                                "query_objects": [
+                                    "alert"
+                                ]
                             },
                             {
                                 "label": "关闭时间",
-                                "value": "closed_at"
+                                "value": "closed_at",
+                                "query_objects": [
+                                    "alert"
+                                ]
                             },
                             {
                                 "label": "接收时间",
-                                "value": "received_at"
+                                "value": "received_at",
+                                "query_objects": [
+                                    "event"
+                                ]
                             },
                             {
                                 "label": "开始时间",
-                                "value": "start_time"
+                                "value": "start_time",
+                                "query_objects": [
+                                    "event"
+                                ]
                             },
                             {
                                 "label": "结束时间",
-                                "value": "end_time"
+                                "value": "end_time",
+                                "query_objects": [
+                                    "event"
+                                ]
                             }
                         ]
                     }
@@ -4191,11 +4230,17 @@
                             },
                             {
                                 "label": "来源名称",
-                                "value": "source_name"
+                                "value": "source_name",
+                                "query_objects": [
+                                    "alert"
+                                ]
                             },
                             {
                                 "label": "来源标识",
-                                "value": "source_id"
+                                "value": "source_id",
+                                "query_objects": [
+                                    "event"
+                                ]
                             }
                         ]
                     }

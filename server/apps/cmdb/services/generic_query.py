@@ -16,6 +16,7 @@ from apps.cmdb.services.generic_query_limits import (
     STAT_GROUP_MAX,
 )
 from apps.cmdb.services.instance import InstanceManage
+from apps.core.exceptions.base_app_exception import BaseAppException
 
 MODEL_MODES = ("detail", "count", "distribution")
 INSTANCE_MODES = ("detail", "count", "distribution", "aggregate")
@@ -143,6 +144,7 @@ def query_instances(
     if mode == "detail":
         page_no, size = _parse_page(page, page_size, enabled=True)
         field, desc = _parse_order(order, set(attr_types) | {"inst_name", "inst_uuid"}, default="inst_name")
+        _validate_sort_field(field)
         order_text = f"-{field}" if desc else field
         items, count = InstanceManage.instance_list(
             model_id=str(model_id),
@@ -230,6 +232,8 @@ def query_one_hop_relations(
         _ensure_groups(len(items))
         if len(items) > ONE_HOP_RESULT_MAX:
             raise GenericQueryError(f"一跳关联结果超过 {ONE_HOP_RESULT_MAX} 条")
+        field, desc = _parse_order(order, {"name", "value"}, default="value")
+        items.sort(key=lambda item: (item.get(field) is None, item.get(field)), reverse=desc)
         if not items:
             return {
                 "structure": "category",
@@ -261,6 +265,7 @@ def query_one_hop_relations(
 
 
 def load_start_instances(*, model_id: str, params: list, permission_map: dict, page: int, page_size: int):
+    _validate_sort_field("inst_name")
     return InstanceManage.instance_list(
         model_id=model_id,
         params=list(params),
@@ -330,6 +335,13 @@ def _apply_result_filter(rows: list[dict], op: str | None, value) -> list[dict]:
     expected = _as_number(value)
     compare = _RESULT_OPS[op]
     return [row for row in rows if compare(row["instance_count"], expected)]
+
+
+def _validate_sort_field(field: str) -> None:
+    try:
+        CQLValidator.validate_field(field)
+    except BaseAppException as exc:
+        raise GenericQueryError(f"不支持的排序字段: {field}") from exc
 
 
 def _group_field(attr_types: dict[str, str], group_by: str | None) -> str:

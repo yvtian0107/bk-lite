@@ -163,7 +163,41 @@ export class ChartDataTransformer {
       : this.formatCategoryValue(value);
   }
 
+  private static genericStructure(rawData: any): 'category' | 'value' | 'series' | 'table' | null {
+    if (!rawData || typeof rawData !== 'object' || Array.isArray(rawData)) return null;
+    const structure = rawData.structure;
+    if (structure === 'category' || structure === 'value' || structure === 'series' || structure === 'table') {
+      return structure;
+    }
+    return null;
+  }
+
+  private static readNullableNumber(value: unknown): number | null {
+    if (value === null || value === undefined || value === '') return null;
+    const numeric = typeof value === 'number' ? value : parseFloat(String(value));
+    return Number.isFinite(numeric) ? numeric : null;
+  }
+
+  /** 只认通用查询的 structure 包络。没有 structure 的旧数据源仍走原来的空判断。 */
+  private static genericQueryIsEmpty(rawData: any): boolean {
+    const structure = this.genericStructure(rawData);
+    if (!structure) return false;
+    if (structure === 'category' || structure === 'table') {
+      return !Array.isArray(rawData.items) || rawData.items.length === 0;
+    }
+    if (structure === 'value') {
+      return this.readNullableNumber(rawData.value) === null;
+    }
+    const series = rawData.series;
+    if (!series || typeof series !== 'object' || Array.isArray(series)) return true;
+    return !Object.values(series).some((points) => (
+      Array.isArray(points)
+      && points.some((point) => point && typeof point === 'object' && this.readNullableNumber(point.value) !== null)
+    ));
+  }
+
   static isStructurallyEmpty(rawData: any): boolean {
+    if (this.genericQueryIsEmpty(rawData)) return true;
     if (!rawData) return true;
     if (Array.isArray(rawData)) return rawData.length === 0;
     if (typeof rawData === 'object') {
@@ -314,10 +348,85 @@ export class ChartDataTransformer {
     return String(value);
   }
 
+  private static transformGenericSeries(seriesMap: unknown): LineBarChartData {
+    if (!seriesMap || typeof seriesMap !== 'object' || Array.isArray(seriesMap)) {
+      return { categories: [], values: [] };
+    }
+    const entries = Object.entries(seriesMap as Record<string, unknown>)
+      .filter((entry): entry is [string, any[]] => Array.isArray(entry[1]));
+    if (entries.length === 0) return { categories: [], values: [] };
+
+    const rawNames: unknown[] = [];
+    entries.forEach(([, points]) => {
+      points.forEach((item) => {
+        if (item && typeof item === 'object' && 'name' in item) rawNames.push(item.name);
+      });
+    });
+    const shouldFormatAsTime = this.shouldFormatAsTimeDimension(rawNames);
+    const categories: string[] = [];
+    const seen = new Set<string>();
+    const categoryValue = new Map<string, unknown>();
+    const remember = (raw: unknown) => {
+      const key = this.formatDimensionValue(raw, shouldFormatAsTime);
+      if (seen.has(key)) return;
+      seen.add(key);
+      categories.push(key);
+      categoryValue.set(key, raw);
+    };
+    entries.forEach(([, points]) => {
+      points.forEach((item) => {
+        if (item && typeof item === 'object' && 'name' in item) remember(item.name);
+      });
+    });
+    categories.sort();
+
+    let anyNumber = false;
+    const series = entries.map(([name, points]) => {
+      const valueMap = new Map<string, number | null>();
+      const pointMap = new Map<string, ChartLinkPoint>();
+      points.forEach((item) => {
+        if (!item || typeof item !== 'object' || !('name' in item)) return;
+        const key = this.formatDimensionValue(item.name, shouldFormatAsTime);
+        const numeric = this.readNullableNumber(item.value);
+        if (numeric !== null) anyNumber = true;
+        valueMap.set(key, numeric);
+        pointMap.set(key, this.linkPoint({
+          seriesName: name,
+          dimension: item.name,
+          dimensionKey: 'name',
+          isTime: shouldFormatAsTime,
+          numeric,
+          raw: item.value,
+          row: item,
+        }));
+      });
+      return {
+        name,
+        data: categories.map((category) => (valueMap.has(category) ? valueMap.get(category)! : null)),
+        points: categories.map((category) => pointMap.get(category) ?? this.linkPoint({
+          seriesName: name,
+          dimension: categoryValue.get(category),
+          dimensionKey: 'name',
+          isTime: shouldFormatAsTime,
+          numeric: null,
+          row: shouldFormatAsTime ? undefined : { name: categoryValue.get(category) },
+        })),
+      };
+    });
+    if (!anyNumber) return { categories: [], values: [] };
+    return { categories, series };
+  }
+
   static transformToLineBarData(
     rawData: any,
     mapping?: ChartFieldMapping,
   ): LineBarChartData {
+    if (this.genericStructure(rawData) === 'series') {
+      return this.transformGenericSeries(rawData.series);
+    }
+    if (this.genericStructure(rawData) === 'category') {
+      return this.transformToLineBarData(Array.isArray(rawData.items) ? rawData.items : [], mapping);
+    }
     if (hasExplicitLineBarMapping(mapping)) {
       return this.transformMappedLineBar(rawData, mapping);
     }
@@ -655,6 +764,9 @@ export class ChartDataTransformer {
     rawData: any,
     mapping?: ChartFieldMapping,
   ): PieChartData {
+    if (this.genericStructure(rawData) === 'category') {
+      return this.transformToPieData(Array.isArray(rawData.items) ? rawData.items : [], mapping);
+    }
     const scalarFields = scalarPieFields(mapping);
     if (
       scalarFields.length >= 2

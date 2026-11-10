@@ -137,6 +137,8 @@ export interface InputOption {
   charts?: string[];
   /** 分析方式选项的返回结构。 */
   result?: AnalysisModeResult;
+  /** 告警中心等按查询对象收窄的选项。缺省表示所有对象都可见。 */
+  query_objects?: string[];
 }
 
 export interface RestApiSourceRef {

@@ -1151,6 +1151,8 @@
     "selectModel": "Please select model",
     "selectInstance": "Please select instance",
     "dataFormatMismatch": "Data format mismatch",
+    "optionPageLimitExceeded": "Option page limit exceeded",
+    "optionPageEndedEarly": "Option pages ended before the total count",
     "invalidSourceDataResponse": "The unified data response format is invalid",
     "multipleOrgParams": "A single request cannot declare more than one organization control parameter",
     "topologyMapEmpty": "No topology relationships",

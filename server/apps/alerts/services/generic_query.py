@@ -6,8 +6,9 @@ import json
 from datetime import datetime, timezone
 from typing import Any
 
-from django.db.models import Count
+from django.db.models import Count, Subquery
 
+from apps.alerts.constants.constants import AlertStatus, EventStatus
 from apps.alerts.services.generic_query_limits import DETAIL_PAGE_SIZE_MAX, NATS_MESSAGE_MAX_BYTES, RANGE_MAX_SECONDS, STAT_GROUP_MAX
 
 QUERY_OBJECTS = {"alert", "event"}
@@ -16,6 +17,8 @@ ALERT_TIME_FIELDS = {"created_at", "updated_at", "first_event_time", "last_event
 EVENT_TIME_FIELDS = {"received_at", "start_time", "end_time"}
 ALERT_GROUP_FIELDS = {"level", "status", "source_name"}
 EVENT_GROUP_FIELDS = {"level", "status", "source_id"}
+ALERT_STATUSES = {value for value, _label in AlertStatus.CHOICES}
+EVENT_STATUSES = {value for value, _label in EventStatus.CHOICES}
 ALERT_SORT_FIELDS = ALERT_TIME_FIELDS | {"level", "status", "alert_id"}
 EVENT_SORT_FIELDS = EVENT_TIME_FIELDS | {"level", "status", "event_id"}
 
@@ -68,12 +71,17 @@ def query_alert_center(
     if level not in (None, ""):
         queryset = queryset.filter(level=level)
     if status not in (None, ""):
+        allowed_status = ALERT_STATUSES if target == "alert" else EVENT_STATUSES
+        if status not in allowed_status:
+            raise GenericQueryError("状态不受支持")
         queryset = queryset.filter(status=status)
     if source not in (None, ""):
         if target == "event":
             queryset = queryset.filter(source__source_id=str(source))
         else:
-            queryset = queryset.filter(events__source__source_id=str(source)).distinct()
+            # 子查询收窄告警，避免事件连接把分组 Count 放大。
+            matched = queryset.filter(events__source__source_id=str(source)).values("pk")
+            queryset = queryset.filter(pk__in=Subquery(matched))
     if mode == "count":
         return _value(queryset.count(), unit="条", aggregation=f"{_label(target)}计数")
     if mode == "distribution":

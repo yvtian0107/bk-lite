@@ -1151,6 +1151,8 @@
     "selectModel": "请选择模型",
     "selectInstance": "请选择实例",
     "dataFormatMismatch": "数据格式不匹配",
+    "optionPageLimitExceeded": "选项超过分页上限，无法继续加载",
+    "optionPageEndedEarly": "选项分页在总数到达前结束",
     "invalidSourceDataResponse": "统一取数响应格式无效",
     "multipleOrgParams": "同一请求不能声明多个组织控件参数",
     "topologyMapEmpty": "暂无拓扑关系",

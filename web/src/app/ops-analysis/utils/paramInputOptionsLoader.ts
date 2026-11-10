@@ -135,6 +135,15 @@ const readOptionPage = (data: unknown): {
   };
 };
 
+export const localizeOptionLoadError = (
+  message: string | undefined,
+  t: (key: string) => string,
+): string | undefined => {
+  if (message === 'option page limit exceeded') return t('dashboard.optionPageLimitExceeded');
+  if (message === 'option page ended before count') return t('dashboard.optionPageEndedEarly');
+  return message;
+};
+
 export const createParamInputOptionsLoader = (
   api: OptionsApi,
   getLoaderOptions?: () => ParamInputOptionsLoaderOptions | undefined,
