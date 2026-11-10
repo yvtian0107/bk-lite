@@ -90,6 +90,8 @@ import {
   isDisplayableDefaultField,
 } from './widgetConfig/utils/columnProbing';
 import { responseFieldsOf } from '@/app/ops-analysis/utils/tableLikeData';
+import { sourceQueryBlockedByRequired } from '@/app/ops-analysis/utils/paramVisibility';
+import { preferredInstanceCountKey } from '@/app/ops-analysis/(pages)/view/topology/utils/dataTreeUtils';
 import { buildRoleFieldOptions, dropRoleValueMissingFrom } from './widgetConfig/utils/chartFieldOptions';
 import { ChartRoleFieldsSection, buildChartRoleFields, chartRoleValuePaths } from './widgetConfig/sections/chartRoleFieldsSection';
 import { PieScalarFieldsSection } from './widgetConfig/sections/pieScalarFieldsSection';
@@ -1280,6 +1282,23 @@ const ViewConfig: React.FC<ViewConfigPropsWithManager> = ({
     }
   }, [tableConfig.displayColumns, tableConfig.displayColumnsError]);
 
+  const analysisMode = watchedFormValues?.params?.analysis_mode;
+  useEffect(() => {
+    if (chartType !== 'single' || analysisMode !== 'count') return;
+    if (singleValueConfig.selectedFields.length > 0) return;
+    const key = preferredInstanceCountKey(singleValueConfig.singleValueTreeData);
+    if (!key) return;
+    singleValueConfig.setSelectedFields([key]);
+    form.setFieldValue('selectedFields', [key]);
+  }, [
+    analysisMode,
+    chartType,
+    form,
+    singleValueConfig.selectedFields,
+    singleValueConfig.setSelectedFields,
+    singleValueConfig.singleValueTreeData,
+  ]);
+
   const hydrateWidgetFormValues = useCallback(
     (
       values: WidgetConfigFormValues,
@@ -1517,6 +1536,23 @@ const ViewConfig: React.FC<ViewConfigPropsWithManager> = ({
         tableConfig.setDisplayColumnsError('');
       }
 
+      let displayColumns = tableConfig.displayColumns;
+      const hasVisibleColumn = displayColumns.some((column) => (
+        Boolean((column.key || '').trim())
+        && column.visible !== false
+        && column.columnType !== 'actions'
+      ));
+      if (isTableLikeChartType && !hasVisibleColumn && effectiveDataSource) {
+        const params = (values.params || {}) as Record<string, unknown>;
+        if (!sourceQueryBlockedByRequired(effectiveDataSource.params || [], params)) {
+          const probed = await tableConfig.probeDefaultDisplayColumns(effectiveDataSource, params);
+          if (probed.length) {
+            tableConfig.setDisplayColumns(probed);
+            displayColumns = probed;
+          }
+        }
+      }
+
       const submitResult = buildWidgetSubmitConfig({
         values,
         chartType,
@@ -1525,7 +1561,7 @@ const ViewConfig: React.FC<ViewConfigPropsWithManager> = ({
         selectedFields: singleValueConfig.selectedFields,
         thresholdColors: singleValueConfig.thresholdColors,
         filterBindings,
-        displayColumns: tableConfig.displayColumns,
+        displayColumns,
         filterFields: tableConfig.filterFields,
         includeSingleStyle: showSingleValueStyle,
       });
@@ -1658,6 +1694,17 @@ const ViewConfig: React.FC<ViewConfigPropsWithManager> = ({
           if (!acceptPreviewRawWrite(sampleReadRef.current, ticket)) return;
           setPreviewRawData(data);
           setPreviewLoading(false);
+          if (chartType === 'table' || chartType === 'eventTable') {
+            const fields = responseFieldsOf(data);
+            if (fields.length) {
+              tableConfig.setDisplayColumns((current) => {
+                const alreadyVisible = current.some((column) => (
+                  Boolean((column.key || '').trim()) && column.visible !== false
+                ));
+                return alreadyVisible ? current : buildDisplayColumnsFromSchema(fields);
+              });
+            }
+          }
         }}
         liveName={watchedFormValues?.name}
         liveDescription={watchedFormValues?.description}
@@ -1827,6 +1874,8 @@ const ViewConfig: React.FC<ViewConfigPropsWithManager> = ({
             onParamOptionsResolved={(param, options) =>
               reconcileParamWithOptions(param.name, options)
             }
+            resultEmpty={Array.isArray((previewRawData as { items?: unknown } | null)?.items)
+              && (previewRawData as { items: unknown[] }).items.length === 0}
           >
             {isTableLikeChartType && (
               <TableSettingsSection

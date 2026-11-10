@@ -15,6 +15,7 @@ import {
 } from '@/app/ops-analysis/utils/widgetDataTransform';
 import { getDateRangeTimezone } from '@/app/ops-analysis/utils/dateRange';
 import { responseFieldsOf } from '@/app/ops-analysis/utils/tableLikeData';
+import { sourceQueryBlockedByRequired } from '@/app/ops-analysis/utils/paramVisibility';
 import {
   DisplayColumnRow,
   buildDisplayColumnsFromSchema,
@@ -325,6 +326,9 @@ export function useTableConfig({
       formParams: Record<string, any>,
     ): Promise<DisplayColumnRow[]> => {
       try {
+        if (sourceQueryBlockedByRequired(targetDataSource.params || [], formParams)) {
+          return [];
+        }
         const payload = buildProbeParams(targetDataSource, formParams);
         const { data: sourceData } = await getSourceDataByApiId(targetDataSource.id, payload);
         const responseFields = responseFieldsOf(sourceData);

@@ -2,10 +2,14 @@ import { describe, expect, it } from 'vitest';
 
 import type { InputOption } from '@/app/ops-analysis/types/dataSource';
 import {
+  describeFieldGroupIssue,
   inspectCondition,
   inspectFieldGroup,
+  inspectOrder,
   previewCondition,
   readFieldCatalog,
+  readOrderChoices,
+  summarizeConditionCards,
 } from '@/app/ops-analysis/utils/conditionTree';
 
 const options: InputOption[] = [
@@ -102,21 +106,60 @@ describe('condition tree', () => {
       }],
     }, withHost, labels)).not.toContain('应用 · 容量');
     expect(inspectCondition({ logic: 'and', children: [] }, catalog, true)).toBeNull();
+    expect(inspectCondition(undefined, catalog, true)).toBeNull();
+    expect(inspectCondition(null, catalog, true)).toBeNull();
+    expect(inspectCondition('', catalog, true)).toBeNull();
+    expect(inspectCondition([], catalog, true)).toBeNull();
+    expect(inspectCondition({}, catalog, true)).toBeNull();
+    expect(inspectCondition({
+      logic: 'and',
+      children: [{ logic: 'and', model_id: 'host', children: [] }],
+    }, catalog, true)).toBeNull();
+    expect(inspectCondition({
+      logic: 'and',
+      children: [{
+        logic: 'and',
+        model_id: 'host',
+        children: [{ scope: 'host', attr_id: '', operator: '' }],
+      }],
+    }, catalog, true)).toMatchObject({ code: 'invalid', cardIndex: 0, leafIndex: 0 });
   });
 
   it('rejects an incompatible field merge and accepts separate metrics', () => {
-    expect(inspectFieldGroup(
+    const incompatible = inspectFieldGroup(
       [{ sources: ['host:os_type', 'app:capacity'], func: 'sum' }],
       catalog,
       true,
       'metrics',
-    )).toBe('incompatible');
+    );
+    expect(incompatible).toMatchObject({
+      code: 'incompatible',
+      names: ['主机 · 系统类型', '应用 · 容量'],
+    });
+    expect(describeFieldGroupIssue(incompatible!, {
+      invalid: '',
+      required: '',
+      stale: '',
+      incompatible: '不能合并',
+      incompatibleNamed: '{left} 和 {right} 的类型或单位不一致，不能合并',
+      enumConflict: '',
+    })).toBe('主机 · 系统类型 和 应用 · 容量 的类型或单位不一致，不能合并');
     expect(inspectFieldGroup(
       [{ sources: ['host:os_type'], func: 'count' }, { sources: ['app:capacity'], func: 'sum' }],
       catalog,
       true,
       'metrics',
     )).toBeNull();
+    expect(summarizeConditionCards(
+      [{ id: 'host', name: '主机' }, { id: 'app', name: '应用' }],
+      [{
+        modelId: 'app',
+        logic: 'and',
+        children: [{ scope: 'app', attr_id: 'capacity', operator: 'int>', value: 1 }],
+      }],
+      catalog,
+      { and: '并且', or: '或者', all: '全部', unfinished: '未完成' },
+    )).toBe('主机（全部） ∪ 应用（应用 · 容量 大于 1）');
   });
 
   it('rejects an enum group when the same stored value has two meanings', () => {
@@ -137,7 +180,7 @@ describe('condition tree', () => {
         },
       },
     ]);
-    expect(inspectFieldGroup([{ sources: ['host:os_type', 'vm:os_type'] }], fields, true, 'group')).toBe('enumConflict');
+    expect(inspectFieldGroup([{ sources: ['host:os_type', 'vm:os_type'] }], fields, true, 'group')?.code).toBe('enumConflict');
     const compatible = readFieldCatalog([
       options[0],
       {
@@ -156,5 +199,16 @@ describe('condition tree', () => {
       },
     ]);
     expect(inspectFieldGroup([{ sources: ['host:os_type', 'vm:os_type'] }], compatible, true, 'group')).toBeNull();
+  });
+
+  it('keeps an empty order and rejects a field that is not in the catalog', () => {
+    const choices = readOrderChoices([
+      { value: 'inst_name', label: '实例名', extra: { orderable: true, order_modes: ['list'], kind: 'order' } },
+      { value: 'count', label: '数量', extra: { orderable: true, order_modes: ['distribution'], kind: 'order' } },
+    ], 'list');
+    expect(choices.map((item) => item.key)).toEqual(['inst_name']);
+    expect(inspectOrder('', choices, true)).toBeNull();
+    expect(inspectOrder('-inst_name', choices, true)).toBeNull();
+    expect(inspectOrder('inst_name / -count', choices, true)).toBe('stale');
   });
 });

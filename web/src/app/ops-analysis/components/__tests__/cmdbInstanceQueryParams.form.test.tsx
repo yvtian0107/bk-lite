@@ -3,7 +3,8 @@
  * 选项是静态夹具，不是 Neo4j / NATS 的真实模型。
  */
 import React from 'react';
-import { cleanup, render, screen, waitFor } from '@testing-library/react';
+import { cleanup, render, screen, waitFor, within } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import { Form } from 'antd';
 
@@ -20,7 +21,11 @@ vi.mock('@/app/ops-analysis/api/dataSource', () => ({
 
 vi.mock('@/utils/i18n', () => ({
   useTranslation: () => ({
-    t: (key: string) => key,
+    t: (key: string, fallback?: string, vars?: Record<string, string>) => {
+      const template = fallback || key;
+      if (!vars) return template;
+      return template.replace(/\{(\w+)\}/g, (_, name: string) => vars[name] ?? '');
+    },
   }),
 }));
 
@@ -135,6 +140,24 @@ const fixtureSource = {
       },
     },
     {
+      name: 'order',
+      alias_name: '排序',
+      type: 'string',
+      filterType: 'params',
+      value: '',
+      formSection: 'more',
+      inputConfig: {
+        control: 'order',
+        optionsSource: {
+          type: 'static',
+          staticItems: [
+            { label: '实例名', value: 'inst_name', extra: { orderable: true, order_modes: ['list'], kind: 'order' } },
+            { label: '数量', value: 'count', extra: { orderable: true, order_modes: ['distribution'], kind: 'order' } },
+          ],
+        },
+      },
+    },
+    {
       name: 'metrics',
       alias_name: '聚合指标',
       type: 'object',
@@ -197,12 +220,12 @@ describe('CMDB instance query parameter form', () => {
   it('keeps a saved scope and one field identity, and omits metrics while the mode is list', async () => {
     const view = render(<QueryForm initialParams={savedParams} />);
     await waitFor(() => {
-      expect(screen.getByText('conditionBuilder.globalIdentity')).toBeTruthy();
+      expect(screen.getByText('conditionBuilder.legacyKept')).toBeTruthy();
     });
     expect(readParams().classification_ids).toEqual(['compute', 'biz']);
     expect(readParams().model_ids).toEqual([]);
-    expect(screen.getByDisplayValue(/主机 · 容量/)).toBeTruthy();
-    expect(screen.queryByDisplayValue(/应用 · 容量/)).toBeNull();
+    expect(screen.getByText(/主机 · 容量/)).toBeTruthy();
+    expect(screen.queryByText(/应用 · 容量/)).toBeNull();
 
     view.unmount();
     render(<QueryForm initialParams={savedParams} />);
@@ -234,7 +257,7 @@ describe('CMDB instance query parameter form', () => {
       },
     }} />);
     await waitFor(() => {
-      expect(screen.getByText('conditionBuilder.globalIdentity')).toBeTruthy();
+      expect(screen.getByText('conditionBuilder.legacyKept')).toBeTruthy();
     });
     screen.getByRole('button', { name: 'validate' }).click();
     await waitFor(() => {
@@ -249,5 +272,61 @@ describe('CMDB instance query parameter form', () => {
     });
     expect(submitted.analysis_mode).toBe('aggregate');
     expect(submitted.metrics).toEqual(savedParams.metrics);
+  });
+
+  it('accepts empty conditions and explains the empty state before a model is chosen', async () => {
+    const user = userEvent.setup();
+    render(<QueryForm initialParams={{ ...savedParams, model_ids: [], conditions: undefined }} />);
+    expect(screen.getByText('conditionBuilder.emptyHint')).toBeTruthy();
+    await user.click(screen.getByText('conditionBuilder.emptyHint'));
+    expect((screen.getByRole('button', { name: 'conditionBuilder.addCard' }) as HTMLButtonElement).disabled).toBe(true);
+    expect(screen.getByText('conditionBuilder.needModel')).toBeTruthy();
+    await user.click(screen.getByRole('button', { name: 'validate' }));
+    await waitFor(() => {
+      expect(screen.queryByText('conditionBuilder.issue.invalid')).toBeNull();
+    });
+  });
+
+  it('does not pick the first model for a new filter card', async () => {
+    const user = userEvent.setup();
+    render(<QueryForm initialParams={{
+      ...savedParams,
+      model_ids: ['host', 'app'],
+      conditions: { logic: 'and', children: [] },
+    }} />);
+    await user.click(screen.getByText(/conditionBuilder.allInstances/));
+    await user.click(screen.getByRole('button', { name: 'conditionBuilder.addCard' }));
+    expect(screen.getByText('conditionBuilder.pickModel')).toBeTruthy();
+    expect(readParams().conditions).toEqual({
+      logic: 'and',
+      children: [{ logic: 'and', model_id: '', children: [] }],
+    });
+  });
+
+  it('writes sort as a field and direction instead of free text', async () => {
+    const user = userEvent.setup();
+    render(<QueryForm initialParams={{ ...savedParams, conditions: { logic: 'and', children: [] }, order: '' }} />);
+    await user.click(screen.getByText('更多'));
+    expect(screen.queryByRole('textbox', { name: '排序' })).toBeNull();
+    const orderItem = screen.getByText('排序').closest('.ant-form-item');
+    if (!orderItem) throw new Error('排序');
+    await user.click(within(orderItem).getByRole('combobox'));
+    await user.click(await screen.findByText('实例名'));
+    expect(readParams().order).toBe('inst_name');
+    await user.click(screen.getByRole('switch', { name: 'orderBuilder.direction' }));
+    expect(readParams().order).toBe('-inst_name');
+  });
+
+  it('names both fields when a metric merge is rejected', async () => {
+    render(<QueryForm initialParams={{
+      ...savedParams,
+      analysis_mode: 'aggregate',
+      model_ids: ['host', 'app'],
+      conditions: { logic: 'and', children: [] },
+      metrics: [{ sources: ['host:capacity', 'app:capacity'], func: 'sum', label: '容量' }],
+    }} />);
+    await waitFor(() => {
+      expect(screen.getByText('主机 · 容量 和 应用 · 容量 的类型或单位不一致，不能合并')).toBeTruthy();
+    });
   });
 });

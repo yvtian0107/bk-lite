@@ -3,12 +3,13 @@
 import React, { useEffect, useRef } from 'react';
 import type { InputControlConfig, InputOption } from '@/app/ops-analysis/types/dataSource';
 import { useParamInputOptions } from '@/app/ops-analysis/hooks/useParamInputOptions';
-import { readFieldCatalog } from '@/app/ops-analysis/utils/conditionTree';
+import { readFieldCatalog, readOrderChoices } from '@/app/ops-analysis/utils/conditionTree';
 import ConditionTreeEditor from '@/app/ops-analysis/components/conditionTreeEditor';
 import FieldGroupEditor from '@/app/ops-analysis/components/fieldGroupEditor';
+import OrderParamEditor from '@/app/ops-analysis/components/orderParamEditor';
 
 interface CatalogParamEditorProps {
-  inputConfig: Extract<InputControlConfig, { control: 'condition' | 'fieldGroup' }>;
+  inputConfig: Extract<InputControlConfig, { control: 'condition' | 'fieldGroup' | 'order' }>;
   value?: unknown;
   onChange?: (value: unknown) => void;
   disabled?: boolean;
@@ -17,6 +18,10 @@ interface CatalogParamEditorProps {
   optionsBlockReason?: 'empty' | 'invalid';
   optionsQuerySignature?: string;
   onOptionsResolved?: (options: InputOption[]) => void;
+  selectedModelIds?: string[];
+  analysisMode?: string;
+  resultEmpty?: boolean;
+  onFocusModels?: () => void;
 }
 
 export const CatalogParamEditor: React.FC<CatalogParamEditorProps> = ({
@@ -29,6 +34,10 @@ export const CatalogParamEditor: React.FC<CatalogParamEditorProps> = ({
   optionsBlockReason,
   optionsQuerySignature = '',
   onOptionsResolved,
+  selectedModelIds = [],
+  analysisMode = '',
+  resultEmpty = false,
+  onFocusModels,
 }) => {
   const state = useParamInputOptions(inputConfig, undefined, {
     reloadKey: optionsQuerySignature,
@@ -48,6 +57,18 @@ export const CatalogParamEditor: React.FC<CatalogParamEditorProps> = ({
   const catalogReady = state.status === 'success' || (state.status === 'error' && !('errorMessage' in state && state.errorMessage));
   const catalog = readFieldCatalog(state.status === 'success' ? state.options : []);
 
+  if (inputConfig.control === 'order') {
+    return (
+      <OrderParamEditor
+        value={value}
+        onChange={onChange}
+        disabled={disabled}
+        choices={readOrderChoices(state.status === 'success' ? state.options : [], analysisMode)}
+        catalogReady={catalogReady && !optionsBlocked}
+      />
+    );
+  }
+
   if (inputConfig.control === 'condition') {
     return (
       <ConditionTreeEditor
@@ -56,6 +77,9 @@ export const CatalogParamEditor: React.FC<CatalogParamEditorProps> = ({
         disabled={disabled}
         catalog={catalog}
         catalogReady={catalogReady && !optionsBlocked}
+        selectedModelIds={selectedModelIds}
+        resultEmpty={resultEmpty}
+        onFocusModels={onFocusModels}
       />
     );
   }

@@ -99,6 +99,30 @@ def test_host_detail_uses_chinese_columns_and_applies_filter_before_page():
     assert "organization" not in titles
 
 
+@pytest.mark.parametrize("conditions", [None, [], {}, "", {"logic": "and", "children": []}])
+def test_empty_conditions_keep_every_selected_model(conditions):
+    service, calls = _service(
+        rows={"host": [{"inst_name": "web"}], "app": [{"inst_name": "shop"}]},
+        counts={"host": 1, "app": 1},
+    )
+    result = _run(service, model_ids=["host", "app"], analysis_mode="list", conditions=conditions)
+    assert calls["list"]
+    assert all(call["params"] == [] for call in calls["list"])
+    assert {item["model_id"] for item in result["items"]} == {"host", "app"}
+
+
+def test_empty_condition_card_does_not_filter_that_model():
+    service, calls = _service(counts={"host": 3})
+    result = _run(
+        service,
+        model_ids=["host"],
+        analysis_mode="count",
+        conditions={"logic": "and", "children": [{"logic": "and", "model_id": "host", "children": []}]},
+    )
+    assert result["items"][0]["count"] == 3
+    assert calls["list"][0]["params"] == []
+
+
 def test_count_changes_when_the_condition_changes():
     service, calls = _service(counts={"host": 4})
     linux = {

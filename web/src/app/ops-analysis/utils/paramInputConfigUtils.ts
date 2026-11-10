@@ -116,8 +116,8 @@ export const extractDataSourceItems = (
 
 export const isCatalogControl = (
   config?: InputControlConfig,
-): config is Extract<InputControlConfig, { control: 'condition' | 'fieldGroup' }> =>
-  config?.control === 'condition' || config?.control === 'fieldGroup';
+): config is Extract<InputControlConfig, { control: 'condition' | 'fieldGroup' | 'order' }> =>
+  config?.control === 'condition' || config?.control === 'fieldGroup' || config?.control === 'order';
 
 export const mapDynamicItems = (
   items: Record<string, unknown>[],

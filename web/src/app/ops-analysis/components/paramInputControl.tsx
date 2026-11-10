@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useEffect, useRef } from 'react';
-import { Radio, Select, Spin } from 'antd';
+import { Button, Radio, Select, Spin } from 'antd';
 import type { InputControlConfig, InputOption } from '@/app/ops-analysis/types/dataSource';
 import { useParamInputOptions } from '@/app/ops-analysis/hooks/useParamInputOptions';
 import {
@@ -165,39 +165,68 @@ export const ParamInputControl: React.FC<ParamInputControlProps> = ({
 
   if (inputConfig.control === 'select') {
     const isMultiple = Boolean(inputConfig.multiple);
+    const selectedValues = Array.isArray(value)
+      ? value
+      : (value == null || value === '' ? [] : [value]);
+    const knownValues = new Set(options.map((option) => String(option.value)));
+    const staleValues = !optionsLoading && state.status === 'success'
+      ? selectedValues.filter((item) => !knownValues.has(String(item)))
+      : [];
+    const visibleOptions = [
+      ...options,
+      ...staleValues.map((item) => ({
+        value: item,
+        label: t('paramInput.staleTag', '{value}（已失效）', { value: String(item) }),
+      })),
+    ];
+    const removeStale = () => {
+      const kept = selectedValues.filter((item) => !staleValues.some((stale) => String(stale) === String(item)));
+      onChange?.(isMultiple ? kept : (kept[0] ?? null));
+    };
+    const staleAction = inputConfig.missingOptionPolicy === 'retain' && staleValues.length > 0 ? (
+      <Button type="link" className="px-0" onClick={removeStale}>
+        {t('paramInput.removeStale', '移除失效项')}
+      </Button>
+    ) : null;
     if (inputConfig.picker === 'table') {
       return (
-        <ParamInputTableSelect
-          options={options}
-          value={value}
-          onChange={onChange}
-          disabled={disabled}
-          placeholder={placeholder}
-          allowClear={allowClear}
-          multiple={isMultiple}
-          maxCount={isMultiple ? inputConfig.maxCount : undefined}
-          loading={optionsLoading}
-          style={style}
-        />
+        <>
+          <ParamInputTableSelect
+            options={visibleOptions}
+            value={value}
+            onChange={onChange}
+            disabled={disabled}
+            placeholder={placeholder}
+            allowClear={allowClear}
+            multiple={isMultiple}
+            maxCount={isMultiple ? inputConfig.maxCount : undefined}
+            loading={optionsLoading}
+            style={style}
+          />
+          {staleAction}
+        </>
       );
     }
     return (
-      <Select
-        value={value}
-        disabled={disabled}
-        placeholder={placeholder}
-        allowClear={allowClear}
-        loading={optionsLoading}
-        showSearch
-        optionFilterProp="label"
-        mode={inputConfig.multiple ? 'multiple' : undefined}
-        maxCount={isMultiple ? inputConfig.maxCount : undefined}
-        maxTagCount={isMultiple ? 'responsive' : undefined}
-        maxTagTextLength={isMultiple ? 16 : undefined}
-        style={{ width: '100%', ...style }}
-        options={options}
-        onChange={(nextValue) => onChange?.(nextValue ?? null)}
-      />
+      <>
+        <Select
+          value={value}
+          disabled={disabled}
+          placeholder={placeholder}
+          allowClear={allowClear}
+          loading={optionsLoading}
+          showSearch
+          optionFilterProp="label"
+          mode={inputConfig.multiple ? 'multiple' : undefined}
+          maxCount={isMultiple ? inputConfig.maxCount : undefined}
+          maxTagCount={isMultiple ? 'responsive' : undefined}
+          maxTagTextLength={isMultiple ? 16 : undefined}
+          style={{ width: '100%', ...style }}
+          options={visibleOptions}
+          onChange={(nextValue) => onChange?.(nextValue ?? null)}
+        />
+        {staleAction}
+      </>
     );
   }
 

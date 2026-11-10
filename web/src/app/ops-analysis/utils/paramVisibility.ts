@@ -30,6 +30,22 @@ export const isParamVisible = (
   values: Record<string, unknown>,
 ): boolean => isParamRuleActive(param.visibleWhen, values);
 
+const valueMissing = (value: unknown) => (
+  value == null
+  || value === ''
+  || (Array.isArray(value) && value.length === 0)
+);
+
+/** 必填项还空着时，不要先打主查询。 */
+export const sourceQueryBlockedByRequired = (
+  params: Array<{ name?: string; required?: boolean; requiredWhen?: ParamVisibilityRule; visibleWhen?: ParamVisibilityRule }>,
+  values: Record<string, unknown>,
+): boolean => params.some((param) => {
+  if (!param.name || !isParamVisible(param, values)) return false;
+  if (!isParamConditionallyRequired(param, values)) return false;
+  return valueMissing(values[param.name]);
+});
+
 export const isParamConditionallyRequired = (
   param: { required?: boolean; requiredWhen?: ParamVisibilityRule },
   values: Record<string, unknown>,

@@ -1833,7 +1833,7 @@
 {
     "key": "CMDB 实例查询::cmdb/query_model_instances",
     "name": "CMDB 实例查询",
-    "desc": "查询当前权限内的实例。分类多选且可空；模型多选且必填，不自动全选，也不自动选第一项。未选模型不会查询，以前保存的空模型需要补选后才能取数，不会自动填成全部模型。分类空时按所选模型查询；分类和模型都选时取交集。未知、越权或不属于所选分类会失败，不会扩大范围。分析方式 list 明细、count 数量、distribution 属性分布、aggregate 数值聚合都会执行。条件是结构化条件树，全局条件按模型字段选择，同名属性不会自动合并。先全范围过滤和统计，再对统计结果排序分页。5000 是服务内逐条取出的上限，图上直接完成的数量和属性分布不受它约束；分组桶超过 2000 会失败。单值请绑定实例数量或指标列；信封上的 count 是结果行数。饼图如果只拿到当前页，会标明百分比和合计不是全体。排名默认按数量取全范围的前几名，不把名次说成只在页内重排。",
+    "desc": "查询已选模型的实例。分类可空多选。模型多选且必填，不自动全选，也不自动选第一项。未选模型不会查询。明细、数量、属性分布和数值聚合共用这一条。没加条件的模型返回全部实例，多个模型的结果是并集。单值请绑定实例数量。",
     "rest_api": "cmdb/query_model_instances",
     "tag": ["cmdb"],
     "chart_type": ["table", "single", "bar", "pie", "topN"],
@@ -1864,7 +1864,7 @@
             "value": [],
             "alias_name": "分类",
             "filterType": "params",
-            "desc": "可空，多选。空表示不按分类限制。模型仍须另选，分类为空不会变成查询全部模型。",
+            "desc": "可选。用来缩小后面的模型列表，不能代替模型。",
             "inputConfig": {
                 "control": "select",
                 "multiple": true,
@@ -1884,7 +1884,7 @@
             "alias_name": "模型",
             "filterType": "params",
             "required": true,
-            "desc": "必填，多选。不自动全选，也不自动选第一项。未选择时不能预览或查询。分类为空时下拉仍列出权限内全部可见模型；选了分类后按下拉并集收窄。换分类后失效模型会保留并阻止提交，不会清空成更大范围。以前保存的空模型需要补选，不会自动填成全部模型。",
+            "desc": "必填，可多选。不会自动选中。没选模型时不会查询。",
             "inputConfig": {
                 "control": "select",
                 "multiple": true,
@@ -1906,7 +1906,7 @@
             "value": {"logic": "and", "children": []},
             "alias_name": "条件",
             "filterType": "params",
-            "desc": "结构化条件。全局条件要求实例具备该属性；模型条件只约束该模型，结果取并集。失效条件会阻止查询。",
+            "desc": "可选。没加条件时，已选模型返回全部实例。多个模型的结果合在一起。",
             "inputConfig": {
                 "control": "condition",
                 "optionsSource": {
@@ -1931,7 +1931,7 @@
             "filterType": "params",
             "requiredWhen": {"param": "analysis_mode", "in": ["distribution"]},
             "visibleWhen": {"param": "analysis_mode", "in": ["distribution"]},
-            "desc": "默认每个模型单独成桶。同一条里多选后，文本和数值按原值合并。枚举的原始值只在各自模型内有身份，相同原始值还要显示名一致才合并；对不上或没有可核对的显示名会失败。不同原始值即使显示名相同也分开。合桶之后再排序分页。结果里的模型是这条分组点名的查询范围，不是这一桶实际贡献实例的模型。没点名的模型不加入。",
+            "desc": "每个已选模型单独统计。要合并时再明确合并，不会因为多选字段就自动合并。",
             "inputConfig": {
                 "control": "fieldGroup",
                 "variant": "group",
@@ -1957,7 +1957,7 @@
             "filterType": "params",
             "requiredWhen": {"param": "analysis_mode", "in": ["aggregate"]},
             "visibleWhen": {"param": "analysis_mode", "in": ["aggregate"]},
-            "desc": "默认每个模型单独成行。同一条指标多选字段才按实例合并，并且只写在这些模型自己的那一行；另一条只属于一个模型的指标不会被带到联合模型上。平均不是各模型平均值再平均。计数包含未填写和空字符串的实例。类型或单位不兼容会失败。",
+            "desc": "每个已选模型单独统计。要合并时再明确合并。",
             "inputConfig": {
                 "control": "fieldGroup",
                 "variant": "metrics",
@@ -1982,7 +1982,8 @@
             "alias_name": "显示不适用",
             "filterType": "params",
             "visibleWhen": {"param": "analysis_mode", "in": ["distribution"]},
-            "desc": "属性不适用于该模型时单独成桶，不并进空值。"
+            "descPlacement": "extra",
+            "desc": "会多出一个「不适用」桶，用来放这个属性不属于该模型的实例。"
         },
         {
             "name": "show_unfilled",
@@ -1991,7 +1992,8 @@
             "alias_name": "显示未填写",
             "filterType": "params",
             "visibleWhen": {"param": "analysis_mode", "in": ["distribution"]},
-            "desc": "属性存在但没有值时单独成桶，不和空字符串合并。"
+            "descPlacement": "extra",
+            "desc": "会多出一个「未填写」桶，用来放这个属性存在但没有填写的实例。"
         },
         {
             "name": "order",
@@ -1999,10 +2001,26 @@
             "value": "",
             "alias_name": "排序",
             "filterType": "params",
-            "desc": "留空时明细按 inst_name，分布按 -count，数量和聚合按 model_id。降序加 -。不支持的字段会失败。"
+            "formSection": "more",
+            "desc": "留空时使用默认顺序。",
+            "inputConfig": {
+                "control": "order",
+                "optionsSource": {
+                    "type": "dynamic",
+                    "sourceRef": {"type": "rest_api", "value": "cmdb/get_instance_query_fields"},
+                    "valueField": "key",
+                    "labelField": "label",
+                    "keepItem": true,
+                    "queryParams": {
+                        "classification_ids": {"ref": "classification_ids", "whenEmpty": "omit"},
+                        "model_ids": {"ref": "model_ids", "whenEmpty": "omit"},
+                        "analysis_mode": {"ref": "analysis_mode"}
+                    }
+                }
+            }
         },
-        {"name": "page", "type": "number", "value": 1, "alias_name": "页码", "filterType": "params"},
-        {"name": "page_size", "type": "number", "value": 20, "alias_name": "每页数量", "filterType": "params"},
+        {"name": "page", "type": "number", "value": 1, "alias_name": "页码", "filterType": "params", "formSection": "more", "desc": "表格上的分页器会改页。这里只在需要固定某一页时再改。"},
+        {"name": "page_size", "type": "number", "value": 20, "alias_name": "每页数量", "filterType": "params", "formSection": "more", "desc": "表格上的分页器会改每页数量。这里只在需要固定条数时再改。"},
         {
             "name": "organization",
             "type": "string",

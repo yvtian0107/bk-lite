@@ -44,6 +44,21 @@ function getDisplayTitle(
   return key;
 }
 
+export const preferredInstanceCountKey = (
+  nodes: Array<{ key?: unknown; children?: unknown }>,
+): string | null => {
+  const found: string[] = [];
+  const walk = (list: Array<{ key?: unknown; children?: unknown }>) => {
+    list.forEach((node) => {
+      const key = String(node.key || '');
+      if (key === 'scope_count' || key.endsWith('.scope_count')) found.push(key);
+      if (Array.isArray(node.children)) walk(node.children as Array<{ key?: unknown; children?: unknown }>);
+    });
+  };
+  walk(nodes || []);
+  return found.find((key) => key.includes('.')) || found[0] || null;
+};
+
 /**
  * 构建树形数据结构
  * @param obj 原始数据对象或数组

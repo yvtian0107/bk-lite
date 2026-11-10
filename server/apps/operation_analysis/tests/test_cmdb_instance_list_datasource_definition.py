@@ -50,6 +50,14 @@ def test_cmdb_instance_query_is_one_source_for_four_modes():
     metrics = next(item for item in source["params"] if item["name"] == "metrics")
     assert group_by["visibleWhen"] == {"param": "analysis_mode", "in": ["distribution"]}
     assert metrics["visibleWhen"] == {"param": "analysis_mode", "in": ["aggregate"]}
+    order = next(item for item in source["params"] if item["name"] == "order")
+    assert order["formSection"] == "more"
+    assert order["inputConfig"]["control"] == "order"
+    assert "inst_name" not in order["desc"]
+    assert "-count" not in order["desc"]
+    assert next(item for item in source["params"] if item["name"] == "page")["formSection"] == "more"
+    assert next(item for item in source["params"] if item["name"] == "page_size")["formSection"] == "more"
+    assert "会多出一个「不适用」桶" in next(item for item in source["params"] if item["name"] == "show_not_applicable")["desc"]
     assert "model_id" not in [item["name"] for item in source["params"]]
     assert "scope_count" in [field["key"] for field in source["field_schema"]]
     assert all(item.get("rest_api") != "cmdb/list_model_instances" for item in entries)

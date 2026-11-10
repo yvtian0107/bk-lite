@@ -192,6 +192,10 @@ export type InputControlConfig =
     control: 'fieldGroup';
     variant: 'group' | 'metrics';
     optionsSource: DynamicOptionsSource;
+  }
+  | {
+    control: 'order';
+    optionsSource: DynamicOptionsSource | StaticOptionsSource;
   };
 
 export interface ParamItem {
@@ -206,6 +210,10 @@ export interface ParamItem {
   /** 与 requiredWhen 同一套规则。隐藏项仍留在编辑草稿里，但不会进入当前请求。 */
   visibleWhen?: ParamVisibilityRule;
   requiredWhen?: ParamVisibilityRule;
+  /** 查询表单里收到「更多」。没有这项的数据源仍按原顺序平铺。 */
+  formSection?: 'more';
+  /** extra 把说明放在控件下方；缺省仍是问号提示。 */
+  descPlacement?: 'tooltip' | 'extra';
   /**
    * 旧字段：手动下拉选项，只读兼容历史数据；
    * 新配置写入 inputConfig。

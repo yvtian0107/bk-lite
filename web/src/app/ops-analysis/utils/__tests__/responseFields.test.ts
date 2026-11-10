@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { reconcileComponentParamValue } from '@/app/ops-analysis/utils/componentParamSwitch';
 import { processDataSourceParams } from '@/app/ops-analysis/utils/widgetDataTransform';
 import { resolveTableLikeColumns } from '@/app/ops-analysis/utils/tableLikeData';
-import { buildTreeData } from '@/app/ops-analysis/(pages)/view/topology/utils/dataTreeUtils';
+import { buildTreeData, preferredInstanceCountKey } from '@/app/ops-analysis/(pages)/view/topology/utils/dataTreeUtils';
 import { getValueByPath } from '@/app/ops-analysis/utils/objectPath';
 
 describe('query response fields and hidden params', () => {
@@ -92,5 +92,7 @@ describe('query response fields and hidden params', () => {
     expect(titleText(itemCount)).toContain('数量');
     expect(titleText(itemCount)).not.toContain('结果行数');
     expect(titleText(scopeCount)).toContain('实例数量');
+    expect(preferredInstanceCountKey(labeled)).toBe('items.scope_count');
+    expect(preferredInstanceCountKey([{ key: 'count' }, { key: 'scope_count' }])).toBe('scope_count');
   });
 });

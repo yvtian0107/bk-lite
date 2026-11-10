@@ -86,6 +86,7 @@ interface WidgetDatasourceChartTypeFieldsProps {
   onOpenDataSourceSelector: () => void;
   onEditInputConfig: (param: ParamItem) => void;
   onParamOptionsResolved: (param: ParamItem, options: InputOption[]) => void;
+  resultEmpty?: boolean;
   children?: React.ReactNode;
 }
 
@@ -178,7 +179,7 @@ export const WidgetQueryFields: React.FC<
     't' | 'selectedDataSource' | 'effectiveDataSource' | 'hasQueryParams' |
     'shouldShowUnifiedFilterSection' | 'hasUnifiedFilterBindings' |
     'previewFilterDefinitions' | 'filterBindings' | 'globalFilters' | 'globalFilterValues' |
-    'onFilterBindingsChange' | 'onEditInputConfig' | 'onParamOptionsResolved' | 'children'>
+    'onFilterBindingsChange' | 'onEditInputConfig' | 'onParamOptionsResolved' | 'resultEmpty' | 'children'>
 > = ({
   t,
   selectedDataSource,
@@ -193,6 +194,7 @@ export const WidgetQueryFields: React.FC<
   onFilterBindingsChange,
   onEditInputConfig,
   onParamOptionsResolved,
+  resultEmpty = false,
   children,
 }) => (
   <section>
@@ -211,6 +213,7 @@ export const WidgetQueryFields: React.FC<
           onParamOptionsResolved={(param, options) =>
             onParamOptionsResolved(param, options)
           }
+          resultEmpty={resultEmpty}
         />
       </div>
     ) : null}
