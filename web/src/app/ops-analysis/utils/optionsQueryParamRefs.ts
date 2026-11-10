@@ -98,6 +98,7 @@ const dynamicOptionsOf = (
       && inputConfig.control !== 'radio'
       && inputConfig.control !== 'condition'
       && inputConfig.control !== 'fieldGroup'
+      && inputConfig.control !== 'order'
     )
   ) {
     return undefined;
@@ -644,6 +645,7 @@ export const dynamicQueryParamsOf = (
       && inputConfig.control !== 'radio'
       && inputConfig.control !== 'condition'
       && inputConfig.control !== 'fieldGroup'
+      && inputConfig.control !== 'order'
     )
   ) {
     return undefined;

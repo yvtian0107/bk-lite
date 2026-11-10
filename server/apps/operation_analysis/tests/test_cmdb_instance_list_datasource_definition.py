@@ -51,12 +51,20 @@ def test_cmdb_instance_query_is_one_source_for_four_modes():
     assert group_by["visibleWhen"] == {"param": "analysis_mode", "in": ["distribution"]}
     assert metrics["visibleWhen"] == {"param": "analysis_mode", "in": ["aggregate"]}
     order = next(item for item in source["params"] if item["name"] == "order")
-    assert order["formSection"] == "more"
+    assert "formSection" not in order
     assert order["inputConfig"]["control"] == "order"
+    assert order["inputConfig"]["optionsSource"]["queryParams"]["model_ids"] == {"ref": "model_ids"}
     assert "inst_name" not in order["desc"]
     assert "-count" not in order["desc"]
-    assert next(item for item in source["params"] if item["name"] == "page")["formSection"] == "more"
-    assert next(item for item in source["params"] if item["name"] == "page_size")["formSection"] == "more"
+    page = next(item for item in source["params"] if item["name"] == "page")
+    page_size = next(item for item in source["params"] if item["name"] == "page_size")
+    assert "formSection" not in page and "formSection" not in page_size
+    assert page["visibleWhen"] == {"param": "analysis_mode", "in": ["list"]}
+    assert page_size["visibleWhen"] == {"param": "analysis_mode", "in": ["list"]}
+    for name in ("conditions", "group_by", "metrics"):
+        param = next(item for item in source["params"] if item["name"] == name)
+        assert param["inputConfig"]["optionsSource"]["queryParams"]["model_ids"] == {"ref": "model_ids"}
+        assert param["inputConfig"]["optionsSource"]["queryParams"]["classification_ids"]["whenEmpty"] == "omit"
     assert "会多出一个「不适用」桶" in next(item for item in source["params"] if item["name"] == "show_not_applicable")["desc"]
     assert "model_id" not in [item["name"] for item in source["params"]]
     assert "scope_count" in [field["key"] for field in source["field_schema"]]

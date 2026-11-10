@@ -325,6 +325,7 @@ const DataSourceParamsConfig: React.FC<DataSourceParamsConfigProps> = ({
           resolvedQueryParams={optionsQuery?.resolution.params}
           optionsBlocked={optionsQuery?.resolution.blocked}
           optionsBlockReason={optionsQuery?.resolution.blockReason}
+          optionsMissingRefs={optionsQuery?.resolution.missingRefs}
           optionsQuerySignature={optionsQuery?.signature}
           onOptionsResolved={rememberOptions}
           selectedModelIds={selectedModelIds}

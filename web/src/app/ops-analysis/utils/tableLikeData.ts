@@ -62,7 +62,7 @@ export const parseTableLikeData = <RecordType extends Record<string, any>>(
         pageSize: queryPagination.pageSize,
         total: hasValidTotal ? total : items.length,
       },
-      isPaginated: supportsPagination && hasValidTotal,
+      isPaginated: supportsPagination && hasValidTotal && total > items.length,
     };
   }
 

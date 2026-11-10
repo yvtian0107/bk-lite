@@ -2521,8 +2521,16 @@ def get_directory_mail_runtime_gaps(scope=None, user_info=None, **kwargs):
     return {"result": True, "data": data, "message": ""}
 
 
+def _downstream_failure(message: str, data):
+    """参数校验带 code 400，网关据此返回 HTTP 400。权限和结果不完整仍走原文关键词。"""
+    payload = {"result": False, "data": data, "message": message}
+    if not any(marker in message for marker in ("不完整", "结果不正确", "不是数字", "无权", "权限")):
+        payload["code"] = 400
+    return payload
+
+
 def _instance_list_failure(message: str):
-    return {"result": False, "data": empty_payload(), "message": message}
+    return _downstream_failure(message, empty_payload())
 
 
 def _reject_non_numeric_team(user_info):
@@ -2737,18 +2745,18 @@ def get_instance_query_fields(classification_ids=None, model_ids=None, analysis_
     try:
         _reject_non_numeric_team(user_info)
     except ValueError as exc:
-        return {"result": False, "data": [], "message": str(exc)}
+        return _downstream_failure(str(exc), [])
     if not _build_nats_model_permission_map(user_info) or not _build_nats_permission_map(user_info):
-        return {"result": False, "data": [], "message": "无权查询实例"}
+        return _downstream_failure("无权查询实例", [])
     try:
         require_explicit_models(None, model_ids)
     except ValueError as exc:
-        return {"result": False, "data": [], "message": str(exc)}
+        return _downstream_failure(str(exc), [])
     language, models = _visible_model_rows(user_info, None)
     if isinstance(language, Exception):
-        return {"result": False, "data": [], "message": str(language)}
+        return _downstream_failure(str(language), [])
     if language is None:
-        return {"result": False, "data": [], "message": "无权查询实例"}
+        return _downstream_failure("无权查询实例", [])
     classifications = [
         {
             "classification_id": str(item.get("classification_id") or ""),
@@ -2764,7 +2772,7 @@ def get_instance_query_fields(classification_ids=None, model_ids=None, analysis_
         attrs_by_model = {model["model_id"]: _query_attrs(model["model_id"], language) for model in selected}
         rows = describe_query_fields(selected, attrs_by_model, mode)
     except ValueError as exc:
-        return {"result": False, "data": [], "message": str(exc)}
+        return _downstream_failure(str(exc), [])
     return {"result": True, "data": rows, "message": ""}
 
 

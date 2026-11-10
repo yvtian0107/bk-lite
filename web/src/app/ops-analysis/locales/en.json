@@ -2184,6 +2184,8 @@
     "rebuildWarn": "This replaces the current conditions. Parts that cannot be kept per model are removed, and a model without the attribute may change from returning nothing to returning all instances. Cancel keeps the original conditions.",
     "rebuildOk": "Replace",
     "needModel": "Select a model first",
+    "loadFailed": "Failed to load attributes",
+    "retry": "Retry",
     "modelsAlreadyAdded": "Every selected model already has a filter",
     "pickModel": "Choose a model",
     "modelLocked": "This card already has filters. Remove them before changing the model.",

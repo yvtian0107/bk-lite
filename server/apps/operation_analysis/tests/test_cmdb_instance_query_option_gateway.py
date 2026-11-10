@@ -128,6 +128,7 @@ def test_field_catalog_rejects_empty_model_before_expanding_attrs(monkeypatch):
         out = nats.get_instance_query_fields(user_info=USER_INFO, **resolved)
         assert out["result"] is False
         assert out["message"] == "请选择模型"
+        assert out["code"] == 400
         assert out["data"] == []
     assert calls["search"] == []
     assert calls["attrs"] == []

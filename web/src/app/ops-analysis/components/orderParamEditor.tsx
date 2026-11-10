@@ -46,7 +46,7 @@ const OrderParamEditor: React.FC<OrderParamEditorProps> = ({
         showSearch
         optionFilterProp="label"
         className="min-w-56"
-        placeholder={t('orderBuilder.defaultOrder')}
+        placeholder={t('orderBuilder.defaultOrder', '默认顺序')}
         value={field || undefined}
         options={options}
         loading={!catalogReady}
@@ -55,9 +55,9 @@ const OrderParamEditor: React.FC<OrderParamEditorProps> = ({
       <Switch
         disabled={disabled || !field}
         checked={Boolean(field) && descending}
-        checkedChildren={t('orderBuilder.descending')}
-        unCheckedChildren={t('orderBuilder.ascending')}
-        aria-label={t('orderBuilder.direction')}
+        checkedChildren={t('orderBuilder.descending', '降序')}
+        unCheckedChildren={t('orderBuilder.ascending', '升序')}
+        aria-label={t('orderBuilder.direction', '升降序')}
         onChange={(checked) => write(field, checked)}
       />
     </Space>

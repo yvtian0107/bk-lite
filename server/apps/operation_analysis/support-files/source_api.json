@@ -1917,7 +1917,7 @@
                     "keepItem": true,
                     "queryParams": {
                         "classification_ids": {"ref": "classification_ids", "whenEmpty": "omit"},
-                        "model_ids": {"ref": "model_ids", "whenEmpty": "omit"},
+                        "model_ids": {"ref": "model_ids"},
                         "analysis_mode": {"ref": "analysis_mode"}
                     }
                 }
@@ -1943,7 +1943,7 @@
                     "keepItem": true,
                     "queryParams": {
                         "classification_ids": {"ref": "classification_ids", "whenEmpty": "omit"},
-                        "model_ids": {"ref": "model_ids", "whenEmpty": "omit"},
+                        "model_ids": {"ref": "model_ids"},
                         "analysis_mode": {"ref": "analysis_mode"}
                     }
                 }
@@ -1969,7 +1969,7 @@
                     "keepItem": true,
                     "queryParams": {
                         "classification_ids": {"ref": "classification_ids", "whenEmpty": "omit"},
-                        "model_ids": {"ref": "model_ids", "whenEmpty": "omit"},
+                        "model_ids": {"ref": "model_ids"},
                         "analysis_mode": {"ref": "analysis_mode"}
                     }
                 }
@@ -2001,8 +2001,7 @@
             "value": "",
             "alias_name": "排序",
             "filterType": "params",
-            "formSection": "more",
-            "desc": "留空时使用默认顺序。",
+            "desc": "四种分析方式都可用。留空时使用默认顺序。",
             "inputConfig": {
                 "control": "order",
                 "optionsSource": {
@@ -2013,14 +2012,14 @@
                     "keepItem": true,
                     "queryParams": {
                         "classification_ids": {"ref": "classification_ids", "whenEmpty": "omit"},
-                        "model_ids": {"ref": "model_ids", "whenEmpty": "omit"},
+                        "model_ids": {"ref": "model_ids"},
                         "analysis_mode": {"ref": "analysis_mode"}
                     }
                 }
             }
         },
-        {"name": "page", "type": "number", "value": 1, "alias_name": "页码", "filterType": "params", "formSection": "more", "desc": "表格上的分页器会改页。这里只在需要固定某一页时再改。"},
-        {"name": "page_size", "type": "number", "value": 20, "alias_name": "每页数量", "filterType": "params", "formSection": "more", "desc": "表格上的分页器会改每页数量。这里只在需要固定条数时再改。"},
+        {"name": "page", "type": "number", "value": 1, "alias_name": "页码", "filterType": "params", "visibleWhen": {"param": "analysis_mode", "in": ["list"]}, "desc": "只在明细里生效。表格上的分页器会改页。"},
+        {"name": "page_size", "type": "number", "value": 20, "alias_name": "每页数量", "filterType": "params", "visibleWhen": {"param": "analysis_mode", "in": ["list"]}, "desc": "只在明细里生效。表格上的分页器会改每页数量。数量、分布和聚合返回全部结果行。"},
         {
             "name": "organization",
             "type": "string",

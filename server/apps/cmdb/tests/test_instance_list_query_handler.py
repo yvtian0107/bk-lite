@@ -64,6 +64,7 @@ def test_empty_model_fails_before_metadata_or_instances(monkeypatch, mode, model
     )
     assert out["result"] is False
     assert out["message"] == "请选择模型"
+    assert out["code"] == 400
     assert out["data"]["items"] == []
     assert calls["search"] == 0
     assert calls["attrs"] is None

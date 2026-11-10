@@ -1,7 +1,7 @@
 """运营分析用的 CMDB 实例查询。
 
 一条查询覆盖四种分析：明细、数量、属性分布、数值聚合。范围由分类和模型共同决定，
-两者都可以空。条件是结构化树，先过滤再统计，统计结果再排序分页。
+分类可空，模型必填。条件是结构化树，先过滤再统计。明细再排序分页；数量、分布和聚合排序后返回全部行。
 
 5000 是服务内逐条取出后再合并或汇总的上限，不是数量和分组的业务上限。图上能直接
 完成的计数和属性分布不受这 5000 限制。分组桶另有 2000 的上限。超过任一执行上限都
@@ -235,8 +235,6 @@ class CmdbInstanceQueryService:
             models,
             classifications,
         )
-        page_number = _parse_positive(page, "page", DEFAULT_PAGE, maximum=None)
-        size = _parse_positive(page_size, "page_size", DEFAULT_PAGE_SIZE, maximum=MAX_PAGE_SIZE)
         catalogs = {model["model_id"]: _attr_catalog(None if attrs_by_model is None else attrs_by_model.get(model["model_id"])) for model in selected}
         tree = _bind_condition_fields(_normalize_conditions(conditions, attr_filters, selected, catalogs), selected, catalogs)
         scope_ids = {model["model_id"] for model in selected}
@@ -248,23 +246,23 @@ class CmdbInstanceQueryService:
             clauses = model_clauses_or_unsat(tree, model["model_id"], catalogs[model["model_id"]], scope_ids)
             prepared.append((model, catalogs[model["model_id"]], permission, clauses))
         if mode == ANALYSIS_LIST:
+            page_number = _parse_positive(page, "page", DEFAULT_PAGE, maximum=None)
+            size = _parse_positive(page_size, "page_size", DEFAULT_PAGE_SIZE, maximum=MAX_PAGE_SIZE)
             return self._list(prepared, order, page_number, size, creator)
         if mode == ANALYSIS_COUNT:
-            return self._count(prepared, order, page_number, size, creator)
+            return self._count(prepared, order, creator)
         if mode == ANALYSIS_DISTRIBUTION:
             groups = _normalize_groups(group_by, selected, catalogs)
             return self._distribution(
                 prepared,
                 groups,
                 order,
-                page_number,
-                size,
                 creator,
                 _parse_flag(show_not_applicable, True),
                 _parse_flag(show_unfilled, True),
             )
         metric_specs = _normalize_metrics(metrics, agg_field, agg_func, selected, catalogs)
-        return self._aggregate(prepared, metric_specs, order, page_number, size, creator)
+        return self._aggregate(prepared, metric_specs, order, creator)
 
     def _list(self, prepared, order, page_number, size, creator):
         fields = _list_fields(prepared)
@@ -294,7 +292,7 @@ class CmdbInstanceQueryService:
         page_rows = [_project_list_row(row, model, fields) for model, row in collected[start : start + size]]
         return {"items": page_rows, "count": len(collected), "fields": fields}
 
-    def _count(self, prepared, order, page_number, size, creator):
+    def _count(self, prepared, order, creator):
         rows = []
         for model, _catalog, permission, clauses in prepared:
             rows.append(
@@ -309,9 +307,9 @@ class CmdbInstanceQueryService:
             row["scope_count"] = scope_count
         allowed = {"model_id", "model_name", "count", "scope_count"}
         rows = _sort_rows(rows, _normalize_order(order, allowed, "model_id"))
-        return _page_rows(rows, page_number, size, _count_fields())
+        return _all_rows(rows, _count_fields())
 
-    def _distribution(self, prepared, groups, order, page_number, size, creator, show_not_applicable, show_unfilled):
+    def _distribution(self, prepared, groups, order, creator, show_not_applicable, show_unfilled):
         prepared_by_id = {model["model_id"]: (model, catalog, permission, clauses) for model, catalog, permission, clauses in prepared}
         selected_order = [model["model_id"] for model, _catalog, _permission, _clauses in prepared]
         rows = []
@@ -329,7 +327,7 @@ class CmdbInstanceQueryService:
             rows = [row for row in rows if row["group_kind"] != KIND_UNFILLED]
         allowed = {"model_id", "model_name", "group_value", "count", "field_label", "group_kind"}
         rows = _sort_rows(rows, _normalize_order(order, allowed, "-count"))
-        return _page_rows(rows, page_number, size, _distribution_fields(groups))
+        return _all_rows(rows, _distribution_fields(groups))
 
     def _distribution_model(self, model, catalog, permission, clauses, spec, creator):
         source = next((item for item in spec["sources"] if item["model_id"] == model["model_id"]), None)
@@ -397,7 +395,7 @@ class CmdbInstanceQueryService:
             )
         return rows
 
-    def _aggregate(self, prepared, metrics, order, page_number, size, creator):
+    def _aggregate(self, prepared, metrics, order, creator):
         prepared_by_id = {model["model_id"]: (model, catalog, permission, clauses) for model, catalog, permission, clauses in prepared}
         selected_order = [model["model_id"] for model, _catalog, _permission, _clauses in prepared]
         if not any(_metric_spans_models(metric) for metric in metrics):
@@ -432,7 +430,7 @@ class CmdbInstanceQueryService:
                 rows.append(row)
         allowed = {"model_id", "model_name", *[metric["key"] for metric in metrics]}
         rows = _sort_rows(rows, _normalize_order(order, allowed, "model_id"))
-        return _page_rows(rows, page_number, size, _aggregate_fields(metrics))
+        return _all_rows(rows, _aggregate_fields(metrics))
 
     def _metric_value(self, model, catalog, permission, clauses, metric, creator):
         sources = [item for item in metric["sources"] if item["model_id"] == model["model_id"]]
@@ -1342,6 +1340,10 @@ def _sort_rows(rows, order):
 def _page_rows(rows, page, size, fields):
     start = (page - 1) * size
     return {"items": rows[start : start + size], "count": len(rows), "fields": fields}
+
+
+def _all_rows(rows, fields):
+    return {"items": rows, "count": len(rows), "fields": fields}
 
 
 def _public_field(attr):

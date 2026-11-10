@@ -751,6 +751,25 @@ def test_get_source_data_exposes_downstream_business_failures(
 
 
 @pytest.mark.django_db
+def test_validation_code_maps_model_required_to_400_without_changing_other_messages(authenticated_user, monkeypatch):
+    authenticated_user.is_superuser = True
+    marked, marked_payload, _ = _build_view_response(
+        _build_request(authenticated_user, data={}),
+        monkeypatch,
+        {"result": False, "data": [], "message": "请选择模型", "code": 400},
+    )
+    assert marked.status_code == status.HTTP_400_BAD_REQUEST
+    assert marked_payload["message"] == "请选择模型"
+    unmarked, unmarked_payload, _ = _build_view_response(
+        _build_request(authenticated_user, data={}),
+        monkeypatch,
+        {"result": False, "data": [], "message": "请选择模型"},
+    )
+    assert unmarked.status_code == status.HTTP_502_BAD_GATEWAY
+    assert unmarked_payload["message"] == "请选择模型"
+
+
+@pytest.mark.django_db
 def test_get_source_data_returns_500_on_client_exception(authenticated_user, monkeypatch):
     authenticated_user.is_superuser = True
     request = _build_request(authenticated_user, data={"limit": 10})

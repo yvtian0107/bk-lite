@@ -145,7 +145,6 @@ const fixtureSource = {
       type: 'string',
       filterType: 'params',
       value: '',
-      formSection: 'more',
       inputConfig: {
         control: 'order',
         optionsSource: {
@@ -156,6 +155,22 @@ const fixtureSource = {
           ],
         },
       },
+    },
+    {
+      name: 'page',
+      alias_name: '页码',
+      type: 'number',
+      filterType: 'params',
+      value: 1,
+      visibleWhen: { param: 'analysis_mode', in: ['list'] },
+    },
+    {
+      name: 'page_size',
+      alias_name: '每页数量',
+      type: 'number',
+      filterType: 'params',
+      value: 20,
+      visibleWhen: { param: 'analysis_mode', in: ['list'] },
     },
     {
       name: 'metrics',
@@ -326,15 +341,27 @@ describe('CMDB instance query parameter form', () => {
   it('writes sort as a field and direction instead of free text', async () => {
     const user = userEvent.setup();
     render(<QueryForm initialParams={{ ...savedParams, conditions: { logic: 'and', children: [] }, order: '' }} />);
-    await user.click(screen.getByText('更多'));
+    expect(screen.queryByText('更多')).toBeNull();
+    expect(screen.queryByText('取值方式')).toBeNull();
+    expect(screen.getByText('页码')).toBeTruthy();
+    expect(screen.getByText('每页数量')).toBeTruthy();
     expect(screen.queryByRole('textbox', { name: '排序' })).toBeNull();
     const orderItem = screen.getByText('排序').closest('.ant-form-item');
     if (!orderItem) throw new Error('排序');
     await user.click(within(orderItem).getByRole('combobox'));
     await user.click(await screen.findByText('实例名'));
     expect(readParams().order).toBe('inst_name');
-    await user.click(screen.getByRole('switch', { name: 'orderBuilder.direction' }));
+    await user.click(screen.getByRole('switch', { name: '升降序' }));
     expect(readParams().order).toBe('-inst_name');
+  });
+
+  it('hides page fields outside list mode and keeps sort', () => {
+    render(<QueryForm initialParams={{ ...savedParams, analysis_mode: 'aggregate', model_ids: ['host'] }} />);
+    expect(screen.getByText('排序')).toBeTruthy();
+    expect(screen.getByText('页码').closest('.ant-form-item')?.classList.contains('ant-form-item-hidden')).toBe(true);
+    expect(screen.getByText('每页数量').closest('.ant-form-item')?.classList.contains('ant-form-item-hidden')).toBe(true);
+    expect(screen.queryByText('更多')).toBeNull();
+    expect(screen.queryByText('取值方式')).toBeNull();
   });
 
   it('names both fields when a metric merge is rejected', async () => {

@@ -2184,6 +2184,8 @@
     "rebuildWarn": "这会替换当前条件。不能按模型原样保留的部分会被去掉，没有该属性的模型可能从「不返回」变成「返回全部实例」。取消则保持原条件。",
     "rebuildOk": "确认替换",
     "needModel": "请先选择模型",
+    "loadFailed": "属性加载失败",
+    "retry": "重试",
     "modelsAlreadyAdded": "所选模型都已添加筛选",
     "pickModel": "选择模型",
     "modelLocked": "已有筛选，要换模型请先删除这些条件。",

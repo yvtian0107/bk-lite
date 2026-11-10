@@ -182,6 +182,28 @@ def test_empty_condition_card_does_not_filter_that_model():
     assert calls["list"][0]["params"] == []
 
 
+def test_summary_modes_return_every_row_when_page_size_is_small():
+    service, _calls = _service(counts={"host": 2, "app": 6}, groups={"host": {"2": 2, "3": 5}})
+    counted = _run(service, model_ids=["host", "app"], analysis_mode="count", page=2, page_size=1)
+    assert counted["count"] == len(counted["items"]) == 2
+    distributed = _run(
+        service,
+        model_ids=["host"],
+        analysis_mode="distribution",
+        group_by=[{"sources": ["host:os_type"]}],
+        page_size=1,
+    )
+    assert distributed["count"] == len(distributed["items"]) == 2
+    aggregated = _run(
+        service,
+        model_ids=["host", "app"],
+        analysis_mode="aggregate",
+        metrics=[{"key": "instances", "label": "实例", "func": "count", "sources": ["host:os_type", "app:capacity"]}],
+        page_size=1,
+    )
+    assert aggregated["count"] == len(aggregated["items"])
+
+
 def test_count_changes_when_the_condition_changes():
     service, calls = _service(counts={"host": 4})
     linux = {
@@ -210,8 +232,8 @@ def test_distribution_uses_enum_label_and_pages_after_the_full_count():
         page_size=2,
     )
     assert calls["group"][0]["group_by_attr"] == "os_type"
-    assert [row["group_value"] for row in result["items"]] == ["Windows", ""]
-    assert result["count"] == 4
+    assert [row["group_value"] for row in result["items"]] == ["Windows", "", "Linux", "未填写"]
+    assert result["count"] == len(result["items"]) == 4
     assert result["items"][0]["count"] == 5
     full = _run(
         service,
@@ -457,7 +479,7 @@ def test_over_limit_fails_instead_of_scanning_a_prefix():
 def test_page_size_above_max_fails_and_legacy_equality_still_filters():
     service, calls = _service(counts={"host": 2}, groups={"host": {"2": 2}})
     with pytest.raises(ValueError, match=str(MAX_PAGE_SIZE)):
-        _run(service, model_ids=["host"], analysis_mode="count", page_size=MAX_PAGE_SIZE + 1)
+        _run(service, model_ids=["host"], analysis_mode="list", page_size=MAX_PAGE_SIZE + 1)
     result = _run(service, model_id="host", analysis_mode="distribution", group_by="os_type", attr_filters="enabled=true")
     assert result["items"][0]["group_value"] == "Linux"
     assert calls["group"][-1]["params"][1] == {"field": "enabled", "type": "bool", "value": True}
