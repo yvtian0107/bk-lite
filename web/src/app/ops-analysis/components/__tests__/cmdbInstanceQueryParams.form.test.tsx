@@ -287,6 +287,27 @@ describe('CMDB instance query parameter form', () => {
     });
   });
 
+  it('blocks an empty card for a model that is no longer selected and does not call it all instances', async () => {
+    const user = userEvent.setup();
+    const conditions = {
+      logic: 'and',
+      children: [
+        { logic: 'and', model_id: 'host', children: [] },
+        { logic: 'and', model_id: 'app', children: [] },
+      ],
+    };
+    render(<QueryForm initialParams={{ ...savedParams, model_ids: ['host'], conditions }} />);
+    await waitFor(() => {
+      expect(screen.getAllByText(/应用（conditionBuilder.staleModel）/).length).toBeGreaterThan(0);
+    });
+    expect(screen.queryByText(/应用（conditionBuilder.allInstances）/)).toBeNull();
+    expect(screen.getAllByText(/主机（conditionBuilder.allInstances）/).length).toBeGreaterThan(0);
+    expect(readParams().conditions).toEqual(conditions);
+    await user.click(screen.getByRole('button', { name: 'validate' }));
+    expect(await screen.findByText('conditionBuilder.issue.staleScope')).toBeTruthy();
+    expect(readParams().conditions).toEqual(conditions);
+  });
+
   it('does not pick the first model for a new filter card', async () => {
     const user = userEvent.setup();
     render(<QueryForm initialParams={{

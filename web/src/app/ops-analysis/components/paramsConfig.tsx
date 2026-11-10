@@ -329,6 +329,7 @@ const DataSourceParamsConfig: React.FC<DataSourceParamsConfigProps> = ({
           onOptionsResolved={rememberOptions}
           selectedModelIds={selectedModelIds}
           analysisMode={typeof formParams?.analysis_mode === 'string' ? formParams.analysis_mode : ''}
+          metrics={formParams?.metrics}
           resultEmpty={resultEmpty}
           onFocusModels={() => form.scrollToField([fieldPrefix, 'model_ids'])}
         />
@@ -443,13 +444,24 @@ const DataSourceParamsConfig: React.FC<DataSourceParamsConfigProps> = ({
                   }
                   if (inputConfig?.control === 'condition') {
                     const options = resolvedOptionsRef.current.get(param.name);
-                    const issue = inspectCondition(current, readFieldCatalog(options), options !== undefined);
+                    const modelValue = formParams?.model_ids;
+                    const selectedModelIds = Array.isArray(modelValue) ? modelValue.map(String) : [];
+                    const issue = inspectCondition(
+                      current,
+                      readFieldCatalog(options),
+                      options !== undefined,
+                      selectedModelIds,
+                    );
                     if (issue) throw new Error(t(`conditionBuilder.issue.${issue.code}`));
                   }
                   if (inputConfig?.control === 'order') {
                     const options = resolvedOptionsRef.current.get(param.name);
                     const mode = typeof formParams?.analysis_mode === 'string' ? formParams.analysis_mode : '';
-                    const issue = inspectOrder(current, readOrderChoices(options, mode), options !== undefined);
+                    const issue = inspectOrder(
+                      current,
+                      readOrderChoices(options, mode, formParams?.metrics),
+                      options !== undefined,
+                    );
                     if (issue) throw new Error(t('orderBuilder.stale'));
                   }
                   if (inputConfig?.control === 'fieldGroup' && inputConfig.variant) {

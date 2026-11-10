@@ -2172,7 +2172,7 @@
       "legacy": "The condition is not valid",
       "staleField": "This condition field is no longer available",
       "ambiguousField": "Same-named attributes are different fields. Choose each model field explicitly",
-      "staleScope": "A model in this condition is no longer available",
+      "staleScope": "This model is outside the selected models. Remove the card or choose a selected model. It is not treated as all instances.",
       "missingValue": "Enter a condition value",
       "unsupportedOperator": "This field does not support that operator",
       "incompatible": "Field types or units do not match, so they cannot be merged"

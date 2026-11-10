@@ -174,17 +174,57 @@ export const writeConditionCards = (cards: ConditionCard[]): ConditionGroup => (
   })),
 });
 
-export const readOrderChoices = (options: InputOption[] | undefined, mode: string): OrderChoice[] => (
-  (options || []).flatMap((option) => {
+const ORDER_KEY = /^[A-Za-z_][A-Za-z0-9_]*$/;
+
+/** 与服务端 `_metric_key` 相同。显式 key 合法时保留，否则用函数和来源拼出来。 */
+export const metricOrderKey = (row: { key?: unknown; func?: unknown; sources?: unknown }): string => {
+  const explicit = typeof row.key === 'string' ? row.key.trim() : '';
+  const func = typeof row.func === 'string' ? row.func.trim() : '';
+  const parts = Array.isArray(row.sources)
+    ? row.sources.flatMap((source) => {
+      const text = String(source);
+      const split = text.indexOf(':');
+      if (split <= 0) return [];
+      const modelId = text.slice(0, split);
+      const attrId = text.slice(split + 1);
+      if (!ORDER_KEY.test(modelId) || !ORDER_KEY.test(attrId)) return [];
+      return [`${modelId}_${attrId}`];
+    })
+    : [];
+  const computed = func && ORDER_KEY.test(func) && parts.length ? `${func}_${parts.join('__')}` : '';
+  if (explicit && ORDER_KEY.test(explicit)) return explicit;
+  return computed;
+};
+
+export const readOrderChoices = (
+  options: InputOption[] | undefined,
+  mode: string,
+  metrics?: unknown,
+): OrderChoice[] => {
+  const choices: OrderChoice[] = [];
+  const seen = new Set<string>();
+  const add = (key: string, label: string) => {
+    if (!key || seen.has(key)) return;
+    seen.add(key);
+    choices.push({ key, label: label || key });
+  };
+  (options || []).forEach((option) => {
     const extra = option.extra;
-    if (!isRecord(extra) || extra.orderable !== true) return [];
+    if (!isRecord(extra) || extra.orderable !== true) return;
     const modes = Array.isArray(extra.order_modes) ? extra.order_modes.map(String) : [];
-    if (mode && modes.length > 0 && !modes.includes(mode)) return [];
-    const key = String(option.value ?? '');
-    if (!key) return [];
-    return [{ key, label: option.label || key }];
-  })
-);
+    if (mode && modes.length > 0 && !modes.includes(mode)) return;
+    add(String(option.value ?? ''), option.label || String(option.value ?? ''));
+  });
+  if (mode === 'aggregate' && Array.isArray(metrics)) {
+    metrics.forEach((item) => {
+      if (!isRecord(item)) return;
+      const key = metricOrderKey(item);
+      const label = typeof item.label === 'string' && item.label.trim() ? item.label.trim() : key;
+      add(key, label);
+    });
+  }
+  return choices;
+};
 
 export const inspectOrder = (
   value: unknown,
@@ -297,6 +337,7 @@ export const inspectCondition = (
   value: unknown,
   catalog: QueryFieldCatalogItem[],
   catalogReady: boolean,
+  selectedModelIds?: readonly string[],
 ): ConditionIssue | null => {
   if (isEmptyConditionValue(value)) return null;
   if (!isConditionGroup(value)) return { code: 'invalid' };
@@ -315,10 +356,14 @@ export const inspectCondition = (
     };
     return walk(value, 0);
   }
+  const selectedIds = selectedModelIds ? new Set(selectedModelIds.filter(Boolean)) : null;
   for (let cardIndex = 0; cardIndex < value.children.length; cardIndex += 1) {
     const child = value.children[cardIndex];
     if (isConditionGroup(child)) {
       const modelId = typeof child.model_id === 'string' ? child.model_id : '';
+      if (selectedIds && modelId && !selectedIds.has(modelId)) {
+        return locate('staleScope', cardIndex);
+      }
       if (catalogReady && modelId && models.size > 0 && !models.has(modelId) && child.children.length > 0) {
         return locate('staleScope', cardIndex);
       }
@@ -341,6 +386,7 @@ export interface SummaryLabels {
   or: string;
   all: string;
   unfinished: string;
+  stale: string;
 }
 
 const summaryValue = (leaf: ConditionLeaf, field: QueryFieldCatalogItem | undefined): string => {
@@ -378,15 +424,26 @@ export const summarizeConditionCards = (
   catalog: QueryFieldCatalogItem[],
   labels: SummaryLabels,
 ): string => {
-  const listed = selected.map((model) => ({ ...model, card: cards.find((card) => card.modelId === model.id) }));
+  const selectedIds = new Set(selected.map((model) => model.id));
+  const listed = selected.map((model) => ({
+    ...model,
+    card: cards.find((card) => card.modelId === model.id),
+    outside: false,
+  }));
   cards.forEach((card) => {
-    if (card.modelId && !listed.some((item) => item.id === card.modelId)) {
+    if (card.modelId && !selectedIds.has(card.modelId)) {
       const known = catalog.find((item) => item.modelId === card.modelId);
-      listed.push({ id: card.modelId, name: known?.modelName || card.modelId, card });
+      listed.push({
+        id: card.modelId,
+        name: known?.modelName || card.modelId,
+        card,
+        outside: true,
+      });
     }
   });
   if (!listed.length) return '';
   return listed.map((model) => {
+    if (model.outside) return `${model.name}（${labels.stale}）`;
     const leaves = model.card?.children || [];
     if (!leaves.length) return `${model.name}（${labels.all}）`;
     const joiner = model.card?.logic === 'or' ? labels.or : labels.and;

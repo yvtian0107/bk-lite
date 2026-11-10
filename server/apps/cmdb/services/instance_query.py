@@ -168,6 +168,7 @@ def resolve_scope(classification_ids: list[str], model_ids: list[str], models: l
 def describe_query_fields(models: list[dict[str, Any]], attrs_by_model: dict[str, list], analysis_mode: str) -> list[dict[str, Any]]:
     rows = []
     mode = analysis_mode if analysis_mode in ANALYSIS_MODES else ANALYSIS_LIST
+    list_order_keys = _list_column_keys(models, attrs_by_model)
     for model in models:
         catalog = _attr_catalog(attrs_by_model.get(model["model_id"]))
         for attr in _display_candidates(catalog):
@@ -175,6 +176,7 @@ def describe_query_fields(models: list[dict[str, Any]], attrs_by_model: dict[str
             if attr_type not in FILTERABLE_TYPES and attr["attr_id"] not in {item["key"] for item in _IDENTITY}:
                 continue
             key = _field_key(model["model_id"], attr["attr_id"])
+            list_orderable = key in list_order_keys
             rows.append(
                 {
                     "key": key,
@@ -189,8 +191,8 @@ def describe_query_fields(models: list[dict[str, Any]], attrs_by_model: dict[str
                     "operators": operator_choices(attr_type),
                     "options": _public_enum_options(attr),
                     "funcs": _funcs_for(attr_type),
-                    "orderable": True,
-                    "order_modes": [ANALYSIS_LIST],
+                    "orderable": list_orderable,
+                    "order_modes": [ANALYSIS_LIST] if list_orderable else [],
                 }
             )
     rows.extend(_summary_order_rows(mode))
@@ -905,18 +907,32 @@ def _display_candidates(catalog):
     return [attr for _index, attr in candidates]
 
 
+def _ranked_list_attrs(catalog):
+    ranked = []
+    for index, attr in enumerate(catalog.values()):
+        if not _is_key_display_attr(attr):
+            continue
+        ranked.append((_display_rank(attr), index, attr))
+    ranked.sort()
+    return [attr for _rank, _index, attr in ranked[:MAX_KEY_ATTRS]]
+
+
+def _list_column_keys(models, attrs_by_model):
+    keys = {item["key"] for item in _IDENTITY}
+    keys.add("model_name")
+    for model in models:
+        catalog = _attr_catalog(attrs_by_model.get(model["model_id"]))
+        for attr in _ranked_list_attrs(catalog):
+            keys.add(_field_key(model["model_id"], attr["attr_id"]))
+    return keys
+
+
 def _list_fields(prepared):
     fields = identity_fields()
     fields.append({"key": "model_name", "title": "模型名称", "value_type": "string", "role": "dimension", "description": "模型中文名"})
     seen = {field["key"] for field in fields}
     for model, catalog, _permission, _clauses in prepared:
-        ranked = []
-        for index, attr in enumerate(catalog.values()):
-            if not _is_key_display_attr(attr):
-                continue
-            ranked.append((_display_rank(attr), index, attr))
-        ranked.sort()
-        for _rank, _index, attr in ranked[:MAX_KEY_ATTRS]:
+        for attr in _ranked_list_attrs(catalog):
             key = _field_key(model["model_id"], attr["attr_id"])
             if key in seen:
                 continue
@@ -1209,11 +1225,16 @@ def _summary_order_rows(mode):
         _order_choice("model_id", "模型", list(ANALYSIS_MODES)),
         _order_choice("model_name", "模型名称", list(ANALYSIS_MODES)),
         _order_choice("inst_name", "实例名", [ANALYSIS_LIST]),
+        _order_choice("inst_uuid", "实例UUID", [ANALYSIS_LIST]),
     ]
-    if mode in {ANALYSIS_COUNT, ANALYSIS_DISTRIBUTION}:
-        rows.append(_order_choice("count", "数量", [mode], "int"))
+    if mode == ANALYSIS_COUNT:
+        rows.append(_order_choice("count", "数量", [ANALYSIS_COUNT], "int"))
+        rows.append(_order_choice("scope_count", "实例数量", [ANALYSIS_COUNT], "int"))
     if mode == ANALYSIS_DISTRIBUTION:
-        rows.append(_order_choice("group_value", "分组值", [mode]))
+        rows.append(_order_choice("count", "数量", [ANALYSIS_DISTRIBUTION], "int"))
+        rows.append(_order_choice("group_value", "分组值", [ANALYSIS_DISTRIBUTION]))
+        rows.append(_order_choice("field_label", "分组字段", [ANALYSIS_DISTRIBUTION]))
+        rows.append(_order_choice("group_kind", "取值口径", [ANALYSIS_DISTRIBUTION]))
     return rows
 
 

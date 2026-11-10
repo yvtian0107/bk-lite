@@ -20,6 +20,7 @@ interface CatalogParamEditorProps {
   onOptionsResolved?: (options: InputOption[]) => void;
   selectedModelIds?: string[];
   analysisMode?: string;
+  metrics?: unknown;
   resultEmpty?: boolean;
   onFocusModels?: () => void;
 }
@@ -36,6 +37,7 @@ export const CatalogParamEditor: React.FC<CatalogParamEditorProps> = ({
   onOptionsResolved,
   selectedModelIds = [],
   analysisMode = '',
+  metrics,
   resultEmpty = false,
   onFocusModels,
 }) => {
@@ -63,7 +65,7 @@ export const CatalogParamEditor: React.FC<CatalogParamEditorProps> = ({
         value={value}
         onChange={onChange}
         disabled={disabled}
-        choices={readOrderChoices(state.status === 'success' ? state.options : [], analysisMode)}
+        choices={readOrderChoices(state.status === 'success' ? state.options : [], analysisMode, metrics)}
         catalogReady={catalogReady && !optionsBlocked}
       />
     );

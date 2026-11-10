@@ -48,7 +48,7 @@ const ConditionTreeEditor: React.FC<ConditionTreeEditorProps> = ({
 }) => {
   const { t } = useTranslation();
   const [open, setOpen] = useState(false);
-  const issue = inspectCondition(value, catalog, catalogReady);
+  const issue = inspectCondition(value, catalog, catalogReady, selectedModelIds);
   const issueKey = issue ? `${issue.code}:${issue.cardIndex ?? ''}:${issue.leafIndex ?? ''}` : '';
   useEffect(() => {
     if (issueKey) setOpen(true);
@@ -71,6 +71,7 @@ const ConditionTreeEditor: React.FC<ConditionTreeEditorProps> = ({
       or: t('conditionBuilder.or'),
       all: t('conditionBuilder.allInstances'),
       unfinished: t('conditionBuilder.unfinished'),
+      stale: t('conditionBuilder.staleModel'),
     },
   );
   const issueText = issue ? t(`conditionBuilder.issue.${issue.code}`) : '';

@@ -7,6 +7,7 @@ from apps.cmdb.services.instance_query import (
     MAX_PAGE_SIZE,
     MAX_SCAN,
     CmdbInstanceQueryService,
+    describe_query_fields,
 )
 
 HOST = {"model_id": "host", "model_name": "主机", "classification_id": "compute", "classification_name": "计算"}
@@ -97,6 +98,25 @@ def test_host_detail_uses_chinese_columns_and_applies_filter_before_page():
     assert titles["host:ip_addr"] == "主机 · 内网IP"
     assert titles["host:os_type"] == "主机 · 系统类型"
     assert "organization" not in titles
+
+
+def test_order_candidates_follow_the_columns_each_mode_accepts():
+    listed = describe_query_fields(MODELS, ATTRS, "list")
+    list_keys = {row["key"] for row in listed if row.get("orderable") and "list" in row.get("order_modes", [])}
+    assert {"inst_name", "inst_uuid", "model_id", "model_name", "host:ip_addr"} <= list_keys
+    note = {"attr_id": "note", "attr_name": "备注", "attr_type": "str", "is_display_field": True}
+    with_note = describe_query_fields([HOST], {"host": [*HOST_ATTRS, note]}, "list")
+    note_row = next(row for row in with_note if row["key"] == "host:note")
+    assert note_row["orderable"] is False
+    assert note_row["order_modes"] == []
+
+    counted = describe_query_fields(MODELS, ATTRS, "count")
+    count_keys = {row["key"] for row in counted if row.get("orderable") and "count" in row.get("order_modes", [])}
+    assert count_keys == {"model_id", "model_name", "count", "scope_count"}
+
+    distributed = describe_query_fields(MODELS, ATTRS, "distribution")
+    distribution_keys = {row["key"] for row in distributed if row.get("orderable") and "distribution" in row.get("order_modes", [])}
+    assert distribution_keys == {"model_id", "model_name", "count", "group_value", "field_label", "group_kind"}
 
 
 @pytest.mark.parametrize("conditions", [None, [], {}, "", {"logic": "and", "children": []}])

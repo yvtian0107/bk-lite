@@ -2172,7 +2172,7 @@
       "legacy": "条件结构不正确",
       "staleField": "条件字段已失效，请重新选择",
       "ambiguousField": "同名属性不是同一个字段，请按模型分别选择",
-      "staleScope": "条件里的模型已失效，请重新选择",
+      "staleScope": "这个模型不在已选范围内，请移除这张卡或改回已选模型。不会按全部实例查询。",
       "missingValue": "请填写条件值",
       "unsupportedOperator": "该字段不支持这个运算符",
       "incompatible": "字段类型或单位不一致，不能合并"

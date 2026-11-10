@@ -6,10 +6,12 @@ import {
   inspectCondition,
   inspectFieldGroup,
   inspectOrder,
+  metricOrderKey,
   previewCondition,
   readFieldCatalog,
   readOrderChoices,
   summarizeConditionCards,
+  writeConditionCards,
 } from '@/app/ops-analysis/utils/conditionTree';
 
 const options: InputOption[] = [
@@ -158,7 +160,7 @@ describe('condition tree', () => {
         children: [{ scope: 'app', attr_id: 'capacity', operator: 'int>', value: 1 }],
       }],
       catalog,
-      { and: '并且', or: '或者', all: '全部', unfinished: '未完成' },
+      { and: '并且', or: '或者', all: '全部', unfinished: '未完成', stale: '已失效' },
     )).toBe('主机（全部） ∪ 应用（应用 · 容量 大于 1）');
   });
 
@@ -199,6 +201,43 @@ describe('condition tree', () => {
       },
     ]);
     expect(inspectFieldGroup([{ sources: ['host:os_type', 'vm:os_type'] }], compatible, true, 'group')).toBeNull();
+  });
+
+  it('marks an unselected empty card as stale and keeps a selected empty card as all instances', () => {
+    const labels = { and: '并且', or: '或者', all: '全部', unfinished: '未完成', stale: '已失效' };
+    const cards = [
+      { modelId: 'host', logic: 'and' as const, children: [] },
+      { modelId: 'app', logic: 'and' as const, children: [] },
+    ];
+    expect(summarizeConditionCards(
+      [{ id: 'host', name: '主机' }],
+      cards,
+      catalog,
+      labels,
+    )).toBe('主机（全部） ∪ 应用（已失效）');
+    const tree = writeConditionCards(cards);
+    expect(inspectCondition(tree, catalog, true, ['host'])).toMatchObject({ code: 'staleScope', cardIndex: 1 });
+    const hostOnly = writeConditionCards([{ modelId: 'host', logic: 'and', children: [] }]);
+    expect(inspectCondition(hostOnly, catalog, true, ['host'])).toBeNull();
+    expect(summarizeConditionCards([{ id: 'host', name: '主机' }], [{ modelId: 'host', logic: 'and', children: [] }], catalog, labels)).toBe('主机（全部）');
+  });
+
+  it('keeps a saved aggregate metric order and a count scope_count order', () => {
+    const choices = readOrderChoices([
+      { value: 'model_id', label: '模型', extra: { orderable: true, order_modes: ['aggregate', 'count'], kind: 'order' } },
+      { value: 'scope_count', label: '实例数量', extra: { orderable: true, order_modes: ['count'], kind: 'order' } },
+    ], 'aggregate', [{ key: 'cpu_avg', func: 'avg', sources: ['host:cpu'], label: 'CPU 平均' }]);
+    expect(choices.map((item) => item.key)).toEqual(['model_id', 'cpu_avg']);
+    expect(inspectOrder('-cpu_avg', choices, true)).toBeNull();
+    expect(metricOrderKey({ func: 'sum', sources: ['host:capacity'] })).toBe('sum_host_capacity');
+    const countChoices = readOrderChoices([
+      { value: 'model_id', label: '模型', extra: { orderable: true, order_modes: ['count'], kind: 'order' } },
+      { value: 'scope_count', label: '实例数量', extra: { orderable: true, order_modes: ['count'], kind: 'order' } },
+      { value: 'host:ip_addr', label: '内网IP', extra: { orderable: true, order_modes: ['list'], kind: 'attribute' } },
+    ], 'count');
+    expect(countChoices.map((item) => item.key)).toEqual(['model_id', 'scope_count']);
+    expect(inspectOrder('scope_count', countChoices, true)).toBeNull();
+    expect(inspectOrder('-scope_count', countChoices, true)).toBeNull();
   });
 
   it('keeps an empty order and rejects a field that is not in the catalog', () => {
