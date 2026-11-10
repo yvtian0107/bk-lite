@@ -75,7 +75,8 @@ export function resolveApplicationTopologyDetailChrome(input: {
   systemTokens: SemanticColorTokens;
 }): {
   theme?: ThemeConfig;
-  surface: string;
+  /** 只有大屏单独呈现时才铺实色。内嵌预览留空，交给 OperateDrawer 默认表面。 */
+  surface?: string;
   contentStyle?: CSSProperties;
 } {
   const followScreen = isScreenChartThemeMode(input.chartThemeMode) && input.presentedAlone;
@@ -87,21 +88,21 @@ export function resolveApplicationTopologyDetailChrome(input: {
       contentStyle: buildScreenContentTokenStyle(input.chartThemeMode),
     };
   }
-  // 大屏组件外层 ConfigProvider 会穿过门户。内嵌预览必须用系统主题盖住它，
-  // 不能退回写死的浅色算法。普通仪表盘没有这层大屏主题，保持不包。
+  // 大屏组件外层 ConfigProvider 会穿过门户。内嵌预览用系统主题盖住它，
+  // 表面色不再改写，标题/正文/底栏走 OperateDrawer 默认样式。
   if (isScreenChartThemeMode(input.chartThemeMode)) {
     return {
       theme: {
         ...createAntdTheme(input.systemMode, input.systemTokens),
         inherit: false,
       },
-      surface: SYSTEM_DRAWER_SURFACE,
+      surface: undefined,
       contentStyle: undefined,
     };
   }
   return {
     theme: undefined,
-    surface: SYSTEM_DRAWER_SURFACE,
+    surface: undefined,
     contentStyle: undefined,
   };
 }
@@ -209,6 +210,12 @@ const ApplicationTopologyDetailPanel = ({
   const MonitorView = monitorWidget.Widget as React.ComponentType<{ monitorId: string }> | null;
   const AlertList = alertWidget.Widget as React.ComponentType<{ monitorId: string }> | null;
 
+  const screenSurface = chrome.surface
+    ? {
+      '--ops-topology-drawer-surface': chrome.surface,
+      ...chrome.contentStyle,
+    } as React.CSSProperties
+    : undefined;
   const drawer = (
     <OperateDrawer
       open
@@ -218,12 +225,16 @@ const ApplicationTopologyDetailPanel = ({
       subTitle={`${node.modelId} · ${statusLabel}`}
       destroyOnHidden
       onClose={onClose}
-      rootClassName={styles.shell}
-      style={{ '--ops-topology-drawer-surface': chrome.surface } as React.CSSProperties}
+      rootClassName={screenSurface ? styles.shell : undefined}
+      style={screenSurface}
       classNames={{ body: 'flex min-h-0 flex-col overflow-hidden' }}
       styles={{
-        header: { boxShadow: 'none' },
-        body: { overflow: 'hidden', padding: 0, background: 'transparent' },
+        header: screenSurface ? { boxShadow: 'none' } : undefined,
+        body: {
+          overflow: 'hidden',
+          padding: 0,
+          ...(screenSurface ? { background: 'transparent' } : {}),
+        },
       }}
       footer={(
         <div>

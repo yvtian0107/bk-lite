@@ -16,6 +16,7 @@ import ApplicationTopologyDetailPanel, {
   resolveApplicationTopologyDetailChrome,
   screenDetailFollowsScreenTheme,
 } from '../detailPanel';
+import panelStyles from '../detailPanel.module.scss';
 
 vi.mock('@/context/appCapabilities', () => ({
   useAppWidget: () => ({
@@ -26,8 +27,8 @@ vi.mock('@/context/appCapabilities', () => ({
   useLazyAppWidget: () => ({ Widget: null, loadFailed: false }),
 }));
 
-const SYSTEM_SURFACE = 'var(--color-modal-header-color)';
 const SCREEN_DARK_SURFACE = '#14243a';
+const SCREEN_DARK_BORDER = 'rgba(112, 147, 195, 0.24)';
 
 const node: ApplicationTopologyBandNode = {
   id: 'node-1',
@@ -144,7 +145,7 @@ describe('application topology detail chrome', () => {
       systemMode: 'light',
       systemTokens: defaultTheme.light,
     });
-    expect(light.surface).toBe(SYSTEM_SURFACE);
+    expect(light.surface).toBeUndefined();
     expect(light.contentStyle).toBeUndefined();
     expect(light.theme?.inherit).toBe(false);
     expect(light.theme?.algorithm).toBe(antdTheme.defaultAlgorithm);
@@ -159,7 +160,7 @@ describe('application topology detail chrome', () => {
       systemMode: 'dark',
       systemTokens: defaultTheme.dark,
     });
-    expect(dark.surface).toBe(SYSTEM_SURFACE);
+    expect(dark.surface).toBeUndefined();
     expect(dark.contentStyle).toBeUndefined();
     expect(dark.theme?.inherit).toBe(false);
     expect(dark.theme?.algorithm).toBe(antdTheme.darkAlgorithm);
@@ -201,7 +202,10 @@ describe('application topology detail chrome', () => {
     expect(screen.theme?.algorithm).toBe(antdTheme.darkAlgorithm);
     expect(screen.theme?.cssVar).toEqual({ key: SCREEN_ANTD_CSS_VAR_KEY['screen-dark'] });
     expect(screen.theme?.token?.colorBgContainer).toBe(SCREEN_DARK_SURFACE);
-    expect(screen.contentStyle).toMatchObject({ '--color-text-1': '#e8eef7' });
+    expect(screen.contentStyle).toMatchObject({
+      '--color-text-1': '#e8eef7',
+      '--color-border-1': SCREEN_DARK_BORDER,
+    });
   });
 
   it('leaves a normal dashboard drawer on the surrounding theme', () => {
@@ -212,7 +216,7 @@ describe('application topology detail chrome', () => {
       systemTokens: defaultTheme.dark,
     });
     expect(dashboard.theme).toBeUndefined();
-    expect(dashboard.surface).toBe(SYSTEM_SURFACE);
+    expect(dashboard.surface).toBeUndefined();
     expect(dashboard.contentStyle).toBeUndefined();
 
     const sharedDashboard = resolveApplicationTopologyDetailChrome({
@@ -222,7 +226,7 @@ describe('application topology detail chrome', () => {
       systemTokens: defaultTheme.light,
     });
     expect(sharedDashboard.theme).toBeUndefined();
-    expect(sharedDashboard.surface).toBe(SYSTEM_SURFACE);
+    expect(sharedDashboard.surface).toBeUndefined();
   });
 });
 
@@ -247,7 +251,8 @@ describe('application topology detail drawer presentation', () => {
     renderPanel({ mode: 'light', chartThemeMode: 'screen-dark' });
 
     expect(document.documentElement.classList.contains('light')).toBe(true);
-    expect(drawerSurface()).toBe(SYSTEM_SURFACE);
+    expect(drawerSurface()).toBe('');
+    expect(drawerRoot()?.classList.contains(panelStyles.shell)).toBe(false);
     expect(drawerRewritesScreenTokens()).toBe(false);
     expect(drawerRoot()?.className ?? '').not.toContain(SCREEN_ANTD_CSS_VAR_KEY['screen-dark']);
     expect(drawerAntdVar('--ant-color-text')).toBe(defaultTheme.light.textPrimary);
@@ -259,7 +264,8 @@ describe('application topology detail drawer presentation', () => {
     renderPanel({ mode: 'dark', chartThemeMode: 'screen-dark' });
 
     expect(document.documentElement.classList.contains('dark')).toBe(true);
-    expect(drawerSurface()).toBe(SYSTEM_SURFACE);
+    expect(drawerSurface()).toBe('');
+    expect(drawerRoot()?.classList.contains(panelStyles.shell)).toBe(false);
     expect(drawerRewritesScreenTokens()).toBe(false);
     expect(drawerRoot()?.className ?? '').not.toContain(SCREEN_ANTD_CSS_VAR_KEY['screen-dark']);
     expect(drawerAntdVar('--ant-color-text')).toBe(defaultTheme.dark.textPrimary);
@@ -270,6 +276,9 @@ describe('application topology detail drawer presentation', () => {
     renderPanel({ mode: 'light', shareMode: true, chartThemeMode: 'screen-dark' });
 
     expect(drawerSurface()).toBe(SCREEN_DARK_SURFACE);
+    expect(drawerRoot()?.classList.contains(panelStyles.shell)).toBe(true);
+    expect(document.querySelector('.ant-drawer-content')?.style.getPropertyValue('--color-border-1')).toBe(SCREEN_DARK_BORDER);
+    expect(document.querySelector('.ant-drawer-content')?.contains(document.querySelector('.ant-drawer-header'))).toBe(true);
     expect(drawerRewritesScreenTokens()).toBe(true);
     expect(drawerRoot()?.className ?? '').toContain(SCREEN_ANTD_CSS_VAR_KEY['screen-dark']);
     expect(drawerAntdVar('--ant-color-bg-container')).toBe(SCREEN_DARK_SURFACE);
@@ -279,7 +288,7 @@ describe('application topology detail drawer presentation', () => {
     document.documentElement.classList.remove('dark', 'light');
 
     renderPanel({ mode: 'light', chartThemeMode: 'screen-dark' });
-    expect(drawerSurface()).toBe(SYSTEM_SURFACE);
+    expect(drawerSurface()).toBe('');
 
     act(() => {
       document.documentElement.setAttribute('data-app-view-fullscreen', '');

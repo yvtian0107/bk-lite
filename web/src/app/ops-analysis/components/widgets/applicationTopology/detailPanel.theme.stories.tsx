@@ -1,7 +1,9 @@
 import React, { useEffect } from 'react';
 import type { Meta, StoryObj } from '@storybook/nextjs';
+import { Button } from 'antd';
 import { IntlProvider } from 'react-intl';
 import ScreenWidgetThemeProvider from '@/app/ops-analysis/components/screenWidgetThemeProvider';
+import OperateDrawer from '@/components/operate-drawer';
 import zhOps from '@/app/ops-analysis/locales/zh.json';
 import { useThemeMode } from '@/theme';
 import type { ApplicationTopologyBandNode } from './bandModel';
@@ -99,6 +101,39 @@ const Shell = ({
               onClose={() => undefined}
             />
           </ScreenWidgetThemeProvider>
+          <OperateDrawer
+            title="系统抽屉"
+            subTitle="OperateDrawer"
+            open
+            width={380}
+            placement="left"
+            mask={false}
+            footer={<Button>关闭</Button>}
+          >
+            <div
+              style={{
+                border: '1px solid var(--color-border-1)',
+                borderRadius: 8,
+                background: 'var(--color-bg)',
+                overflow: 'hidden',
+              }}
+            >
+              <div
+                style={{
+                  padding: '8px 12px',
+                  background: 'var(--color-fill-1)',
+                  color: 'var(--color-text-1)',
+                  fontWeight: 600,
+                }}
+              >
+                基本信息
+              </div>
+              <div style={{ display: 'grid', gridTemplateColumns: '88px 1fr' }}>
+                <div style={{ padding: 10, background: 'var(--color-fill-1)', color: 'var(--color-text-2)' }}>实例名</div>
+                <div style={{ padding: 10, color: 'var(--color-text-1)' }}>settle-core-01</div>
+              </div>
+            </div>
+          </OperateDrawer>
         </div>
       </div>
     </IntlProvider>
