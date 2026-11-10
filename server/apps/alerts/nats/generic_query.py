@@ -10,6 +10,7 @@ from apps.alerts.nats.nats import _build_permission_user, _get_authorized_alert_
 from apps.alerts.services.generic_query import GenericQueryError, ensure_payload_limit
 from apps.alerts.services.generic_query import query_alert_center as run_alert_center_query
 from apps.core.logger import alert_logger as logger
+from apps.core.utils.condition_group import ConditionGroupError, parse_condition_group
 from apps.core.utils.permission_utils import get_permission_rules
 from apps.core.utils.viewset_utils import GenericViewSetFun, build_json_membership_query
 
@@ -123,6 +124,7 @@ def query_alert_center(
     status=None,
     time_field=None,
     time_range=None,
+    filters=None,
     group_by=None,
     order=None,
     page=None,
@@ -132,6 +134,10 @@ def query_alert_center(
 ):
     _reject_unsupported_filters(kwargs)
     del kwargs
+    try:
+        parse_condition_group(filters)
+    except ConditionGroupError as exc:
+        raise GenericQueryError(exc.message) from exc
     target = str(query_object or "").strip()
     if target == "alert":
         queryset, error = _get_authorized_alert_queryset(user_info or {})
@@ -154,6 +160,7 @@ def query_alert_center(
         status=status,
         time_field=time_field,
         time_range=time_range,
+        filters=filters,
         group_by=group_by,
         order=order,
         page=page,

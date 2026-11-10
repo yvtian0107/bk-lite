@@ -11,7 +11,7 @@ export interface AnalysisModeOption {
 
 const staticItemsOf = (param?: ParamItem): InputOption[] => {
   const config = param?.inputConfig;
-  if (!config || config.control === 'input' || config.control === 'organization') return [];
+  if (!config || !('optionsSource' in config)) return [];
   if (config.optionsSource.type !== 'static') return [];
   return config.optionsSource.staticItems;
 };
@@ -45,12 +45,21 @@ export const resolveAnalysisModeValue = ({
   const options = analysisModeOptions(params);
   if (!options.length) return undefined;
   const chosen = selected === undefined || selected === null ? '' : String(selected);
+  const chartModes = chartType ? options.filter((item) => item.charts.includes(chartType)) : [];
+  if (chosen && chartModes.some((item) => item.value === chosen)) return chosen;
+  if (chartModes.length) return chartModes[0].value;
   if (chosen && options.some((item) => item.value === chosen)) return chosen;
-  if (chartType) {
-    const compatible = options.find((item) => item.charts.includes(chartType));
-    if (compatible) return compatible.value;
-  }
   return options[0]?.value;
+};
+
+/** 同一图表对应多种分析方式时才展示下拉，例如实例单值的计数和聚合。 */
+export const shouldShowAnalysisMode = (
+  params: ParamItem[] | null | undefined,
+  chartType?: string,
+): boolean => {
+  const options = analysisModeOptions(params);
+  const matching = chartType ? options.filter((item) => item.charts.includes(chartType)) : options;
+  return matching.length > 1;
 };
 
 export const chartsForAnalysisMode = (
@@ -81,7 +90,8 @@ export const filterChartTypesForAnalysisMode = <ChartType extends { value: strin
   params: ParamItem[] | null | undefined,
   mode: string | undefined,
 ): ChartType[] => {
-  const allowed = chartsForAnalysisMode(params, mode);
-  if (!allowed) return chartTypes;
-  return chartTypes.filter((item) => allowed.includes(item.value));
+  // 图表决定分析方式，不再按当前方式收窄可选图表。
+  void mode;
+  if (!findAnalysisModeParam(params)) return chartTypes;
+  return chartTypes;
 };

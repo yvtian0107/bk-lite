@@ -6,10 +6,14 @@ import json
 from datetime import datetime, timezone
 from typing import Any
 
-from django.db.models import Count, Subquery
+from django.db.models import Count, Q, Subquery
 
-from apps.alerts.constants.constants import AlertStatus, EventStatus
+from apps.alerts.constants.constants import AlertStatus, EventLevel, EventStatus
+from apps.alerts.models.models import Alert
 from apps.alerts.services.generic_query_limits import DETAIL_PAGE_SIZE_MAX, NATS_MESSAGE_MAX_BYTES, RANGE_MAX_SECONDS, STAT_GROUP_MAX
+from apps.core.utils.condition_group import ConditionGroupError, parse_condition_group
+
+ALERT_LEVELS = {value for value, _label in EventLevel.CHOICES}
 
 QUERY_OBJECTS = {"alert", "event"}
 MODES = ("detail", "count", "distribution")
@@ -50,6 +54,7 @@ def query_alert_center(
     order: str | None = None,
     page=None,
     page_size=None,
+    filters=None,
 ) -> dict:
     target = str(query_object or "").strip()
     if target not in QUERY_OBJECTS:
@@ -82,6 +87,7 @@ def query_alert_center(
             # 子查询收窄告警，避免事件连接把分组 Count 放大。
             matched = queryset.filter(events__source__source_id=str(source)).values("pk")
             queryset = queryset.filter(pk__in=Subquery(matched))
+    queryset = _apply_center_conditions(queryset, target, filters)
     if mode == "count":
         return _value(queryset.count(), unit="条", aggregation=f"{_label(target)}计数")
     if mode == "distribution":
@@ -159,6 +165,78 @@ def _row(item, target: str) -> dict:
         "last_event_time": _iso(item.last_event_time),
         "closed_at": _iso(item.closed_at),
     }
+
+
+def _apply_center_conditions(queryset, target: str, filters):
+    try:
+        logic, items = parse_condition_group(filters)
+    except ConditionGroupError as exc:
+        raise GenericQueryError(exc.message) from exc
+    allowed_status = ALERT_STATUSES if target == "alert" else EVENT_STATUSES
+    combined = None
+    for item in items:
+        clause = _center_clause(target, item.get("field"), item.get("op"), item.get("value"), allowed_status)
+        if combined is None:
+            combined = clause
+        elif logic == "OR":
+            combined |= clause
+        else:
+            combined &= clause
+    if combined is None:
+        return queryset
+    return queryset.filter(combined)
+
+
+def _center_clause(target: str, field, op, value, allowed_status: set):
+    if field == "level":
+        _ensure_members(op, value, ALERT_LEVELS, "级别不受支持")
+        return _choice_q("level", op, value)
+    if field == "status":
+        _ensure_members(op, value, allowed_status, "状态不受支持")
+        return _choice_q("status", op, value)
+    if field == "source":
+        return _source_q(target, op, value)
+    raise GenericQueryError("属性过滤不受支持")
+
+
+def _ensure_members(op, value, allowed: set, message: str) -> None:
+    if op not in {"eq", "ne", "in"}:
+        raise GenericQueryError("属性过滤运算符不受支持")
+    values = _condition_values(op, value)
+    if any(item not in allowed for item in values):
+        raise GenericQueryError(message)
+
+
+def _condition_values(op, value) -> list:
+    if op == "in":
+        if isinstance(value, list):
+            values = [str(item) for item in value if str(item).strip()]
+        else:
+            values = [part.strip() for part in str(value or "").split(",") if part.strip()]
+        if not values:
+            raise GenericQueryError("属性过滤必须给出值")
+        return values
+    if value in (None, ""):
+        raise GenericQueryError("属性过滤必须给出值")
+    return [str(value)]
+
+
+def _choice_q(field: str, op: str, value):
+    values = _condition_values(op, value)
+    clause = Q(**{f"{field}__in": values})
+    return ~clause if op == "ne" else clause
+
+
+def _source_q(target: str, op: str, value):
+    if op not in {"eq", "ne", "in"}:
+        raise GenericQueryError("属性过滤运算符不受支持")
+    values = _condition_values(op, value)
+    if target == "event":
+        clause = Q(source__source_id__in=values)
+    else:
+        matched = Alert.objects.filter(events__source__source_id__in=values).values("pk")
+        clause = Q(pk__in=Subquery(matched))
+    return ~clause if op == "ne" else clause
 
 
 def _value(value, *, unit: str, aggregation: str) -> dict:

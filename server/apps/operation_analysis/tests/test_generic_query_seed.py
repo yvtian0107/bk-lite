@@ -88,3 +88,32 @@ def test_generic_query_seed_enums_match_module_constants():
     assert objects_for("group_by", "source_name") == {"alert"}
     assert objects_for("group_by", "source_id") == {"event"}
     assert objects_for("group_by", "level") == {"alert", "event"}
+
+
+def test_generic_query_seed_uses_chart_driven_filters_and_order():
+    sources = _sources()
+    models = sources["cmdb/query_cmdb_models"]
+    model = _param(models, "model_id")
+    assert model["inputConfig"]["optionsSource"]["queryParams"]["classification_id"] == {"ref": "classification_id"}
+    assert model["inputConfig"]["optionsSource"]["emptyUpstreamHintKey"] == "dashboard.selectClassificationFirst"
+    for rest_api in (
+        "cmdb/query_cmdb_models",
+        "cmdb/query_cmdb_instances",
+        "cmdb/query_cmdb_one_hop",
+        "monitor/query_monitor_instances",
+        "monitor/query_monitor_alerts",
+        "alert/query_alert_center",
+    ):
+        source = sources[rest_api]
+        modes = {item["value"]: item["charts"] for item in _param(source, "analysis_mode")["inputConfig"]["optionsSource"]["staticItems"]}
+        assert "topN" not in modes["detail"]
+        assert "topN" in modes["distribution"]
+        assert _param(source, "order")["inputConfig"]["control"] == "order"
+    assert _param(models, "result_filter")["inputConfig"]["control"] == "conditionFilter"
+    assert "distribution" in _param(models, "result_filter")["visible_modes"]
+    assert _param(models, "result_op")["hidden"] is True
+    assert _param(sources["cmdb/query_cmdb_instances"], "filters")["inputConfig"]["fields"]["kind"] == "modelAttrs"
+    assert _param(sources["cmdb/query_cmdb_one_hop"], "end_filters")["inputConfig"]["fields"]["kind"] == "endModelAttrs"
+    assert _param(sources["alert/query_alert_center"], "filters")["type"] == "conditionFilter"
+    metric = sources["monitor/query_monitor_metric"]
+    assert all(param.get("type") != "conditionFilter" for param in metric["params"])

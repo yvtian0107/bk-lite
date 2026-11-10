@@ -17,6 +17,7 @@ from apps.cmdb.services.generic_query_limits import (
 )
 from apps.cmdb.services.instance import InstanceManage
 from apps.core.exceptions.base_app_exception import BaseAppException
+from apps.core.utils.condition_group import ConditionGroupError, parse_condition_group
 
 MODEL_MODES = ("detail", "count", "distribution")
 INSTANCE_MODES = ("detail", "count", "distribution", "aggregate")
@@ -34,13 +35,17 @@ _FILTER_TYPES = {
     ("string", "eq"): "str=",
     ("string", "ne"): "str<>",
     ("string", "contains"): "str*",
-    ("string", "in"): "str[]",
+    ("string", "empty"): "empty",
     ("number", "eq"): "int=",
-    ("number", "ne"): "int<>",
     ("number", "gt"): "int>",
+    ("number", "gte"): "int>=",
     ("number", "lt"): "int<",
-    ("number", "in"): "int[]",
+    ("number", "lte"): "int<=",
+    ("enum", "eq"): "str=",
+    ("enum", "ne"): "str<>",
+    ("enum", "in"): "str[]",
 }
+_ENUM_ATTR_TYPES = {"enum"}
 _NUMBER_ATTR_TYPES = {"int", "integer", "float", "number", "long", "double"}
 
 
@@ -66,6 +71,7 @@ def query_models(
     model_ids: list[str] | None = None,
     result_op: str | None = None,
     result_value=None,
+    result_filter=None,
     order: str | None = None,
     page=None,
     page_size=None,
@@ -87,7 +93,7 @@ def query_models(
     scanned = sum(int(row["instance_count"]) for row in rows)
     if mode != "detail":
         _ensure_scan(scanned)
-    rows = _apply_result_filter(rows, result_op, result_value)
+    rows = _apply_result_filter(rows, result_op, result_value, result_filter)
     if mode == "count":
         return _value_payload(len(rows), unit="个", aggregation="模型计数")
     if mode == "distribution":
@@ -126,7 +132,7 @@ def query_instances(
     filter_field: str | None = None,
     filter_op: str | None = None,
     filter_value=None,
-    filters: list | None = None,
+    filters=None,
     group_by: str | None = None,
     aggregate_field: str | None = None,
     aggregate_op: str | None = None,
@@ -139,8 +145,8 @@ def query_instances(
     mode = _mode(analysis_mode, INSTANCE_MODES)
     if mode != "detail":
         _parse_page(page, page_size, enabled=False)
-    params = [{"field": "model_id", "type": "str=", "value": str(model_id)}]
-    params.extend(_attribute_filters(attr_types, filter_field, filter_op, filter_value, filters))
+    base_params = [{"field": "model_id", "type": "str=", "value": str(model_id)}]
+    logic, condition_params = _attribute_filters(attr_types, filter_field, filter_op, filter_value, filters)
     if mode == "detail":
         page_no, size = _parse_page(page, page_size, enabled=True)
         field, desc = _parse_order(order, set(attr_types) | {"inst_name", "inst_uuid"}, default="inst_name")
@@ -148,11 +154,13 @@ def query_instances(
         order_text = f"-{field}" if desc else field
         items, count = InstanceManage.instance_list(
             model_id=str(model_id),
-            params=list(params),
+            params=[],
             page=page_no,
             page_size=size,
             order=order_text,
             permission_map=permission_map,
+            condition_params=condition_params,
+            condition_logic=logic,
         )
         rows = [_public_instance(item) for item in items or []]
         return _page_payload(rows, page_no, size, count=int(count or 0))
@@ -164,7 +172,14 @@ def query_instances(
         if attr_type != "number":
             raise GenericQueryError("聚合字段不是数值属性")
         try:
-            aggregated = aggregate_numeric(aggregate_field, aggregate_op, params, permission_map)
+            aggregated = aggregate_numeric(
+                aggregate_field,
+                aggregate_op,
+                base_params,
+                permission_map,
+                condition_params=condition_params,
+                condition_logic=logic,
+            )
         except GenericQueryGraphError as exc:
             raise GenericQueryError(exc.message) from exc
         _ensure_scan(int(aggregated.get("scanned") or 0))
@@ -183,7 +198,13 @@ def query_instances(
             aggregation=f"{aggregate_op}({aggregate_field})",
         )
 
-    grouped_counts = count_by_attr("model_id" if mode == "count" else _group_field(attr_types, group_by), params, permission_map)
+    grouped_counts = count_by_attr(
+        "model_id" if mode == "count" else _group_field(attr_types, group_by),
+        base_params,
+        permission_map,
+        condition_params=condition_params,
+        condition_logic=logic,
+    )
     scanned = sum(int(value or 0) for value in grouped_counts.values())
     _ensure_scan(scanned)
     if mode == "count":
@@ -264,7 +285,16 @@ def query_one_hop_relations(
     return _page_payload(rows, page, page_size)
 
 
-def load_start_instances(*, model_id: str, params: list, permission_map: dict, page: int, page_size: int):
+def load_start_instances(
+    *,
+    model_id: str,
+    params: list,
+    permission_map: dict,
+    page: int,
+    page_size: int,
+    condition_params: list | None = None,
+    condition_logic: str = "AND",
+):
     _validate_sort_field("inst_name")
     return InstanceManage.instance_list(
         model_id=model_id,
@@ -273,45 +303,54 @@ def load_start_instances(*, model_id: str, params: list, permission_map: dict, p
         page_size=page_size,
         order="inst_name",
         permission_map=permission_map,
+        condition_params=condition_params,
+        condition_logic=condition_logic,
     )
 
 
 def build_attribute_filter(attr_types: dict[str, str], field: str | None, op: str | None, value) -> dict | None:
-    if field in (None, "") and value in (None, ""):
+    if field in (None, "") and op in (None, "") and value in (None, ""):
         return None
-    if field in (None, "") or op in (None, "") or value in (None, ""):
-        raise GenericQueryError("属性过滤必须同时给出字段、运算符和值")
+    if field in (None, "") or op in (None, ""):
+        raise GenericQueryError("属性过滤必须同时给出字段和运算符")
     kind = _attr_kind(attr_types, field)
     mapped = _FILTER_TYPES.get((kind, op))
     if mapped is None:
         raise GenericQueryError("属性过滤运算符不受支持")
+    if op == "empty":
+        return {"field": field, "type": mapped}
+    if value in (None, "") or (isinstance(value, list) and not value):
+        raise GenericQueryError("属性过滤必须给出值")
     parsed = value
-    if kind == "number" and op != "in":
+    if kind == "number":
         parsed = _as_number(value)
-    if op == "in" and not isinstance(parsed, list):
-        parsed = [part.strip() for part in str(value).split(",") if part.strip()]
-        if kind == "number":
-            parsed = [_as_number(part) for part in parsed]
+    if op == "in":
+        if not isinstance(parsed, list):
+            parsed = [part.strip() for part in str(value).split(",") if part.strip()]
+        if not parsed:
+            raise GenericQueryError("属性过滤必须给出值")
     return {"field": field, "type": mapped, "value": parsed}
 
 
-def _attribute_filters(attr_types, field, op, value, filters) -> list:
-    built = []
+def _attribute_filters(attr_types, field, op, value, filters) -> tuple[str, list]:
+    try:
+        logic, items = parse_condition_group(filters)
+    except ConditionGroupError as exc:
+        raise GenericQueryError(exc.message) from exc
     single = build_attribute_filter(attr_types, field, op, value)
-    if single:
-        built.append(single)
-    for item in filters or []:
-        if not isinstance(item, dict):
-            raise GenericQueryError("属性过滤格式错误")
-        parsed = build_attribute_filter(
-            attr_types,
-            item.get("field"),
-            item.get("op") or item.get("type"),
-            item.get("value"),
-        )
+    group = []
+    for item in items:
+        parsed = build_attribute_filter(attr_types, item.get("field"), item.get("op"), item.get("value"))
         if parsed:
-            built.append(parsed)
-    return built
+            group.append(parsed)
+    if single and group and logic == "OR":
+        raise GenericQueryError("属性过滤不能同时使用旧字段和 OR 条件组")
+    if single:
+        return "AND", [single, *group]
+    return logic, group
+
+
+compile_attribute_conditions = _attribute_filters
 
 
 def _model_row(model: dict, counts: dict) -> dict:
@@ -327,14 +366,42 @@ def _model_row(model: dict, counts: dict) -> dict:
     }
 
 
-def _apply_result_filter(rows: list[dict], op: str | None, value) -> list[dict]:
-    if op in (None, "") and value in (None, ""):
+def _apply_result_filter(rows: list[dict], op: str | None, value, result_filter=None) -> list[dict]:
+    try:
+        logic, items = parse_condition_group(result_filter)
+    except ConditionGroupError as exc:
+        raise GenericQueryError(exc.message) from exc
+    comparisons = []
+    for item in items:
+        if item.get("field") not in (None, "", "instance_count"):
+            raise GenericQueryError("实例数筛选只支持实例数")
+        comparisons.append(_result_comparison(item.get("op"), item.get("value")))
+    legacy = None
+    if op not in (None, "") or value not in (None, ""):
+        if op not in _RESULT_OPS or value in (None, ""):
+            raise GenericQueryError("统计结果筛选必须同时给出受支持的运算符和数值")
+        legacy = _result_comparison(op, value)
+
+    def keep(row: dict) -> bool:
+        count = row["instance_count"]
+        grouped = True
+        if comparisons:
+            checks = [compare(count, expected) for compare, expected in comparisons]
+            grouped = all(checks) if logic == "AND" else any(checks)
+        if legacy:
+            compare, expected = legacy
+            grouped = grouped and compare(count, expected)
+        return grouped
+
+    if not comparisons and legacy is None:
         return rows
-    if op not in _RESULT_OPS or value in (None, ""):
-        raise GenericQueryError("统计结果筛选必须同时给出受支持的运算符和数值")
-    expected = _as_number(value)
-    compare = _RESULT_OPS[op]
-    return [row for row in rows if compare(row["instance_count"], expected)]
+    return [row for row in rows if keep(row)]
+
+
+def _result_comparison(op, value):
+    if op not in _RESULT_OPS:
+        raise GenericQueryError("实例数筛选运算符不受支持")
+    return _RESULT_OPS[op], _as_number(value)
 
 
 def _validate_sort_field(field: str) -> None:
@@ -356,6 +423,8 @@ def _attr_kind(attr_types: dict[str, str], field: str) -> str:
     if field not in attr_types:
         raise GenericQueryError(f"属性不存在或无权使用: {field}")
     raw = str(attr_types.get(field) or "string").lower()
+    if raw in _ENUM_ATTR_TYPES:
+        return "enum"
     if raw in _NUMBER_ATTR_TYPES:
         return "number"
     return "string"

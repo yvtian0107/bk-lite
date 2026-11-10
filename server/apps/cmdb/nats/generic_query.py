@@ -6,7 +6,7 @@ from apps.cmdb.services.asset_overview_query import list_model_association_optio
 from apps.cmdb.services.classification import ClassificationManage
 from apps.cmdb.services.generic_query import (
     GenericQueryError,
-    build_attribute_filter,
+    compile_attribute_conditions,
     ensure_payload_limit,
     load_start_instances,
     query_instances,
@@ -57,12 +57,38 @@ def _reject_unsupported_filters(kwargs: dict) -> None:
         raise GenericQueryError("当前查询不支持 filters")
 
 
-def _require_filter_list(filters):
+def _require_condition_group(filters):
     if filters in (None, "", []):
         return None
-    if not isinstance(filters, list):
-        raise GenericQueryError("filters 必须是列表")
-    return filters
+    if isinstance(filters, (list, dict)):
+        return filters
+    raise GenericQueryError("条件过滤格式错误")
+
+
+def _attr_option(attr: dict) -> dict:
+    raw_type = str(attr.get("attr_type") or "string").lower()
+    if raw_type == "enum":
+        value_type = "enum"
+    elif raw_type in {"int", "integer", "float", "number", "long", "double"}:
+        value_type = "number"
+    else:
+        value_type = "string"
+    options = []
+    if value_type == "enum":
+        for option in ModelManage.resolve_runtime_enum_options(attr) or []:
+            if not isinstance(option, dict):
+                continue
+            option_id = option.get("id")
+            if option_id in (None, ""):
+                continue
+            options.append({"value": option_id, "label": option.get("name") or option.get("label") or option_id})
+    return {
+        "attr_id": attr.get("attr_id"),
+        "attr_name": attr.get("attr_name") or attr.get("attr_id"),
+        "attr_type": attr.get("attr_type") or "string",
+        "value_type": value_type,
+        "options": options,
+    }
 
 
 def _text_list(value) -> list[str]:
@@ -115,6 +141,7 @@ def query_cmdb_models(
     model_ids=None,
     result_op=None,
     result_value=None,
+    result_filter=None,
     order=None,
     page=None,
     page_size=None,
@@ -139,6 +166,7 @@ def query_cmdb_models(
         model_ids=selected,
         result_op=result_op,
         result_value=result_value,
+        result_filter=result_filter,
         order=order,
         page=page,
         page_size=page_size,
@@ -166,7 +194,7 @@ def query_cmdb_instances(
 ):
     _reject_unsupported_filters(kwargs)
     del kwargs
-    parsed_filters = _require_filter_list(filters)
+    parsed_filters = _require_condition_group(filters)
     _models, instance_permissions, _names = _visible_models(user_info)
     visible_ids = {str(item.get("model_id")) for item in _models}
     if str(model_id or "") not in visible_ids:
@@ -202,6 +230,8 @@ def query_cmdb_one_hop(
     end_filter_field=None,
     end_filter_op=None,
     end_filter_value=None,
+    filters=None,
+    end_filters=None,
     analysis_mode=None,
     order=None,
     page=None,
@@ -232,16 +262,21 @@ def query_cmdb_one_hop(
     if str(end_model_id) not in visible_ids:
         raise GenericQueryError("终点模型不存在或无权访问", status="forbidden")
     attr_types = _attr_types(str(start_model_id), user_info)
-    params = []
-    start_filter = build_attribute_filter(attr_types, filter_field, filter_op, filter_value)
-    if start_filter:
-        params.append(start_filter)
+    start_logic, start_conditions = compile_attribute_conditions(
+        attr_types,
+        filter_field,
+        filter_op,
+        filter_value,
+        _require_condition_group(filters),
+    )
     _preview, total = load_start_instances(
         model_id=str(start_model_id),
-        params=params,
+        params=[],
         permission_map=instance_permissions,
         page=1,
         page_size=1,
+        condition_params=start_conditions,
+        condition_logic=start_logic,
     )
     if int(total or 0) > ONE_HOP_START_MAX:
         raise GenericQueryError(f"一跳关联起点超过 {ONE_HOP_START_MAX} 个")
@@ -250,25 +285,31 @@ def query_cmdb_one_hop(
         if not total
         else load_start_instances(
             model_id=str(start_model_id),
-            params=params,
+            params=[],
             permission_map=instance_permissions,
             page=1,
             page_size=int(total),
+            condition_params=start_conditions,
+            condition_logic=start_logic,
         )
     )
     start_uuids = [str(item.get("inst_uuid")) for item in starts or [] if item.get("inst_uuid")]
-    end_types = _attr_types(str(end_model_id), user_info) if end_filter_field else {}
-    if end_filter_field:
-        build_attribute_filter(end_types, end_filter_field, end_filter_op or "eq", end_filter_value)
+    end_types = _attr_types(str(end_model_id), user_info) if end_filter_field or end_filters else {"inst_name": "string"}
+    end_logic, end_conditions = compile_attribute_conditions(
+        end_types,
+        end_filter_field,
+        end_filter_op if end_filter_field else None,
+        end_filter_value if end_filter_field else None,
+        _require_condition_group(end_filters),
+    )
     graph_result = query_one_hop(
         start_uuids=start_uuids,
         model_asst_id=str(model_asst_id),
         direction=direction,
         end_model_id=str(end_model_id),
         permission_map=instance_permissions,
-        end_field=end_filter_field,
-        end_op=end_filter_op or "eq",
-        end_value=end_filter_value,
+        end_conditions=end_conditions,
+        end_logic=end_logic,
     )
     data = query_one_hop_relations(
         analysis_mode=analysis_mode or "detail",
@@ -313,14 +354,6 @@ def list_cmdb_attr_options(model_id=None, user_info=None, **kwargs):
         raise GenericQueryError("指定模型不存在或无权访问", status="forbidden")
     language = _resolve_nats_cmdb_language(user_info)
     attrs = ModelManage.search_model_attr(str(model_id), language=language) or []
-    data = [
-        {
-            "attr_id": attr.get("attr_id"),
-            "attr_name": attr.get("attr_name") or attr.get("attr_id"),
-            "attr_type": attr.get("attr_type") or "string",
-        }
-        for attr in attrs
-        if attr.get("attr_id")
-    ]
+    data = [_attr_option(attr) for attr in attrs if attr.get("attr_id")]
     ensure_payload_limit(data)
     return {"result": True, "data": data, "message": ""}

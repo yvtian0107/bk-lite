@@ -122,6 +122,11 @@ export const buildTopNItems = (
     return buildScalarTopNItems(data, scalarFields);
   }
 
+  if (isTopNRecord(data) && (data.structure === 'category' || data.structure === 'table')) {
+    const rows = Array.isArray(data.items) ? data.items : [];
+    return buildTopNItems(rows, labelField || 'name', valueField || 'value');
+  }
+
   const rows = unwrapTopNData(data);
   if (rows.length === 0) {
     return [];
@@ -220,6 +225,12 @@ export const validateTopNPayload = (
   const scalarFields = normalizeTopNScalarFields(options?.scalarFields);
   if (scalarFields.length > 0 && isScalarTopNObject(data)) {
     return buildTopNItems(data, options?.labelField, options?.valueField, { scalarFields }).length > 0;
+  }
+
+  if (isTopNRecord(data) && (data.structure === 'category' || data.structure === 'table')) {
+    const items = Array.isArray(data.items) ? data.items : [];
+    if (items.length === 0) return true;
+    return buildTopNItems(data, options?.labelField, options?.valueField).length > 0;
   }
 
   if (!Array.isArray(data)) {

@@ -466,7 +466,42 @@ def _normalize_param_value(param_name, param_type, raw_value):
     if param_type == "timeRange":
         return _normalize_time_range(raw_value)
 
+    if param_type == "conditionFilter":
+        return _normalize_condition_filter(param_name, raw_value)
+
+    if param_type == "order":
+        if raw_value in (None, ""):
+            return raw_value
+        if not isinstance(raw_value, str):
+            raise ValueError(oa_message("messages.param_must_be_string", "参数 {param_name} 必须是字符串", param_name=param_name))
+        return raw_value
+
     return raw_value
+
+
+def _normalize_condition_filter(param_name, raw_value):
+    if raw_value in (None, "", []):
+        return {"logic": "AND", "items": []}
+    if isinstance(raw_value, list):
+        items = raw_value
+        logic = "AND"
+    elif isinstance(raw_value, dict):
+        logic = str(raw_value.get("logic") or "AND").strip().upper()
+        items = raw_value.get("items", [])
+    else:
+        raise ValueError(oa_message("messages.condition_filter_format", "参数 {param_name} 条件过滤格式错误", param_name=param_name))
+    if logic not in {"AND", "OR"}:
+        raise ValueError(oa_message("messages.condition_filter_logic", "参数 {param_name} 条件关系只支持 AND 或 OR", param_name=param_name))
+    if items in (None, []):
+        return {"logic": logic, "items": []}
+    if not isinstance(items, list):
+        raise ValueError(oa_message("messages.condition_filter_format", "参数 {param_name} 条件过滤格式错误", param_name=param_name))
+    normalized = []
+    for item in items:
+        if not isinstance(item, dict) or item.get("field") in (None, "") or item.get("op") in (None, ""):
+            raise ValueError(oa_message("messages.condition_filter_format", "参数 {param_name} 条件过滤格式错误", param_name=param_name))
+        normalized.append({"field": item.get("field"), "op": item.get("op"), "value": item.get("value")})
+    return {"logic": logic, "items": normalized}
 
 
 def _normalize_runtime_params(request_data):
@@ -517,11 +552,7 @@ def _unspecified_host_top_instance_ids(instance, param_name, default_value):
     源定义里的 [] 只是「未选择」。请求里明确带上的 [] 仍走显式筛选，
     不在这里改掉。其它数据源的空列表默认值继续补齐。
     """
-    return (
-        getattr(instance, "rest_api", None) == "monitor/get_host_resource_top"
-        and param_name == "instance_ids"
-        and default_value == []
-    )
+    return getattr(instance, "rest_api", None) == "monitor/get_host_resource_top" and param_name == "instance_ids" and default_value == []
 
 
 def _resolve_request_params(instance, request_data):

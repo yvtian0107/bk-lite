@@ -24,24 +24,46 @@ class GenericQueryGraphError(Exception):
         self.message = message
 
 
-def count_by_attr(group_by_attr: str, params: list, permission_map: dict) -> dict:
+def count_by_attr(
+    group_by_attr: str,
+    params: list,
+    permission_map: dict,
+    condition_params: list | None = None,
+    condition_logic: str = "AND",
+) -> dict:
     """图内 GROUP BY 计数，返回 {分组值: 数量}。"""
     CQLValidator.validate_field(group_by_attr)
     return InstanceManage.group_inst_count(
         group_by_attr=group_by_attr,
         permissions_map=permission_map,
         params=list(params or []),
+        condition_params=list(condition_params or []),
+        condition_logic=condition_logic,
     )
 
 
-def aggregate_numeric(field: str, aggregation: str, params: list, permission_map: dict) -> dict:
+def aggregate_numeric(
+    field: str,
+    aggregation: str,
+    params: list,
+    permission_map: dict,
+    condition_params: list | None = None,
+    condition_logic: str = "AND",
+) -> dict:
     """图内对数值属性做 sum/avg/min/max，同时返回参与计数。"""
     agg = _AGGREGATIONS.get(str(aggregation or "").strip().lower())
     if agg is None:
         raise GenericQueryGraphError("聚合方式不受支持")
     validated = CQLValidator.validate_field(field)
     with GraphClient() as client:
-        where, query_params = _where_clause(client, params, permission_map, alias="n")
+        where, query_params = _where_clause(
+            client,
+            params,
+            permission_map,
+            alias="n",
+            condition_params=condition_params,
+            condition_logic=condition_logic,
+        )
         query = f"MATCH (n:{INSTANCE}) {where} " f"RETURN {agg}(n.{validated}) AS value, count(n) AS scanned"
         rows = _run(client, query, query_params)
     if not rows:
@@ -60,6 +82,8 @@ def query_one_hop(
     end_field: str | None = None,
     end_op: str | None = None,
     end_value=None,
+    end_conditions: list | None = None,
+    end_logic: str = "AND",
 ) -> dict:
     """一跳关系统计。终点权限写进图查询，计数和结果上限都按过滤后的边计算。"""
     if direction not in {"out", "in"}:
@@ -90,9 +114,14 @@ def query_one_hop(
             raise GenericQueryGraphError("终点过滤运算符不受支持")
         params["end_value"] = end_value
     with GraphClient() as client:
-        permission_sql, permission_params = _permission_clause(client, permission_map, alias="t")
-        params.update(permission_params)
-        where_sql = " AND ".join([*where, permission_sql])
+        collector = ParameterCollector()
+        permission_sql, collector = _permission_clause(client, permission_map, alias="t", collector=collector)
+        end_sql, collector = _condition_sql(client, end_conditions, end_logic, alias="t", collector=collector)
+        params.update(collector.get_params())
+        clauses = [*where, permission_sql]
+        if end_sql:
+            clauses.append(end_sql)
+        where_sql = " AND ".join(clauses)
         count_query = (
             f"MATCH {pattern} WHERE {where_sql} " "WITH DISTINCT s.inst_uuid AS start_uuid, t.inst_uuid AS end_uuid " "RETURN count(*) AS pair_count"
         )
@@ -124,11 +153,11 @@ def query_one_hop(
     return {"pair_count": pair_count, "pairs": pairs, "groups": groups}
 
 
-def _permission_clause(client, permission_map: dict, alias: str) -> tuple[str, dict]:
+def _permission_clause(client, permission_map: dict, alias: str, collector: ParameterCollector | None = None):
     """把实例权限写成图条件。权限范围为空时失败关闭，不退回全量终点。"""
     if not permission_map:
         raise GenericQueryGraphError("缺少权限范围，已拒绝查询")
-    collector = ParameterCollector()
+    collector = collector or ParameterCollector()
     permission = InstanceManage._build_format_permission_dict(permission_map or {}, "")
     permission_parts = []
     for organization_id, query_list in permission.items():
@@ -152,14 +181,42 @@ def _permission_clause(client, permission_map: dict, alias: str) -> tuple[str, d
     if not permission_parts:
         raise GenericQueryGraphError("缺少权限范围，已拒绝查询")
     joined = permission_parts[0] if len(permission_parts) == 1 else "(" + " OR ".join(permission_parts) + ")"
-    return joined, collector.get_params()
+    return joined, collector
 
 
-def _where_clause(client, params: list, permission_map: dict, alias: str) -> tuple[str, dict]:
+def _condition_sql(client, conditions: list | None, logic: str, alias: str, collector: ParameterCollector | None = None):
+    """条件组单独参数化。OR 由 format_search_params 加括号，再和权限 AND。"""
+    collector = collector or ParameterCollector()
+    if not conditions:
+        return "", collector
+    logic_name = "OR" if str(logic or "AND").upper() == "OR" else "AND"
+    sql, _ignored = client.format_search_params(
+        list(conditions),
+        param_type=logic_name,
+        param_collector=collector,
+        alias=alias,
+    )
+    return sql, collector
+
+
+def _where_clause(
+    client,
+    params: list,
+    permission_map: dict,
+    alias: str,
+    condition_params: list | None = None,
+    condition_logic: str = "AND",
+) -> tuple[str, dict]:
     collector = ParameterCollector()
     base, _query_params = client.format_search_params(
         list(params or []),
         param_type="AND",
+        param_collector=collector,
+        alias=alias,
+    )
+    group_sql, _ignored = client.format_search_params(
+        list(condition_params or []),
+        param_type="OR" if str(condition_logic or "AND").upper() == "OR" else "AND",
         param_collector=collector,
         alias=alias,
     )
@@ -186,6 +243,8 @@ def _where_clause(client, params: list, permission_map: dict, alias: str) -> tup
     parts = []
     if base:
         parts.append(base)
+    if group_sql:
+        parts.append(group_sql)
     if permission_parts:
         joined = permission_parts[0] if len(permission_parts) == 1 else "(" + " OR ".join(permission_parts) + ")"
         parts.append(joined)

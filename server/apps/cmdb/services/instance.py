@@ -1027,6 +1027,8 @@ class InstanceManage(object):
         case_sensitive: bool = True,
         advanced_filter: dict = None,
         permission_lookup=None,
+        condition_params: list = None,
+        condition_logic: str = "AND",
     ):
         """实例列表"""
 
@@ -1065,6 +1067,8 @@ class InstanceManage(object):
                 order_type=order_type,
                 format_permission_dict=format_permission_dict,
                 case_sensitive=case_sensitive,
+                condition_params=list(condition_params or []),
+                condition_logic=condition_logic,
             )
             inst_list, count = ag.query_entity(**query)
         return inst_list, count
@@ -3201,7 +3205,15 @@ class InstanceManage(object):
         return f"n.inst_name IN {inst_names}"
 
     @classmethod
-    def group_inst_count(cls, group_by_attr: str, permissions_map: dict, params: list = None, creator: str = ""):
+    def group_inst_count(
+        cls,
+        group_by_attr: str,
+        permissions_map: dict,
+        params: list = None,
+        creator: str = "",
+        condition_params: list = None,
+        condition_logic: str = "AND",
+    ):
         format_permission_dict = cls._build_format_permission_dict(permissions_map, creator)
 
         with GraphClient() as ag:
@@ -3210,6 +3222,8 @@ class InstanceManage(object):
                 group_by_attr=group_by_attr,
                 params=params or [],
                 format_permission_dict=format_permission_dict,
+                condition_params=list(condition_params or []),
+                condition_logic=condition_logic,
             )
         return data
 

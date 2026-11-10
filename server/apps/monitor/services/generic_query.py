@@ -6,8 +6,9 @@ import json
 from datetime import datetime, timezone
 from typing import Any
 
-from django.db.models import Count
+from django.db.models import Count, Q
 
+from apps.core.utils.condition_group import ConditionGroupError, parse_condition_group
 from apps.monitor.services.generic_query_limits import (
     ALERT_RANGE_MAX_SECONDS,
     DETAIL_PAGE_SIZE_MAX,
@@ -58,6 +59,7 @@ def query_instances(
     filter_field: str | None = None,
     filter_op: str | None = None,
     filter_value=None,
+    filters=None,
     instance_ids=None,
     group_by: str | None = None,
     order: str | None = None,
@@ -67,7 +69,7 @@ def query_instances(
     mode = _mode(analysis_mode, INSTANCE_MODES)
     if mode != "detail":
         _reject_paging(page, page_size)
-    queryset = _filter_instances(queryset, status, filter_field, filter_op, filter_value, instance_ids)
+    queryset = _filter_instances(queryset, status, filter_field, filter_op, filter_value, instance_ids, filters)
     if mode == "count":
         return _value(queryset.count(), unit="个", aggregation="监控实例计数")
     if mode == "distribution":
@@ -211,6 +213,7 @@ def query_alerts(
     instance_id: str | None = None,
     time_field: str | None = None,
     time_range=None,
+    filters=None,
     group_by: str | None = None,
     order: str | None = None,
     page=None,
@@ -219,7 +222,7 @@ def query_alerts(
     mode = _mode(analysis_mode, ALERT_MODES)
     if mode != "detail":
         _reject_paging(page, page_size)
-    queryset = _filter_alerts(queryset, level, status, alert_type, instance_id, time_field, time_range)
+    queryset = _filter_alerts(queryset, level, status, alert_type, instance_id, time_field, time_range, filters)
     if mode == "count":
         return _value(queryset.count(), unit="条", aggregation="监控告警计数")
     if mode == "distribution":
@@ -239,7 +242,7 @@ def query_alerts(
     return _table(rows, total, page_no, size)
 
 
-def _filter_instances(queryset, status, field, op, value, instance_ids):
+def _filter_instances(queryset, status, field, op, value, instance_ids, filters=None):
     if status in ("active", "inactive"):
         queryset = queryset.filter(is_active=(status == "active"))
     elif status not in (None, "", "all"):
@@ -247,15 +250,50 @@ def _filter_instances(queryset, status, field, op, value, instance_ids):
     ids = _id_list(instance_ids) if instance_ids not in (None, "", []) else []
     if ids:
         queryset = queryset.filter(id__in=ids)
-    if field in (None, "") and value in (None, ""):
+    legacy = []
+    if field not in (None, "") or value not in (None, ""):
+        legacy.append({"field": field, "op": op or "eq", "value": value})
+    queryset = _apply_text_group(queryset, "AND", legacy, INSTANCE_FILTER_FIELDS)
+    try:
+        logic, items = parse_condition_group(filters)
+    except ConditionGroupError as exc:
+        raise GenericQueryError(exc.message) from exc
+    return _apply_text_group(queryset, logic, items, INSTANCE_FILTER_FIELDS)
+
+
+def _apply_text_group(queryset, logic, items, allowed):
+    combined = None
+    for item in items:
+        field = item.get("field")
+        if field not in allowed:
+            raise GenericQueryError("属性过滤不受支持")
+        clause = _text_clause(field, item.get("op"), item.get("value"))
+        if combined is None:
+            combined = clause
+        elif logic == "OR":
+            combined |= clause
+        else:
+            combined &= clause
+    if combined is None:
         return queryset
-    if field not in INSTANCE_FILTER_FIELDS or op not in {"eq", "contains"} or value in (None, ""):
-        raise GenericQueryError("属性过滤不受支持")
-    lookup = field if op == "eq" else f"{field}__icontains"
-    return queryset.filter(**{lookup: value})
+    return queryset.filter(combined)
 
 
-def _filter_alerts(queryset, level, status, alert_type, instance_id, time_field, time_range):
+def _text_clause(field, op, value):
+    if op == "empty":
+        return Q(**{field: ""}) | Q(**{f"{field}__isnull": True})
+    if value in (None, ""):
+        raise GenericQueryError("属性过滤必须给出值")
+    if op == "eq":
+        return Q(**{field: value})
+    if op == "ne":
+        return ~Q(**{field: value})
+    if op == "contains":
+        return Q(**{f"{field}__icontains": value})
+    raise GenericQueryError("属性过滤运算符不受支持")
+
+
+def _filter_alerts(queryset, level, status, alert_type, instance_id, time_field, time_range, filters=None):
     if level not in (None, ""):
         queryset = queryset.filter(level=level)
     if status not in (None, ""):
@@ -264,6 +302,7 @@ def _filter_alerts(queryset, level, status, alert_type, instance_id, time_field,
         queryset = queryset.filter(alert_type=alert_type)
     if instance_id not in (None, ""):
         queryset = queryset.filter(monitor_instance_id=str(instance_id))
+    queryset = _apply_alert_conditions(queryset, filters)
     if time_range in (None, "", [], {}):
         if time_field not in (None, ""):
             raise GenericQueryError("时间范围不能为空")
@@ -274,6 +313,48 @@ def _filter_alerts(queryset, level, status, alert_type, instance_id, time_field,
     if (end - start).total_seconds() > ALERT_RANGE_MAX_SECONDS:
         raise GenericQueryError("监控告警时间范围最长 90 天")
     return queryset.filter(**{f"{time_field}__gte": start, f"{time_field}__lt": end})
+
+
+def _apply_alert_conditions(queryset, filters):
+    try:
+        logic, items = parse_condition_group(filters)
+    except ConditionGroupError as exc:
+        raise GenericQueryError(exc.message) from exc
+    combined = None
+    for item in items:
+        field = item.get("field")
+        op = item.get("op")
+        value = item.get("value")
+        if field in {"level", "status", "alert_type", "monitor_instance_id"} and op in {"eq", "ne", "in"}:
+            clause = _enum_clause(field, op, value)
+        elif field == "monitor_instance_id":
+            clause = _text_clause(field, op, value)
+        else:
+            raise GenericQueryError("属性过滤不受支持")
+        if combined is None:
+            combined = clause
+        elif logic == "OR":
+            combined |= clause
+        else:
+            combined &= clause
+    if combined is None:
+        return queryset
+    return queryset.filter(combined)
+
+
+def _enum_clause(field, op, value):
+    if op == "in":
+        values = value if isinstance(value, list) else [part.strip() for part in str(value).split(",") if part.strip()]
+        if not values:
+            raise GenericQueryError("属性过滤必须给出值")
+        return Q(**{f"{field}__in": values})
+    if value in (None, ""):
+        raise GenericQueryError("属性过滤必须给出值")
+    if op == "eq":
+        return Q(**{field: value})
+    if op == "ne":
+        return ~Q(**{field: value})
+    raise GenericQueryError("属性过滤运算符不受支持")
 
 
 def _instance_row(instance) -> dict:

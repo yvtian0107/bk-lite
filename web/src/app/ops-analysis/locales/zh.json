@@ -1152,6 +1152,28 @@
     "selectInstance": "请选择实例",
     "dataFormatMismatch": "数据格式不匹配",
     "optionPageLimitExceeded": "选项超过分页上限，无法继续加载",
+    "selectClassificationFirst": "请先选择分类",
+    "conditionFilter": {
+      "add": "添加条件",
+      "delete": "删除条件",
+      "and": "且",
+      "or": "或",
+      "field": "字段",
+      "eq": "等于",
+      "ne": "不等于",
+      "contains": "包含",
+      "empty": "为空",
+      "gt": "大于",
+      "gte": "大于等于",
+      "lt": "小于",
+      "lte": "小于等于",
+      "in": "属于"
+    },
+    "order": {
+      "field": "排序字段",
+      "asc": "升序",
+      "desc": "降序"
+    },
     "optionPageEndedEarly": "选项分页在总数到达前结束",
     "invalidSourceDataResponse": "统一取数响应格式无效",
     "multipleOrgParams": "同一请求不能声明多个组织控件参数",

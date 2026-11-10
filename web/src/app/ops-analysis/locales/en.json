@@ -1152,6 +1152,28 @@
     "selectInstance": "Please select instance",
     "dataFormatMismatch": "Data format mismatch",
     "optionPageLimitExceeded": "Option page limit exceeded",
+    "selectClassificationFirst": "Select a classification first",
+    "conditionFilter": {
+      "add": "Add condition",
+      "delete": "Delete condition",
+      "and": "AND",
+      "or": "OR",
+      "field": "Field",
+      "eq": "Equals",
+      "ne": "Not equal",
+      "contains": "Contains",
+      "empty": "Is empty",
+      "gt": "Greater than",
+      "gte": "Greater than or equal",
+      "lt": "Less than",
+      "lte": "Less than or equal",
+      "in": "In"
+    },
+    "order": {
+      "field": "Sort field",
+      "asc": "Ascending",
+      "desc": "Descending"
+    },
     "optionPageEndedEarly": "Option pages ended before the total count",
     "invalidSourceDataResponse": "The unified data response format is invalid",
     "multipleOrgParams": "A single request cannot declare more than one organization control parameter",

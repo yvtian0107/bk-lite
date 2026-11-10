@@ -2,6 +2,7 @@
 
 import nats_client
 from apps.core.logger import monitor_logger as logger
+from apps.core.utils.condition_group import ConditionGroupError, parse_condition_group
 from apps.monitor.models.monitor_object import MonitorObject
 from apps.monitor.models.monitor_policy import MonitorAlert
 from apps.monitor.nats.monitor import (
@@ -96,6 +97,7 @@ def query_monitor_instances(
     filter_field=None,
     filter_op=None,
     filter_value=None,
+    filters=None,
     instance_ids=None,
     group_by=None,
     order=None,
@@ -106,6 +108,10 @@ def query_monitor_instances(
 ):
     _reject_unsupported_filters(kwargs)
     del kwargs
+    try:
+        parse_condition_group(filters)
+    except ConditionGroupError as exc:
+        raise GenericQueryError(exc.message) from exc
     queryset = _authorized_instances(user_info, monitor_object_id)
     data = query_instances(
         queryset,
@@ -114,6 +120,7 @@ def query_monitor_instances(
         filter_field=filter_field,
         filter_op=filter_op,
         filter_value=filter_value,
+        filters=filters,
         instance_ids=instance_ids,
         group_by=group_by,
         order=order,
@@ -207,6 +214,7 @@ def query_monitor_alerts(
     alert_type=None,
     time_field=None,
     time_range=None,
+    filters=None,
     group_by=None,
     order=None,
     page=None,
@@ -239,6 +247,7 @@ def query_monitor_alerts(
         instance_id=instance_id,
         time_field=time_field,
         time_range=time_range,
+        filters=filters,
         group_by=group_by,
         order=order,
         page=page,

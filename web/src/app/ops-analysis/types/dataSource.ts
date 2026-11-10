@@ -130,6 +130,46 @@ export interface AnalysisModeResult {
   structure: 'table' | 'value' | 'category' | 'series';
 }
 
+export type ConditionLogic = 'AND' | 'OR';
+
+export interface ConditionFilterItem {
+  field?: string;
+  op?: string;
+  value?: unknown;
+}
+
+export interface ConditionFilterValue {
+  logic?: ConditionLogic;
+  items?: ConditionFilterItem[];
+}
+
+export type ConditionFieldValueType = 'string' | 'number' | 'enum';
+
+export interface ConditionFieldOption {
+  value: string;
+  label: string;
+  valueType?: ConditionFieldValueType;
+  options?: Array<{ label: string; value: string | number; query_objects?: string[] }>;
+  optionsSource?: DynamicOptionsSource;
+  query_objects?: string[];
+}
+
+export interface ConditionFieldSource {
+  kind: 'static' | 'modelAttrs' | 'endModelAttrs';
+  items?: ConditionFieldOption[];
+  modelParam?: string;
+  startModelParam?: string;
+  associationParam?: string;
+  directionParam?: string;
+}
+
+export interface OrderFieldOption {
+  value: string;
+  label: string;
+  modes?: string[];
+  query_objects?: string[];
+}
+
 export interface InputOption {
   label: string;
   value: string | number;
@@ -169,6 +209,8 @@ export interface DynamicOptionsSource {
   labelField: string;
   /** 选项查询请求参数。值为字面量或 { ref }；YAML 整值 $name$ / $name:type$ 读入时归一成 { ref }。 */
   queryParams?: Record<string, OptionsQueryParamValue>;
+  /** 上游为空时的提示文案 key。 */
+  emptyUpstreamHintKey?: string;
 }
 
 export type InputControlConfig =
@@ -186,12 +228,24 @@ export type InputControlConfig =
     maxCount?: number;
     /** select 专用：dropdown 为默认下拉；table 点击后弹表格批量勾选 */
     picker?: 'dropdown' | 'table';
+  }
+  | {
+    control: 'conditionFilter';
+    fields: ConditionFieldSource;
+  }
+  | {
+    control: 'order';
+    fields: OrderFieldOption[];
+    modelParam?: string;
+    includeModelAttrsInModes?: string[];
   };
 
 export interface ParamItem {
   id?: string;
   name: string;
-  value: string | number | boolean | Array<string | number> | [number, number] | DateRangeValue | null | undefined;
+  value: string | number | boolean | Array<string | number> | [number, number] | DateRangeValue | ConditionFilterValue | null | undefined;
+  /** 种子里保留、界面不展示。旧组件仍可提交。 */
+  hidden?: boolean;
   alias_name: string;
   type?: string;
   filterType?: DataSourceParamFilterType;

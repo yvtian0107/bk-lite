@@ -391,7 +391,12 @@ export const ParamInputConfigEditor: React.FC<ParamInputConfigEditorProps> = ({
     setMultiple(
       value.control === 'select' ? Boolean(value.multiple) : false,
     );
-    if (value.control === 'input' || value.control === 'organization') {
+    if (
+      value.control === 'input'
+      || value.control === 'organization'
+      || value.control === 'conditionFilter'
+      || value.control === 'order'
+    ) {
       setSourceType('static');
       setStaticRows([createRow()]);
       setDynamicSourceId(undefined);
@@ -540,6 +545,8 @@ export const ParamInputConfigEditor: React.FC<ParamInputConfigEditorProps> = ({
       !value ||
       value.control === 'input' ||
       value.control === 'organization' ||
+      value.control === 'conditionFilter' ||
+      value.control === 'order' ||
       value.optionsSource.type !== 'dynamic' ||
       !value.optionsSource.sourceRef ||
       dataSourceList.length === 0
@@ -740,6 +747,10 @@ export const ParamInputConfigEditor: React.FC<ParamInputConfigEditorProps> = ({
     }
     if (control === 'organization') {
       onConfirm({ control: 'organization' });
+      return;
+    }
+    if (control !== 'select' && control !== 'radio') {
+      onConfirm({ control: 'input' });
       return;
     }
 

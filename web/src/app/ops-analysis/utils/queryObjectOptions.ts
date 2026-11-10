@@ -10,7 +10,13 @@ export const narrowInputConfigForQueryObject = (
   inputConfig: InputControlConfig | undefined,
   queryObject: unknown,
 ): InputControlConfig | undefined => {
-  if (!inputConfig || inputConfig.control === 'input' || inputConfig.control === 'organization') {
+  if (
+    !inputConfig
+    || inputConfig.control === 'input'
+    || inputConfig.control === 'organization'
+    || inputConfig.control === 'conditionFilter'
+    || inputConfig.control === 'order'
+  ) {
     return inputConfig;
   }
   if (inputConfig.optionsSource.type !== 'static') return inputConfig;

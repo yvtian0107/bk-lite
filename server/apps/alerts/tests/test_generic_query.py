@@ -290,12 +290,56 @@ def test_event_queryset_follows_event_rules_and_is_empty_without_rules(monkeypat
     assert allowed["data"]["value"] == 1
 
 
+def test_alert_or_group_cannot_leave_the_authorized_queryset_or_multiply_count():
+    source = _source()
+    other = AlertSource.objects.create(name="other", source_id="src-2", source_type=AlertsSourceTypes.WEBHOOK)
+    alert = _alert("ALERT-1", created_at=START + timedelta(hours=1))
+    alert.events.add(_event("EVENT-1", source), _event("EVENT-2", source), _event("EVENT-3", other))
+    _alert("ALERT-2", level="fatal", created_at=START + timedelta(hours=2))
+    day = _range(24 * 60 * 60)
+    filters = {
+        "logic": "OR",
+        "items": [
+            {"field": "source", "op": "eq", "value": "src-1"},
+            {"field": "level", "op": "eq", "value": "fatal"},
+        ],
+    }
+    counted = query_alert_center(
+        Alert.objects.all(),
+        query_object="alert",
+        analysis_mode="count",
+        time_field="created_at",
+        time_range=day,
+        filters=filters,
+    )
+    grouped = query_alert_center(
+        Alert.objects.all(),
+        query_object="alert",
+        analysis_mode="distribution",
+        time_field="created_at",
+        time_range=day,
+        group_by="level",
+        filters=filters,
+    )
+    scoped = query_alert_center(
+        Alert.objects.filter(alert_id="ALERT-1"),
+        query_object="alert",
+        analysis_mode="count",
+        time_field="created_at",
+        time_range=day,
+        filters=filters,
+    )
+    assert counted["value"] == 2
+    assert {item["name"]: item["value"] for item in grouped["items"]} == {"warning": 1, "fatal": 1}
+    assert scoped["value"] == 1
+
+
 def test_handler_rejects_unsupported_filters():
     from apps.alerts.nats.generic_query import query_alert_center as handler
 
     result = handler(query_object="alert", analysis_mode="count", user_info={}, filters=[{"field": "level"}])
     assert result["result"] is False
-    assert "filters" in result["message"]
+    assert "条件过滤" in result["message"]
 
 
 def test_handler_rejects_unknown_query_object_and_keeps_extra_kwargs():

@@ -113,7 +113,7 @@ def test_model_count_rejects_paging():
 
 
 def test_instance_count_distribution_and_missing_model(monkeypatch):
-    def fake_count(group_by, params, permission_map):
+    def fake_count(group_by, params, permission_map, **_kwargs):
         assert permission_map == {"1": {}}
         assert params[0]["value"] == "host"
         if group_by == "model_id":
@@ -154,7 +154,7 @@ def test_instance_count_distribution_and_missing_model(monkeypatch):
 def test_instance_statistics_fail_over_scan_and_group_limits(monkeypatch):
     monkeypatch.setattr(
         "apps.cmdb.services.generic_query.count_by_attr",
-        lambda group_by, params, permission_map: {"host": SCAN_INSTANCE_MAX + 1},
+        lambda group_by, params, permission_map, **_kwargs: {"host": SCAN_INSTANCE_MAX + 1},
     )
     with pytest.raises(GenericQueryError, match=str(SCAN_INSTANCE_MAX)):
         query_instances(
@@ -167,7 +167,7 @@ def test_instance_statistics_fail_over_scan_and_group_limits(monkeypatch):
     groups = {f"os-{index}": 1 for index in range(STAT_GROUP_MAX + 1)}
     monkeypatch.setattr(
         "apps.cmdb.services.generic_query.count_by_attr",
-        lambda group_by, params, permission_map: groups,
+        lambda group_by, params, permission_map, **_kwargs: groups,
     )
     with pytest.raises(GenericQueryError, match=str(STAT_GROUP_MAX)):
         query_instances(
@@ -182,7 +182,7 @@ def test_instance_statistics_fail_over_scan_and_group_limits(monkeypatch):
 def test_instance_aggregate_distinguishes_zero_from_empty(monkeypatch):
     monkeypatch.setattr(
         "apps.cmdb.services.generic_query.aggregate_numeric",
-        lambda field, aggregation, params, permission_map: {"value": 0, "scanned": 2},
+        lambda field, aggregation, params, permission_map, **_kwargs: {"value": 0, "scanned": 2},
     )
     zero = query_instances(
         model_id="host",
@@ -194,7 +194,7 @@ def test_instance_aggregate_distinguishes_zero_from_empty(monkeypatch):
     )
     monkeypatch.setattr(
         "apps.cmdb.services.generic_query.aggregate_numeric",
-        lambda field, aggregation, params, permission_map: {"value": None, "scanned": 0},
+        lambda field, aggregation, params, permission_map, **_kwargs: {"value": None, "scanned": 0},
     )
     empty = query_instances(
         model_id="host",
@@ -444,7 +444,137 @@ def test_unsupported_filters_fail_instead_of_being_dropped(monkeypatch):
         model_id="host",
         analysis_mode="count",
         user_info={"user": "demo"},
-        filters={"field": "inst_name"},
+        filters="not-a-group",
     )
     assert invalid["result"] is False
-    assert "filters" in invalid["message"]
+    assert "条件过滤" in invalid["message"]
+
+
+def test_attribute_operators_and_or_group_compile():
+    from apps.cmdb.services.generic_query import compile_attribute_conditions
+
+    types = {"inst_name": "string", "cpu": "number", "os_type": "enum"}
+    logic, conditions = compile_attribute_conditions(
+        types,
+        None,
+        None,
+        None,
+        {
+            "logic": "OR",
+            "items": [
+                {"field": "inst_name", "op": "contains", "value": "web"},
+                {"field": "inst_name", "op": "empty"},
+                {"field": "cpu", "op": "gte", "value": "4"},
+                {"field": "os_type", "op": "in", "value": "Linux,Windows"},
+            ],
+        },
+    )
+    assert logic == "OR"
+    assert conditions == [
+        {"field": "inst_name", "type": "str*", "value": "web"},
+        {"field": "inst_name", "type": "empty"},
+        {"field": "cpu", "type": "int>=", "value": 4},
+        {"field": "os_type", "type": "str[]", "value": ["Linux", "Windows"]},
+    ]
+    with pytest.raises(GenericQueryError, match="运算符不受支持"):
+        compile_attribute_conditions(types, "inst_name", "in", "web", None)
+    with pytest.raises(GenericQueryError, match="旧字段和 OR"):
+        compile_attribute_conditions(
+            types,
+            "inst_name",
+            "eq",
+            "web",
+            {"logic": "OR", "items": [{"field": "cpu", "op": "gt", "value": 1}]},
+        )
+    empty_logic, empty_items = compile_attribute_conditions(types, None, None, None, {"logic": "OR", "items": []})
+    assert (empty_logic, empty_items) == ("OR", [])
+
+
+def test_instance_count_filter_runs_before_distribution_and_keeps_legacy_and():
+    models = [
+        _model("host", "主机", "compute", "计算"),
+        _model("net", "网络", "compute", "计算"),
+        _model("room", "机房", "space", "空间"),
+    ]
+    counts = {"host": 5, "net": 1, "room": 0}
+    grouped = query_models(
+        models=models,
+        instance_counts=counts,
+        analysis_mode="distribution",
+        result_filter={
+            "logic": "OR",
+            "items": [{"field": "instance_count", "op": "gt", "value": 3}, {"field": "instance_count", "op": "eq", "value": 0}],
+        },
+        order="name",
+    )
+    assert grouped["items"] == [
+        {"name": "空间", "classification_id": "space", "value": 0},
+        {"name": "计算", "classification_id": "compute", "value": 5},
+    ]
+    widened = query_models(
+        models=models,
+        instance_counts=counts,
+        analysis_mode="count",
+        result_filter={
+            "logic": "OR",
+            "items": [{"field": "instance_count", "op": "gt", "value": 3}, {"field": "instance_count", "op": "eq", "value": 0}],
+        },
+    )
+    narrowed = query_models(
+        models=models,
+        instance_counts=counts,
+        analysis_mode="count",
+        result_op="gt",
+        result_value=0,
+        result_filter={
+            "logic": "OR",
+            "items": [{"field": "instance_count", "op": "gt", "value": 3}, {"field": "instance_count", "op": "eq", "value": 0}],
+        },
+    )
+    assert widened["value"] == 2
+    assert narrowed["value"] == 1
+
+
+def test_one_hop_or_group_stays_parenthesized_with_permission(monkeypatch):
+    from apps.cmdb.graph.falkordb import FalkorDBClient
+    from apps.cmdb.graph.format_type import ParameterCollector
+    from apps.cmdb.services.generic_query_graph import query_one_hop
+
+    queries = []
+
+    class Client:
+        ENABLE_PARAMETERIZATION = True
+        _param_collector = ParameterCollector()
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+        def format_search_params(self, *args, **kwargs):
+            return FalkorDBClient.format_search_params(self, *args, **kwargs)
+
+    monkeypatch.setattr("apps.cmdb.services.generic_query_graph.GraphClient", Client)
+    monkeypatch.setattr(
+        "apps.cmdb.services.generic_query_graph._run",
+        lambda _client, query, params: queries.append((query, dict(params))) or [{"pair_count": 0}],
+    )
+    query_one_hop(
+        start_uuids=["s1"],
+        model_asst_id="host_belong_app",
+        direction="out",
+        end_model_id="app",
+        permission_map={1: {"inst_names": ["可见"]}},
+        end_conditions=[
+            {"field": "inst_name", "type": "str=", "value": "公开"},
+            {"field": "inst_name", "type": "str=", "value": "内部"},
+        ],
+        end_logic="OR",
+    )
+    query, params = queries[0]
+    assert "(t.inst_name = $str3 OR t.inst_name = $str4)" in query
+    assert "organization" in query
+    assert query.index("organization") < query.index(" OR t.inst_name")
+    assert "公开" in params.values()
+    assert "内部" in params.values()

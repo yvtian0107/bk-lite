@@ -54,6 +54,41 @@ def test_monitor_instance_detail_count_and_unbound_identity():
     assert {item["name"] for item in grouped["items"]} == {"active", "inactive"}
 
 
+def test_instance_or_group_matches_either_row_and_empty_group_does_not_filter():
+    obj = _object()
+    _instance(obj, "host-1", name="alpha")
+    other = _instance(obj, "host-2", name="beta")
+    other.ip = "10.9.9.9"
+    other.save(update_fields=["ip"])
+    base = MonitorInstance.objects.filter(monitor_object=obj)
+    either = query_instances(
+        base,
+        analysis_mode="count",
+        filters={
+            "logic": "OR",
+            "items": [
+                {"field": "name", "op": "eq", "value": "alpha"},
+                {"field": "ip", "op": "eq", "value": "10.9.9.9"},
+            ],
+        },
+    )
+    both = query_instances(
+        base,
+        analysis_mode="count",
+        filters={
+            "logic": "AND",
+            "items": [
+                {"field": "name", "op": "eq", "value": "alpha"},
+                {"field": "ip", "op": "eq", "value": "10.9.9.9"},
+            ],
+        },
+    )
+    cleared = query_instances(base, analysis_mode="count", filters={"logic": "OR", "items": []})
+    assert either["value"] == 2
+    assert both["value"] == 0
+    assert cleared["value"] == 2
+
+
 def test_monitor_instance_page_size_and_statistics_group_limits():
     obj = _object()
     _instance(obj, "host-1")
@@ -149,7 +184,7 @@ def test_metric_handler_rejects_non_list_filters():
 
     instances = query_monitor_instances(monitor_object_id="1", filters={"label": "cpu"})
     assert instances["result"] is False
-    assert "filters" in instances["message"]
+    assert "条件过滤" in instances["message"]
     metric = query_monitor_metric(
         metric_id="cpu",
         instance_ids=["host-1"],

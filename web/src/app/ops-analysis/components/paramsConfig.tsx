@@ -29,9 +29,13 @@ import {
   type ResolvedOptionsQuery,
 } from '@/app/ops-analysis/utils/optionsQueryParamRefs';
 import {
+  ANALYSIS_MODE_PARAM,
   isParamVisibleForAnalysisMode,
   resolveAnalysisModeValue,
+  shouldShowAnalysisMode,
 } from '@/app/ops-analysis/utils/analysisMode';
+import ConditionFilterControl from '@/app/ops-analysis/components/conditionFilterControl';
+import OrderControl from '@/app/ops-analysis/components/orderControl';
 import { narrowInputConfigForQueryObject } from '@/app/ops-analysis/utils/queryObjectOptions';
 import DateRangeSelector from './dateRangeSelector';
 import {
@@ -215,8 +219,10 @@ const DataSourceParamsConfig: React.FC<DataSourceParamsConfigProps> = ({
   });
   const configParams = sourceParams.filter(
     (param: ParamItem) =>
-      includeFilterTypes.includes(param.filterType || 'fixed')
-      && isParamVisibleForAnalysisMode(param, analysisMode, sourceParams),
+      !param.hidden
+      && includeFilterTypes.includes(param.filterType || 'fixed')
+      && isParamVisibleForAnalysisMode(param, analysisMode, sourceParams)
+      && (param.name !== ANALYSIS_MODE_PARAM || shouldShowAnalysisMode(sourceParams, chartType)),
   );
 
   if (configParams.length === 0) {
@@ -297,6 +303,31 @@ const DataSourceParamsConfig: React.FC<DataSourceParamsConfigProps> = ({
           );
       }
     })();
+
+    if (inputConfig?.control === 'conditionFilter') {
+      return (
+        <ConditionFilterControl
+          source={inputConfig.fields}
+          formParams={formParams}
+          queryObject={queryObject === undefined || queryObject === null ? '' : String(queryObject)}
+          disabled={isDisabled}
+        />
+      );
+    }
+
+    if (inputConfig?.control === 'order') {
+      return (
+        <OrderControl
+          fields={inputConfig.fields}
+          modelParam={inputConfig.modelParam}
+          includeModelAttrsInModes={inputConfig.includeModelAttrsInModes}
+          formParams={formParams}
+          analysisMode={analysisMode}
+          queryObject={queryObject === undefined || queryObject === null ? '' : String(queryObject)}
+          disabled={isDisabled}
+        />
+      );
+    }
 
     if (!inputConfig) {
       return fallbackInput;

@@ -73,14 +73,14 @@ describe('analysis mode visibility and request', () => {
       latest,
       'distribution',
     );
-    assert.deepEqual(charts.map((item) => item.value), ['bar', 'pie']);
+    assert.deepEqual(charts.map((item) => item.value), ['table', 'single', 'bar', 'pie']);
     assert.deepEqual(
       filterChartTypesForAnalysisMode(
         [{ value: 'table' }, { value: 'line' }],
         stale,
         'detail',
       ).map((item) => item.value),
-      [],
+      ['table', 'line'],
     );
   });
 
@@ -105,6 +105,20 @@ describe('analysis mode visibility and request', () => {
     assert.equal(request.group_by, undefined);
     assert.equal(request.page, undefined);
     assert.equal(request.page_size, undefined);
+  });
+
+  it('replaces the seed mode when the chart does not allow it', () => {
+    const params = catalog();
+    assert.equal(resolveAnalysisModeValue({
+      params,
+      selected: 'detail',
+      chartType: 'pie',
+    }), 'distribution');
+    assert.equal(resolveAnalysisModeValue({
+      params,
+      selected: 'count',
+      chartType: 'single',
+    }), 'count');
   });
 
   it('picks a chart-compatible mode when the widget has no selection', () => {

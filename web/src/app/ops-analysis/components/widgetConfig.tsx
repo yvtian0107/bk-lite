@@ -52,6 +52,7 @@ import {
   supportsComponentSwitch,
 } from '@/app/ops-analysis/utils/componentParamSwitch';
 import {
+  ANALYSIS_MODE_PARAM,
   analysisModeOptions,
   filterChartTypesForAnalysisMode,
   resolveAnalysisModeValue,
@@ -914,23 +915,16 @@ const ViewConfig: React.FC<ViewConfigPropsWithManager> = ({
 
   useEffect(() => {
     const options = analysisModeOptions(selectedDataSource?.params);
+    if (!options.length || !chartType) return;
     const current = String(watchedAnalysisMode ?? '');
-    if (!options.some((item) => item.value === current)) return;
-    const available = resolveDatasourceChartTypes({
-      chartTypes: selectedDataSource?.chart_type || [],
-      chartTypeDefinitions: getChartTypeList(),
-      surface,
+    const next = resolveAnalysisModeValue({
+      params: selectedDataSource?.params,
+      selected: current,
+      chartType,
     });
-    const compatible = filterChartTypesForAnalysisMode(
-      available,
-      selectedDataSource?.params,
-      current,
-    );
-    if (!compatible.length || compatible.some((item) => item.value === chartType)) return;
-    const nextChart = compatible[0]?.value;
-    if (!nextChart) return;
-    void handleChartTypeChange({ target: { value: nextChart } });
-  }, [selectedDataSource, watchedAnalysisMode, chartType, surface]);
+    if (!next || next === current) return;
+    form.setFieldValue(['params', ANALYSIS_MODE_PARAM], next);
+  }, [selectedDataSource, watchedAnalysisMode, chartType, form]);
 
   const initializeItemForm = async (
     widgetItem: ViewConfigItem,
