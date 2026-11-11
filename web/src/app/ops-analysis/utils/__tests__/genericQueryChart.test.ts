@@ -98,6 +98,30 @@ test('legacy datasources still coerce null to zero and reject unmapped objects',
   assert.equal(unmapped.isValid, false);
 });
 
+test('model count and instance total zeros stay visible instead of an empty state', () => {
+  for (const aggregation of ['模型计数', '实例总数']) {
+    const payload = {
+      structure: 'value',
+      status: 'ok',
+      value: 0,
+      unit: '个',
+      aggregation,
+    };
+    assert.equal(extractComparableValue(payload), 0);
+    assert.equal(ChartDataTransformer.isStructurallyEmpty(payload), false);
+    assert.equal(Object.keys(payload).includes('title'), false);
+  }
+  const missing = {
+    structure: 'value',
+    status: 'empty',
+    value: null,
+    unit: '',
+    aggregation: 'sum(cpu)',
+  };
+  assert.equal(extractComparableValue(missing), null);
+  assert.equal(ChartDataTransformer.isStructurallyEmpty(missing), true);
+});
+
 test('single value reads the value envelope and keeps zero distinct from empty', () => {
   assert.equal(extractComparableValue({
     structure: 'value',

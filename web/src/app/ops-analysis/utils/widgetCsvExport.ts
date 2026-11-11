@@ -17,6 +17,7 @@ import { validateMultiValueData } from '@/app/ops-analysis/utils/multiValueData'
 import { resolveRadarSeriesData } from '@/app/ops-analysis/utils/radarData';
 import { resolveTableCellPresentation } from '@/app/ops-analysis/utils/tableCellStyle';
 import { parseTableLikeData, resolveTableLikeColumns } from '@/app/ops-analysis/utils/tableLikeData';
+import { modelCellDisplayText, readModelColumnPayload } from '@/app/ops-analysis/utils/modelTableColumns';
 import {
   applyTableQueryList,
   type TableQueryCondition,
@@ -338,6 +339,7 @@ const exportColumns = (
   config: ValueConfig | undefined,
   dataSource: DatasourceItem | undefined,
   rows: Record<string, unknown>[],
+  rawData?: unknown,
 ): TableColumnConfigItem[] => {
   if (chartType === 'eventTable') {
     return (config?.tableConfig?.columns || [])
@@ -347,6 +349,8 @@ const exportColumns = (
 
   return resolveTableLikeColumns({
     configuredColumns: config?.tableConfig?.columns,
+    columnModelKey: config?.tableConfig?.columnModelKey,
+    modelColumns: readModelColumnPayload(rawData),
     schemaFields: dataSource?.field_schema,
     rows,
   }).filter((column) => column.visible && column.columnType !== 'actions');
@@ -357,11 +361,15 @@ const formatTableExportCell = (
   raw: unknown,
   column: TableColumnConfigItem,
   config?: ValueConfig,
+  row?: Record<string, unknown>,
 ): string => {
   if (chartType === 'eventTable') {
     if (raw == null) return '-';
     return String(raw);
   }
+
+  const modelText = modelCellDisplayText(raw, column, row);
+  if (modelText !== null) return modelText;
 
   const presentation = resolveTableCellPresentation(raw, column);
   if (
@@ -384,13 +392,14 @@ export const buildTableCsvTable = (
   rows: Record<string, unknown>[],
   config: ValueConfig | undefined,
   dataSource: DatasourceItem | undefined,
+  rawData?: unknown,
 ): CsvTable & { unconfigured: boolean } => {
-  const columns = exportColumns(chartType, config, dataSource, rows);
+  const columns = exportColumns(chartType, config, dataSource, rows, rawData);
   return {
     unconfigured: chartType === 'eventTable' && columns.length === 0,
     headers: columns.map((column) => column.title || column.key),
     rows: rows.map((row) => columns.map((column) => (
-      formatTableExportCell(chartType, row[column.key], column, config)
+      formatTableExportCell(chartType, row[column.key], column, config, row)
     ))),
   };
 };
@@ -621,7 +630,13 @@ export const createWidgetCsvExport = async (
     let table: CsvTable;
     let truncated = false;
     if (runtime.chartType === 'table' || runtime.chartType === 'eventTable') {
-      const previewColumns = exportColumns(runtime.chartType, runtime.config, runtime.dataSource, []);
+      const previewColumns = exportColumns(
+        runtime.chartType,
+        runtime.config,
+        runtime.dataSource,
+        [],
+        runtime.rawData,
+      );
       if (runtime.chartType === 'eventTable' && previewColumns.length === 0) {
         return { kind: 'unconfigured' };
       }
@@ -651,6 +666,7 @@ export const createWidgetCsvExport = async (
         loaded.rows,
         runtime.config,
         runtime.dataSource,
+        runtime.rawData,
       );
       if (built.unconfigured) return { kind: 'unconfigured' };
       table = built;

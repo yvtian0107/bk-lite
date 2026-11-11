@@ -3,6 +3,7 @@
 import pytest
 
 from apps.cmdb.services.generic_query import GenericQueryError, query_instances, query_models, query_one_hop_relations
+from apps.cmdb.services.generic_query_columns import build_instance_column_fields, build_one_hop_column_fields, project_one_hop_rows
 from apps.cmdb.services.generic_query_limits import DETAIL_PAGE_SIZE_MAX, ONE_HOP_RESULT_MAX, ONE_HOP_START_MAX, SCAN_INSTANCE_MAX, STAT_GROUP_MAX
 
 
@@ -834,7 +835,10 @@ def test_instance_classification_does_not_replace_model_permission(monkeypatch):
     from apps.cmdb.nats.generic_query import query_cmdb_instances
 
     monkeypatch.setattr("apps.cmdb.nats.generic_query._visible_models", lambda user_info: _visible_cmdb_models())
-    monkeypatch.setattr("apps.cmdb.nats.generic_query._attr_types", lambda model_id, user_info: {"inst_name": "string"})
+    monkeypatch.setattr(
+        "apps.cmdb.nats.generic_query._load_model_attrs",
+        lambda model_id, user_info: [{"attr_id": "inst_name", "attr_name": "实例名称", "attr_type": "str"}],
+    )
     monkeypatch.setattr(
         "apps.cmdb.nats.generic_query.query_instances",
         lambda **kwargs: {"structure": "value", "status": "ok", "value": 1, "unit": "个", "aggregation": "实例计数"},
@@ -847,6 +851,7 @@ def test_instance_classification_does_not_replace_model_permission(monkeypatch):
         user_info={"user": "demo"},
     )
     assert matched["result"] is True
+    assert "column_fields" not in matched["data"]
 
     empty_classification = query_cmdb_instances(
         model_id="host",
@@ -920,3 +925,784 @@ def test_one_hop_loads_associations_after_classification_matches(monkeypatch):
     )
     assert loaded["result"] is True
     assert listed == ["host"]
+
+
+def test_instance_detail_hides_password_and_describes_business_columns(monkeypatch):
+    captured = {}
+
+    def fake_list(**kwargs):
+        captured.update(kwargs)
+        return [
+            {
+                "_id": 9,
+                "inst_name": "web-1",
+                "inst_uuid": "uuid-1",
+                "cpu": 0,
+                "enabled": False,
+                "status": "1",
+                "status_display": "运行中",
+                "organization": [7],
+                "organization_display": "研发",
+                "password": "secret-value",
+                "password_display": "secret-display",
+                "owner": "user-1",
+            }
+        ], 1
+
+    monkeypatch.setattr("apps.cmdb.services.generic_query.InstanceManage.instance_list", fake_list)
+    payload = query_instances(
+        model_id="host",
+        analysis_mode="detail",
+        attr_types={
+            "inst_name": "str",
+            "cpu": "int",
+            "enabled": "bool",
+            "status": "enum",
+            "organization": "organization",
+            "password": "pwd",
+            "owner": "user",
+        },
+        permission_map={"1": {"inst_names": []}},
+        page=1,
+        page_size=20,
+    )
+    row = payload["items"][0]
+    assert row["cpu"] == 0
+    assert row["enabled"] is False
+    assert row["status"] == "1"
+    assert row["status_display"] == "运行中"
+    assert "password" not in row
+    assert "password_display" not in row
+    assert "_id" not in row
+    assert "name" not in row
+    assert captured["page_size"] == 20
+
+    fields = build_instance_column_fields(
+        [
+            {"attr_id": "inst_name", "attr_name": "实例名称", "attr_type": "str"},
+            {"attr_id": "cpu", "attr_name": "CPU", "attr_type": "int"},
+            {"attr_id": "status", "attr_name": "运行状态", "attr_type": "enum", "option": [{"id": "1", "name": "运行中"}, {"id": 0, "name": "停止"}]},
+            {"attr_id": "status_display", "attr_name": "运行状态", "attr_type": "str", "is_display_field": True},
+            {"attr_id": "password", "attr_name": "密码", "attr_type": "pwd"},
+            {"attr_id": "password_display", "attr_name": "密码", "attr_type": "str", "is_display_field": True},
+            {"attr_id": "inst_uuid", "attr_name": "实例标识", "attr_type": "str"},
+            {"attr_id": "node_id", "attr_name": "节点", "attr_type": "str", "is_system_link": True},
+        ],
+        model_key="host",
+    )
+    by_key = {field["key"]: field for field in fields["fields"]}
+    assert [field["key"] for field in fields["fields"] if field["default_visible"]][:2] == ["inst_name", "cpu"]
+    assert by_key["inst_name"]["title"] == "实例名称"
+    assert by_key["status"]["title"] == "运行状态"
+    assert by_key["status"]["options"] == [{"value": "1", "label": "运行中"}, {"value": "0", "label": "停止"}]
+    assert by_key["inst_uuid"]["default_visible"] is False
+    assert by_key["node_id"]["default_visible"] is False
+    assert "password" not in by_key
+    assert "status_display" not in by_key
+    assert "name" not in by_key
+    assert "unit" not in by_key
+
+
+def test_instance_detail_empty_page_stays_paged(monkeypatch):
+    monkeypatch.setattr(
+        "apps.cmdb.services.generic_query.InstanceManage.instance_list",
+        lambda **kwargs: ([], 0),
+    )
+    payload = query_instances(
+        model_id="host",
+        analysis_mode="detail",
+        attr_types={"inst_name": "str", "status": "enum"},
+        permission_map={"1": {"inst_names": []}},
+    )
+    assert payload["items"] == []
+    assert payload["status"] == "empty"
+    assert payload["page_size"] == 20
+
+
+def test_one_hop_detail_projects_both_sides_and_skips_protocol_columns():
+    rows = project_one_hop_rows(
+        [
+            {
+                "start_uuid": "s1",
+                "start_name": "主机甲",
+                "start_model_id": "host",
+                "end_uuid": "e1",
+                "end_name": "应用甲",
+                "end_model_id": "app",
+            }
+        ],
+        starts=[
+            {
+                "inst_uuid": "s1",
+                "inst_name": "主机甲",
+                "model_id": "host",
+                "cpu": 0,
+                "password": "secret",
+                "password_display": "secret-display",
+                "_id": 1,
+            }
+        ],
+        ends=[
+            {
+                "inst_uuid": "e1",
+                "inst_name": "应用甲",
+                "model_id": "app",
+                "status": "up",
+                "status_display": "在线",
+                "enabled": False,
+            }
+        ],
+        start_attrs=[
+            {"attr_id": "cpu", "attr_type": "int"},
+            {"attr_id": "password", "attr_type": "pwd"},
+        ],
+        end_attrs=[
+            {"attr_id": "status", "attr_type": "enum"},
+            {"attr_id": "enabled", "attr_type": "bool"},
+        ],
+    )
+    row = rows[0]
+    assert row["start:cpu"] == 0
+    assert row["end:enabled"] is False
+    assert row["end:status_display"] == "在线"
+    assert "password" not in row
+    assert "start:password" not in row
+    assert "start:password_display" not in row
+    assert "_id" not in row
+    assert "name" not in row
+    columns = build_one_hop_column_fields(
+        [
+            {"attr_id": "inst_name", "attr_name": "实例名称", "attr_type": "str"},
+            {"attr_id": "cpu", "attr_name": "CPU", "attr_type": "int"},
+            {"attr_id": "password", "attr_name": "密码", "attr_type": "pwd"},
+        ],
+        [
+            {"attr_id": "inst_name", "attr_name": "实例名称", "attr_type": "str"},
+            {"attr_id": "status", "attr_name": "状态", "attr_type": "enum", "option": [{"id": "up", "name": "在线"}]},
+        ],
+        model_key="host|out|host_belong_app|app",
+    )
+    keys = [field["key"] for field in columns["fields"]]
+    assert keys[:3] == ["start_name", "start:cpu", "end_name"]
+    assert "end:status" in keys
+    assert "name" not in keys
+    assert "value" not in keys
+    assert "unit" not in keys
+    assert "aggregation" not in keys
+    assert next(field for field in columns["fields"] if field["key"] == "start_uuid")["default_visible"] is False
+
+
+def test_instance_detail_handler_attaches_model_columns_and_strips_password(monkeypatch):
+    from apps.cmdb.nats.generic_query import query_cmdb_instances
+
+    monkeypatch.setattr("apps.cmdb.nats.generic_query._visible_models", lambda user_info: _visible_cmdb_models())
+    monkeypatch.setattr(
+        "apps.cmdb.nats.generic_query._load_model_attrs",
+        lambda model_id, user_info: [
+            {"attr_id": "inst_name", "attr_name": "实例名称", "attr_type": "str"},
+            {"attr_id": "status", "attr_name": "运行状态", "attr_type": "enum", "option": [{"id": "1", "name": "运行中"}]},
+            {"attr_id": "password", "attr_name": "密码", "attr_type": "pwd"},
+        ],
+    )
+    monkeypatch.setattr(
+        "apps.cmdb.services.generic_query.InstanceManage.instance_list",
+        lambda **kwargs: (
+            [
+                {
+                    "_id": 3,
+                    "inst_name": "web-1",
+                    "status": "1",
+                    "status_display": "运行中",
+                    "password": "secret-value",
+                    "password_display": "secret-display",
+                    "cpu": 0,
+                }
+            ],
+            1,
+        ),
+    )
+
+    loaded = query_cmdb_instances(
+        model_id="host",
+        classification_id="compute",
+        analysis_mode="detail",
+        user_info={"user": "demo"},
+    )
+    assert loaded["result"] is True
+    row = loaded["data"]["items"][0]
+    assert row["cpu"] == 0
+    assert "password" not in row
+    assert "password_display" not in row
+    assert "_id" not in row
+    fields = {field["key"]: field for field in loaded["data"]["column_fields"]["fields"]}
+    assert loaded["data"]["column_fields"]["model_key"] == "host"
+    assert fields["status"]["title"] == "运行状态"
+    assert "password" not in fields
+    assert loaded["data"]["page_size"] == 20
+
+
+def test_one_hop_detail_handler_projects_business_columns(monkeypatch):
+    from apps.cmdb.nats.generic_query import query_cmdb_one_hop
+
+    monkeypatch.setattr("apps.cmdb.nats.generic_query._visible_models", lambda user_info: _visible_cmdb_models())
+    monkeypatch.setattr("apps.cmdb.nats.generic_query._attr_types", lambda model_id, user_info: {"inst_name": "string"})
+    monkeypatch.setattr(
+        "apps.cmdb.nats.generic_query.list_model_association_options",
+        lambda language, model_id: [
+            {
+                "model_asst_id": "host_belong_app",
+                "src_model_id": "host",
+                "dst_model_id": "app",
+                "label": "属于",
+            }
+        ],
+    )
+
+    def attrs_for(model_id, user_info):
+        if model_id == "host":
+            return [
+                {"attr_id": "inst_name", "attr_name": "实例名称", "attr_type": "str"},
+                {"attr_id": "cpu", "attr_name": "CPU", "attr_type": "int"},
+                {"attr_id": "password", "attr_name": "密码", "attr_type": "pwd"},
+            ]
+        return [
+            {"attr_id": "inst_name", "attr_name": "实例名称", "attr_type": "str"},
+            {"attr_id": "status", "attr_name": "状态", "attr_type": "enum", "option": [{"id": "up", "name": "在线"}]},
+        ]
+
+    monkeypatch.setattr("apps.cmdb.nats.generic_query._load_model_attrs", attrs_for)
+    monkeypatch.setattr(
+        "apps.cmdb.nats.generic_query.load_start_instances",
+        lambda **kwargs: (
+            [
+                {
+                    "inst_uuid": "s1",
+                    "inst_name": "主机甲",
+                    "model_id": "host",
+                    "cpu": 0,
+                    "password": "secret",
+                    "password_display": "secret-display",
+                    "_id": 1,
+                }
+            ],
+            1,
+        ),
+    )
+    monkeypatch.setattr(
+        "apps.cmdb.nats.generic_query.query_one_hop",
+        lambda **kwargs: {
+            "pair_count": 1,
+            "groups": [],
+            "pairs": [
+                {
+                    "start_uuid": "s1",
+                    "start_name": "主机甲",
+                    "start_model_id": "host",
+                    "end_uuid": "e1",
+                    "end_name": "应用甲",
+                    "end_model_id": "app",
+                }
+            ],
+        },
+    )
+    monkeypatch.setattr(
+        "apps.cmdb.nats.generic_query.load_instances_by_uuids",
+        lambda uuids: [
+            {
+                "inst_uuid": "e1",
+                "inst_name": "应用甲",
+                "model_id": "app",
+                "status": "up",
+                "status_display": "在线",
+                "enabled": False,
+            }
+        ],
+    )
+
+    loaded = query_cmdb_one_hop(
+        start_model_id="host",
+        classification_id="compute",
+        model_asst_id="host_belong_app",
+        direction="out",
+        analysis_mode="detail",
+        user_info={"user": "demo"},
+    )
+    assert loaded["result"] is True
+    row = loaded["data"]["items"][0]
+    assert row["start:cpu"] == 0
+    assert row["end:enabled"] is False
+    assert row["end:status"] == "up"
+    assert "start:password" not in row
+    assert "start:password_display" not in row
+    assert loaded["data"]["column_fields"]["model_key"] == "host|out|host_belong_app|app"
+    keys = [field["key"] for field in loaded["data"]["column_fields"]["fields"]]
+    assert "start:cpu" in keys
+    assert "end:status" in keys
+    assert "name" not in keys
+    assert "unit" not in keys
+
+
+def _scope_models():
+    """假设数据：主机 100、虚机 50、路由 0。路由没有计数记录，按零实例保留。"""
+    return [
+        _model("host", "主机", "compute", "计算"),
+        _model("vm", "虚机", "compute", "计算"),
+        _model("router", "路由", "network", "网络"),
+    ]
+
+
+_SCOPE_COUNTS = {"host": 100, "vm": 50}
+
+
+def test_single_value_count_metric_keeps_model_count_until_asked_for_instances():
+    models = _scope_models()
+    counted = query_models(models=models, instance_counts=_SCOPE_COUNTS, analysis_mode="count")
+    blank = query_models(models=models, instance_counts=_SCOPE_COUNTS, analysis_mode="count", count_metric="")
+    named = query_models(models=models, instance_counts=_SCOPE_COUNTS, analysis_mode="count", count_metric=" model_count ")
+    total = query_models(models=models, instance_counts=_SCOPE_COUNTS, analysis_mode="count", count_metric="instance_total")
+    selected = query_models(
+        models=models,
+        instance_counts=_SCOPE_COUNTS,
+        analysis_mode="count",
+        model_ids=["host"],
+    )
+    selected_total = query_models(
+        models=models,
+        instance_counts=_SCOPE_COUNTS,
+        analysis_mode="count",
+        model_ids=["host"],
+        count_metric="instance_total",
+    )
+
+    assert counted == {"structure": "value", "status": "ok", "value": 3, "unit": "个", "aggregation": "模型计数"}
+    assert set(counted) == {"structure", "status", "value", "unit", "aggregation"}
+    assert blank == counted
+    assert named == counted
+    assert total == {"structure": "value", "status": "ok", "value": 150, "unit": "个", "aggregation": "实例总数"}
+    assert selected["value"] == 1
+    assert selected["aggregation"] == "模型计数"
+    assert selected_total["value"] == 100
+    assert selected_total["aggregation"] == "实例总数"
+    assert "page" not in total
+    assert "items" not in total
+
+
+def test_count_metric_uses_the_same_scope_before_instance_filters():
+    models = _scope_models()
+    classified = query_models(
+        models=models,
+        instance_counts=_SCOPE_COUNTS,
+        analysis_mode="count",
+        classification_id="compute",
+        count_metric="instance_total",
+    )
+    classified_models = query_models(
+        models=models,
+        instance_counts=_SCOPE_COUNTS,
+        analysis_mode="count",
+        classification_id="compute",
+    )
+    router = query_models(
+        models=models,
+        instance_counts=_SCOPE_COUNTS,
+        analysis_mode="count",
+        model_ids=["router"],
+        count_metric="instance_total",
+    )
+    narrowed = query_models(
+        models=models,
+        instance_counts=_SCOPE_COUNTS,
+        analysis_mode="count",
+        result_filter={
+            "logic": "AND",
+            "items": [
+                {"field": "instance_count", "op": "gt", "value": 0},
+                {"field": "instance_count", "op": "lt", "value": 80},
+            ],
+        },
+    )
+    narrowed_total = query_models(
+        models=models,
+        instance_counts=_SCOPE_COUNTS,
+        analysis_mode="count",
+        count_metric="instance_total",
+        result_filter={
+            "logic": "AND",
+            "items": [
+                {"field": "instance_count", "op": "gt", "value": 0},
+                {"field": "instance_count", "op": "lt", "value": 80},
+            ],
+        },
+    )
+    or_filter = {
+        "logic": "OR",
+        "items": [
+            {"field": "instance_count", "op": "gt", "value": 80},
+            {"field": "instance_count", "op": "eq", "value": 0},
+        ],
+    }
+    either = query_models(
+        models=models,
+        instance_counts=_SCOPE_COUNTS,
+        analysis_mode="count",
+        count_metric="instance_total",
+        result_filter=or_filter,
+    )
+    either_models = query_models(
+        models=models,
+        instance_counts=_SCOPE_COUNTS,
+        analysis_mode="count",
+        result_filter=or_filter,
+    )
+    legacy_and = query_models(
+        models=models,
+        instance_counts=_SCOPE_COUNTS,
+        analysis_mode="count",
+        count_metric="instance_total",
+        result_op="gt",
+        result_value=0,
+        result_filter=or_filter,
+    )
+    none = query_models(
+        models=models,
+        instance_counts=_SCOPE_COUNTS,
+        analysis_mode="count",
+        count_metric="instance_total",
+        result_filter={"logic": "AND", "items": [{"field": "instance_count", "op": "gt", "value": 1000}]},
+    )
+    none_models = query_models(
+        models=models,
+        instance_counts=_SCOPE_COUNTS,
+        analysis_mode="count",
+        result_filter={"logic": "AND", "items": [{"field": "instance_count", "op": "gt", "value": 1000}]},
+    )
+    empty_models = query_models(
+        models=models,
+        instance_counts=_SCOPE_COUNTS,
+        analysis_mode="count",
+        result_op="eq",
+        result_value=0,
+    )
+    empty_total = query_models(
+        models=models,
+        instance_counts=_SCOPE_COUNTS,
+        analysis_mode="count",
+        count_metric="instance_total",
+        result_op="eq",
+        result_value=0,
+    )
+
+    assert classified_models["value"] == 2
+    assert classified["value"] == 150
+    assert router == {"structure": "value", "status": "ok", "value": 0, "unit": "个", "aggregation": "实例总数"}
+    assert narrowed["value"] == 1
+    assert narrowed["aggregation"] == "模型计数"
+    assert narrowed_total["value"] == 50
+    assert either_models["value"] == 2
+    assert either["value"] == 100
+    assert legacy_and["value"] == 100
+    assert none["status"] == "ok"
+    assert none["value"] == 0
+    assert none["aggregation"] == "实例总数"
+    assert none_models["status"] == "ok"
+    assert none_models["value"] == 0
+    assert empty_models["value"] == 1
+    assert empty_total["value"] == 0
+
+
+def test_count_metric_is_ignored_outside_count_and_rejects_unknown_values():
+    models = _scope_models()
+    detail = query_models(
+        models=models,
+        instance_counts=_SCOPE_COUNTS,
+        analysis_mode="detail",
+        count_metric="instance_total",
+        page=1,
+        page_size=1,
+        order="model_id",
+    )
+    plain_detail = query_models(
+        models=models,
+        instance_counts=_SCOPE_COUNTS,
+        analysis_mode="detail",
+        page=1,
+        page_size=1,
+        order="model_id",
+    )
+    distribution = query_models(
+        models=models,
+        instance_counts=_SCOPE_COUNTS,
+        analysis_mode="distribution",
+        count_metric="by_classification",
+    )
+    plain_distribution = query_models(
+        models=models,
+        instance_counts=_SCOPE_COUNTS,
+        analysis_mode="distribution",
+    )
+
+    assert detail == plain_detail
+    assert detail["count"] == 3
+    assert len(detail["items"]) == 1
+    assert list(detail["items"][0]) == list(DETAIL_COLUMNS)
+    assert distribution == plain_distribution
+    assert [item["model_id"] for item in distribution["items"]] == ["host", "vm", "router"]
+    assert distribution["aggregation"] == "按模型统计权限内实例数，含零实例模型"
+    with pytest.raises(GenericQueryError, match="统计内容不受支持"):
+        query_models(
+            models=models,
+            instance_counts=_SCOPE_COUNTS,
+            analysis_mode="count",
+            count_metric="by_classification",
+        )
+    with pytest.raises(GenericQueryError, match="不支持分页"):
+        query_models(
+            models=models,
+            instance_counts=_SCOPE_COUNTS,
+            analysis_mode="count",
+            count_metric="instance_total",
+            page=1,
+            page_size=1,
+        )
+
+
+def test_instance_total_keeps_the_scan_limit_before_filtering():
+    with pytest.raises(GenericQueryError, match=str(SCAN_INSTANCE_MAX)):
+        query_models(
+            models=[
+                _model("host", "主机", "compute", "计算"),
+                _model("router", "路由", "network", "网络"),
+            ],
+            instance_counts={"host": SCAN_INSTANCE_MAX + 1, "router": 0},
+            analysis_mode="count",
+            count_metric="instance_total",
+            result_filter={"logic": "AND", "items": [{"field": "instance_count", "op": "eq", "value": 0}]},
+        )
+
+
+def test_count_metric_permission_failure_is_not_reported_as_zero(monkeypatch):
+    from apps.cmdb.nats.generic_query import query_cmdb_models
+
+    calls = {"count": 0}
+    monkeypatch.setattr("apps.cmdb.nats.generic_query._resolve_nats_cmdb_language", lambda user_info: "zh-Hans")
+    monkeypatch.setattr("apps.cmdb.nats.generic_query._build_nats_model_permission_map", lambda user_info: None)
+    monkeypatch.setattr(
+        "apps.cmdb.nats.generic_query._build_nats_permission_map",
+        lambda user_info: {"7": {"inst_names": ["visible-host"]}},
+    )
+    monkeypatch.setattr(
+        "apps.cmdb.nats.generic_query.count_by_attr",
+        lambda *args, **kwargs: calls.__setitem__("count", calls["count"] + 1) or {},
+    )
+
+    denied = query_cmdb_models(
+        analysis_mode="count",
+        count_metric="instance_total",
+        user_info={"user": "demo", "team": 7},
+    )
+    assert denied["result"] is False
+    assert denied["data"] == {"status": "forbidden"}
+    assert denied["message"] == "无权限"
+    assert calls["count"] == 0
+
+    monkeypatch.setattr(
+        "apps.cmdb.nats.generic_query._build_nats_model_permission_map",
+        lambda user_info: {"7": {}},
+    )
+    monkeypatch.setattr("apps.cmdb.nats.generic_query._build_nats_permission_map", lambda user_info: None)
+    denied_instances = query_cmdb_models(
+        analysis_mode="count",
+        count_metric="model_count",
+        model_id="host",
+        user_info={"user": "demo", "team": 7},
+    )
+    assert denied_instances["result"] is False
+    assert denied_instances["data"] == {"status": "forbidden"}
+    assert "value" not in denied_instances["data"]
+    assert calls["count"] == 0
+
+
+def test_handler_count_metric_uses_full_permission_counts(monkeypatch):
+    from apps.cmdb.nats.generic_query import query_cmdb_models
+    from apps.cmdb.services.generic_query import ensure_payload_limit
+
+    calls = []
+    monkeypatch.setattr(
+        "apps.cmdb.nats.generic_query._visible_models",
+        lambda user_info: (
+            _scope_models(),
+            {"7": {"inst_names": ["visible-host"]}},
+            {"compute": "计算", "network": "网络"},
+        ),
+    )
+
+    def fake_count(group_by, params, permission_map, **kwargs):
+        calls.append((group_by, list(params), permission_map))
+        return dict(_SCOPE_COUNTS)
+
+    monkeypatch.setattr("apps.cmdb.nats.generic_query.count_by_attr", fake_count)
+
+    total = query_cmdb_models(analysis_mode="count", count_metric="instance_total", user_info={"user": "demo"})
+    assert total["result"] is True
+    assert total["data"]["value"] == 150
+    assert total["data"]["status"] == "ok"
+    ensure_payload_limit(total["data"])
+    assert calls == [("model_id", [], {"7": {"inst_names": ["visible-host"]}})]
+
+    selected = query_cmdb_models(analysis_mode="count", model_id="host", user_info={"user": "demo"})
+    assert selected["data"]["value"] == 1
+    assert selected["data"]["aggregation"] == "模型计数"
+
+    classified = query_cmdb_models(
+        analysis_mode="count",
+        classification_id="compute",
+        count_metric="model_count",
+        user_info={"user": "demo"},
+    )
+    assert classified["data"]["value"] == 2
+
+    paged = query_cmdb_models(
+        analysis_mode="count",
+        count_metric="instance_total",
+        page=1,
+        page_size=1,
+        user_info={"user": "demo"},
+    )
+    assert paged["result"] is False
+    assert "分页" in paged["message"]
+
+    detail = query_cmdb_models(
+        analysis_mode="detail",
+        count_metric="instance_total",
+        page=1,
+        page_size=1,
+        order="model_name",
+        user_info={"user": "demo"},
+    )
+    assert detail["result"] is True
+    assert detail["data"]["count"] == 3
+    assert len(detail["data"]["items"]) == 1
+    assert list(detail["data"]["items"][0]) == list(DETAIL_COLUMNS)
+
+    missing = query_cmdb_models(
+        analysis_mode="count",
+        count_metric="instance_total",
+        model_id="secret",
+        user_info={"user": "demo"},
+    )
+    assert missing["result"] is False
+    assert missing["data"] == {"status": "forbidden"}
+
+    unknown_class = query_cmdb_models(
+        analysis_mode="count",
+        count_metric="instance_total",
+        classification_id="secret",
+        user_info={"user": "demo"},
+    )
+    assert unknown_class["result"] is False
+    assert unknown_class["data"] == {"status": "forbidden"}
+    assert "value" not in unknown_class["data"]
+
+    illegal = query_cmdb_models(
+        analysis_mode="count",
+        count_metric="by_classification",
+        user_info={"user": "demo"},
+    )
+    assert illegal["result"] is False
+    assert illegal["data"] == {"status": "failed"}
+    assert "统计内容" in illegal["message"]
+
+    distribution = query_cmdb_models(
+        analysis_mode="distribution",
+        count_metric="instance_total",
+        user_info={"user": "demo"},
+    )
+    assert distribution["result"] is True
+    assert [item["model_id"] for item in distribution["data"]["items"]] == ["host", "vm", "router"]
+    assert distribution["data"]["aggregation"] == "按模型统计权限内实例数，含零实例模型"
+
+
+def test_http_resolution_reaches_handler_without_hidden_paging_or_cross_chart_params(monkeypatch):
+    """假设数据主机 100、虚机 50、路由 0。HTTP 解析结果直接交给模型查询 handler。"""
+    import json
+    from pathlib import Path
+    from types import SimpleNamespace
+
+    from apps.cmdb.nats.generic_query import query_cmdb_models
+    from apps.operation_analysis.views.datasource_view import _resolve_request_params
+
+    seed_path = Path(__file__).resolve().parents[2] / "operation_analysis" / "support-files" / "source_api.json"
+    sources = json.loads(seed_path.read_text(encoding="utf-8"))
+    models = next(item for item in sources if item.get("rest_api") == "cmdb/query_cmdb_models")
+    instance = SimpleNamespace(rest_api="cmdb/query_cmdb_models", params=models["params"])
+    monkeypatch.setattr(
+        "apps.cmdb.nats.generic_query._visible_models",
+        lambda user_info: (
+            _scope_models(),
+            {"7": {"inst_names": ["visible-host"]}},
+            {"compute": "计算", "network": "网络"},
+        ),
+    )
+    monkeypatch.setattr("apps.cmdb.nats.generic_query.count_by_attr", lambda *args, **kwargs: dict(_SCOPE_COUNTS))
+
+    def run(request):
+        resolved = _resolve_request_params(instance, request)
+        return resolved, query_cmdb_models(user_info={"user": "demo"}, **resolved)
+
+    hidden = ("page", "page_size", "top_n", "count_metric")
+    distribution, distribution_result = run({"analysis_mode": "distribution"})
+    assert all(key not in distribution for key in hidden)
+    assert distribution_result["result"] is True
+    assert [item["model_id"] for item in distribution_result["data"]["items"]] == ["host", "vm", "router"]
+    assert distribution_result["data"]["aggregation"] == "按模型统计权限内实例数，含零实例模型"
+
+    counted, counted_result = run({"analysis_mode": "count"})
+    assert counted["count_metric"] == "model_count"
+    assert "page" not in counted
+    assert "page_size" not in counted
+    assert "top_n" not in counted
+    assert counted_result["data"] == {
+        "structure": "value",
+        "status": "ok",
+        "value": 3,
+        "unit": "个",
+        "aggregation": "模型计数",
+    }
+
+    total, total_result = run({"analysis_mode": "count", "count_metric": "instance_total"})
+    assert total["count_metric"] == "instance_total"
+    assert "page" not in total
+    assert "top_n" not in total
+    assert total_result["data"]["value"] == 150
+    assert total_result["data"]["aggregation"] == "实例总数"
+    assert total_result["data"]["status"] == "ok"
+
+    ranking, ranking_result = run({"analysis_mode": "distribution", "top_n": 2})
+    assert ranking["top_n"] == 2
+    assert "page" not in ranking
+    assert "count_metric" not in ranking
+    assert [item["model_id"] for item in ranking_result["data"]["items"]] == ["host", "vm"]
+
+    detail, detail_result = run({"analysis_mode": "detail"})
+    assert detail["page"] == 1
+    assert detail["page_size"] == 20
+    assert "count_metric" not in detail
+    assert "top_n" not in detail
+    assert detail_result["result"] is True
+    assert detail_result["data"]["page"] == 1
+    assert detail_result["data"]["page_size"] == 20
+    assert detail_result["data"]["count"] == 3
+
+    leaked, leaked_result = run({"analysis_mode": "count", "count_metric": "instance_total", "top_n": 10})
+    assert leaked["top_n"] == 10
+    assert leaked_result["result"] is False
+    assert leaked_result["data"] == {"status": "failed"}
+    assert "展示前几名" in leaked_result["message"]
+    assert "value" not in leaked_result["data"]
+
+    paged, paged_result = run({"analysis_mode": "distribution", "page": 1, "page_size": 20})
+    assert paged["page"] == 1
+    assert paged["page_size"] == 20
+    assert "top_n" not in paged
+    assert paged_result["result"] is False
+    assert "分页" in paged_result["message"]

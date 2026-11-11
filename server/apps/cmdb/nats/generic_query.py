@@ -8,11 +8,13 @@ from apps.cmdb.services.generic_query import (
     GenericQueryError,
     compile_attribute_conditions,
     ensure_payload_limit,
+    load_instances_by_uuids,
     load_start_instances,
     query_instances,
     query_models,
     query_one_hop_relations,
 )
+from apps.cmdb.services.generic_query_columns import build_instance_column_fields, build_one_hop_column_fields, project_one_hop_rows
 from apps.cmdb.services.generic_query_graph import GenericQueryGraphError, count_by_attr, query_one_hop
 from apps.cmdb.services.generic_query_limits import ONE_HOP_START_MAX
 from apps.cmdb.services.model import ModelManage
@@ -129,18 +131,27 @@ def _visible_models(user_info):
     return visible, instance_permissions, names
 
 
-def _attr_types(model_id: str, user_info) -> dict[str, str]:
+def _load_model_attrs(model_id: str, user_info) -> list:
     language = _resolve_nats_cmdb_language(user_info)
     try:
-        attrs = ModelManage.search_model_attr(model_id, language=language) or []
+        return list(ModelManage.search_model_attr(model_id, language=language) or [])
     except Exception as exc:
         raise GenericQueryError("指定模型不存在或无权访问", status="forbidden") from exc
+
+
+def _attr_types_from(attrs: list) -> dict[str, str]:
     types = {"inst_name": "string", "inst_uuid": "string"}
-    for attr in attrs:
+    for attr in attrs or []:
+        if not isinstance(attr, dict):
+            continue
         attr_id = str(attr.get("attr_id") or "").strip()
         if attr_id:
             types[attr_id] = str(attr.get("attr_type") or "string")
     return types
+
+
+def _attr_types(model_id: str, user_info) -> dict[str, str]:
+    return _attr_types_from(_load_model_attrs(model_id, user_info))
 
 
 @nats_client.register
@@ -153,6 +164,7 @@ def query_cmdb_models(
     result_op=None,
     result_value=None,
     result_filter=None,
+    count_metric=None,
     order=None,
     page=None,
     page_size=None,
@@ -179,6 +191,7 @@ def query_cmdb_models(
         result_op=result_op,
         result_value=result_value,
         result_filter=result_filter,
+        count_metric=count_metric,
         order=order,
         page=page,
         page_size=page_size,
@@ -214,10 +227,11 @@ def query_cmdb_instances(
     if str(model_id or "") not in visible_ids:
         raise GenericQueryError("指定模型不存在或无权访问", status="forbidden")
     _require_model_classification(_models, model_id, classification_id)
+    attrs = _load_model_attrs(str(model_id), user_info)
     data = query_instances(
         model_id=str(model_id),
         analysis_mode=analysis_mode or "detail",
-        attr_types=_attr_types(str(model_id), user_info),
+        attr_types=_attr_types_from(attrs),
         permission_map=instance_permissions,
         filter_field=filter_field,
         filter_op=filter_op,
@@ -230,6 +244,8 @@ def query_cmdb_instances(
         page=page,
         page_size=page_size,
     )
+    if data.get("structure") == "table":
+        data["column_fields"] = build_instance_column_fields(attrs, model_key=str(model_id))
     return _ok(data)
 
 
@@ -337,6 +353,28 @@ def query_cmdb_one_hop(
         page=page,
         page_size=page_size,
     )
+    if data.get("structure") == "table":
+        start_attrs = _load_model_attrs(str(start_model_id), user_info)
+        end_attrs = _load_model_attrs(str(end_model_id), user_info)
+        end_uuids = []
+        seen_end = set()
+        for row in data.get("items") or []:
+            end_uuid = str((row or {}).get("end_uuid") or "").strip()
+            if end_uuid and end_uuid not in seen_end:
+                seen_end.add(end_uuid)
+                end_uuids.append(end_uuid)
+        data["items"] = project_one_hop_rows(
+            data.get("items") or [],
+            starts=starts or [],
+            ends=load_instances_by_uuids(end_uuids),
+            start_attrs=start_attrs,
+            end_attrs=end_attrs,
+        )
+        data["column_fields"] = build_one_hop_column_fields(
+            start_attrs,
+            end_attrs,
+            model_key=f"{start_model_id}|{direction}|{model_asst_id}|{end_model_id}",
+        )
     return _ok(data)
 
 
