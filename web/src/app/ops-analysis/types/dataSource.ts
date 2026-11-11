@@ -269,4 +269,13 @@ export interface ParamItem {
    * 显隐以数据源最新 params 为准，不读组件保存的副本。
    */
   visible_modes?: string[];
+  /**
+   * 该参数在哪些图表下显示和提交。缺省表示不按图表限制。
+   * 与 visible_modes 同时存在时两者都要满足。
+   */
+  visible_charts?: string[];
+  /** 正整数。配合 maximum 给出范围提示。 */
+  integer?: boolean;
+  /** 与后端统计分组上限一致的最大值。 */
+  maximum?: number;
 }

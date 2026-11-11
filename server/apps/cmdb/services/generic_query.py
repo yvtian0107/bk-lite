@@ -82,6 +82,7 @@ def query_models(
     order: str | None = None,
     page=None,
     page_size=None,
+    top_n=None,
 ) -> dict:
     """模型查询。零实例模型保留为 0；统计超过扫描上限时失败。
 
@@ -106,6 +107,8 @@ def query_models(
         _ensure_scan(scanned)
     rows = _apply_result_filter(rows, result_op, result_value, result_filter)
     if mode == "count":
+        if top_n not in (None, ""):
+            raise GenericQueryError("当前分析方式不支持展示前几名")
         metric = _resolve_count_metric(count_metric)
         if metric == INSTANCE_TOTAL_METRIC:
             total = sum(int(row["instance_count"]) for row in rows)
@@ -113,11 +116,21 @@ def query_models(
         return _value_payload(len(rows), unit="个", aggregation=_COUNT_METRICS[MODEL_COUNT_METRIC])
     if mode == "distribution":
         # 分类和模型只缩小范围。每个可见模型一项，不再按分类把实例数加总。
+        # 未传 top_n 时返回全部模型，供柱状图和饼图使用。
         items = _model_distribution_items(rows)
         _ensure_groups(len(items))
-        field, desc = _parse_order(order, {"name", "value"}, default="value")
-        items.sort(key=lambda item: (item.get(field) is None, item.get(field)), reverse=desc)
+        if top_n not in (None, ""):
+            # 排行榜固定按实例数从高到低取前 N，不沿用排序参数，也不先分页。
+            limit = _parse_model_top_n(top_n)
+            items.sort(key=lambda item: (item.get("value") is None, item.get("value")), reverse=True)
+            items = items[:limit]
+        else:
+            field, desc = _parse_order(order, {"name", "value"}, default="value")
+            items.sort(key=lambda item: (item.get(field) is None, item.get(field)), reverse=desc)
+        _unique_distribution_names(items)
         return _category_payload(items, unit="个", aggregation="按模型统计权限内实例数，含零实例模型")
+    if top_n not in (None, ""):
+        raise GenericQueryError("当前分析方式不支持展示前几名")
     field, desc = _parse_order(
         order,
         {"model_name", "model_id", "classification_name", "instance_count"},
@@ -389,7 +402,6 @@ def _model_distribution_items(rows: list[dict]) -> list[dict]:
         }
         for row in rows
     ]
-    _unique_distribution_names(items)
     return items
 
 
@@ -569,6 +581,26 @@ def _public_instance(row: dict) -> dict:
     if not isinstance(row, dict):
         return {}
     return {key: value for key, value in row.items() if not str(key).startswith("_")}
+
+
+def _parse_model_top_n(value) -> int:
+    """排行榜名次。空值由调用方视为不截断；非法值和超限直接失败。"""
+    if isinstance(value, bool) or isinstance(value, float):
+        raise GenericQueryError("展示前几名必须是正整数")
+    if isinstance(value, str):
+        text = value.strip()
+        if not text.isdigit():
+            raise GenericQueryError("展示前几名必须是正整数")
+        number = int(text)
+    elif isinstance(value, int):
+        number = value
+    else:
+        raise GenericQueryError("展示前几名必须是正整数")
+    if number < 1:
+        raise GenericQueryError("展示前几名必须是正整数")
+    if number > STAT_GROUP_MAX:
+        raise GenericQueryError(f"展示前几名不能超过统计分组上限 {STAT_GROUP_MAX}")
+    return number
 
 
 def _as_int(value, name: str) -> int:

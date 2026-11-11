@@ -2048,7 +2048,7 @@
         {
         "key": "CMDB 模型通用查询::cmdb/query_cmdb_models",
         "name": "CMDB 模型通用查询",
-        "desc": "按分类或模型缩小可见模型范围。明细始终返回模型定义，不因选中模型变成实例行。柱状图、饼图和排行榜都按模型给出权限内实例数，不固定为 TOP5。非空或空模型个数由计数和实例数筛选得到。零实例模型保留。单值图可选择统计内容为模型数量或实例总数，默认模型数量，选中模型不改变口径",
+        "desc": "查询模型信息、模型数量和各模型权限内实例数。分类和模型只用来缩小范围。明细返回分类、模型名称、模型标识和实例数，零实例保留。单值图可选择统计内容为模型数量或实例总数，默认模型数量，选中模型不改变口径；模型数量是筛选后的模型个数，实例总数是这些模型权限内实例数之和。柱状图和饼图返回范围内每个模型，不截断。排行榜按实例数从高到低展示前 N 名，默认 10，须为正整数，且不超过统计分组上限。支持分类筛选和实例数条件筛选",
         "rest_api": "cmdb/query_cmdb_models",
         "tag": [
             "cmdb"
@@ -2275,6 +2275,11 @@
                     "detail",
                     "distribution"
                 ],
+                "visible_charts": [
+                    "table",
+                    "bar",
+                    "pie"
+                ],
                 "inputConfig": {
                     "control": "order",
                     "fields": [
@@ -2315,6 +2320,23 @@
                         }
                     ]
                 }
+            },
+            {
+                "name": "top_n",
+                "type": "number",
+                "value": 10,
+                "alias_name": "展示前几名",
+                "filterType": "params",
+                "required": true,
+                "integer": true,
+                "maximum": 500,
+                "desc": "正整数。只对排行榜生效，按实例数从高到低取前 N 项",
+                "visible_modes": [
+                    "distribution"
+                ],
+                "visible_charts": [
+                    "topN"
+                ]
             },
             {
                 "name": "page",
