@@ -206,6 +206,37 @@ def test_model_query_schema_matches_detail_rows_without_touching_other_status():
     instances = sources["monitor/query_monitor_instances"]
     assert "status" in {field["key"] for field in instances["field_schema"]}
     assert "unit" in {field["key"] for field in instances["field_schema"]}
+    instance_query = sources["cmdb/query_cmdb_instances"]
+    one_hop = sources["cmdb/query_cmdb_one_hop"]
+    metric = sources["monitor/query_monitor_metric"]
+    models = sources["cmdb/query_cmdb_models"]
+
+    def table_keys(source):
+        return [field["key"] for field in source["field_schema"] if field.get("table") is not False]
+
+    assert table_keys(instance_query) == ["inst_name"]
+    assert table_keys(one_hop) == ["start_name", "end_name"]
+    assert "status" not in table_keys(instance_query)
+    assert table_keys(instances) == [
+        "instance_id",
+        "name",
+        "ip",
+        "cmdb_id",
+        "cmdb_bind_status",
+        "monitor_object_id",
+        "status",
+    ]
+    assert "value" in table_keys(alerts)
+    assert "name" not in table_keys(alerts)
+    assert "status" in table_keys(center)
+    assert "unit" not in table_keys(center)
+    assert all(field.get("table") is not False for field in metric["field_schema"])
+    assert [field["key"] for field in models["field_schema"]] == [
+        "classification_name",
+        "model_name",
+        "model_id",
+        "instance_count",
+    ]
 
 
 def test_model_query_resolver_keeps_explicit_values_and_skips_hidden_defaults():

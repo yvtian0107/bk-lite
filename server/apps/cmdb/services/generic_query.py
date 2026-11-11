@@ -6,6 +6,7 @@ import json
 from typing import Any
 
 from apps.cmdb.graph.validators import CQLValidator
+from apps.cmdb.services.generic_query_columns import public_instance, sensitive_hidden_keys
 from apps.cmdb.services.generic_query_graph import GenericQueryGraphError, aggregate_numeric, count_by_attr
 from apps.cmdb.services.generic_query_limits import (
     DETAIL_PAGE_SIZE_MAX,
@@ -166,7 +167,7 @@ def query_instances(
             condition_params=condition_params,
             condition_logic=logic,
         )
-        rows = [_public_instance(item) for item in items or []]
+        rows = [_public_instance(item, sensitive_hidden_keys(attr_types)) for item in items or []]
         return _page_payload(rows, page_no, size, count=int(count or 0))
 
     if mode == "aggregate":
@@ -553,10 +554,26 @@ def _category_payload(items: list[dict], *, unit: str, aggregation: str) -> dict
     }
 
 
-def _public_instance(row: dict) -> dict:
-    if not isinstance(row, dict):
-        return {}
-    return {key: value for key, value in row.items() if not str(key).startswith("_")}
+def _public_instance(row: dict, hidden: set[str] | None = None) -> dict:
+    return public_instance(row, hidden)
+
+
+def load_instances_by_uuids(uuids: list[str]) -> list[dict]:
+    """按已授权的实例标识补齐一跳端点属性。空列表不访问图库。"""
+    unique = []
+    seen = set()
+    for value in uuids or []:
+        text = str(value or "").strip()
+        if not text or text in seen:
+            continue
+        seen.add(text)
+        unique.append(text)
+    if not unique:
+        return []
+    from apps.cmdb.graph.drivers.graph_client import GraphClient
+
+    with GraphClient() as client:
+        return client.query_entity_by_inst_uuids(unique) or []
 
 
 def _parse_model_top_n(value) -> int:

@@ -33,6 +33,8 @@ export interface ResponseFieldDefinition {
   title: string;
   value_type: 'string' | 'number' | 'boolean' | 'datetime';
   description?: string;
+  /** false 时不作为明细表默认列。旧数据源缺省仍显示。 */
+  table?: boolean;
 }
 
 /** 接口字段定义配置（数据源级别） */

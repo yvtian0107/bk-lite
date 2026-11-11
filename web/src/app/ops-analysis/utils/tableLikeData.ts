@@ -1,5 +1,10 @@
 import type { ResponseFieldDefinition } from '@/app/ops-analysis/types/dataSource';
 import type { TableColumnConfigItem } from '@/app/ops-analysis/types/dashBoard';
+import {
+  resolveModelAttrColumns,
+  schemaFieldsForTable,
+  type ModelColumnPayload,
+} from '@/app/ops-analysis/utils/modelTableColumns';
 
 export interface TableLikePaginationState {
   current: number;
@@ -119,6 +124,8 @@ interface ResolveTableLikeColumnsInput<
   ColumnType extends TableLikeColumnConfigItem,
 > {
   configuredColumns?: ColumnType[];
+  columnModelKey?: string;
+  modelColumns?: ModelColumnPayload | null;
   schemaFields?: ResponseFieldDefinition[];
   rows: RecordType[];
 }
@@ -128,15 +135,26 @@ export function resolveTableLikeColumns<
   ColumnType extends TableLikeColumnConfigItem = TableColumnConfigItem,
 >({
   configuredColumns = [],
+  columnModelKey,
+  modelColumns,
   schemaFields = [],
   rows,
 }: ResolveTableLikeColumnsInput<RecordType, ColumnType>): ColumnType[] {
+  if (modelColumns?.fields.length) {
+    return resolveModelAttrColumns({
+      configuredColumns: configuredColumns as TableColumnConfigItem[],
+      columnModelKey,
+      modelColumns,
+    }) as ColumnType[];
+  }
+
   if (configuredColumns.length > 0) {
     return [...configuredColumns].sort((a, b) => a.order - b.order);
   }
 
-  if (schemaFields.length > 0) {
-    return schemaFields.map(
+  const tableSchema = schemaFieldsForTable(schemaFields);
+  if (tableSchema.length > 0) {
+    return tableSchema.map(
       (field, index) =>
         ({
           key: field.key,
