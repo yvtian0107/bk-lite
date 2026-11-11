@@ -90,6 +90,7 @@ const SingleValueNodePanel: React.FC<NodeConfPanelProps> = ({
     dataSourceId: currentDataSource,
     getSourceDataByApiId,
     open: visible,
+    chartType: 'single',
   });
 
   const previewFilterDefinitions = useMemo(

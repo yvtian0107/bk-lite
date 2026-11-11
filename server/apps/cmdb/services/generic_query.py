@@ -75,6 +75,7 @@ def query_models(
     order: str | None = None,
     page=None,
     page_size=None,
+    top_n=None,
 ) -> dict:
     """模型查询。零实例模型保留为 0；统计超过扫描上限时失败。"""
     mode = _mode(analysis_mode, MODEL_MODES)
@@ -95,32 +96,35 @@ def query_models(
         _ensure_scan(scanned)
     rows = _apply_result_filter(rows, result_op, result_value, result_filter)
     if mode == "count":
+        if top_n not in (None, ""):
+            raise GenericQueryError("当前分析方式不支持展示前几名")
         return _value_payload(len(rows), unit="个", aggregation="模型计数")
     if mode == "distribution":
-        grouped: dict[str, dict] = {}
-        for row in rows:
-            key = row["classification_id"] or ""
-            bucket = grouped.setdefault(
-                key,
-                {
-                    "name": row["classification_name"] or key or "未分类",
-                    "classification_id": key,
-                    "value": 0,
-                },
-            )
-            bucket["value"] += int(row["instance_count"])
-        items = list(grouped.values())
+        # 分类和模型只缩小范围。每个可见模型一项，不再按分类把实例数加总。
+        # 未传 top_n 时返回全部模型，供柱状图和饼图使用。
+        items = _model_distribution_items(rows)
         _ensure_groups(len(items))
-        field, desc = _parse_order(order, {"name", "value"}, default="value")
-        items.sort(key=lambda item: (item.get(field) is None, item.get(field)), reverse=desc)
-        return _category_payload(items, unit="个", aggregation="按分类汇总实例数，含零实例模型")
+        if top_n not in (None, ""):
+            # 排行榜固定按实例数从高到低取前 N，不沿用排序参数，也不先分页。
+            limit = _parse_model_top_n(top_n)
+            items.sort(key=lambda item: (item.get("value") is None, item.get("value")), reverse=True)
+            items = items[:limit]
+        else:
+            field, desc = _parse_order(order, {"name", "value"}, default="value")
+            items.sort(key=lambda item: (item.get(field) is None, item.get(field)), reverse=desc)
+        _unique_distribution_names(items)
+        return _category_payload(items, unit="个", aggregation="按模型统计权限内实例数，含零实例模型")
+    if top_n not in (None, ""):
+        raise GenericQueryError("当前分析方式不支持展示前几名")
     field, desc = _parse_order(
         order,
         {"model_name", "model_id", "classification_name", "instance_count"},
         default="model_name",
     )
     rows.sort(key=lambda item: (item.get(field) is None, item.get(field)), reverse=desc)
-    return _page_payload(rows, page, page_size)
+    paged = _page_payload(rows, page, page_size)
+    paged["items"] = [_public_model_detail(row) for row in paged["items"]]
+    return paged
 
 
 def query_instances(
@@ -358,12 +362,53 @@ def _model_row(model: dict, counts: dict) -> dict:
     return {
         "model_id": model_id,
         "model_name": model.get("model_name") or model_id,
-        "name": model.get("model_name") or model_id,
         "classification_id": str(model.get("classification_id") or ""),
         "classification_name": model.get("classification_name") or "",
         "instance_count": int(counts.get(model_id, 0) or 0),
-        "value": int(counts.get(model_id, 0) or 0),
     }
+
+
+def _public_model_detail(row: dict) -> dict:
+    """明细只返回模型定义上的四列。name/value 留给分布图，不作为表格列。"""
+    return {
+        "classification_name": row.get("classification_name") or "",
+        "model_name": row.get("model_name") or "",
+        "model_id": row.get("model_id") or "",
+        "instance_count": int(row.get("instance_count") or 0),
+    }
+
+
+def _model_distribution_items(rows: list[dict]) -> list[dict]:
+    items = [
+        {
+            "name": str(row.get("model_name") or row.get("model_id") or ""),
+            "model_id": str(row.get("model_id") or ""),
+            "value": int(row.get("instance_count") or 0),
+        }
+        for row in rows
+    ]
+    return items
+
+
+def _unique_distribution_names(items: list[dict]) -> None:
+    """重名模型的图表类目附上模型标识，避免柱、饼和图例按 name 覆盖。"""
+    bases = [str(item.get("name") or item.get("model_id") or "") for item in items]
+    counts: dict[str, int] = {}
+    for base in bases:
+        counts[base] = counts.get(base, 0) + 1
+    used: set[str] = set()
+    for item, base in zip(items, bases):
+        model_id = str(item.get("model_id") or "")
+        candidate = base if counts[base] == 1 else f"{base} ({model_id})"
+        if candidate in used:
+            stem = f"{base} ({model_id})"
+            candidate = stem
+            serial = 2
+            while candidate in used:
+                candidate = f"{stem}-{serial}"
+                serial += 1
+        used.add(candidate)
+        item["name"] = candidate
 
 
 def _apply_result_filter(rows: list[dict], op: str | None, value, result_filter=None) -> list[dict]:
@@ -512,6 +557,26 @@ def _public_instance(row: dict) -> dict:
     if not isinstance(row, dict):
         return {}
     return {key: value for key, value in row.items() if not str(key).startswith("_")}
+
+
+def _parse_model_top_n(value) -> int:
+    """排行榜名次。空值由调用方视为不截断；非法值和超限直接失败。"""
+    if isinstance(value, bool) or isinstance(value, float):
+        raise GenericQueryError("展示前几名必须是正整数")
+    if isinstance(value, str):
+        text = value.strip()
+        if not text.isdigit():
+            raise GenericQueryError("展示前几名必须是正整数")
+        number = int(text)
+    elif isinstance(value, int):
+        number = value
+    else:
+        raise GenericQueryError("展示前几名必须是正整数")
+    if number < 1:
+        raise GenericQueryError("展示前几名必须是正整数")
+    if number > STAT_GROUP_MAX:
+        raise GenericQueryError(f"展示前几名不能超过统计分组上限 {STAT_GROUP_MAX}")
+    return number
 
 
 def _as_int(value, name: str) -> int:

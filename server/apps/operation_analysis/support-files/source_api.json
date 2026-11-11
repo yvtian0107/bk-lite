@@ -2048,7 +2048,7 @@
         {
         "key": "CMDB 模型通用查询::cmdb/query_cmdb_models",
         "name": "CMDB 模型通用查询",
-        "desc": "按分类和模型查询可见模型。零实例模型保留为 0。TOP5、非空模型数、空模型数和分类汇总都由分析方式与结果筛选配置出来",
+        "desc": "查询模型信息、模型数量和各模型权限内实例数。分类和模型只用来缩小范围。明细返回分类、模型名称、模型标识和实例数，零实例保留。计数是筛选后的模型个数。柱状图和饼图返回范围内每个模型。排行榜按实例数从高到低展示前 N 名，默认 10，须为正整数，且不超过统计分组上限。支持分类筛选和实例数条件筛选",
         "rest_api": "cmdb/query_cmdb_models",
         "tag": [
             "cmdb"
@@ -2248,6 +2248,11 @@
                     "detail",
                     "distribution"
                 ],
+                "visible_charts": [
+                    "table",
+                    "bar",
+                    "pie"
+                ],
                 "inputConfig": {
                     "control": "order",
                     "fields": [
@@ -2290,6 +2295,23 @@
                 }
             },
             {
+                "name": "top_n",
+                "type": "number",
+                "value": 10,
+                "alias_name": "展示前几名",
+                "filterType": "params",
+                "required": true,
+                "integer": true,
+                "maximum": 500,
+                "desc": "正整数。只对排行榜生效，按实例数从高到低取前 N 项",
+                "visible_modes": [
+                    "distribution"
+                ],
+                "visible_charts": [
+                    "topN"
+                ]
+            },
+            {
                 "name": "page",
                 "type": "number",
                 "value": 1,
@@ -2322,8 +2344,8 @@
         ],
         "field_schema": [
             {
-                "key": "model_id",
-                "title": "模型标识",
+                "key": "classification_name",
+                "title": "分类",
                 "value_type": "string"
             },
             {
@@ -2332,48 +2354,15 @@
                 "value_type": "string"
             },
             {
-                "key": "name",
-                "title": "名称",
-                "value_type": "string",
-                "description": "与模型名称相同，供 TOP 图使用"
-            },
-            {
-                "key": "classification_id",
-                "title": "分类标识",
-                "value_type": "string"
-            },
-            {
-                "key": "classification_name",
-                "title": "分类",
+                "key": "model_id",
+                "title": "模型标识",
                 "value_type": "string"
             },
             {
                 "key": "instance_count",
                 "title": "实例数",
                 "value_type": "number",
-                "description": "可见但零实例的模型为 0"
-            },
-            {
-                "key": "value",
-                "title": "值",
-                "value_type": "number",
-                "description": "明细为实例数；计数为模型数；分布为分类实例合计"
-            },
-            {
-                "key": "unit",
-                "title": "单位",
-                "value_type": "string"
-            },
-            {
-                "key": "aggregation",
-                "title": "聚合口径",
-                "value_type": "string"
-            },
-            {
-                "key": "status",
-                "title": "结果状态",
-                "value_type": "string",
-                "description": "ok、empty、missing、forbidden 或 failed"
+                "description": "权限内可见实例数，零实例为 0"
             }
         ]
     },

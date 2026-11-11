@@ -32,6 +32,8 @@ interface UseSingleValueConfigProps {
   open?: boolean;
   /** 配置预览或字段刷新已经拿到的样本。有值时优先于本钩子自己取到的样本。 */
   previewRawData?: unknown;
+  /** 当前图表。有分析方式时按它过滤分页，避免单值取样仍带上明细页码。 */
+  chartType?: string;
 }
 
 export function useSingleValueConfig({
@@ -42,6 +44,7 @@ export function useSingleValueConfig({
   getSourceDataByApiId,
   open = true,
   previewRawData = null,
+  chartType,
 }: UseSingleValueConfigProps) {
   const { t } = useTranslation();
   const [singleValueTreeData, setSingleValueTreeData] = useState<any[]>([]);
@@ -193,7 +196,9 @@ export function useSingleValueConfig({
       const userParams = formValues?.params || {};
       const requestParams = processDataSourceParams({
         sourceParams: selectedDataSource.params,
+        definitionParams: selectedDataSource.params,
         userParams,
+        chartType,
         resolutionContext: {
           referenceNow: Date.now(),
           timezone: getDateRangeTimezone(),
@@ -217,7 +222,7 @@ export function useSingleValueConfig({
     } finally {
       setLoadingSingleValueData(false);
     }
-  }, [selectedDataSource, dataSourceId, form, getSourceDataByApiId, builtinNamespaceId, t]);
+  }, [selectedDataSource, dataSourceId, form, getSourceDataByApiId, builtinNamespaceId, chartType, t]);
 
   const handleSingleValueFieldChange = useCallback(
     (checkedKeys: any) => {

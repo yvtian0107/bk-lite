@@ -8,6 +8,7 @@ import { supportsComponentSwitch } from '@/app/ops-analysis/utils/componentParam
 import {
   findAnalysisModeParam,
   isParamVisibleForAnalysisMode,
+  isParamVisibleForChart,
   resolveAnalysisModeValue,
 } from '@/app/ops-analysis/utils/analysisMode';
 import { formatOpsRequestTime } from '@/app/ops-analysis/utils/dateTime';
@@ -500,6 +501,7 @@ export const fetchWidgetData = async ({
   filterBindings,
   filterDefinitions,
   throwError = false,
+  chartType,
   t,
 }: {
   config: any;
@@ -510,6 +512,7 @@ export const fetchWidgetData = async ({
   filterBindings?: FilterBindings;
   filterDefinitions?: UnifiedFilterDefinition[];
   throwError?: boolean;
+  chartType?: string;
   t?: WidgetMessage;
 }) => {
   if (!config?.dataSource) {
@@ -524,6 +527,7 @@ export const fetchWidgetData = async ({
       unifiedFilterValues,
       filterBindings,
       filterDefinitions,
+      chartType: chartType || config?.chartType,
       t,
     });
 
@@ -707,7 +711,7 @@ export const buildWidgetRequestParams = ({
     filterBindings,
     filterDefinitions,
     resolutionContext,
-    chartType,
+    chartType: chartType || config?.chartType,
     t,
   });
 
@@ -756,7 +760,7 @@ export const buildWidgetRequestSignatureParams = ({
     filterDefinitions,
     resolutionContext,
     timeRangeFormatter: formatTimeRangeForSignature,
-    chartType,
+    chartType: chartType || config?.chartType,
     t,
   });
 
@@ -1030,6 +1034,21 @@ export const processDataSourceParams = ({
     ? Array.from(definitionByName.values())
     : migratedSourceParams;
   if (findAnalysisModeParam(catalogParams)) {
+    const sourceNames = new Set(
+      migratedSourceParams.map((param: { name?: string }) => param?.name),
+    );
+    catalogParams.forEach((param) => {
+      if (!param?.name || sourceNames.has(param.name)) return;
+      if (Object.prototype.hasOwnProperty.call(userParams, param.name)) return;
+      const filterType = param.filterType || 'fixed';
+      if (filterType !== 'params' && filterType !== 'fixed') return;
+      setShapedParam(
+        param.name,
+        param.type || 'string',
+        param.value,
+        resolveConsumerMultiple(param),
+      );
+    });
     const mode = resolveAnalysisModeValue({
       params: catalogParams,
       selected: processedParams[findAnalysisModeParam(catalogParams)?.name || ''],
@@ -1039,8 +1058,23 @@ export const processDataSourceParams = ({
       processedParams.analysis_mode = mode;
     }
     catalogParams.forEach((param) => {
-      if (!isParamVisibleForAnalysisMode(param, mode, catalogParams)) {
+      const visible = isParamVisibleForAnalysisMode(param, mode, catalogParams)
+        && isParamVisibleForChart(param, chartType);
+      if (!visible) {
         delete processedParams[param.name];
+        return;
+      }
+      const charts = param.visible_charts;
+      const missing = !Object.prototype.hasOwnProperty.call(processedParams, param.name);
+      if (
+        missing
+        && Array.isArray(charts)
+        && charts.length > 0
+        && param.value !== undefined
+        && param.value !== null
+        && param.value !== ''
+      ) {
+        processedParams[param.name] = param.value;
       }
     });
   }

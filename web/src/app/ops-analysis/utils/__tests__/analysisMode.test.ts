@@ -6,7 +6,14 @@ import {
   isParamVisibleForAnalysisMode,
   resolveAnalysisModeValue,
 } from '@/app/ops-analysis/utils/analysisMode';
-import { processDataSourceParams } from '@/app/ops-analysis/utils/widgetDataTransform';
+import { mergeDetectedFieldsWithSchema } from '@/app/ops-analysis/components/widgetConfig/utils/columnProbing';
+import { resolveTableLikeColumns } from '@/app/ops-analysis/utils/tableLikeData';
+import { buildCompareRequestParams } from '@/app/ops-analysis/utils/compareQuery';
+import {
+  buildWidgetRequestParams,
+  fetchWidgetData,
+  processDataSourceParams,
+} from '@/app/ops-analysis/utils/widgetDataTransform';
 
 const modeParam = (items: Array<{
   label: string;
@@ -185,13 +192,204 @@ describe('analysis mode visibility and request', () => {
       { name: 'step', alias_name: '步长', type: 'string', filterType: 'params', value: '5m' },
     ];
     assert.equal(resolveAnalysisModeValue({ params, selected: undefined, chartType: 'line' }), undefined);
-    assert.deepEqual(processDataSourceParams({ sourceParams: params }), {
+    assert.deepEqual(processDataSourceParams({ sourceParams: params, chartType: 'bar' }), {
       query: 'up',
       step: '5m',
     });
+    const legacyPaging = processDataSourceParams({
+      sourceParams: [
+        ...params,
+        { name: 'page', alias_name: '页码', type: 'number', filterType: 'params', value: 2 },
+        { name: 'page_size', alias_name: '每页', type: 'number', filterType: 'params', value: 15 },
+      ],
+      chartType: 'bar',
+    });
+    assert.equal(legacyPaging.page, 2);
+    assert.equal(legacyPaging.page_size, 15);
     assert.deepEqual(
       filterChartTypesForAnalysisMode([{ value: 'line' }, { value: 'bar' }], params, undefined),
       [{ value: 'line' }, { value: 'bar' }],
     );
+  });
+});
+
+const modelCatalog = (): ParamItem[] => [
+  modeParam([
+    { label: '明细', value: 'detail', charts: ['table'], result: { structure: 'table' } },
+    { label: '计数', value: 'count', charts: ['single'], result: { structure: 'value' } },
+    { label: '分布', value: 'distribution', charts: ['bar', 'pie', 'topN'], result: { structure: 'category' } },
+  ]),
+  { name: 'model_id', alias_name: '模型', type: 'string', filterType: 'params', value: 'host' },
+  { name: 'page', alias_name: '页码', type: 'number', filterType: 'params', value: 1, visible_modes: ['detail'] },
+  { name: 'page_size', alias_name: '每页', type: 'number', filterType: 'params', value: 20, visible_modes: ['detail'] },
+];
+
+const withPaging = (page: number, pageSize: number): ParamItem[] =>
+  modelCatalog().map((param) => {
+    if (param.name === 'page') return { ...param, value: page };
+    if (param.name === 'page_size') return { ...param, value: pageSize };
+    if (param.name === 'analysis_mode') return { ...param, value: 'detail' };
+    return param;
+  });
+
+describe('chart requests drop paging outside detail', () => {
+  it('omits page for bar, pie, ranking and single even when the saved mode is still detail', () => {
+    const params = withPaging(3, 50);
+    for (const chartType of ['bar', 'pie', 'topN', 'single']) {
+      const request = buildWidgetRequestParams({
+        config: { chartType, dataSourceParams: params },
+        dataSource: { params: modelCatalog() },
+        extraParams: { page: 3, page_size: 50 },
+      });
+      assert.equal(request.page, undefined, chartType);
+      assert.equal(request.page_size, undefined, chartType);
+      assert.equal(
+        request.analysis_mode,
+        chartType === 'single' ? 'count' : 'distribution',
+      );
+    }
+  });
+
+  it('keeps the saved page when the chart returns to the table', () => {
+    const params = withPaging(4, 50);
+    const request = buildCompareRequestParams({
+      config: { chartType: 'table', dataSourceParams: params },
+      dataSource: { params: modelCatalog() },
+    });
+    assert.equal(request.currentParams.analysis_mode, 'detail');
+    assert.equal(request.currentParams.page, 4);
+    assert.equal(request.currentParams.page_size, 50);
+  });
+
+  it('uses the saved chart type for run and compare when the caller omits chartType', async () => {
+    const params = withPaging(1, 20);
+    const compared = buildCompareRequestParams({
+      config: { chartType: 'topN', dataSourceParams: params, dataSource: 8 },
+      dataSource: { params: modelCatalog() },
+    });
+    assert.equal(compared.currentParams.page, undefined);
+    assert.equal(compared.currentParams.analysis_mode, 'distribution');
+
+    let captured: Record<string, unknown> | undefined;
+    await fetchWidgetData({
+      config: { dataSource: 8, chartType: 'pie', dataSourceParams: params },
+      dataSource: { params: modelCatalog() },
+      getSourceDataByApiId: async (_id, request) => {
+        captured = request;
+        return { data: { structure: 'category', items: [] } };
+      },
+    });
+    assert.equal(captured?.page, undefined);
+    assert.equal(captured?.page_size, undefined);
+    assert.equal(captured?.analysis_mode, 'distribution');
+  });
+
+  it('keeps four model columns when the table is empty and a re-probe sees no aliases', () => {
+    const schema = [
+      { key: 'classification_name', title: '分类', value_type: 'string' as const },
+      { key: 'model_name', title: '模型名称', value_type: 'string' as const },
+      { key: 'model_id', title: '模型标识', value_type: 'string' as const },
+      { key: 'instance_count', title: '实例数', value_type: 'number' as const },
+    ];
+    const headers = resolveTableLikeColumns({ schemaFields: schema, rows: [] });
+    assert.deepEqual(headers.map((column) => column.key), schema.map((field) => field.key));
+    const probed = mergeDetectedFieldsWithSchema(schema.map((field) => field.key), schema);
+    assert.deepEqual(probed.map((column) => column.key), schema.map((field) => field.key));
+    assert.equal(probed.some((column) => column.key === 'name' || column.key === 'value'), false);
+  });
+});
+
+const rankingCatalog = (): ParamItem[] => [
+  ...modelCatalog(),
+  {
+    name: 'order',
+    alias_name: '排序',
+    type: 'order',
+    filterType: 'params',
+    value: 'name',
+    visible_modes: ['detail', 'distribution'],
+    visible_charts: ['table', 'bar', 'pie'],
+  },
+  {
+    name: 'top_n',
+    alias_name: '展示前几名',
+    type: 'number',
+    filterType: 'params',
+    value: 10,
+    integer: true,
+    maximum: 500,
+    visible_modes: ['distribution'],
+    visible_charts: ['topN'],
+  },
+];
+
+describe('model ranking top N stays on the ranking chart', () => {
+  it('sends the saved rank limit for topN and omits it for bar, pie, table and single', () => {
+    const saved = rankingCatalog().map((param) => (
+      param.name === 'top_n' ? { ...param, value: 5 } : param
+    ));
+    const ranking = buildCompareRequestParams({
+      config: { chartType: 'topN', dataSourceParams: saved },
+      dataSource: { params: rankingCatalog() },
+    });
+    assert.equal(ranking.currentParams.top_n, 5);
+    assert.equal(ranking.currentParams.page, undefined);
+    assert.equal(ranking.currentParams.order, undefined);
+    assert.equal(ranking.currentParams.analysis_mode, 'distribution');
+
+    for (const chartType of ['bar', 'pie', 'table', 'single']) {
+      const request = buildWidgetRequestParams({
+        config: { chartType, dataSourceParams: saved },
+        dataSource: { params: rankingCatalog() },
+      });
+      assert.equal(request.top_n, undefined, chartType);
+    }
+
+    const bar = buildWidgetRequestParams({
+      config: { chartType: 'bar', dataSourceParams: saved },
+      dataSource: { params: rankingCatalog() },
+    });
+    assert.equal(bar.order, 'name');
+    assert.equal(bar.page, undefined);
+    const table = buildWidgetRequestParams({
+      config: { chartType: 'table', dataSourceParams: saved },
+      dataSource: { params: rankingCatalog() },
+    });
+    assert.equal(table.page, 1);
+    assert.equal(table.order, 'name');
+  });
+
+  it('uses the catalog default of 10 when an older ranking widget has no saved limit', () => {
+    const saved = rankingCatalog().filter((param) => param.name !== 'top_n');
+    const ranking = processDataSourceParams({
+      sourceParams: saved,
+      definitionParams: rankingCatalog(),
+      userParams: Object.fromEntries(saved.map((param) => [param.name, param.value])),
+      chartType: 'topN',
+    });
+    const bar = processDataSourceParams({
+      sourceParams: saved,
+      definitionParams: rankingCatalog(),
+      userParams: Object.fromEntries(saved.map((param) => [param.name, param.value])),
+      chartType: 'bar',
+    });
+    assert.equal(ranking.top_n, 10);
+    assert.equal(ranking.page, undefined);
+    assert.equal(bar.top_n, undefined);
+    assert.equal(bar.page, undefined);
+  });
+
+  it('keeps paging for a source that has no analysis mode', () => {
+    const request = processDataSourceParams({
+      sourceParams: [
+        { name: 'query', alias_name: '查询', type: 'string', filterType: 'params', value: 'up' },
+        { name: 'page', alias_name: '页码', type: 'number', filterType: 'params', value: 2 },
+        { name: 'page_size', alias_name: '每页', type: 'number', filterType: 'params', value: 15 },
+      ],
+      chartType: 'topN',
+    });
+    assert.equal(request.page, 2);
+    assert.equal(request.page_size, 15);
+    assert.equal(request.top_n, undefined);
   });
 });

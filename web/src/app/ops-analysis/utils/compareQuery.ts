@@ -26,6 +26,7 @@ interface BuildRequestParamsInput {
   filterBindings?: FilterBindings;
   filterDefinitions?: UnifiedFilterDefinition[];
   resolutionContext?: DateRangeResolutionContext;
+  chartType?: string;
   t?: (id: string, defaultMessage?: string) => string;
 }
 
@@ -112,6 +113,7 @@ export const buildCompareRequestParams = ({
   filterBindings,
   filterDefinitions,
   resolutionContext,
+  chartType,
   t,
 }: BuildRequestParamsInput): { currentParams: RequestParams; baselineParams: RequestParams | null } => {
   const currentParams = buildWidgetRequestParams({
@@ -122,6 +124,7 @@ export const buildCompareRequestParams = ({
     filterBindings,
     filterDefinitions,
     resolutionContext,
+    chartType: chartType || config?.chartType,
     t,
   });
 

@@ -893,6 +893,7 @@ const WidgetWrapper: React.FC<WidgetWrapperProps> = ({
         filterBindings: config?.filterBindings,
         filterDefinitions,
         resolutionContext: dateRangeResolutionContext,
+        chartType,
       });
 
       // Discard stale response if a newer fetch has started
