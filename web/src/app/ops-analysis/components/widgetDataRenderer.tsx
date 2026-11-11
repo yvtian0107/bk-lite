@@ -75,6 +75,11 @@ import {
 } from "@/app/ops-analysis/utils/tablePagination";
 import { validateMultiValueData } from "@/app/ops-analysis/utils/multiValueData";
 import { validateTopNPayload } from "@/app/ops-analysis/utils/topNData";
+import {
+  chartFieldMissingMessage,
+  missingConfiguredField,
+  readChartFieldMissing,
+} from "@/app/ops-analysis/utils/chartFieldContract";
 import { validateEventTimelinePayload } from "@/app/ops-analysis/utils/eventTimeline";
 import { validateCardListPayload } from "@/app/ops-analysis/utils/cardList";
 import { resolveRadarSeriesData } from "@/app/ops-analysis/utils/radarData";
@@ -98,6 +103,13 @@ const validateTopNData = (
   config?: ValueConfig,
   errorMessage?: string,
 ): { isValid: boolean; message?: string } => {
+  const missing = missingConfiguredField(data, [
+    config?.topNLabelField,
+    config?.topNValueField,
+  ]);
+  if (missing) {
+    return { isValid: false, message: chartFieldMissingMessage(missing) };
+  }
   const valid = validateTopNPayload(data, {
     labelField: config?.topNLabelField,
     valueField: config?.topNValueField,
@@ -738,6 +750,17 @@ const WidgetWrapper: React.FC<WidgetWrapperProps> = ({
       const localizeStructureMessage = (
         result: { isValid: boolean; message?: string },
       ) => {
+        const missingField = readChartFieldMissing(result.message);
+        if (!result.isValid && missingField) {
+          return {
+            ...result,
+            message: t(
+              "dashboard.chartFieldMissing",
+              "字段 {field} 不在当前结果中",
+              { field: missingField },
+            ),
+          };
+        }
         if (!result.isValid && result.message?.startsWith("dashboard.")) {
           return { ...result, message: t(result.message) };
         }
@@ -777,11 +800,11 @@ const WidgetWrapper: React.FC<WidgetWrapperProps> = ({
 
       switch (type) {
         case "pie":
-          return ChartDataTransformer.validatePieData(data, errorMessage, {
+          return localizeStructureMessage(ChartDataTransformer.validatePieData(data, errorMessage, {
             dimensionField: config?.dimensionField,
             valueField: config?.valueField,
             pieScalarFields: config?.pieScalarFields,
-          });
+          }));
         case "line":
         case "bar":
           return localizeStructureMessage(
@@ -792,9 +815,22 @@ const WidgetWrapper: React.FC<WidgetWrapperProps> = ({
             ),
           );
         case "topN":
-          return validateTopNData(data, config, errorMessage);
-        case "gauge":
-          return localizeStructureMessage(validateGaugeData(data, config));
+          return localizeStructureMessage(validateTopNData(data, config, errorMessage));
+        case "single":
+        case "gauge": {
+          const selected = config?.selectedFields?.[0];
+          const missing = missingConfiguredField(data, [selected]);
+          if (missing) {
+            return localizeStructureMessage({
+              isValid: false,
+              message: chartFieldMissingMessage(missing),
+            });
+          }
+          if (type === "gauge") {
+            return localizeStructureMessage(validateGaugeData(data, config));
+          }
+          return { isValid: true };
+        }
         case "eventTable":
           return localizeStructureMessage(validateEventTableData(data));
         case "eventTimeline":

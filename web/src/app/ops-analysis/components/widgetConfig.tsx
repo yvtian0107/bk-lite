@@ -99,8 +99,8 @@ import {
   modelTableEmptyText,
   reconcileSavedModelColumns,
 } from '@/app/ops-analysis/utils/modelTableColumns';
-import { buildRoleFieldOptions, dropRoleValueMissingFrom } from './widgetConfig/utils/chartFieldOptions';
-import { ChartRoleFieldsSection, buildChartRoleFields, chartRoleValuePaths } from './widgetConfig/sections/chartRoleFieldsSection';
+import { buildRoleFieldOptions } from './widgetConfig/utils/chartFieldOptions';
+import { ChartRoleFieldsSection, buildChartRoleFields } from './widgetConfig/sections/chartRoleFieldsSection';
 import { PieScalarFieldsSection } from './widgetConfig/sections/pieScalarFieldsSection';
 import {
   buildDisplayColumnFieldOptions,
@@ -652,8 +652,12 @@ const ViewConfig: React.FC<ViewConfigPropsWithManager> = ({
   );
 
   const roleFieldOptions = useMemo(
-    () => buildRoleFieldOptions(availableFields, previewRawData),
-    [availableFields, previewRawData],
+    () => buildRoleFieldOptions(
+      availableFields,
+      previewRawData,
+      typeof watchedAnalysisMode === 'string' ? watchedAnalysisMode : undefined,
+    ),
+    [availableFields, previewRawData, watchedAnalysisMode],
   );
   const lineBarValueOptions = useMemo(
     () => buildLineBarValueFieldOptions(availableFields, roleFieldOptions),
@@ -670,77 +674,6 @@ const ViewConfig: React.FC<ViewConfigPropsWithManager> = ({
     ),
     [chartType, radarIndicators, t],
   );
-
-  useEffect(() => {
-    if (previewRawData == null) {
-      return;
-    }
-    if (chartType === 'single' || chartType === 'gauge') {
-      const leaves: string[] = [];
-      const walk = (nodes: Array<{ key?: string; children?: typeof nodes }>) => {
-        nodes.forEach((node) => {
-          if (node.children?.length) {
-            walk(node.children);
-            return;
-          }
-          if (node.key) {
-            leaves.push(String(node.key));
-          }
-        });
-      };
-      walk(singleValueConfig.singleValueTreeData || []);
-      if (leaves.length === 0) {
-        return;
-      }
-      const schemaKeys = (selectedDataSource?.field_schema || [])
-        .map((field) => String(field.key || '').trim())
-        .filter(Boolean);
-      const leafSet = new Set([...leaves, ...schemaKeys]);
-      const current = form.getFieldValue('selectedFields');
-      if (!Array.isArray(current)) {
-        return;
-      }
-      const next = current.filter(
-        (key): key is string => typeof key === 'string' && leafSet.has(key),
-      );
-      if (next.length !== current.length) {
-        form.setFieldValue('selectedFields', next);
-        singleValueConfig.setSelectedFields(next);
-      }
-      return;
-    }
-    const allowed = new Set(roleFieldOptions.map((option) => option.value));
-    chartRoleValuePaths(chartType).forEach((path) => {
-      const current = form.getFieldValue(path);
-      if (Array.isArray(current)) {
-        const next = current
-          .filter((item): item is string => typeof item === 'string' && allowed.has(item.trim()))
-          .map((item) => item.trim());
-        const changed = next.length !== current.length
-          || next.some((item, index) => item !== String(current[index] || '').trim());
-        if (changed) {
-          form.setFieldValue(path, next);
-        }
-        return;
-      }
-      if (typeof current !== 'string') {
-        return;
-      }
-      const next = dropRoleValueMissingFrom(current, allowed);
-      if (next !== current.trim()) {
-        form.setFieldValue(path, next);
-      }
-    });
-  }, [
-    chartType,
-    form,
-    previewRawData,
-    selectedDataSource,
-    singleValueConfig.selectedFields,
-    singleValueConfig.setSelectedFields,
-    singleValueConfig.singleValueTreeData,
-    roleFieldOptions,
-  ]);
 
   const fetchRoleFields = useCallback(async () => {
     const resolvedId = canonicalSelectedDataSource?.id;

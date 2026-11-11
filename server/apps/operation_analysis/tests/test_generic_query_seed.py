@@ -185,7 +185,12 @@ def test_model_query_schema_matches_detail_rows_without_touching_other_status():
         "model_name",
         "model_id",
         "instance_count",
+        "model_count",
     ]
+    assert models["field_schema"][1]["role"] == "dimension"
+    assert models["field_schema"][2]["role"] == "identity"
+    assert models["field_schema"][4]["modes"] == ["count"]
+    assert models["field_schema"][4]["table"] is False
     assert "各模型权限内实例数" in models["desc"]
     assert "每页 10" in models["desc"]
     assert "分类汇总" not in models["desc"]
@@ -211,7 +216,8 @@ def test_model_query_schema_matches_detail_rows_without_touching_other_status():
     assert "status" in {field["key"] for field in center["field_schema"]}
     instances = sources["monitor/query_monitor_instances"]
     assert "status" in {field["key"] for field in instances["field_schema"]}
-    assert "unit" in {field["key"] for field in instances["field_schema"]}
+    assert "instance_count" in {field["key"] for field in instances["field_schema"]}
+    assert "unit" not in {field["key"] for field in instances["field_schema"]}
     instance_query = sources["cmdb/query_cmdb_instances"]
     one_hop = sources["cmdb/query_cmdb_one_hop"]
     metric = sources["monitor/query_monitor_metric"]
@@ -242,7 +248,12 @@ def test_model_query_schema_matches_detail_rows_without_touching_other_status():
         "model_name",
         "model_id",
         "instance_count",
+        "model_count",
     ]
+    assert models["field_schema"][1]["role"] == "dimension"
+    assert models["field_schema"][2]["role"] == "identity"
+    assert models["field_schema"][4]["modes"] == ["count"]
+    assert models["field_schema"][4]["table"] is False
 
 
 def test_model_query_resolver_keeps_explicit_values_and_skips_hidden_defaults():

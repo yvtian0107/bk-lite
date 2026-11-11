@@ -27,6 +27,8 @@ import {
   modelTableBindingKey,
   readModelColumnPayload,
 } from '@/app/ops-analysis/utils/modelTableColumns';
+import { readDeclaredFields } from '@/app/ops-analysis/utils/chartFieldContract';
+import type { ResponseFieldDefinition } from '@/app/ops-analysis/types/dataSource';
 export type FilterFieldRow = TableFilterFieldConfig & { id: string };
 
 interface UseTableConfigProps {
@@ -342,7 +344,23 @@ export function useTableConfig({
           const modelColumns = readModelColumnPayload(sourceData);
           if (!modelColumns) {
             probedModelKeyRef.current = '';
-            return minimal;
+            const declared = readDeclaredFields(sourceData) || [];
+            const firstRecord = extractFirstRecordFromSourceData(sourceData);
+            const detectedKeys = firstRecord
+              ? Object.keys(firstRecord)
+              : declared.map((field) => field.key);
+            if (detectedKeys.length === 0) {
+              return minimal;
+            }
+            const titles: ResponseFieldDefinition[] = [
+              ...(targetDataSource.field_schema || []),
+              ...declared.map((field) => ({
+                key: field.key,
+                title: field.title || field.key,
+                value_type: (field.value_type as ResponseFieldDefinition['value_type']) || 'string',
+              })),
+            ];
+            return mergeDetectedFieldsWithSchema(detectedKeys, titles);
           }
           probedModelKeyRef.current = modelColumns.model_key;
           return columnsFromModelFields(modelColumns.fields).map((column, index) => ({

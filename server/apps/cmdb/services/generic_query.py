@@ -88,28 +88,35 @@ def query_models(
     if mode != "detail":
         _ensure_scan(scanned)
     if mode == "count":
-        return _value_payload(len(rows), unit="个", aggregation="模型计数")
+        return _value_payload(
+            len(rows),
+            field="model_count",
+            title="模型数",
+            unit="个",
+            aggregation="模型计数",
+        )
     if mode == "distribution":
         # 分类和模型只缩小范围。每个可见模型一项，不再按分类把实例数加总。
-        # 先完成全部统计和排序，再截取当前页。
+        # 先完成全部统计和排序，再截取当前页。重名保留原始模型名称，身份看 model_id。
         items = _model_distribution_items(rows)
         _ensure_groups(len(items))
-        items.sort(key=lambda item: str(item.get("model_id") or ""))
-        items.sort(key=lambda item: int(item.get("value") or 0), reverse=True)
-        _unique_distribution_names(items)
+        items.sort(key=lambda item: (-int(item.get("instance_count") or 0), str(item.get("model_id") or "")))
         page_no, size = _model_page(page, page_size)
         start = (page_no - 1) * size
         page_items = items[start : start + size]
-        return {
-            "structure": "category",
-            "status": "empty" if not page_items else "ok",
-            "items": page_items,
-            "count": len(items),
-            "page": page_no,
-            "page_size": size,
-            "unit": "个",
-            "aggregation": "按模型统计权限内实例数，含零实例模型",
-        }
+        return _with_fields(
+            {
+                "structure": "category",
+                "status": "empty" if not page_items else "ok",
+                "items": page_items,
+                "count": len(items),
+                "page": page_no,
+                "page_size": size,
+                "unit": "个",
+                "aggregation": "按模型统计权限内实例数，含零实例模型",
+            },
+            _MODEL_ROW_FIELDS,
+        )
     rows.sort(
         key=lambda item: (
             str(item.get("classification_name") or ""),
@@ -120,7 +127,7 @@ def query_models(
     page_no, size = _model_page(page, page_size)
     paged = _page_payload(rows, page_no, size)
     paged["items"] = [_public_model_detail(row) for row in paged["items"]]
-    return paged
+    return _with_fields(paged, _MODEL_ROW_FIELDS)
 
 
 def query_instances(
@@ -139,6 +146,8 @@ def query_instances(
     order: str | None = None,
     page=None,
     page_size=None,
+    group_title: str | None = None,
+    group_value_type: str | None = None,
 ) -> dict:
     if not str(model_id or "").strip():
         raise GenericQueryError("模型不能为空")
@@ -183,23 +192,35 @@ def query_instances(
         except GenericQueryGraphError as exc:
             raise GenericQueryError(exc.message) from exc
         _ensure_scan(int(aggregated.get("scanned") or 0))
+        aggregate_fields = [
+            _result_field("aggregate_value", "聚合值", "number", "measure"),
+            _result_field("aggregate_field", "聚合属性", "string"),
+        ]
         if int(aggregated.get("scanned") or 0) == 0:
-            return {
-                "structure": "value",
-                "status": "empty",
-                "value": None,
-                "unit": "",
-                "aggregation": aggregate_op,
-                "field": aggregate_field,
-            }
+            return _with_fields(
+                {
+                    "structure": "value",
+                    "status": "empty",
+                    "aggregate_value": None,
+                    "aggregate_field": aggregate_field,
+                    "unit": "",
+                    "aggregation": aggregate_op,
+                },
+                aggregate_fields,
+            )
         return _value_payload(
             aggregated.get("value"),
+            field="aggregate_value",
+            title="聚合值",
             unit="",
             aggregation=f"{aggregate_op}({aggregate_field})",
+            extra={"aggregate_field": aggregate_field},
+            fields=aggregate_fields,
         )
 
+    group_field = "" if mode == "count" else _group_field(attr_types, group_by)
     grouped_counts = count_by_attr(
-        "model_id" if mode == "count" else _group_field(attr_types, group_by),
+        "model_id" if mode == "count" else group_field,
         base_params,
         permission_map,
         condition_params=condition_params,
@@ -208,14 +229,37 @@ def query_instances(
     scanned = sum(int(value or 0) for value in grouped_counts.values())
     _ensure_scan(scanned)
     if mode == "count":
-        return _value_payload(scanned, unit="个", aggregation="实例计数")
-    items = [{"name": "" if key is None else str(key), "value": int(value or 0)} for key, value in grouped_counts.items()]
+        return _value_payload(
+            scanned,
+            field="instance_count",
+            title="实例数",
+            unit="个",
+            aggregation="实例计数",
+        )
+    items = [{group_field: _bucket_value(key), "instance_count": int(value or 0)} for key, value in grouped_counts.items()]
     _ensure_groups(len(items))
-    field, desc = _parse_order(order, {"name", "value"}, default="value")
+    field, desc = _parse_order(
+        order,
+        {group_field, "instance_count"},
+        default="instance_count",
+        default_descending=True,
+    )
     items.sort(key=lambda item: (item.get(field) is None, item.get(field)), reverse=desc)
+    distribution_fields = [
+        _result_field(
+            group_field,
+            group_title or group_field,
+            group_value_type or _declared_value_type(attr_types, group_field),
+            "dimension",
+        ),
+        _result_field("instance_count", "实例数", "number", "measure"),
+    ]
     if not items:
-        return {"structure": "category", "status": "empty", "items": [], "unit": "个", "aggregation": f"按 {group_by} 计数"}
-    return _category_payload(items, unit="个", aggregation=f"按 {group_by} 计数")
+        return _with_fields(
+            {"structure": "category", "status": "empty", "items": [], "unit": "个", "aggregation": f"按 {group_by} 计数"},
+            distribution_fields,
+        )
+    return _category_payload(items, unit="个", aggregation=f"按 {group_by} 计数", fields=distribution_fields)
 
 
 def query_one_hop_relations(
@@ -240,30 +284,54 @@ def query_one_hop_relations(
     groups = graph_result.get("groups") or []
     pairs = graph_result.get("pairs") or []
     if mode == "count":
-        return _value_payload(pair_count, unit="个", aggregation="按起点计数，同一起点关联多个终点时分别计数")
+        return _value_payload(
+            pair_count,
+            field="relation_count",
+            title="关联数",
+            unit="个",
+            aggregation="按起点计数，同一起点关联多个终点时分别计数",
+        )
     if mode == "distribution":
         items = [
             {
-                "name": item.get("end_name") or item.get("end_uuid") or "",
+                "end_name": item.get("end_name") or "",
                 "end_uuid": item.get("end_uuid") or "",
-                "value": int(item.get("value") or 0),
+                "start_count": int(item.get("value") or 0),
             }
             for item in groups
         ]
         _ensure_groups(len(items))
         if len(items) > ONE_HOP_RESULT_MAX:
             raise GenericQueryError(f"一跳关联结果超过 {ONE_HOP_RESULT_MAX} 条")
-        field, desc = _parse_order(order, {"name", "value"}, default="value")
+        field, desc = _parse_order(
+            order,
+            {"end_name", "end_uuid", "start_count"},
+            default="start_count",
+            default_descending=True,
+        )
         items.sort(key=lambda item: (item.get(field) is None, item.get(field)), reverse=desc)
+        distribution_fields = [
+            _result_field("end_name", "终点名称", "string", "dimension"),
+            _result_field("end_uuid", "终点标识", "string", "identity"),
+            _result_field("start_count", "起点数", "number", "measure"),
+        ]
         if not items:
-            return {
-                "structure": "category",
-                "status": "empty",
-                "items": [],
-                "unit": "个",
-                "aggregation": "按终点统计起点数，不做全局去重",
-            }
-        return _category_payload(items, unit="个", aggregation="按终点统计起点数，不做全局去重")
+            return _with_fields(
+                {
+                    "structure": "category",
+                    "status": "empty",
+                    "items": [],
+                    "unit": "个",
+                    "aggregation": "按终点统计起点数，不做全局去重",
+                },
+                distribution_fields,
+            )
+        return _category_payload(
+            items,
+            unit="个",
+            aggregation="按终点统计起点数，不做全局去重",
+            fields=distribution_fields,
+        )
     rows = [
         {
             "start_uuid": item.get("start_uuid") or "",
@@ -353,6 +421,26 @@ def _attribute_filters(attr_types, field, op, value, filters) -> tuple[str, list
 compile_attribute_conditions = _attribute_filters
 
 
+def _result_field(key: str, title: str, value_type: str, role: str | None = None) -> dict:
+    field = {"key": key, "title": title, "value_type": value_type}
+    if role:
+        field["role"] = role
+    return field
+
+
+_MODEL_ROW_FIELDS = [
+    _result_field("classification_name", "分类", "string"),
+    _result_field("model_name", "模型名称", "string", "dimension"),
+    _result_field("model_id", "模型标识", "string", "identity"),
+    _result_field("instance_count", "实例数", "number", "measure"),
+]
+
+
+def _with_fields(payload: dict, fields: list[dict]) -> dict:
+    payload["fields"] = fields
+    return payload
+
+
 def _model_row(model: dict, counts: dict) -> dict:
     model_id = str(model.get("model_id") or "")
     return {
@@ -365,7 +453,7 @@ def _model_row(model: dict, counts: dict) -> dict:
 
 
 def _public_model_detail(row: dict) -> dict:
-    """明细只返回模型定义上的四列。name/value 留给分布图，不作为表格列。"""
+    """明细只返回模型定义上的四列。分布使用同一组业务键，不另造 name/value。"""
     return {
         "classification_name": row.get("classification_name") or "",
         "model_name": row.get("model_name") or "",
@@ -375,36 +463,26 @@ def _public_model_detail(row: dict) -> dict:
 
 
 def _model_distribution_items(rows: list[dict]) -> list[dict]:
-    items = [
-        {
-            "name": str(row.get("model_name") or row.get("model_id") or ""),
-            "model_id": str(row.get("model_id") or ""),
-            "value": int(row.get("instance_count") or 0),
-        }
-        for row in rows
-    ]
-    return items
+    return [_public_model_detail(row) for row in rows]
 
 
-def _unique_distribution_names(items: list[dict]) -> None:
-    """重名模型的图表类目附上模型标识，避免柱、饼和图例按 name 覆盖。"""
-    bases = [str(item.get("name") or item.get("model_id") or "") for item in items]
-    counts: dict[str, int] = {}
-    for base in bases:
-        counts[base] = counts.get(base, 0) + 1
-    used: set[str] = set()
-    for item, base in zip(items, bases):
-        model_id = str(item.get("model_id") or "")
-        candidate = base if counts[base] == 1 else f"{base} ({model_id})"
-        if candidate in used:
-            stem = f"{base} ({model_id})"
-            candidate = stem
-            serial = 2
-            while candidate in used:
-                candidate = f"{stem}-{serial}"
-                serial += 1
-        used.add(candidate)
-        item["name"] = candidate
+def _bucket_value(key):
+    """分组键保留 0、false 和空串。只有缺失分组才是 None。"""
+    if key is None:
+        return None
+    if isinstance(key, bool) or isinstance(key, (int, float)):
+        return key
+    return str(key)
+
+
+def _declared_value_type(attr_types: dict[str, str], field: str) -> str:
+    kind = _attr_kind(attr_types, field) if field in attr_types else "string"
+    if kind == "number":
+        return "number"
+    raw = str(attr_types.get(field) or "").lower()
+    if raw in {"bool", "boolean"}:
+        return "boolean"
+    return "string"
 
 
 def _validate_sort_field(field: str) -> None:
@@ -450,10 +528,18 @@ def _ensure_groups(count: int) -> None:
         raise GenericQueryError(f"统计分组超过 {STAT_GROUP_MAX} 组")
 
 
-def _parse_order(order: str | None, allowed: set[str], *, default: str) -> tuple[str, bool]:
+def _parse_order(
+    order: str | None,
+    allowed: set[str],
+    *,
+    default: str,
+    default_descending: bool | None = None,
+) -> tuple[str, bool]:
     text = str(order or "").strip()
     if not text:
-        return default, False if default != "value" else True
+        if default_descending is None:
+            default_descending = default == "value"
+        return default, default_descending
     descending = text.startswith("-")
     field = text[1:] if descending else text
     if field not in allowed:
@@ -501,24 +587,39 @@ def _page_payload(rows: list, page, page_size, *, count: int | None = None) -> d
     }
 
 
-def _value_payload(value, *, unit: str, aggregation: str) -> dict:
-    return {
+def _value_payload(
+    value,
+    *,
+    field: str,
+    title: str,
+    unit: str,
+    aggregation: str,
+    extra: dict | None = None,
+    fields: list[dict] | None = None,
+) -> dict:
+    payload = {
         "structure": "value",
         "status": "ok",
-        "value": value,
+        field: value,
         "unit": unit,
         "aggregation": aggregation,
     }
+    if extra:
+        payload.update(extra)
+    return _with_fields(payload, fields or [_result_field(field, title, "number", "measure")])
 
 
-def _category_payload(items: list[dict], *, unit: str, aggregation: str) -> dict:
-    return {
-        "structure": "category",
-        "status": "ok",
-        "items": items,
-        "unit": unit,
-        "aggregation": aggregation,
-    }
+def _category_payload(items: list[dict], *, unit: str, aggregation: str, fields: list[dict]) -> dict:
+    return _with_fields(
+        {
+            "structure": "category",
+            "status": "ok",
+            "items": items,
+            "unit": unit,
+            "aggregation": aggregation,
+        },
+        fields,
+    )
 
 
 def _public_instance(row: dict, hidden: set[str] | None = None) -> dict:
