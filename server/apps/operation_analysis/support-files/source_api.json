@@ -2292,7 +2292,7 @@
             {
                 "name": "page",
                 "type": "number",
-                "value": null,
+                "value": 1,
                 "alias_name": "页码",
                 "filterType": "params",
                 "visible_modes": [
@@ -2302,7 +2302,7 @@
             {
                 "name": "page_size",
                 "type": "number",
-                "value": null,
+                "value": 20,
                 "alias_name": "每页条数",
                 "filterType": "params",
                 "visible_modes": [
@@ -2394,6 +2394,25 @@
         ],
         "params": [
             {
+                "name": "classification_id",
+                "type": "string",
+                "value": "",
+                "alias_name": "模型分类",
+                "filterType": "params",
+                "inputConfig": {
+                    "control": "select",
+                    "optionsSource": {
+                        "type": "dynamic",
+                        "sourceRef": {
+                            "type": "rest_api",
+                            "value": "cmdb/get_model_classification_options"
+                        },
+                        "valueField": "classification_id",
+                        "labelField": "classification_name"
+                    }
+                }
+            },
+            {
                 "name": "model_id",
                 "type": "string",
                 "value": "",
@@ -2408,7 +2427,13 @@
                             "value": "cmdb/list_cmdb_model_options"
                         },
                         "valueField": "model_id",
-                        "labelField": "model_name"
+                        "labelField": "model_name",
+                        "queryParams": {
+                            "classification_id": {
+                                "ref": "classification_id"
+                            }
+                        },
+                        "emptyUpstreamHintKey": "dashboard.selectClassificationFirst"
                     }
                 },
                 "required": true
@@ -2700,7 +2725,7 @@
             {
                 "name": "page",
                 "type": "number",
-                "value": null,
+                "value": 1,
                 "alias_name": "页码",
                 "filterType": "params",
                 "visible_modes": [
@@ -2710,7 +2735,7 @@
             {
                 "name": "page_size",
                 "type": "number",
-                "value": null,
+                "value": 20,
                 "alias_name": "每页条数",
                 "filterType": "params",
                 "visible_modes": [
@@ -2785,6 +2810,25 @@
         ],
         "params": [
             {
+                "name": "classification_id",
+                "type": "string",
+                "value": "",
+                "alias_name": "模型分类",
+                "filterType": "params",
+                "inputConfig": {
+                    "control": "select",
+                    "optionsSource": {
+                        "type": "dynamic",
+                        "sourceRef": {
+                            "type": "rest_api",
+                            "value": "cmdb/get_model_classification_options"
+                        },
+                        "valueField": "classification_id",
+                        "labelField": "classification_name"
+                    }
+                }
+            },
+            {
                 "name": "start_model_id",
                 "type": "string",
                 "value": "",
@@ -2799,7 +2843,13 @@
                             "value": "cmdb/list_cmdb_model_options"
                         },
                         "valueField": "model_id",
-                        "labelField": "model_name"
+                        "labelField": "model_name",
+                        "queryParams": {
+                            "classification_id": {
+                                "ref": "classification_id"
+                            }
+                        },
+                        "emptyUpstreamHintKey": "dashboard.selectClassificationFirst"
                     }
                 },
                 "required": true
@@ -3097,7 +3147,7 @@
             {
                 "name": "page",
                 "type": "number",
-                "value": null,
+                "value": 1,
                 "alias_name": "页码",
                 "filterType": "params",
                 "visible_modes": [
@@ -3107,7 +3157,7 @@
             {
                 "name": "page_size",
                 "type": "number",
-                "value": null,
+                "value": 20,
                 "alias_name": "每页条数",
                 "filterType": "params",
                 "visible_modes": [
@@ -3489,7 +3539,7 @@
             {
                 "name": "page",
                 "type": "number",
-                "value": null,
+                "value": 1,
                 "alias_name": "页码",
                 "filterType": "params",
                 "visible_modes": [
@@ -3499,7 +3549,7 @@
             {
                 "name": "page_size",
                 "type": "number",
-                "value": null,
+                "value": 20,
                 "alias_name": "每页条数",
                 "filterType": "params",
                 "visible_modes": [
@@ -4245,7 +4295,7 @@
             {
                 "name": "page",
                 "type": "number",
-                "value": null,
+                "value": 1,
                 "alias_name": "页码",
                 "filterType": "params",
                 "visible_modes": [
@@ -4255,7 +4305,7 @@
             {
                 "name": "page_size",
                 "type": "number",
-                "value": null,
+                "value": 20,
                 "alias_name": "每页条数",
                 "filterType": "params",
                 "visible_modes": [
@@ -4857,7 +4907,7 @@
             {
                 "name": "page",
                 "type": "number",
-                "value": null,
+                "value": 1,
                 "alias_name": "页码",
                 "filterType": "params",
                 "visible_modes": [
@@ -4867,7 +4917,7 @@
             {
                 "name": "page_size",
                 "type": "number",
-                "value": null,
+                "value": 20,
                 "alias_name": "每页条数",
                 "filterType": "params",
                 "visible_modes": [

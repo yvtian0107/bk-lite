@@ -2,6 +2,9 @@
 
 import json
 from pathlib import Path
+from types import SimpleNamespace
+
+import pytest
 
 from apps.alerts.constants.constants import AlertStatus, EventLevel, EventStatus
 from apps.monitor.models.monitor_policy import MonitorAlert, MonitorEvent
@@ -36,7 +39,7 @@ def _option_values(param):
     return {item["value"] for item in param["inputConfig"]["optionsSource"]["staticItems"]}
 
 
-def test_generic_query_seed_declares_analysis_modes_without_paging_defaults():
+def test_generic_query_seed_declares_analysis_modes_and_paging_defaults():
     sources = _sources()
     assert set(sources) == {
         "cmdb/query_cmdb_models",
@@ -56,10 +59,15 @@ def test_generic_query_seed_declares_analysis_modes_without_paging_defaults():
             assert option["charts"]
             assert option["result"]["structure"] in {"table", "value", "category", "series"}
             assert set(option["charts"]) <= set(source["chart_type"])
-        if any(param["name"] == "page" for param in source["params"]):
-            assert _param(source, "page")["value"] is None
-            assert _param(source, "page_size")["value"] is None
+        has_page = any(param["name"] == "page" for param in source["params"])
+        if source["rest_api"] == "monitor/query_monitor_metric":
+            assert has_page is False
+        else:
+            assert has_page is True
+            assert _param(source, "page")["value"] == 1
+            assert _param(source, "page_size")["value"] == 20
             assert _param(source, "page")["visible_modes"] == ["detail"]
+            assert _param(source, "page_size")["visible_modes"] == ["detail"]
 
 
 def test_generic_query_seed_enums_match_module_constants():
@@ -117,3 +125,47 @@ def test_generic_query_seed_uses_chart_driven_filters_and_order():
     assert _param(sources["alert/query_alert_center"], "filters")["type"] == "conditionFilter"
     metric = sources["monitor/query_monitor_metric"]
     assert all(param.get("type") != "conditionFilter" for param in metric["params"])
+
+
+def test_instance_and_one_hop_classification_is_single_select_and_declared():
+    from apps.operation_analysis.views.datasource_view import _resolve_request_params
+
+    sources = _sources()
+    specs = (
+        ("cmdb/query_cmdb_instances", "model_id"),
+        ("cmdb/query_cmdb_one_hop", "start_model_id"),
+    )
+    for rest_api, model_name in specs:
+        source = sources[rest_api]
+        classification = _param(source, "classification_id")
+        options = classification["inputConfig"]["optionsSource"]
+        assert classification["inputConfig"]["control"] == "select"
+        assert classification["inputConfig"].get("multiple") is not True
+        assert options["valueField"] == "classification_id"
+        assert options["sourceRef"]["value"] == "cmdb/get_model_classification_options"
+        model = _param(source, model_name)
+        model_options = model["inputConfig"]["optionsSource"]
+        assert model["inputConfig"].get("multiple") is not True
+        assert model_options["queryParams"]["classification_id"] == {"ref": "classification_id"}
+        assert model_options["emptyUpstreamHintKey"] == "dashboard.selectClassificationFirst"
+        visible = [item["name"] for item in source["params"] if not item.get("hidden")]
+        assert visible.index("classification_id") < visible.index(model_name)
+        instance = SimpleNamespace(rest_api=rest_api, params=source["params"])
+        resolved = _resolve_request_params(
+            instance,
+            {"classification_id": "compute", model_name: "host", "analysis_mode": "detail"},
+        )
+        assert resolved["classification_id"] == "compute"
+        assert resolved[model_name] == "host"
+        with pytest.raises(ValueError, match="未声明参数"):
+            _resolve_request_params(instance, {"classification_id": "compute", "not_declared": "x"})
+
+    one_hop = sources["cmdb/query_cmdb_one_hop"]
+    visible = [item["name"] for item in one_hop["params"] if not item.get("hidden")]
+    assert visible.index("classification_id") < visible.index("start_model_id") < visible.index("model_asst_id")
+    assert "end_filter_field" not in visible
+    assert "filter_field" not in visible
+    association = _param(one_hop, "model_asst_id")["inputConfig"]["optionsSource"]
+    assert association["queryParams"]["model_id"] == {"ref": "start_model_id"}
+    assert _param(one_hop, "filters")["inputConfig"]["fields"]["kind"] == "modelAttrs"
+    assert _param(one_hop, "end_filters")["inputConfig"]["fields"]["kind"] == "endModelAttrs"

@@ -1156,9 +1156,14 @@
     "conditionFilter": {
       "add": "Add condition",
       "delete": "Delete condition",
+      "logic": "Condition logic",
+      "matchAll": "Match all of the following",
+      "matchAny": "Match any of the following",
       "and": "AND",
       "or": "OR",
       "field": "Field",
+      "op": "Operator",
+      "value": "Value",
       "eq": "Equals",
       "ne": "Not equal",
       "contains": "Contains",
@@ -1171,6 +1176,7 @@
     },
     "order": {
       "field": "Sort field",
+      "direction": "Direction",
       "asc": "Ascending",
       "desc": "Descending"
     },

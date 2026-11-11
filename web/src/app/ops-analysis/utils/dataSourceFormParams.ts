@@ -20,6 +20,32 @@ export type DataSourceFormParamValue =
 export type DataSourceFormParams = Record<string, DataSourceFormParamValue>;
 type SubmittedParamValue = Exclude<DataSourceFormParamValue, Dayjs | undefined>;
 
+/**
+ * 已保存的页码 / 每页条数为空时，保留数据源给出的数字默认值。
+ * 用户填过的数字仍然覆盖默认值。
+ */
+export const mergeRestoredParamValue = (
+  current: DataSourceFormParamValue,
+  param: Pick<ParamItem, 'name' | 'type' | 'value'>,
+): DataSourceFormParamValue => {
+  const saved = param.value;
+  if (saved === undefined) return current;
+  if (
+    (param.name === 'page' || param.name === 'page_size')
+    && (saved === null || saved === '')
+    && typeof current === 'number'
+  ) {
+    return current;
+  }
+  if (param.type === 'date' && saved) {
+    if (typeof saved === 'string' || typeof saved === 'number') {
+      return dayjs(saved);
+    }
+    return current;
+  }
+  return saved as DataSourceFormParamValue;
+};
+
 export const getDataSourceFormParamInitialValue = (
   param: ParamItem,
 ): DataSourceFormParamValue => {

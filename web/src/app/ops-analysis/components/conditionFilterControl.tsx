@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import type {
   ConditionFieldOption,
   ConditionFieldSource,
@@ -58,6 +58,16 @@ const ConditionFilterControl: React.FC<ConditionFilterControlProps> = ({
   const fields = baseFields.map((field) => (
     loadedOptions[field.value] ? { ...field, options: loadedOptions[field.value] } : field
   ));
+  const formParamsRef = useRef(formParams);
+  formParamsRef.current = formParams;
+  const modelScope = source?.kind === 'modelAttrs' ? readParam(formParams, source.modelParam) : '';
+  const endScope = source?.kind === 'endModelAttrs'
+    ? [
+      readParam(formParams, source.startModelParam),
+      readParam(formParams, source.associationParam),
+      readParam(formParams, source.directionParam),
+    ].join('\0')
+    : '';
 
   useEffect(() => {
     if (!source || source.kind === 'static') {
@@ -68,11 +78,11 @@ const ConditionFilterControl: React.FC<ConditionFilterControlProps> = ({
     const load = async () => {
       setReady(false);
       const modelId = source.kind === 'modelAttrs'
-        ? readParam(formParams, source.modelParam)
-        : await resolveEndModel(api, source, formParams);
+        ? modelScope
+        : await resolveEndModel(api, source, formParamsRef.current);
       if (!modelId) {
         if (!cancelled) {
-          setDynamicFields([]);
+          setDynamicFields((current) => (current.length ? [] : current));
           setReady(true);
         }
         return;
@@ -87,7 +97,7 @@ const ConditionFilterControl: React.FC<ConditionFilterControlProps> = ({
     return () => {
       cancelled = true;
     };
-  }, [api, formParams, source]);
+  }, [api, endScope, modelScope, source]);
 
   useEffect(() => {
     const pending = (source?.items || []).filter(

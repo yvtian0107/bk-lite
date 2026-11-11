@@ -140,6 +140,45 @@ describe('analysis mode visibility and request', () => {
     assert.equal(request.page, undefined);
   });
 
+  it('uses paging defaults on detail and drops them for statistics', () => {
+    const params = catalog().map((param) => {
+      if (param.name === 'page') return { ...param, value: 1 };
+      if (param.name === 'page_size') return { ...param, value: 20 };
+      return param;
+    });
+    const detail = processDataSourceParams({
+      sourceParams: params,
+      definitionParams: params,
+      chartType: 'table',
+    });
+    assert.equal(detail.page, 1);
+    assert.equal(detail.page_size, 20);
+    const custom = processDataSourceParams({
+      sourceParams: params,
+      definitionParams: params,
+      userParams: { analysis_mode: 'detail', page: 3, page_size: 50 },
+      chartType: 'table',
+    });
+    assert.equal(custom.page, 3);
+    assert.equal(custom.page_size, 50);
+    const cleared = processDataSourceParams({
+      sourceParams: params,
+      definitionParams: params,
+      userParams: { analysis_mode: 'detail', page: null, page_size: null },
+      chartType: 'table',
+    });
+    assert.equal(cleared.page, undefined);
+    assert.equal(cleared.page_size, undefined);
+    const counted = processDataSourceParams({
+      sourceParams: params,
+      definitionParams: params,
+      userParams: { analysis_mode: 'count', page: 1, page_size: 20 },
+      chartType: 'single',
+    });
+    assert.equal(counted.page, undefined);
+    assert.equal(counted.page_size, undefined);
+  });
+
   it('leaves a datasource without analysis_mode unchanged', () => {
     const params: ParamItem[] = [
       { name: 'query', alias_name: '查询', type: 'string', filterType: 'params', value: 'up' },
