@@ -266,6 +266,7 @@ export function useTableConfig({
     (
       targetDataSource: DatasourceItem,
       formParams: Record<string, any>,
+      chartTypeOverride?: string,
     ): Record<string, any> => {
       const payload: Record<string, any> = {};
       const sourceParams = targetDataSource.params || [];
@@ -279,6 +280,7 @@ export function useTableConfig({
         payload,
         processDataSourceParams({
           sourceParams: processedParams,
+          definitionParams: sourceParams,
           userParams,
           unifiedFilterValues,
           filterBindings,
@@ -288,14 +290,10 @@ export function useTableConfig({
             referenceNow: Date.now(),
             timezone: getDateRangeTimezone(),
           },
+          chartType: chartTypeOverride || chartType,
           t,
         }),
       );
-
-      if (isTableLikeChartType) {
-        payload.page = 1;
-        payload.page_size = 20;
-      }
 
       if (
         builtinNamespaceId !== undefined &&
@@ -308,7 +306,7 @@ export function useTableConfig({
       return payload;
     },
     [
-      isTableLikeChartType,
+      chartType,
       processFormParamsForSubmit,
       unifiedFilterValues,
       filterBindings,
@@ -322,9 +320,10 @@ export function useTableConfig({
     async (
       targetDataSource: DatasourceItem,
       formParams: Record<string, any>,
+      chartTypeOverride?: string,
     ): Promise<DisplayColumnRow[]> => {
       try {
-        const payload = buildProbeParams(targetDataSource, formParams);
+        const payload = buildProbeParams(targetDataSource, formParams, chartTypeOverride);
         const { data: sourceData } = await getSourceDataByApiId(targetDataSource.id, payload);
         const firstRecord = extractFirstRecordFromSourceData(sourceData);
         if (!firstRecord) return [];
@@ -353,6 +352,7 @@ export function useTableConfig({
       const probedColumns = await probeDefaultDisplayColumns(
         selectedDataSource,
         currentParams,
+        chartType,
       );
 
       if (probedColumns.length > 0) {
@@ -375,6 +375,7 @@ export function useTableConfig({
       setIsProbingColumns(false);
     }
   }, [
+    chartType,
     selectedDataSource,
     isTableLikeChartType,
     form,
@@ -399,6 +400,7 @@ export function useTableConfig({
         const probedColumns = await probeDefaultDisplayColumns(
           selectedDataSource,
           currentParams,
+          newChartType,
         );
         setDetectedDisplayColumns(probedColumns);
       }

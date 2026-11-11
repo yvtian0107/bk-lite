@@ -15,6 +15,43 @@ def _model(model_id, name, classification_id, classification_name):
     }
 
 
+DETAIL_COLUMNS = ("classification_name", "model_name", "model_id", "instance_count")
+
+
+def test_model_detail_returns_only_definition_columns():
+    payload = query_models(
+        models=[
+            _model("host", "主机", "compute", "计算"),
+            _model("room", "机房", "space", "空间"),
+        ],
+        instance_counts={"host": 5},
+        analysis_mode="detail",
+        model_ids=["host"],
+        page=1,
+        page_size=20,
+    )
+    empty = query_models(
+        models=[_model("host", "主机", "compute", "计算")],
+        instance_counts={"host": 1},
+        analysis_mode="detail",
+        classification_id="space",
+    )
+
+    assert list(payload["items"][0]) == list(DETAIL_COLUMNS)
+    assert payload["items"][0] == {
+        "classification_name": "计算",
+        "model_name": "主机",
+        "model_id": "host",
+        "instance_count": 5,
+    }
+    assert empty["structure"] == "table"
+    assert empty["status"] == "empty"
+    assert empty["items"] == []
+    assert empty["count"] == 0
+    for row in payload["items"]:
+        assert set(row) == set(DETAIL_COLUMNS)
+
+
 def test_model_detail_keeps_zero_instance_models_and_top_sort():
     rows = query_models(
         models=[
@@ -62,24 +99,93 @@ def test_model_count_splits_empty_and_non_empty_without_dropping_zeros_first():
     assert empty["status"] == "ok"
 
 
-def test_model_distribution_sums_by_classification_and_keeps_zero_class():
+def test_model_distribution_is_one_item_per_model_and_keeps_zero():
+    models = [
+        _model("host", "主机", "compute", "计算"),
+        _model("net", "网络", "compute", "计算"),
+        _model("room", "机房", "space", "空间"),
+    ]
     payload = query_models(
-        models=[
-            _model("host", "主机", "compute", "计算"),
-            _model("net", "网络", "compute", "计算"),
-            _model("room", "机房", "space", "空间"),
-        ],
+        models=models,
+        instance_counts={"host": 2, "net": 3},
+        analysis_mode="distribution",
+    )
+    by_name = query_models(
+        models=models,
         instance_counts={"host": 2, "net": 3},
         analysis_mode="distribution",
         order="name",
     )
+    classified = query_models(
+        models=models,
+        instance_counts={"host": 2, "net": 3},
+        analysis_mode="distribution",
+        classification_id="compute",
+    )
+    selected = query_models(
+        models=models,
+        instance_counts={"host": 2, "net": 3},
+        analysis_mode="distribution",
+        model_ids=["room"],
+    )
+    counted = query_models(
+        models=models,
+        instance_counts={"host": 2, "net": 3},
+        analysis_mode="count",
+        classification_id="compute",
+    )
 
     assert payload["status"] == "ok"
-    assert payload["aggregation"] == "按分类汇总实例数，含零实例模型"
+    assert payload["unit"] == "个"
+    assert payload["aggregation"] == "按模型统计权限内实例数，含零实例模型"
     assert payload["items"] == [
-        {"name": "空间", "classification_id": "space", "value": 0},
-        {"name": "计算", "classification_id": "compute", "value": 5},
+        {"name": "网络", "model_id": "net", "value": 3},
+        {"name": "主机", "model_id": "host", "value": 2},
+        {"name": "机房", "model_id": "room", "value": 0},
     ]
+    assert [item["name"] for item in by_name["items"]] == ["主机", "机房", "网络"]
+    assert [item["model_id"] for item in classified["items"]] == ["net", "host"]
+    assert selected["items"] == [{"name": "机房", "model_id": "room", "value": 0}]
+    assert counted["value"] == 2
+    assert counted["aggregation"] == "模型计数"
+
+
+def test_model_distribution_keeps_ties_and_disambiguates_duplicate_names():
+    payload = query_models(
+        models=[
+            _model("host", "主机", "compute", "计算"),
+            _model("host_shadow", "主机", "ops", "运维"),
+            _model("literal", "主机 (host)", "ops", "运维"),
+            _model("room", "机房", "space", "空间"),
+        ],
+        instance_counts={"host": 4, "host_shadow": 4, "literal": 1, "room": 4},
+        analysis_mode="distribution",
+    )
+
+    assert [(item["model_id"], item["name"], item["value"]) for item in payload["items"]] == [
+        ("host", "主机 (host)", 4),
+        ("host_shadow", "主机 (host_shadow)", 4),
+        ("room", "机房", 4),
+        ("literal", "主机 (host) (literal)", 1),
+    ]
+
+
+def test_model_distribution_rejects_paging_and_group_limit():
+    with pytest.raises(GenericQueryError, match="不支持分页"):
+        query_models(
+            models=[_model("host", "主机", "compute", "计算")],
+            instance_counts={"host": 1},
+            analysis_mode="distribution",
+            page=1,
+            page_size=20,
+        )
+    too_many = [_model(f"m{index}", f"模型{index}", "compute", "计算") for index in range(STAT_GROUP_MAX + 1)]
+    with pytest.raises(GenericQueryError, match=str(STAT_GROUP_MAX)):
+        query_models(
+            models=too_many,
+            instance_counts={},
+            analysis_mode="distribution",
+        )
 
 
 def test_model_statistics_fail_when_scan_exceeds_limit():
@@ -527,9 +633,11 @@ def test_instance_count_filter_runs_before_distribution_and_keeps_legacy_and():
         order="name",
     )
     assert grouped["items"] == [
-        {"name": "空间", "classification_id": "space", "value": 0},
-        {"name": "计算", "classification_id": "compute", "value": 5},
+        {"name": "主机", "model_id": "host", "value": 5},
+        {"name": "机房", "model_id": "room", "value": 0},
     ]
+    assert grouped["unit"] == "个"
+    assert grouped["aggregation"] == "按模型统计权限内实例数，含零实例模型"
     widened = query_models(
         models=models,
         instance_counts=counts,

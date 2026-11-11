@@ -2048,7 +2048,7 @@
         {
         "key": "CMDB 模型通用查询::cmdb/query_cmdb_models",
         "name": "CMDB 模型通用查询",
-        "desc": "按分类和模型查询可见模型。零实例模型保留为 0。TOP5、非空模型数、空模型数和分类汇总都由分析方式与结果筛选配置出来",
+        "desc": "按分类或模型缩小可见模型范围。明细始终返回模型定义，不因选中模型变成实例行。柱状图、饼图和排行榜都按模型给出权限内实例数，不固定为 TOP5。非空或空模型个数由计数和实例数筛选得到。零实例模型保留",
         "rest_api": "cmdb/query_cmdb_models",
         "tag": [
             "cmdb"
@@ -2322,8 +2322,8 @@
         ],
         "field_schema": [
             {
-                "key": "model_id",
-                "title": "模型标识",
+                "key": "classification_name",
+                "title": "分类",
                 "value_type": "string"
             },
             {
@@ -2332,48 +2332,15 @@
                 "value_type": "string"
             },
             {
-                "key": "name",
-                "title": "名称",
-                "value_type": "string",
-                "description": "与模型名称相同，供 TOP 图使用"
-            },
-            {
-                "key": "classification_id",
-                "title": "分类标识",
-                "value_type": "string"
-            },
-            {
-                "key": "classification_name",
-                "title": "分类",
+                "key": "model_id",
+                "title": "模型标识",
                 "value_type": "string"
             },
             {
                 "key": "instance_count",
                 "title": "实例数",
                 "value_type": "number",
-                "description": "可见但零实例的模型为 0"
-            },
-            {
-                "key": "value",
-                "title": "值",
-                "value_type": "number",
-                "description": "明细为实例数；计数为模型数；分布为分类实例合计"
-            },
-            {
-                "key": "unit",
-                "title": "单位",
-                "value_type": "string"
-            },
-            {
-                "key": "aggregation",
-                "title": "聚合口径",
-                "value_type": "string"
-            },
-            {
-                "key": "status",
-                "title": "结果状态",
-                "value_type": "string",
-                "description": "ok、empty、missing、forbidden 或 failed"
+                "description": "权限内可见实例数，零实例为 0"
             }
         ]
     },

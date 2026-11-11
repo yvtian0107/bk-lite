@@ -169,3 +169,23 @@ def test_instance_and_one_hop_classification_is_single_select_and_declared():
     assert association["queryParams"]["model_id"] == {"ref": "start_model_id"}
     assert _param(one_hop, "filters")["inputConfig"]["fields"]["kind"] == "modelAttrs"
     assert _param(one_hop, "end_filters")["inputConfig"]["fields"]["kind"] == "endModelAttrs"
+
+
+def test_model_query_schema_matches_detail_rows_without_touching_other_status():
+    sources = _sources()
+    models = sources["cmdb/query_cmdb_models"]
+    assert [field["key"] for field in models["field_schema"]] == [
+        "classification_name",
+        "model_name",
+        "model_id",
+        "instance_count",
+    ]
+    assert "按模型给出权限内实例数" in models["desc"]
+    assert "分类汇总" not in models["desc"]
+    alerts = sources["monitor/query_monitor_alerts"]
+    center = sources["alert/query_alert_center"]
+    assert "status" in {field["key"] for field in alerts["field_schema"]}
+    assert "status" in {field["key"] for field in center["field_schema"]}
+    instances = sources["monitor/query_monitor_instances"]
+    assert "status" in {field["key"] for field in instances["field_schema"]}
+    assert "unit" in {field["key"] for field in instances["field_schema"]}

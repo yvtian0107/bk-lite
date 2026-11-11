@@ -97,30 +97,21 @@ def query_models(
     if mode == "count":
         return _value_payload(len(rows), unit="个", aggregation="模型计数")
     if mode == "distribution":
-        grouped: dict[str, dict] = {}
-        for row in rows:
-            key = row["classification_id"] or ""
-            bucket = grouped.setdefault(
-                key,
-                {
-                    "name": row["classification_name"] or key or "未分类",
-                    "classification_id": key,
-                    "value": 0,
-                },
-            )
-            bucket["value"] += int(row["instance_count"])
-        items = list(grouped.values())
+        # 分类和模型只缩小范围。每个可见模型一项，不再按分类把实例数加总。
+        items = _model_distribution_items(rows)
         _ensure_groups(len(items))
         field, desc = _parse_order(order, {"name", "value"}, default="value")
         items.sort(key=lambda item: (item.get(field) is None, item.get(field)), reverse=desc)
-        return _category_payload(items, unit="个", aggregation="按分类汇总实例数，含零实例模型")
+        return _category_payload(items, unit="个", aggregation="按模型统计权限内实例数，含零实例模型")
     field, desc = _parse_order(
         order,
         {"model_name", "model_id", "classification_name", "instance_count"},
         default="model_name",
     )
     rows.sort(key=lambda item: (item.get(field) is None, item.get(field)), reverse=desc)
-    return _page_payload(rows, page, page_size)
+    paged = _page_payload(rows, page, page_size)
+    paged["items"] = [_public_model_detail(row) for row in paged["items"]]
+    return paged
 
 
 def query_instances(
@@ -358,12 +349,54 @@ def _model_row(model: dict, counts: dict) -> dict:
     return {
         "model_id": model_id,
         "model_name": model.get("model_name") or model_id,
-        "name": model.get("model_name") or model_id,
         "classification_id": str(model.get("classification_id") or ""),
         "classification_name": model.get("classification_name") or "",
         "instance_count": int(counts.get(model_id, 0) or 0),
-        "value": int(counts.get(model_id, 0) or 0),
     }
+
+
+def _public_model_detail(row: dict) -> dict:
+    """明细只返回模型定义上的四列。name/value 留给分布图，不作为表格列。"""
+    return {
+        "classification_name": row.get("classification_name") or "",
+        "model_name": row.get("model_name") or "",
+        "model_id": row.get("model_id") or "",
+        "instance_count": int(row.get("instance_count") or 0),
+    }
+
+
+def _model_distribution_items(rows: list[dict]) -> list[dict]:
+    items = [
+        {
+            "name": str(row.get("model_name") or row.get("model_id") or ""),
+            "model_id": str(row.get("model_id") or ""),
+            "value": int(row.get("instance_count") or 0),
+        }
+        for row in rows
+    ]
+    _unique_distribution_names(items)
+    return items
+
+
+def _unique_distribution_names(items: list[dict]) -> None:
+    """重名模型的图表类目附上模型标识，避免柱、饼和图例按 name 覆盖。"""
+    bases = [str(item.get("name") or item.get("model_id") or "") for item in items]
+    counts: dict[str, int] = {}
+    for base in bases:
+        counts[base] = counts.get(base, 0) + 1
+    used: set[str] = set()
+    for item, base in zip(items, bases):
+        model_id = str(item.get("model_id") or "")
+        candidate = base if counts[base] == 1 else f"{base} ({model_id})"
+        if candidate in used:
+            stem = f"{base} ({model_id})"
+            candidate = stem
+            serial = 2
+            while candidate in used:
+                candidate = f"{stem}-{serial}"
+                serial += 1
+        used.add(candidate)
+        item["name"] = candidate
 
 
 def _apply_result_filter(rows: list[dict], op: str | None, value, result_filter=None) -> list[dict]:

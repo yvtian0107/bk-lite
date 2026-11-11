@@ -500,6 +500,7 @@ export const fetchWidgetData = async ({
   filterBindings,
   filterDefinitions,
   throwError = false,
+  chartType,
   t,
 }: {
   config: any;
@@ -510,6 +511,7 @@ export const fetchWidgetData = async ({
   filterBindings?: FilterBindings;
   filterDefinitions?: UnifiedFilterDefinition[];
   throwError?: boolean;
+  chartType?: string;
   t?: WidgetMessage;
 }) => {
   if (!config?.dataSource) {
@@ -524,6 +526,7 @@ export const fetchWidgetData = async ({
       unifiedFilterValues,
       filterBindings,
       filterDefinitions,
+      chartType: chartType || config?.chartType,
       t,
     });
 
@@ -707,7 +710,7 @@ export const buildWidgetRequestParams = ({
     filterBindings,
     filterDefinitions,
     resolutionContext,
-    chartType,
+    chartType: chartType || config?.chartType,
     t,
   });
 
@@ -756,7 +759,7 @@ export const buildWidgetRequestSignatureParams = ({
     filterDefinitions,
     resolutionContext,
     timeRangeFormatter: formatTimeRangeForSignature,
-    chartType,
+    chartType: chartType || config?.chartType,
     t,
   });
 
