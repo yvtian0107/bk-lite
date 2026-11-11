@@ -267,14 +267,9 @@ export interface ParamItem {
    */
   inputMode?: string;
   /**
-   * 该参数在哪些 analysis_mode 下显示。缺省表示始终显示。
-   * 显隐以数据源最新 params 为准，不读组件保存的副本。
+   * 历史字段。参数展示和请求组装不再读取，避免按分析方式或图表隐藏参数。
    */
   visible_modes?: string[];
-  /**
-   * 该参数在哪些图表下显示和提交。缺省表示不按图表限制。
-   * 与 visible_modes 同时存在时两者都要满足。
-   */
   visible_charts?: string[];
   /** 正整数。配合 maximum 给出范围提示。 */
   integer?: boolean;

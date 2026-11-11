@@ -7,8 +7,6 @@ import type { InputOption, ParamItem } from '@/app/ops-analysis/types/dataSource
 import { supportsComponentSwitch } from '@/app/ops-analysis/utils/componentParamSwitch';
 import {
   findAnalysisModeParam,
-  isParamVisibleForAnalysisMode,
-  isParamVisibleForChart,
   resolveAnalysisModeValue,
 } from '@/app/ops-analysis/utils/analysisMode';
 import { formatOpsRequestTime } from '@/app/ops-analysis/utils/dateTime';
@@ -776,7 +774,6 @@ export const processDataSourceParams = ({
   filterDefinitions,
   resolutionContext = createDateRangeResolutionContext(),
   timeRangeFormatter = formatTimeRange,
-  chartType,
   t: translate,
 }: {
   sourceParams: any;
@@ -1052,31 +1049,10 @@ export const processDataSourceParams = ({
     const mode = resolveAnalysisModeValue({
       params: catalogParams,
       selected: processedParams[findAnalysisModeParam(catalogParams)?.name || ''],
-      chartType,
     });
     if (mode) {
       processedParams.analysis_mode = mode;
     }
-    catalogParams.forEach((param) => {
-      const visible = isParamVisibleForAnalysisMode(param, mode, catalogParams)
-        && isParamVisibleForChart(param, chartType);
-      if (!visible) {
-        delete processedParams[param.name];
-        return;
-      }
-      const charts = param.visible_charts;
-      const missing = !Object.prototype.hasOwnProperty.call(processedParams, param.name);
-      if (
-        missing
-        && Array.isArray(charts)
-        && charts.length > 0
-        && param.value !== undefined
-        && param.value !== null
-        && param.value !== ''
-      ) {
-        processedParams[param.name] = param.value;
-      }
-    });
   }
 
   return Object.fromEntries(
