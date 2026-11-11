@@ -298,3 +298,98 @@ describe('chart requests drop paging outside detail', () => {
     assert.equal(probed.some((column) => column.key === 'name' || column.key === 'value'), false);
   });
 });
+
+const rankingCatalog = (): ParamItem[] => [
+  ...modelCatalog(),
+  {
+    name: 'order',
+    alias_name: '排序',
+    type: 'order',
+    filterType: 'params',
+    value: 'name',
+    visible_modes: ['detail', 'distribution'],
+    visible_charts: ['table', 'bar', 'pie'],
+  },
+  {
+    name: 'top_n',
+    alias_name: '展示前几名',
+    type: 'number',
+    filterType: 'params',
+    value: 10,
+    integer: true,
+    maximum: 500,
+    visible_modes: ['distribution'],
+    visible_charts: ['topN'],
+  },
+];
+
+describe('model ranking top N stays on the ranking chart', () => {
+  it('sends the saved rank limit for topN and omits it for bar, pie, table and single', () => {
+    const saved = rankingCatalog().map((param) => (
+      param.name === 'top_n' ? { ...param, value: 5 } : param
+    ));
+    const ranking = buildCompareRequestParams({
+      config: { chartType: 'topN', dataSourceParams: saved },
+      dataSource: { params: rankingCatalog() },
+    });
+    assert.equal(ranking.currentParams.top_n, 5);
+    assert.equal(ranking.currentParams.page, undefined);
+    assert.equal(ranking.currentParams.order, undefined);
+    assert.equal(ranking.currentParams.analysis_mode, 'distribution');
+
+    for (const chartType of ['bar', 'pie', 'table', 'single']) {
+      const request = buildWidgetRequestParams({
+        config: { chartType, dataSourceParams: saved },
+        dataSource: { params: rankingCatalog() },
+      });
+      assert.equal(request.top_n, undefined, chartType);
+    }
+
+    const bar = buildWidgetRequestParams({
+      config: { chartType: 'bar', dataSourceParams: saved },
+      dataSource: { params: rankingCatalog() },
+    });
+    assert.equal(bar.order, 'name');
+    assert.equal(bar.page, undefined);
+    const table = buildWidgetRequestParams({
+      config: { chartType: 'table', dataSourceParams: saved },
+      dataSource: { params: rankingCatalog() },
+    });
+    assert.equal(table.page, 1);
+    assert.equal(table.order, 'name');
+  });
+
+  it('uses the catalog default of 10 when an older ranking widget has no saved limit', () => {
+    const saved = rankingCatalog().filter((param) => param.name !== 'top_n');
+    const ranking = processDataSourceParams({
+      sourceParams: saved,
+      definitionParams: rankingCatalog(),
+      userParams: Object.fromEntries(saved.map((param) => [param.name, param.value])),
+      chartType: 'topN',
+    });
+    const bar = processDataSourceParams({
+      sourceParams: saved,
+      definitionParams: rankingCatalog(),
+      userParams: Object.fromEntries(saved.map((param) => [param.name, param.value])),
+      chartType: 'bar',
+    });
+    assert.equal(ranking.top_n, 10);
+    assert.equal(ranking.page, undefined);
+    assert.equal(bar.top_n, undefined);
+    assert.equal(bar.page, undefined);
+  });
+
+  it('keeps paging for a source that has no analysis mode', () => {
+    const request = processDataSourceParams({
+      sourceParams: [
+        { name: 'query', alias_name: '查询', type: 'string', filterType: 'params', value: 'up' },
+        { name: 'page', alias_name: '页码', type: 'number', filterType: 'params', value: 2 },
+        { name: 'page_size', alias_name: '每页', type: 'number', filterType: 'params', value: 15 },
+      ],
+      chartType: 'topN',
+    });
+    assert.equal(request.page, 2);
+    assert.equal(request.page_size, 15);
+    assert.equal(request.top_n, undefined);
+  });
+});

@@ -72,6 +72,16 @@ export const chartsForAnalysisMode = (
   return selected?.charts ?? [];
 };
 
+export const isParamVisibleForChart = (
+  param: ParamItem,
+  chartType?: string,
+): boolean => {
+  const charts = param.visible_charts;
+  if (!Array.isArray(charts) || charts.length === 0) return true;
+  if (!chartType) return false;
+  return charts.includes(chartType);
+};
+
 export const isParamVisibleForAnalysisMode = (
   param: ParamItem,
   mode: string | undefined,

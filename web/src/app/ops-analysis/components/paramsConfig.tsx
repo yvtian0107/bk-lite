@@ -31,6 +31,7 @@ import {
 import {
   ANALYSIS_MODE_PARAM,
   isParamVisibleForAnalysisMode,
+  isParamVisibleForChart,
   resolveAnalysisModeValue,
   shouldShowAnalysisMode,
 } from '@/app/ops-analysis/utils/analysisMode';
@@ -222,6 +223,7 @@ const DataSourceParamsConfig: React.FC<DataSourceParamsConfigProps> = ({
       !param.hidden
       && includeFilterTypes.includes(param.filterType || 'fixed')
       && isParamVisibleForAnalysisMode(param, analysisMode, sourceParams)
+      && isParamVisibleForChart(param, chartType)
       && (param.name !== ANALYSIS_MODE_PARAM || shouldShowAnalysisMode(sourceParams, chartType)),
   );
 
@@ -430,12 +432,36 @@ const DataSourceParamsConfig: React.FC<DataSourceParamsConfigProps> = ({
               </div>
             }
             name={fieldName}
+            preserve
             initialValue={!preserveValues && mounted ? initialValue : undefined}
             tooltip={param.desc || undefined}
             style={{ marginBottom: isVeryLongText ? 20 : 16 }}
-            rules={[
-              { required: param.required, message: t('dataSource.paramRequired', '请配置{label}', { label: labelText }) },
-            ]}
+            required={Boolean(param.required || param.integer)}
+            rules={param.integer
+              ? [
+                {
+                  validator: async (_rule, value) => {
+                    const max = typeof param.maximum === 'number' ? param.maximum : undefined;
+                    const withinMax = max === undefined || (typeof value === 'number' && value <= max);
+                    if (
+                      typeof value === 'number'
+                      && Number.isInteger(value)
+                      && value >= 1
+                      && withinMax
+                    ) {
+                      return;
+                    }
+                    throw new Error(t(
+                      'dataSource.positiveIntegerRange',
+                      '{label}必须是 1 到 {max} 的正整数',
+                      { label: labelText, max: max ?? '' },
+                    ));
+                  },
+                },
+              ]
+              : [
+                { required: param.required, message: t('dataSource.paramRequired', '请配置{label}', { label: labelText }) },
+              ]}
           >
             {renderParamInput(param)}
           </Form.Item>

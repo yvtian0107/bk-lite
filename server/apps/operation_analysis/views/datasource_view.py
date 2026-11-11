@@ -555,6 +555,31 @@ def _unspecified_host_top_instance_ids(instance, param_name, default_value):
     return getattr(instance, "rest_api", None) == "monitor/get_host_resource_top" and param_name == "instance_ids" and default_value == []
 
 
+def _effective_analysis_mode(allowed_specs, sanitized_request) -> str:
+    raw = sanitized_request.get("analysis_mode")
+    if raw not in (None, ""):
+        return str(raw)
+    spec = allowed_specs.get("analysis_mode")
+    if isinstance(spec, dict) and spec.get("value") not in (None, ""):
+        return str(spec.get("value"))
+    return ""
+
+
+def _skip_omitted_default(spec, analysis_mode: str) -> bool:
+    """图表专属参数和当前分析方式不可见的参数，省略时不回填默认值。
+
+    客户端显式传来的值仍原样下发。分布请求因此不会被种子里的 page=1 或
+    排行榜 top_n=10 重新截断。
+    """
+    charts = spec.get("visible_charts")
+    if isinstance(charts, list) and charts:
+        return True
+    modes = spec.get("visible_modes")
+    if isinstance(modes, list) and modes and analysis_mode not in modes:
+        return True
+    return False
+
+
 def _resolve_request_params(instance, request_data):
     configured_params = instance.params if isinstance(instance.params, list) else []
     allowed_specs = {
@@ -569,6 +594,7 @@ def _resolve_request_params(instance, request_data):
         sanitized_request.pop("group_by", None)
         allowed_specs.pop("group_by", None)
 
+    analysis_mode = _effective_analysis_mode(allowed_specs, sanitized_request)
     allowed_request_keys = set(allowed_specs.keys()) | RUNTIME_ALLOWED_KEYS
     unknown_keys = sorted(str(key) for key in sanitized_request.keys() if key not in allowed_request_keys)
     if unknown_keys:
@@ -588,7 +614,11 @@ def _resolve_request_params(instance, request_data):
             # 导致整个请求 400(空字符串、null、空数组都被视为"未选时段")
             if param_type == "timeRange" and raw_value in (None, "", [], {}):
                 continue
-        elif default_value not in (None, "") and not _unspecified_host_top_instance_ids(instance, param_name, default_value):
+        elif (
+            default_value not in (None, "")
+            and not _unspecified_host_top_instance_ids(instance, param_name, default_value)
+            and not _skip_omitted_default(spec, analysis_mode)
+        ):
             raw_value = default_value
         else:
             continue

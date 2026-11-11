@@ -188,6 +188,89 @@ def test_model_distribution_rejects_paging_and_group_limit():
         )
 
 
+def test_model_ranking_limits_after_filter_and_keeps_ties():
+    models = [_model(f"m{index:02d}", f"模型{index:02d}", "compute", "计算") for index in range(12)]
+    counts = {model["model_id"]: 100 - index for index, model in enumerate(models)}
+    full = query_models(models=models, instance_counts=counts, analysis_mode="distribution")
+    top_ten = query_models(models=models, instance_counts=counts, analysis_mode="distribution", top_n=10)
+    top_five = query_models(models=models, instance_counts=counts, analysis_mode="distribution", top_n="5")
+    short = query_models(
+        models=models[:3],
+        instance_counts={"m00": 2, "m01": 0, "m02": 1},
+        analysis_mode="distribution",
+        top_n=10,
+    )
+    tied = query_models(
+        models=[
+            _model("b", "乙", "compute", "计算"),
+            _model("a", "甲", "compute", "计算"),
+            _model("c", "丙", "compute", "计算"),
+        ],
+        instance_counts={"b": 4, "a": 4, "c": 1},
+        analysis_mode="distribution",
+        order="name",
+        top_n=2,
+    )
+    filtered = query_models(
+        models=[
+            _model("low", "低", "compute", "计算"),
+            _model("high", "高", "compute", "计算"),
+            _model("mid", "中", "compute", "计算"),
+            _model("zero", "零", "compute", "计算"),
+        ],
+        instance_counts={"low": 1, "high": 9, "mid": 8, "zero": 0},
+        analysis_mode="distribution",
+        result_filter={"logic": "AND", "items": [{"field": "instance_count", "op": "gt", "value": 3}]},
+        top_n=5,
+    )
+    ranked_names = query_models(
+        models=[
+            _model("host", "主机", "compute", "计算"),
+            _model("room", "机房", "space", "空间"),
+            _model("host_shadow", "主机", "ops", "运维"),
+        ],
+        instance_counts={"host": 10, "room": 9, "host_shadow": 1},
+        analysis_mode="distribution",
+        top_n=2,
+    )
+    all_names = query_models(
+        models=[
+            _model("host", "主机", "compute", "计算"),
+            _model("room", "机房", "space", "空间"),
+            _model("host_shadow", "主机", "ops", "运维"),
+        ],
+        instance_counts={"host": 10, "room": 9, "host_shadow": 1},
+        analysis_mode="distribution",
+        top_n=3,
+    )
+
+    assert len(full["items"]) == 12
+    assert [item["model_id"] for item in top_ten["items"]] == [f"m{index:02d}" for index in range(10)]
+    assert [item["value"] for item in top_five["items"]] == [100, 99, 98, 97, 96]
+    assert [(item["model_id"], item["value"]) for item in short["items"]] == [("m00", 2), ("m02", 1), ("m01", 0)]
+    assert [item["model_id"] for item in tied["items"]] == ["b", "a"]
+    assert [item["model_id"] for item in filtered["items"]] == ["high", "mid"]
+    assert [item["name"] for item in ranked_names["items"]] == ["主机", "机房"]
+    assert [item["name"] for item in all_names["items"]] == ["主机 (host)", "机房", "主机 (host_shadow)"]
+    with pytest.raises(GenericQueryError, match="正整数"):
+        query_models(models=models[:1], instance_counts={}, analysis_mode="distribution", top_n=0)
+    with pytest.raises(GenericQueryError, match="正整数"):
+        query_models(models=models[:1], instance_counts={}, analysis_mode="distribution", top_n=1.5)
+    with pytest.raises(GenericQueryError, match="正整数"):
+        query_models(models=models[:1], instance_counts={}, analysis_mode="distribution", top_n=True)
+    with pytest.raises(GenericQueryError, match=str(STAT_GROUP_MAX)):
+        query_models(models=models[:1], instance_counts={}, analysis_mode="distribution", top_n=STAT_GROUP_MAX + 1)
+    with pytest.raises(GenericQueryError, match="不支持展示前几名"):
+        query_models(models=models[:1], instance_counts={}, analysis_mode="count", top_n=5)
+    with pytest.raises(GenericQueryError, match="不支持展示前几名"):
+        query_models(models=models[:1], instance_counts={}, analysis_mode="detail", top_n=5)
+    with pytest.raises(GenericQueryError, match="不支持分页"):
+        query_models(models=models[:1], instance_counts={}, analysis_mode="distribution", top_n=5, page=1)
+    too_many = [_model(f"g{index}", f"组{index}", "compute", "计算") for index in range(STAT_GROUP_MAX + 1)]
+    with pytest.raises(GenericQueryError, match="统计分组超过"):
+        query_models(models=too_many, instance_counts={}, analysis_mode="distribution", top_n=10)
+
+
 def test_model_statistics_fail_when_scan_exceeds_limit():
     with pytest.raises(GenericQueryError, match=str(SCAN_INSTANCE_MAX)):
         query_models(
@@ -411,6 +494,23 @@ def test_generic_query_handlers_accept_unknown_kwargs(monkeypatch):
     assert result["result"] is True
     assert result["data"]["value"] == 1
     assert "unexpected" not in result["data"]
+
+    monkeypatch.setattr(
+        "apps.cmdb.nats.generic_query._visible_models",
+        lambda user_info: (
+            [
+                _model("low", "低", "compute", "计算"),
+                _model("high", "高", "compute", "计算"),
+            ],
+            {"1": {}},
+            {"compute": "计算"},
+        ),
+    )
+    monkeypatch.setattr("apps.cmdb.nats.generic_query.count_by_attr", lambda *args, **kwargs: {"low": 1, "high": 4})
+    ranked = query_cmdb_models(analysis_mode="distribution", top_n=1, user_info={"user": "demo"})
+    untouched = query_cmdb_models(analysis_mode="distribution", user_info={"user": "demo"})
+    assert [item["model_id"] for item in ranked["data"]["items"]] == ["high"]
+    assert [item["model_id"] for item in untouched["data"]["items"]] == ["high", "low"]
 
 
 def test_one_hop_distribution_uses_order():
