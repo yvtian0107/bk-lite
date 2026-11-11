@@ -57,6 +57,26 @@ const source = {
           staticItems: [
             { label: '明细', value: 'detail', charts: ['table'], result: { structure: 'table' } },
             { label: '计数', value: 'count', charts: ['single'], result: { structure: 'value' } },
+            { label: '分布', value: 'distribution', charts: ['bar', 'pie', 'topN'], result: { structure: 'category' } },
+          ],
+        },
+      },
+    },
+    {
+      name: 'count_metric',
+      alias_name: '统计内容',
+      type: 'string',
+      filterType: 'params',
+      value: 'model_count',
+      desc: '只在单值图生效',
+      visible_modes: ['count'],
+      inputConfig: {
+        control: 'select',
+        optionsSource: {
+          type: 'static',
+          staticItems: [
+            { label: '模型数量', value: 'model_count' },
+            { label: '实例总数', value: 'instance_total' },
           ],
         },
       },
@@ -146,5 +166,80 @@ describe('generic query config drawer', () => {
     expect(within(row).getByTestId('condition-value')).toBeTruthy();
     expect(screen.getByText('dashboard.conditionFilter.matchAll')).toBeTruthy();
     expect(screen.queryByRole('button', { name: 'dashboard.conditionFilter.or' })).toBeNull();
+    expect(screen.queryByText('统计内容')).toBeNull();
+  });
+
+  it('shows the count metric only on the single chart and keeps the choice when switching away', async () => {
+    const MetricHarness = () => {
+      const [form] = Form.useForm();
+      const [chartType, setChartType] = React.useState('table');
+      const metric = Form.useWatch(['params', 'count_metric'], { form, preserve: true });
+      useEffect(() => {
+        const params: Record<string, unknown> = {};
+        source.params?.forEach((param) => {
+          params[param.name] = getDataSourceFormParamInitialValue(param);
+        });
+        form.setFieldsValue({ chartType: 'table', params });
+      }, [form]);
+      const switchChart = (next: string) => {
+        setChartType(next);
+        form.setFieldValue('chartType', next);
+      };
+      return (
+        <Form form={form} layout="vertical">
+          <button type="button" onClick={() => switchChart('single')}>切到单值</button>
+          <button type="button" onClick={() => switchChart('bar')}>切到柱状</button>
+          <button type="button" onClick={() => switchChart('pie')}>切到饼图</button>
+          <button type="button" onClick={() => switchChart('topN')}>切到排行榜</button>
+          <button type="button" onClick={() => switchChart('table')}>切到表格</button>
+          <div data-testid="chart-type">{chartType}</div>
+          <div data-testid="saved-metric">{metric ?? ''}</div>
+          <DataSourceParamsConfig selectedDataSource={source} />
+        </Form>
+      );
+    };
+
+    render(<MetricHarness />);
+    await waitFor(() => {
+      expect(screen.getByTestId('chart-type').textContent).toBe('table');
+    });
+    expect(screen.queryByText('统计内容')).toBeNull();
+    expect(screen.getAllByRole('spinbutton').map((node) => (node as HTMLInputElement).value)).toEqual(
+      expect.arrayContaining(['1', '20']),
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: '切到单值' }));
+    await waitFor(() => {
+      expect(screen.getByText('统计内容')).toBeTruthy();
+    });
+    expect(screen.getByText('模型数量')).toBeTruthy();
+    expect(screen.queryAllByRole('spinbutton')).toHaveLength(0);
+
+    const select = screen.getByRole('combobox');
+    fireEvent.mouseDown(select);
+    fireEvent.click(await screen.findByText('实例总数'));
+    await waitFor(() => {
+      expect(screen.getByTestId('saved-metric').textContent).toBe('instance_total');
+    });
+
+    for (const name of ['切到柱状', '切到饼图', '切到排行榜', '切到表格']) {
+      fireEvent.click(screen.getByRole('button', { name }));
+      await waitFor(() => {
+        expect(screen.queryByText('统计内容')).toBeNull();
+      });
+      expect(screen.getByTestId('saved-metric').textContent).toBe('instance_total');
+      if (name === '切到表格') {
+        expect(screen.getAllByRole('spinbutton').map((node) => (node as HTMLInputElement).value)).toEqual(
+          expect.arrayContaining(['1', '20']),
+        );
+      }
+    }
+
+    fireEvent.click(screen.getByRole('button', { name: '切到单值' }));
+    await waitFor(() => {
+      expect(screen.getByText('统计内容')).toBeTruthy();
+    });
+    expect(screen.getByText('实例总数')).toBeTruthy();
+    expect(screen.queryAllByRole('spinbutton')).toHaveLength(0);
   });
 });
