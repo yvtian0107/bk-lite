@@ -582,6 +582,7 @@ const ViewConfig: React.FC<ViewConfigPropsWithManager> = ({
           const probedColumns = await tableConfig.probeDefaultDisplayColumns(
             fullItem,
             params,
+            defaultChartType,
           );
           if (!isCurrentConfigRequest(requestId)) {
             return;
@@ -713,7 +714,9 @@ const ViewConfig: React.FC<ViewConfigPropsWithManager> = ({
       const userParams = formValues?.params || {};
       const requestParams = processDataSourceParams({
         sourceParams: canonicalSelectedDataSource.params,
+        definitionParams: canonicalSelectedDataSource.params,
         userParams,
+        chartType,
         resolutionContext: {
           referenceNow: Date.now(),
           timezone: getDateRangeTimezone(),
@@ -752,6 +755,7 @@ const ViewConfig: React.FC<ViewConfigPropsWithManager> = ({
     }
   }, [
     canonicalSelectedDataSource,
+    chartType,
     effectiveNamespaceId,
     form,
     getSourceDataByApiId,
@@ -1048,6 +1052,7 @@ const ViewConfig: React.FC<ViewConfigPropsWithManager> = ({
         const probedColumns = await tableConfig.probeDefaultDisplayColumns(
           targetDataSource,
           formValues.params || {},
+          formValues.chartType,
         );
         if (!isCurrentConfigRequest(requestId)) {
           return;
@@ -1107,6 +1112,7 @@ const ViewConfig: React.FC<ViewConfigPropsWithManager> = ({
           const probedColumns = await tableConfig.probeDefaultDisplayColumns(
             targetDataSource,
             formValues.params || {},
+            formValues.chartType,
           );
           if (!isCurrentConfigRequest(requestId)) {
             return;
