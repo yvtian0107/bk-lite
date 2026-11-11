@@ -143,6 +143,15 @@ const modelParams = (): ParamItem[] => [
   },
   { name: 'page', alias_name: '页码', type: 'number', filterType: 'params', value: 1, visible_modes: ['detail'] },
   { name: 'page_size', alias_name: '每页', type: 'number', filterType: 'params', value: 20, visible_modes: ['detail'] },
+  {
+    name: 'top_n',
+    alias_name: '展示前几名',
+    type: 'number',
+    filterType: 'params',
+    value: 10,
+    visible_modes: ['distribution'],
+    visible_charts: ['topN'],
+  },
 ];
 
 describe('useTableConfig probe requests', () => {
@@ -184,6 +193,7 @@ describe('useTableConfig probe requests', () => {
     expect(calls[0]?.analysis_mode).toBe('detail');
     expect(calls[0]?.page).toBe(3);
     expect(calls[0]?.page_size).toBe(50);
+    expect(calls[0]?.top_n).toBeUndefined();
     expect(probed.map((column) => column.key)).toEqual([
       'classification_name',
       'model_name',
@@ -212,14 +222,45 @@ describe('useTableConfig probe requests', () => {
     await act(async () => {
       await result.current.probeDefaultDisplayColumns(
         { id: 9, params: modelParams(), namespaces: [] } as never,
-        { analysis_mode: 'detail', page: 1, page_size: 20 },
+        { analysis_mode: 'detail', page: 1, page_size: 20, top_n: 5 },
         'topN',
       );
     });
 
     expect(calls[0]?.analysis_mode).toBe('distribution');
+    expect(calls[0]?.top_n).toBe(5);
     expect(calls[0]?.page).toBeUndefined();
     expect(calls[0]?.page_size).toBeUndefined();
+  });
+
+  it('does not send the ranking limit when probing a bar chart', async () => {
+    const calls: Array<Record<string, unknown>> = [];
+    const { result } = renderHook(() =>
+      useTableConfig({
+        form: { getFieldValue: () => ({}) } as never,
+        chartType: 'topN',
+        selectedDataSource: undefined,
+        availableFields: [],
+        getSourceDataByApiId: vi.fn(async (_id, params) => {
+          calls.push(params);
+          return { data: { items: [] } };
+        }),
+        processFormParamsForSubmit: processDataSourceFormParamsForSubmit,
+        t: (key) => key,
+      }),
+    );
+
+    await act(async () => {
+      await result.current.probeDefaultDisplayColumns(
+        { id: 9, params: modelParams(), namespaces: [] } as never,
+        { analysis_mode: 'distribution', top_n: 5, page: 2, page_size: 20 },
+        'bar',
+      );
+    });
+
+    expect(calls[0]?.analysis_mode).toBe('distribution');
+    expect(calls[0]?.top_n).toBeUndefined();
+    expect(calls[0]?.page).toBeUndefined();
   });
 
   it('keeps the configured table page instead of forcing page 1', async () => {

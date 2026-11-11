@@ -7,6 +7,7 @@ from types import SimpleNamespace
 import pytest
 
 from apps.alerts.constants.constants import AlertStatus, EventLevel, EventStatus
+from apps.cmdb.services.generic_query_limits import STAT_GROUP_MAX
 from apps.monitor.models.monitor_policy import MonitorAlert, MonitorEvent
 
 SEED = Path(__file__).resolve().parents[1] / "support-files" / "source_api.json"
@@ -180,8 +181,43 @@ def test_model_query_schema_matches_detail_rows_without_touching_other_status():
         "model_id",
         "instance_count",
     ]
-    assert "按模型给出权限内实例数" in models["desc"]
+    assert "各模型权限内实例数" in models["desc"]
+    assert "默认 10" in models["desc"]
     assert "分类汇总" not in models["desc"]
+    assert "默认模型数量" in models["desc"]
+    assert "实例总数" in models["desc"]
+    assert "TOP5" not in models["desc"]
+    metric = _param(models, "count_metric")
+    assert metric["alias_name"] == "统计内容"
+    assert metric["type"] == "string"
+    assert metric["value"] == "model_count"
+    assert metric["filterType"] == "params"
+    assert metric["visible_modes"] == ["count"]
+    assert metric.get("visible_charts") in (None, [])
+    assert metric.get("hidden") is not True
+    assert metric["inputConfig"]["control"] == "select"
+    assert [(item["value"], item["label"]) for item in metric["inputConfig"]["optionsSource"]["staticItems"]] == [
+        ("model_count", "模型数量"),
+        ("instance_total", "实例总数"),
+    ]
+    top_n = _param(models, "top_n")
+    assert top_n["value"] == 10
+    assert top_n["alias_name"] == "展示前几名"
+    assert top_n["visible_modes"] == ["distribution"]
+    assert top_n["visible_charts"] == ["topN"]
+    assert top_n["integer"] is True
+    assert top_n["maximum"] == STAT_GROUP_MAX
+    assert _param(models, "order")["visible_charts"] == ["table", "bar", "pie"]
+    assert models["chart_type"] == ["table", "topN", "single", "bar", "pie"]
+    assert models["rest_api"] == "cmdb/query_cmdb_models"
+    for rest_api, source in sources.items():
+        names = [param["name"] for param in source["params"]]
+        if rest_api == "cmdb/query_cmdb_models":
+            assert names.count("top_n") == 1
+            assert names.count("count_metric") == 1
+        else:
+            assert "top_n" not in names
+            assert "count_metric" not in names
     alerts = sources["monitor/query_monitor_alerts"]
     center = sources["alert/query_alert_center"]
     assert "status" in {field["key"] for field in alerts["field_schema"]}
@@ -189,3 +225,38 @@ def test_model_query_schema_matches_detail_rows_without_touching_other_status():
     instances = sources["monitor/query_monitor_instances"]
     assert "status" in {field["key"] for field in instances["field_schema"]}
     assert "unit" in {field["key"] for field in instances["field_schema"]}
+
+
+def test_model_query_resolver_keeps_explicit_values_and_skips_hidden_defaults():
+    from apps.operation_analysis.views.datasource_view import _resolve_request_params
+
+    models = _sources()["cmdb/query_cmdb_models"]
+    instance = SimpleNamespace(rest_api="cmdb/query_cmdb_models", params=models["params"])
+    distribution = _resolve_request_params(
+        instance,
+        {"analysis_mode": "distribution", "classification_id": "compute"},
+    )
+    explicit = _resolve_request_params(
+        instance,
+        {"analysis_mode": "distribution", "page": 2, "page_size": 20, "top_n": 5},
+    )
+    detail = _resolve_request_params(instance, {"analysis_mode": "detail"})
+    legacy = SimpleNamespace(
+        rest_api="legacy/query",
+        params=[
+            {"name": "page", "type": "number", "value": 2, "filterType": "params"},
+            {"name": "page_size", "type": "number", "value": 15, "filterType": "params"},
+        ],
+    )
+    kept = _resolve_request_params(legacy, {})
+
+    assert "page" not in distribution
+    assert "page_size" not in distribution
+    assert "top_n" not in distribution
+    assert explicit["page"] == 2
+    assert explicit["page_size"] == 20
+    assert explicit["top_n"] == 5
+    assert detail["page"] == 1
+    assert detail["page_size"] == 20
+    assert "top_n" not in detail
+    assert kept == {"page": 2, "page_size": 15}

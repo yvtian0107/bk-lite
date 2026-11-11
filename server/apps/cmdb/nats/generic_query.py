@@ -153,9 +153,11 @@ def query_cmdb_models(
     result_op=None,
     result_value=None,
     result_filter=None,
+    count_metric=None,
     order=None,
     page=None,
     page_size=None,
+    top_n=None,
     user_info=None,
     **kwargs,
 ):
@@ -178,9 +180,11 @@ def query_cmdb_models(
         result_op=result_op,
         result_value=result_value,
         result_filter=result_filter,
+        count_metric=count_metric,
         order=order,
         page=page,
         page_size=page_size,
+        top_n=top_n,
     )
     return _ok(data)
 
