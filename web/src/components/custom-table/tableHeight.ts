@@ -76,6 +76,7 @@ export const resolveTableDimensions = ({
     };
   }
 
+  // 无分页且省略 scroll.y 时按内容撑开。短表父级往往只有表头高，回填会把表体锁成 0。
   if (!hasPagination) {
     return { tableHeight: undefined, containerHeight: undefined };
   }

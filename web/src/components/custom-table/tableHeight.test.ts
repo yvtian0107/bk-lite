@@ -26,6 +26,20 @@ describe('resolveTableDimensions', () => {
     });
   });
 
+
+  it('does not lock height when pagination is absent and scroll.y is omitted', () => {
+    expect(resolveTableDimensions({
+      scrollY: undefined,
+      viewportHeight: 900,
+      parentHeight: 226,
+      size: 'small',
+      hasPagination: false,
+    })).toEqual({
+      tableHeight: undefined,
+      containerHeight: undefined,
+    });
+  });
+
   it('still honors an explicit pixel body height', () => {
     expect(resolveTableDimensions({
       scrollY: 320,
