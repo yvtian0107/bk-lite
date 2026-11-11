@@ -73,6 +73,8 @@ def test_alert_and_event_queries_do_not_share_rows():
     )
 
     assert [item["alert_id"] for item in alerts["items"]] == ["ALERT-1"]
+    assert alerts["page"] == 1
+    assert alerts["page_size"] == 20
     assert "event_id" not in alerts["items"][0]
     assert events["value"] == 1
     assert events["aggregation"].startswith("事件")

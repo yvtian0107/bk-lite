@@ -47,6 +47,8 @@ def test_monitor_instance_detail_count_and_unbound_identity():
     grouped = query_instances(MonitorInstance.objects.filter(monitor_object=obj), analysis_mode="distribution", group_by="status")
 
     assert detail["count"] == 2
+    assert detail["page"] == 1
+    assert detail["page_size"] == 20
     unbound = next(item for item in detail["items"] if item["instance_id"] == "host-2")
     assert unbound["cmdb_bind_status"] == "unbound"
     assert counted["value"] == 1

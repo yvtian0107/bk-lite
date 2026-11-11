@@ -41,6 +41,14 @@ export const toggleConditionLogic = (group: ConditionGroup): ConditionGroup => (
   logic: group.logic === 'OR' ? 'AND' : 'OR',
 });
 
+export const setConditionLogic = (
+  group: ConditionGroup,
+  logic: ConditionLogic,
+): ConditionGroup => ({
+  ...group,
+  logic: logic === 'OR' ? 'OR' : 'AND',
+});
+
 export const addConditionRow = (
   group: ConditionGroup,
   field?: ConditionFieldOption,

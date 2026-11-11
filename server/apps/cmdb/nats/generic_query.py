@@ -57,6 +57,17 @@ def _reject_unsupported_filters(kwargs: dict) -> None:
         raise GenericQueryError("当前查询不支持 filters")
 
 
+def _require_model_classification(models, model_id, classification_id) -> None:
+    """分类只核对所选模型是否属于该类，不代替模型可见性。"""
+    if classification_id in (None, ""):
+        return
+    row = next((item for item in models if str(item.get("model_id")) == str(model_id)), None)
+    if row is None:
+        return
+    if str(row.get("classification_id") or "") != str(classification_id):
+        raise GenericQueryError("模型不属于所选分类")
+
+
 def _require_condition_group(filters):
     if filters in (None, "", []):
         return None
@@ -178,6 +189,7 @@ def query_cmdb_models(
 @_guard("query_cmdb_instances")
 def query_cmdb_instances(
     model_id=None,
+    classification_id=None,
     analysis_mode=None,
     filter_field=None,
     filter_op=None,
@@ -199,6 +211,7 @@ def query_cmdb_instances(
     visible_ids = {str(item.get("model_id")) for item in _models}
     if str(model_id or "") not in visible_ids:
         raise GenericQueryError("指定模型不存在或无权访问", status="forbidden")
+    _require_model_classification(_models, model_id, classification_id)
     data = query_instances(
         model_id=str(model_id),
         analysis_mode=analysis_mode or "detail",
@@ -222,6 +235,7 @@ def query_cmdb_instances(
 @_guard("query_cmdb_one_hop")
 def query_cmdb_one_hop(
     start_model_id=None,
+    classification_id=None,
     model_asst_id=None,
     direction=None,
     filter_field=None,
@@ -247,6 +261,7 @@ def query_cmdb_one_hop(
     visible_ids = {str(item.get("model_id")) for item in models}
     if str(start_model_id) not in visible_ids:
         raise GenericQueryError("指定模型不存在或无权访问", status="forbidden")
+    _require_model_classification(models, start_model_id, classification_id)
     language = _resolve_nats_cmdb_language(user_info)
     associations = list_model_association_options(language, start_model_id)
     association = next((item for item in associations if item.get("model_asst_id") == model_asst_id), None)

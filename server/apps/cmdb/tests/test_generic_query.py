@@ -91,6 +91,25 @@ def test_model_statistics_fail_when_scan_exceeds_limit():
         )
 
 
+def test_model_detail_defaults_page_when_unfilled_and_keeps_explicit_size():
+    payload = query_models(
+        models=[_model("host", "主机", "compute", "计算")],
+        instance_counts={"host": 1},
+        analysis_mode="detail",
+    )
+    assert payload["page"] == 1
+    assert payload["page_size"] == 20
+    explicit = query_models(
+        models=[_model("host", "主机", "compute", "计算")],
+        instance_counts={"host": 1},
+        analysis_mode="detail",
+        page=2,
+        page_size=5,
+    )
+    assert explicit["page"] == 2
+    assert explicit["page_size"] == 5
+
+
 def test_model_detail_rejects_page_size_above_limit():
     with pytest.raises(GenericQueryError, match=str(DETAIL_PAGE_SIZE_MAX)):
         query_models(
@@ -578,3 +597,118 @@ def test_one_hop_or_group_stays_parenthesized_with_permission(monkeypatch):
     assert query.index("organization") < query.index(" OR t.inst_name")
     assert "公开" in params.values()
     assert "内部" in params.values()
+
+
+def _visible_cmdb_models():
+    return (
+        [
+            _model("host", "主机", "compute", "计算"),
+            _model("app", "应用", "biz", "业务"),
+            _model("room", "机房", "space", "空间"),
+        ],
+        {"1": {"inst_names": []}},
+        {"compute": "计算", "biz": "业务", "space": "空间"},
+    )
+
+
+def test_model_options_list_only_the_selected_classification(monkeypatch):
+    from apps.cmdb.nats.generic_query import list_cmdb_model_options
+
+    monkeypatch.setattr("apps.cmdb.nats.generic_query._visible_models", lambda user_info: _visible_cmdb_models())
+    listed = list_cmdb_model_options(classification_id="compute", user_info={"user": "demo"})
+    assert listed["result"] is True
+    assert [item["model_id"] for item in listed["data"]] == ["host"]
+    hidden = list_cmdb_model_options(classification_id="secret", user_info={"user": "demo"})
+    assert hidden["data"] == []
+
+
+def test_instance_classification_does_not_replace_model_permission(monkeypatch):
+    from apps.cmdb.nats.generic_query import query_cmdb_instances
+
+    monkeypatch.setattr("apps.cmdb.nats.generic_query._visible_models", lambda user_info: _visible_cmdb_models())
+    monkeypatch.setattr("apps.cmdb.nats.generic_query._attr_types", lambda model_id, user_info: {"inst_name": "string"})
+    monkeypatch.setattr(
+        "apps.cmdb.nats.generic_query.query_instances",
+        lambda **kwargs: {"structure": "value", "status": "ok", "value": 1, "unit": "个", "aggregation": "实例计数"},
+    )
+
+    matched = query_cmdb_instances(
+        model_id="host",
+        classification_id="compute",
+        analysis_mode="count",
+        user_info={"user": "demo"},
+    )
+    assert matched["result"] is True
+
+    empty_classification = query_cmdb_instances(
+        model_id="host",
+        classification_id="",
+        analysis_mode="count",
+        user_info={"user": "demo"},
+    )
+    assert empty_classification["result"] is True
+
+    mismatch = query_cmdb_instances(
+        model_id="host",
+        classification_id="space",
+        analysis_mode="count",
+        user_info={"user": "demo"},
+    )
+    assert mismatch["result"] is False
+    assert "分类" in mismatch["message"]
+
+    forbidden = query_cmdb_instances(
+        model_id="secret",
+        classification_id="compute",
+        analysis_mode="count",
+        user_info={"user": "demo"},
+    )
+    assert forbidden["result"] is False
+    assert forbidden["data"]["status"] == "forbidden"
+
+
+def test_one_hop_loads_associations_after_classification_matches(monkeypatch):
+    from apps.cmdb.nats.generic_query import query_cmdb_one_hop
+
+    listed = []
+    monkeypatch.setattr("apps.cmdb.nats.generic_query._visible_models", lambda user_info: _visible_cmdb_models())
+    monkeypatch.setattr("apps.cmdb.nats.generic_query._attr_types", lambda model_id, user_info: {"inst_name": "string"})
+    monkeypatch.setattr(
+        "apps.cmdb.nats.generic_query.list_model_association_options",
+        lambda language, model_id: listed.append(model_id)
+        or [
+            {
+                "model_asst_id": "host_belong_app",
+                "src_model_id": "host",
+                "dst_model_id": "app",
+                "label": "属于",
+            }
+        ],
+    )
+    monkeypatch.setattr("apps.cmdb.nats.generic_query.load_start_instances", lambda **kwargs: ([], 0))
+    monkeypatch.setattr(
+        "apps.cmdb.nats.generic_query.query_one_hop",
+        lambda **kwargs: {"pair_count": 0, "groups": [], "pairs": []},
+    )
+
+    mismatch = query_cmdb_one_hop(
+        start_model_id="host",
+        classification_id="space",
+        model_asst_id="host_belong_app",
+        direction="out",
+        analysis_mode="count",
+        user_info={"user": "demo"},
+    )
+    assert mismatch["result"] is False
+    assert listed == []
+
+    loaded = query_cmdb_one_hop(
+        start_model_id="host",
+        classification_id="compute",
+        model_asst_id="host_belong_app",
+        direction="out",
+        analysis_mode="count",
+        user_info={"user": "demo"},
+    )
+    assert loaded["result"] is True
+    assert listed == ["host"]

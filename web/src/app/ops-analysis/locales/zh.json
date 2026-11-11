@@ -1156,9 +1156,14 @@
     "conditionFilter": {
       "add": "添加条件",
       "delete": "删除条件",
+      "logic": "条件关系",
+      "matchAll": "满足以下全部条件",
+      "matchAny": "满足以下任一条件",
       "and": "且",
       "or": "或",
       "field": "字段",
+      "op": "运算符",
+      "value": "条件值",
       "eq": "等于",
       "ne": "不等于",
       "contains": "包含",
@@ -1171,6 +1176,7 @@
     },
     "order": {
       "field": "排序字段",
+      "direction": "升降序",
       "asc": "升序",
       "desc": "降序"
     },

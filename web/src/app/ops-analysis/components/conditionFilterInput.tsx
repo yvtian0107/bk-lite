@@ -9,7 +9,7 @@ import {
   operatorsForFieldType,
   parseConditionGroup,
   removeConditionRow,
-  toggleConditionLogic,
+  setConditionLogic,
   updateConditionRow,
   type ConditionGroup,
 } from '@/app/ops-analysis/utils/conditionFilter';
@@ -36,6 +36,28 @@ const operatorLabel = (op: string, t: (key: string) => string) => {
   return op;
 };
 
+/**
+ * 槽位负责行宽。Form.Item 里的 Select 会带上 ant-select-in-form-item { width:100% }，
+ * 直接当作 flex 子项时，运算符会占满整行，字段和值被挤到 0 宽。
+ */
+const FieldSlot = ({ children }: { children: React.ReactNode }) => (
+  <div data-slot="field" className="min-w-[72px] flex-1 basis-0">
+    {children}
+  </div>
+);
+
+const OperatorSlot = ({ children }: { children: React.ReactNode }) => (
+  <div data-slot="operator" className="w-[108px] shrink-0">
+    {children}
+  </div>
+);
+
+const ValueSlot = ({ children }: { children: React.ReactNode }) => (
+  <div data-slot="value" className="min-w-[72px] flex-1 basis-0">
+    {children}
+  </div>
+);
+
 const ConditionFilterInput: React.FC<ConditionFilterInputProps> = ({
   value,
   onChange,
@@ -50,32 +72,43 @@ const ConditionFilterInput: React.FC<ConditionFilterInputProps> = ({
     [fields],
   );
   const emit = (next: ConditionGroup) => onChange?.(next);
+  const fieldLocked = fields.length <= 1;
 
   return (
-    <div className="flex w-full flex-col gap-2">
+    <div className="flex w-full min-w-0 flex-col gap-2">
+      {group.items.length > 0 ? (
+        <Select
+          aria-label={t('dashboard.conditionFilter.logic')}
+          data-testid="condition-logic"
+          className="w-full"
+          style={{ width: '100%' }}
+          disabled={disabled}
+          value={group.logic}
+          options={[
+            { value: 'AND', label: t('dashboard.conditionFilter.matchAll') },
+            { value: 'OR', label: t('dashboard.conditionFilter.matchAny') },
+          ]}
+          onChange={(logic) => emit(setConditionLogic(group, logic === 'OR' ? 'OR' : 'AND'))}
+        />
+      ) : null}
       {group.items.map((item, index) => {
         const field = fieldMap.get(String(item.field || ''));
         const valueType = field?.valueType || 'string';
         const operators = operatorsForFieldType(valueType);
         const multiple = item.op === 'in';
         return (
-          <div key={`${item.field || 'row'}-${index}`} className="flex flex-col gap-2">
-            {index > 0 && (
-              <button
-                type="button"
-                className="self-start text-xs text-[var(--color-primary)]"
-                disabled={disabled}
-                onClick={() => emit(toggleConditionLogic(group))}
-              >
-                {group.logic === 'OR'
-                  ? t('dashboard.conditionFilter.or')
-                  : t('dashboard.conditionFilter.and')}
-              </button>
-            )}
-            <div className="flex items-center gap-2">
+          <div
+            key={`${item.field || 'row'}-${index}`}
+            data-testid={`condition-row-${index}`}
+            className="flex w-full min-w-0 items-center gap-2"
+          >
+            <FieldSlot>
               <Select
-                className="min-w-0 flex-1"
-                disabled={disabled || fields.length <= 1}
+                aria-label={t('dashboard.conditionFilter.field')}
+                data-testid="condition-field"
+                className="w-full"
+                style={{ width: '100%' }}
+                disabled={disabled || fieldLocked}
                 placeholder={t('dashboard.conditionFilter.field')}
                 value={item.field || undefined}
                 options={fields.map((option) => ({ label: option.label, value: option.value }))}
@@ -89,17 +122,27 @@ const ConditionFilterInput: React.FC<ConditionFilterInputProps> = ({
                   }));
                 }}
               />
+            </FieldSlot>
+            <OperatorSlot>
               <Select
-                className="w-[108px]"
+                aria-label={t('dashboard.conditionFilter.op')}
+                data-testid="condition-operator"
+                className="w-full"
+                style={{ width: '100%' }}
                 disabled={disabled}
                 value={item.op || undefined}
                 options={operators.map((op) => ({ label: operatorLabel(op, t), value: op }))}
                 onChange={(op) => emit(updateConditionRow(group, index, { op, value: undefined }))}
               />
-              {item.op === 'empty' ? <div className="min-w-0 flex-1" /> : null}
+            </OperatorSlot>
+            <ValueSlot>
+              {item.op === 'empty' ? <div className="min-h-8" /> : null}
               {item.op !== 'empty' && valueType === 'number' ? (
                 <InputNumber
-                  className="min-w-0 flex-1"
+                  aria-label={t('dashboard.conditionFilter.value')}
+                  data-testid="condition-value"
+                  className="w-full"
+                  style={{ width: '100%' }}
                   disabled={disabled}
                   value={typeof item.value === 'number' ? item.value : undefined}
                   onChange={(next) => emit(updateConditionRow(group, index, { value: next }))}
@@ -107,7 +150,10 @@ const ConditionFilterInput: React.FC<ConditionFilterInputProps> = ({
               ) : null}
               {item.op !== 'empty' && valueType === 'enum' ? (
                 <Select
-                  className="min-w-0 flex-1"
+                  aria-label={t('dashboard.conditionFilter.value')}
+                  data-testid="condition-value"
+                  className="w-full"
+                  style={{ width: '100%' }}
                   disabled={disabled}
                   mode={multiple ? 'multiple' : undefined}
                   value={multiple ? (Array.isArray(item.value) ? item.value : []) : item.value}
@@ -122,26 +168,31 @@ const ConditionFilterInput: React.FC<ConditionFilterInputProps> = ({
               ) : null}
               {item.op !== 'empty' && valueType === 'string' ? (
                 <Input
-                  className="min-w-0 flex-1"
+                  aria-label={t('dashboard.conditionFilter.value')}
+                  data-testid="condition-value"
+                  className="w-full"
+                  style={{ width: '100%' }}
                   disabled={disabled}
                   value={item.value === undefined || item.value === null ? '' : String(item.value)}
                   onChange={(event) => emit(updateConditionRow(group, index, { value: event.target.value }))}
                 />
               ) : null}
-              <Button
-                type="text"
-                aria-label={t('dashboard.conditionFilter.delete')}
-                icon={<DeleteOutlined />}
-                disabled={disabled}
-                onClick={() => emit(removeConditionRow(group, index))}
-              />
-            </div>
+            </ValueSlot>
+            <Button
+              type="text"
+              className="shrink-0"
+              aria-label={t('dashboard.conditionFilter.delete')}
+              icon={<DeleteOutlined />}
+              disabled={disabled}
+              onClick={() => emit(removeConditionRow(group, index))}
+            />
           </div>
         );
       })}
       <Button
         type="dashed"
         className="self-start"
+        aria-label={t('dashboard.conditionFilter.add')}
         icon={<PlusOutlined />}
         disabled={disabled}
         onClick={() => emit(addConditionRow(group, fields.length === 1 ? fields[0] : undefined))}
