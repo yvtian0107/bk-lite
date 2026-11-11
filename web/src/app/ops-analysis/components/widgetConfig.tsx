@@ -963,13 +963,18 @@ const ViewConfig: React.FC<ViewConfigPropsWithManager> = ({
   useEffect(() => {
     const options = analysisModeOptions(selectedDataSource?.params);
     if (!options.length) return;
-    const current = String(watchedAnalysisMode ?? '');
-    if (current && options.some((item) => item.value === current)) return;
+    // useWatch 比 setFieldsValue 慢一拍，重开时这一帧经常还是空的。
+    // 默认回填以表单里已经写下的值为准，合法的已存选择不再写回 detail。
+    const stored = form.getFieldValue(['params', ANALYSIS_MODE_PARAM]);
+    const chosen = [stored, watchedAnalysisMode]
+      .map((value) => (value === undefined || value === null ? '' : String(value)))
+      .find((value) => value !== '' && options.some((item) => item.value === value));
+    if (chosen) return;
     const next = resolveAnalysisModeValue({
       params: selectedDataSource?.params,
-      selected: current,
+      selected: '',
     });
-    if (!next || next === current) return;
+    if (!next) return;
     form.setFieldValue(['params', ANALYSIS_MODE_PARAM], next);
   }, [selectedDataSource, watchedAnalysisMode, form]);
 
