@@ -65,10 +65,39 @@ export const reconcileComponentSwitchValue = (
  * 标量与组件切换一致：不在选项里则清空，不落到 options[0]。
  * `options` 未传入表示还在加载，保留现值；空数组表示上游为空或已经没有候选项，清空失效值。
  */
-export const reconcileComponentParamValue = (
+export type MissingOptionPolicy = 'drop' | 'retain';
+
+export const missingOptionPolicyOf = (
+  param?: Pick<ParamItem, 'inputConfig'>,
+): MissingOptionPolicy => {
+  const config = param?.inputConfig;
+  if (config && config.control === 'select' && config.missingOptionPolicy === 'retain') return 'retain';
+  return 'drop';
+};
+
+/** 只有下拉和单选按选项列表对齐。条件、字段分组、排序以及其它控件保持原值。 */
+export const isOptionBackedParam = (
+  param?: Pick<ParamItem, 'inputConfig'>,
+): boolean => {
+  const control = param?.inputConfig?.control;
+  return control === 'select' || control === 'radio';
+};
+
+export const reconcileParamValueWithOptions = (
+  param: Pick<ParamItem, 'inputConfig'> | undefined,
   value: ParamItem['value'] | undefined,
   options?: InputOption[],
 ): ParamItem['value'] | undefined => {
+  if (!isOptionBackedParam(param)) return value;
+  return reconcileComponentParamValue(value, options, missingOptionPolicyOf(param));
+};
+
+export const reconcileComponentParamValue = (
+  value: ParamItem['value'] | undefined,
+  options?: InputOption[],
+  policy: MissingOptionPolicy = 'drop',
+): ParamItem['value'] | undefined => {
+  if (policy === 'retain') return value;
   if (options == null) return value;
   if (Array.isArray(value)) {
     const optionKeys = new Set(

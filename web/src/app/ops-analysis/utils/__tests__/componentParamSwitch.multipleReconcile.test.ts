@@ -2,6 +2,7 @@ import { describe, expect, test } from 'vitest';
 import {
   reconcileComponentParamValue,
   reconcileComponentSwitchValue,
+  reconcileParamValueWithOptions,
 } from '@/app/ops-analysis/utils/componentParamSwitch';
 import { processDataSourceParams } from '@/app/ops-analysis/utils/widgetDataTransform';
 import type { InputOption, ParamItem } from '@/app/ops-analysis/types/dataSource';
@@ -64,5 +65,48 @@ describe('reconcileComponentParamValue multiple', () => {
         userParams: { cheshi2: reconciled },
       }),
     ).toEqual({ cheshi2: ['1', '2'] });
+  });
+});
+
+describe('reconcileParamValueWithOptions leaves catalog controls alone', () => {
+  const catalogOptions: InputOption[] = [
+    { label: '主机 · 容量', value: 'host:capacity' },
+    { label: '实例名', value: 'inst_name' },
+  ];
+  const conditions = {
+    logic: 'and',
+    children: [{
+      logic: 'and',
+      model_id: 'host',
+      children: [{ scope: 'host', attr_id: 'capacity', operator: 'int>', value: 1 }],
+    }],
+  };
+  const metrics = [{ sources: ['host:capacity'], func: 'sum', label: '容量' }];
+
+  test('下拉仍清掉不在选项里的值，retain 仍保留', () => {
+    const select = {
+      inputConfig: { control: 'select' as const, optionsSource: { type: 'static' as const, staticItems: catalogOptions } },
+    };
+    const retain = {
+      inputConfig: {
+        control: 'select' as const,
+        missingOptionPolicy: 'retain' as const,
+        optionsSource: { type: 'static' as const, staticItems: catalogOptions },
+      },
+    };
+    expect(reconcileParamValueWithOptions(select, ['host:capacity', 'gone'], catalogOptions)).toEqual(['host:capacity']);
+    expect(reconcileParamValueWithOptions(select, 'gone', catalogOptions)).toBeNull();
+    expect(reconcileParamValueWithOptions(retain, ['host:capacity', 'gone'], catalogOptions)).toEqual(['host:capacity', 'gone']);
+  });
+
+  test('条件卡片、字段分组和排序在目录就绪后保持原值', () => {
+    const condition = { inputConfig: { control: 'condition' as const, optionsSource: { type: 'dynamic' as const, valueField: 'key', labelField: 'label' } } };
+    const fieldGroup = { inputConfig: { control: 'fieldGroup' as const, variant: 'metrics' as const, optionsSource: { type: 'dynamic' as const, valueField: 'key', labelField: 'label' } } };
+    const order = { inputConfig: { control: 'order' as const, optionsSource: { type: 'dynamic' as const, valueField: 'key', labelField: 'label' } } };
+    expect(reconcileParamValueWithOptions(condition, conditions, catalogOptions)).toEqual(conditions);
+    expect(reconcileParamValueWithOptions(fieldGroup, metrics, catalogOptions)).toEqual(metrics);
+    expect(reconcileParamValueWithOptions(order, '-cpu_avg', catalogOptions)).toBe('-cpu_avg');
+    expect(reconcileComponentParamValue(conditions, catalogOptions)).toBeNull();
+    expect(reconcileComponentParamValue(metrics, catalogOptions)).toEqual([]);
   });
 });

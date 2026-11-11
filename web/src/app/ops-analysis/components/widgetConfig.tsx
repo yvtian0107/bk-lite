@@ -42,13 +42,14 @@ import {
   processDataSourceParams,
 } from '@/app/ops-analysis/utils/widgetDataTransform';
 import { getDateRangeTimezone } from '@/app/ops-analysis/utils/dateRange';
+import { queryParamFieldPaths } from '@/app/ops-analysis/utils/queryParamFields';
 import { dynamicQueryParamsOf } from '@/app/ops-analysis/utils/optionsQueryParamRefs';
 import type { OptionsQueryEditorContext } from '@/app/ops-analysis/utils/optionsQueryCandidates';
 import { optionsSourceSummary } from '@/app/ops-analysis/utils/optionsSourceIdentity';
 import {
   clearComponentParamSwitch,
   findComponentSwitchParams,
-  reconcileComponentParamValue,
+  reconcileParamValueWithOptions,
   supportsComponentSwitch,
 } from '@/app/ops-analysis/utils/componentParamSwitch';
 import type {
@@ -87,6 +88,9 @@ import {
   buildDisplayColumnsFromSchema,
   isDisplayableDefaultField,
 } from './widgetConfig/utils/columnProbing';
+import { responseFieldsOf } from '@/app/ops-analysis/utils/tableLikeData';
+import { sourceQueryBlockedByRequired } from '@/app/ops-analysis/utils/paramVisibility';
+import { preferredInstanceCountKey } from '@/app/ops-analysis/(pages)/view/topology/utils/dataTreeUtils';
 import { buildRoleFieldOptions, dropRoleValueMissingFrom } from './widgetConfig/utils/chartFieldOptions';
 import { ChartRoleFieldsSection, buildChartRoleFields, chartRoleValuePaths } from './widgetConfig/sections/chartRoleFieldsSection';
 import { PieScalarFieldsSection } from './widgetConfig/sections/pieScalarFieldsSection';
@@ -341,8 +345,10 @@ const ViewConfig: React.FC<ViewConfigPropsWithManager> = ({
   } = dataSourceManager;
 
   const availableFields = useMemo((): ResponseFieldDefinition[] => {
+    const responseFields = responseFieldsOf(previewRawData);
+    if (responseFields.length) return responseFields;
     return selectedDataSource?.field_schema || [];
-  }, [selectedDataSource]);
+  }, [previewRawData, selectedDataSource]);
 
   const getFilteredChartTypes = (
     dataSource: DatasourceItem | undefined,
@@ -550,21 +556,19 @@ const ViewConfig: React.FC<ViewConfigPropsWithManager> = ({
 
       // 如果默认图表类型是 table-like，尝试探测列
       if (defaultChartType === 'table' || defaultChartType === 'eventTable') {
-        const schemaFields = fullItem.field_schema;
-        if (schemaFields && schemaFields.length > 0) {
-          tableConfig.setDetectedDisplayColumns(
-            buildDisplayColumnsFromSchema(schemaFields),
-          );
-        } else {
-          const probedColumns = await tableConfig.probeDefaultDisplayColumns(
-            fullItem,
-            params,
-          );
-          if (!isCurrentConfigRequest(requestId)) {
-            return;
-          }
-          tableConfig.setDetectedDisplayColumns(probedColumns);
+        const probedColumns = await tableConfig.probeDefaultDisplayColumns(
+          fullItem,
+          params,
+        );
+        if (!isCurrentConfigRequest(requestId)) {
+          return;
         }
+        const schemaFields = fullItem.field_schema;
+        tableConfig.setDetectedDisplayColumns(
+          probedColumns.length > 0
+            ? probedColumns
+            : buildDisplayColumnsFromSchema(schemaFields || []),
+        );
       }
     },
     [
@@ -686,6 +690,10 @@ const ViewConfig: React.FC<ViewConfigPropsWithManager> = ({
     sampleReadRef.current = ticket;
     setLoadingRoleFields(true);
     try {
+      const paths = queryParamFieldPaths(canonicalSelectedDataSource.params);
+      if (paths.length) {
+        await form.validateFields(paths);
+      }
       const formValues = form.getFieldsValue();
       const userParams = formValues?.params || {};
       const requestParams = processDataSourceParams({
@@ -714,6 +722,10 @@ const ViewConfig: React.FC<ViewConfigPropsWithManager> = ({
         setSuppliedPreviewVersion((version) => version + 1);
       }
     } catch (error) {
+      if (error && typeof error === 'object' && 'errorFields' in error) {
+        message.warning(t('dashboard.queryParamsBlocked'));
+        return;
+      }
       interactionSampleKeyRef.current = clearSampleKeyOnFetchFailure(
         sampleReadRef.current,
         ticket,
@@ -1021,11 +1033,9 @@ const ViewConfig: React.FC<ViewConfigPropsWithManager> = ({
         );
 
         tableConfig.setDetectedDisplayColumns(
-          (targetDataSource?.field_schema || []).length > 0
-            ? buildDisplayColumnsFromSchema(
-              targetDataSource?.field_schema || [],
-            )
-            : probedColumns,
+          probedColumns.length > 0
+            ? probedColumns
+            : buildDisplayColumnsFromSchema(targetDataSource?.field_schema || []),
         );
 
         const fieldTitleMap = new Map<string, string>();
@@ -1035,7 +1045,7 @@ const ViewConfig: React.FC<ViewConfigPropsWithManager> = ({
           }
         });
         probedColumns.forEach((column) => {
-          if (column.key && !fieldTitleMap.has(column.key)) {
+          if (column.key) {
             fieldTitleMap.set(column.key, column.title || column.key);
           }
         });
@@ -1059,26 +1069,20 @@ const ViewConfig: React.FC<ViewConfigPropsWithManager> = ({
         (formValues.chartType === 'table' ||
           formValues.chartType === 'eventTable')
       ) {
-        const schemaFields = targetDataSource?.field_schema;
         const replaceActionOnlyColumns = originalColumns.length > 0;
-        if (schemaFields && schemaFields.length > 0) {
-          const defaults = buildDisplayColumnsFromSchema(schemaFields);
-          tableConfig.setDetectedDisplayColumns(defaults);
-          if (replaceActionOnlyColumns) {
-            tableConfig.setDisplayColumns(defaults);
-          }
-        } else {
-          const probedColumns = await tableConfig.probeDefaultDisplayColumns(
-            targetDataSource,
-            formValues.params || {},
-          );
-          if (!isCurrentConfigRequest(requestId)) {
-            return;
-          }
-          tableConfig.setDetectedDisplayColumns(probedColumns);
-          if (replaceActionOnlyColumns) {
-            tableConfig.setDisplayColumns(probedColumns);
-          }
+        const probedColumns = await tableConfig.probeDefaultDisplayColumns(
+          targetDataSource,
+          formValues.params || {},
+        );
+        if (!isCurrentConfigRequest(requestId)) {
+          return;
+        }
+        const defaults = probedColumns.length > 0
+          ? probedColumns
+          : buildDisplayColumnsFromSchema(targetDataSource?.field_schema || []);
+        tableConfig.setDetectedDisplayColumns(defaults);
+        if (replaceActionOnlyColumns) {
+          tableConfig.setDisplayColumns(defaults);
         }
       }
     } else {
@@ -1148,12 +1152,17 @@ const ViewConfig: React.FC<ViewConfigPropsWithManager> = ({
     (paramName: string, options: InputOption[]) => {
       resolvedParamOptionsRef.current.set(paramName, options);
       const currentParams = form.getFieldValue('params') || {};
-      const nextValue = reconcileComponentParamValue(currentParams[paramName], options);
+      const param = (selectedDataSource?.params || []).find((item) => item.name === paramName);
+      const nextValue = reconcileParamValueWithOptions(
+        param,
+        currentParams[paramName],
+        options,
+      );
       if (nextValue !== currentParams[paramName]) {
         form.setFieldValue(['params', paramName], nextValue);
       }
     },
-    [form],
+    [form, selectedDataSource],
   );
 
   const handleInputConfigConfirm = (
@@ -1272,6 +1281,23 @@ const ViewConfig: React.FC<ViewConfigPropsWithManager> = ({
     }
   }, [tableConfig.displayColumns, tableConfig.displayColumnsError]);
 
+  const analysisMode = watchedFormValues?.params?.analysis_mode;
+  useEffect(() => {
+    if (chartType !== 'single' || analysisMode !== 'count') return;
+    if (singleValueConfig.selectedFields.length > 0) return;
+    const key = preferredInstanceCountKey(singleValueConfig.singleValueTreeData);
+    if (!key) return;
+    singleValueConfig.setSelectedFields([key]);
+    form.setFieldValue('selectedFields', [key]);
+  }, [
+    analysisMode,
+    chartType,
+    form,
+    singleValueConfig.selectedFields,
+    singleValueConfig.setSelectedFields,
+    singleValueConfig.singleValueTreeData,
+  ]);
+
   const hydrateWidgetFormValues = useCallback(
     (
       values: WidgetConfigFormValues,
@@ -1289,7 +1315,8 @@ const ViewConfig: React.FC<ViewConfigPropsWithManager> = ({
         effectiveDataSource.params.forEach((param) => {
           const optionsForParam = resolvedParamOptionsRef.current.get(param.name);
           if (optionsForParam == null) return;
-          reconciledFormParams[param.name] = reconcileComponentParamValue(
+          reconciledFormParams[param.name] = reconcileParamValueWithOptions(
+            param,
             reconciledFormParams[param.name],
             optionsForParam,
           );
@@ -1438,9 +1465,18 @@ const ViewConfig: React.FC<ViewConfigPropsWithManager> = ({
     ? `min(${formDrawerWidth + previewPaneWidth}px, 100vw)`
     : formDrawerWidth;
 
-  const handlePreview = useCallback(() => {
+  const handlePreview = useCallback(async () => {
     if (!isSceneWidget && !effectiveDataSource) {
       message.warning(t('dashboard.configPreviewNeedDataSource'));
+      return;
+    }
+    try {
+      const paths = queryParamFieldPaths(effectiveDataSource?.params);
+      if (paths.length) {
+        await form.validateFields(paths);
+      }
+    } catch {
+      message.warning(t('dashboard.queryParamsBlocked'));
       return;
     }
     const draft = buildCurrentDraftConfig(true);
@@ -1460,6 +1496,7 @@ const ViewConfig: React.FC<ViewConfigPropsWithManager> = ({
     buildCurrentDraftConfig,
     effectiveDataSource,
     effectiveNamespaceId,
+    form,
     isSceneWidget,
     previewFilterDefinitions,
     t,
@@ -1498,6 +1535,23 @@ const ViewConfig: React.FC<ViewConfigPropsWithManager> = ({
         tableConfig.setDisplayColumnsError('');
       }
 
+      let displayColumns = tableConfig.displayColumns;
+      const hasVisibleColumn = displayColumns.some((column) => (
+        Boolean((column.key || '').trim())
+        && column.visible !== false
+        && column.columnType !== 'actions'
+      ));
+      if (isTableLikeChartType && !hasVisibleColumn && effectiveDataSource) {
+        const params = (values.params || {}) as Record<string, unknown>;
+        if (!sourceQueryBlockedByRequired(effectiveDataSource.params || [], params)) {
+          const probed = await tableConfig.probeDefaultDisplayColumns(effectiveDataSource, params);
+          if (probed.length) {
+            tableConfig.setDisplayColumns(probed);
+            displayColumns = probed;
+          }
+        }
+      }
+
       const submitResult = buildWidgetSubmitConfig({
         values,
         chartType,
@@ -1506,7 +1560,7 @@ const ViewConfig: React.FC<ViewConfigPropsWithManager> = ({
         selectedFields: singleValueConfig.selectedFields,
         thresholdColors: singleValueConfig.thresholdColors,
         filterBindings,
-        displayColumns: tableConfig.displayColumns,
+        displayColumns,
         filterFields: tableConfig.filterFields,
         includeSingleStyle: showSingleValueStyle,
       });
@@ -1639,6 +1693,17 @@ const ViewConfig: React.FC<ViewConfigPropsWithManager> = ({
           if (!acceptPreviewRawWrite(sampleReadRef.current, ticket)) return;
           setPreviewRawData(data);
           setPreviewLoading(false);
+          if (chartType === 'table' || chartType === 'eventTable') {
+            const fields = responseFieldsOf(data);
+            if (fields.length) {
+              tableConfig.setDisplayColumns((current) => {
+                const alreadyVisible = current.some((column) => (
+                  Boolean((column.key || '').trim()) && column.visible !== false
+                ));
+                return alreadyVisible ? current : buildDisplayColumnsFromSchema(fields);
+              });
+            }
+          }
         }}
         liveName={watchedFormValues?.name}
         liveDescription={watchedFormValues?.description}
@@ -1808,6 +1873,8 @@ const ViewConfig: React.FC<ViewConfigPropsWithManager> = ({
             onParamOptionsResolved={(param, options) =>
               reconcileParamWithOptions(param.name, options)
             }
+            resultEmpty={Array.isArray((previewRawData as { items?: unknown } | null)?.items)
+              && (previewRawData as { items: unknown[] }).items.length === 0}
           >
             {isTableLikeChartType && (
               <TableSettingsSection

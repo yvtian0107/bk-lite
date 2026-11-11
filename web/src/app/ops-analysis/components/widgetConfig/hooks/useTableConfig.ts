@@ -14,6 +14,8 @@ import {
   processDataSourceParams,
 } from '@/app/ops-analysis/utils/widgetDataTransform';
 import { getDateRangeTimezone } from '@/app/ops-analysis/utils/dateRange';
+import { responseFieldsOf } from '@/app/ops-analysis/utils/tableLikeData';
+import { sourceQueryBlockedByRequired } from '@/app/ops-analysis/utils/paramVisibility';
 import {
   DisplayColumnRow,
   buildDisplayColumnsFromSchema,
@@ -324,8 +326,15 @@ export function useTableConfig({
       formParams: Record<string, any>,
     ): Promise<DisplayColumnRow[]> => {
       try {
+        if (sourceQueryBlockedByRequired(targetDataSource.params || [], formParams)) {
+          return [];
+        }
         const payload = buildProbeParams(targetDataSource, formParams);
         const { data: sourceData } = await getSourceDataByApiId(targetDataSource.id, payload);
+        const responseFields = responseFieldsOf(sourceData);
+        if (responseFields.length) {
+          return buildDisplayColumnsFromSchema(responseFields);
+        }
         const firstRecord = extractFirstRecordFromSourceData(sourceData);
         if (!firstRecord) return [];
 
@@ -389,18 +398,18 @@ export function useTableConfig({
         selectedDataSource
       ) {
         const currentParams = (form.getFieldValue('params') || {}) as Record<string, any>;
-        const schemaColumns = buildDisplayColumnsFromSchema(availableFields);
-
-        if (schemaColumns.length > 0) {
-          setDetectedDisplayColumns(schemaColumns);
-          return;
-        }
-
         const probedColumns = await probeDefaultDisplayColumns(
           selectedDataSource,
           currentParams,
         );
-        setDetectedDisplayColumns(probedColumns);
+        if (probedColumns.length > 0) {
+          setDetectedDisplayColumns(probedColumns);
+          return;
+        }
+        const schemaColumns = buildDisplayColumnsFromSchema(availableFields);
+        if (schemaColumns.length > 0) {
+          setDetectedDisplayColumns(schemaColumns);
+        }
       }
     },
     [selectedDataSource, form, probeDefaultDisplayColumns, availableFields],

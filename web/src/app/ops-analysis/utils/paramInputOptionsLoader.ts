@@ -4,6 +4,7 @@ import type { SourceDataResult } from '@/app/ops-analysis/utils/sourceDataRespon
 import { getRequestErrorMessage } from '@/app/ops-analysis/utils/requestError';
 import {
   extractDataSourceItems,
+  isCatalogControl,
   isOptionInputControl,
   mapDynamicItems,
   resolveDynamicSourceId,
@@ -74,9 +75,14 @@ export const createParamInputOptionsNotifier = (): ParamInputOptionsNotifier => 
   };
 };
 
+const loadsOptions = (
+  config?: InputControlConfig,
+): config is Extract<InputControlConfig, { control: 'select' | 'radio' | 'condition' | 'fieldGroup' }> =>
+  isOptionInputControl(config) || isCatalogControl(config);
+
 export const getParamInputConfigKey = (config?: InputControlConfig): string => {
   if (!config) return 'none';
-  if (!isOptionInputControl(config)) return config.control;
+  if (!loadsOptions(config)) return config.control;
   const source = config.optionsSource;
   if (source.type === 'static') {
     return JSON.stringify(['static', config.control, source.staticItems.map(typedOption)]);
@@ -121,7 +127,7 @@ export const createParamInputOptionsLoader = (
     settled = false;
     const requestGeneration = ++generation;
 
-    if (!isOptionInputControl(config)) {
+    if (!loadsOptions(config)) {
       const initial: ParamInputOptionsState = { status: 'idle', options: [] };
       settled = true;
       currentLoad = { sync: true, initial, promise: Promise.resolve(initial) };
@@ -174,7 +180,10 @@ export const createParamInputOptionsLoader = (
         }
         const { data } = await api.getSourceDataByApiId(sourceId, resolvedParams, requestOptions);
         const options = mapDynamicItems(
-          extractDataSourceItems(data), source.valueField, source.labelField,
+          extractDataSourceItems(data),
+          source.valueField,
+          source.labelField,
+          { keepItem: Boolean(source.keepItem) },
         );
         if (requestGeneration !== generation) return null;
         settled = true;

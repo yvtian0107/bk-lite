@@ -5,7 +5,7 @@ import type { InputControlConfig } from '@/app/ops-analysis/types/dataSource';
 import type { SourceDataResult } from '@/app/ops-analysis/utils/sourceDataResponse';
 import type { SourceDataRequestOptions } from '@/app/ops-analysis/api/dataSource';
 import { useDataSourceApi } from '@/app/ops-analysis/api/dataSource';
-import { isOptionInputControl } from '@/app/ops-analysis/utils/paramInputConfigUtils';
+import { isCatalogControl, isOptionInputControl } from '@/app/ops-analysis/utils/paramInputConfigUtils';
 import {
   createParamInputOptionsLoader,
   buildOptionsLoadSignature,
@@ -74,7 +74,7 @@ export const useParamInputOptions = (
     .sort()
     .join(',');
   const getSynchronousState = (): ParamInputOptionsState => {
-    if (!isOptionInputControl(inputConfig)) {
+    if (!isOptionInputControl(inputConfig) && !isCatalogControl(inputConfig)) {
       return { status: 'idle', options: [] };
     }
     if (inputConfig.optionsSource.type === 'static') {

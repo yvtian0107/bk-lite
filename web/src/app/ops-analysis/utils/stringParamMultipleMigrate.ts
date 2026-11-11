@@ -79,6 +79,8 @@ export const areNormalizedInputConfigsCompatible = (
     || left.control === 'organization' || right.control === 'organization') {
     return left.control === right.control;
   }
+  if (left.control !== 'select' && left.control !== 'radio') return true;
+  if (right.control !== 'select' && right.control !== 'radio') return true;
   const leftPicker = left.picker ?? 'dropdown';
   const rightPicker = right.picker ?? 'dropdown';
   if (leftPicker !== rightPicker) return false;
@@ -100,6 +102,9 @@ export const normalizeStringListInputConfig = (
   }
   if (normalized.control === 'organization') {
     return { inputConfig: { control: 'organization' }, warnings };
+  }
+  if (normalized.control !== 'select' && normalized.control !== 'radio') {
+    return { inputConfig: normalized, warnings };
   }
 
   const next: Extract<InputControlConfig, { control: 'select' | 'radio' }> = {

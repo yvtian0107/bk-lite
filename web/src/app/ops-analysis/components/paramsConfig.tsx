@@ -1,8 +1,8 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { useDebouncedOptionsQueryValues } from '@/app/ops-analysis/hooks/useDebouncedOptionsQueryValues';
 import { isFreeTextOptionsParam } from '@/app/ops-analysis/utils/optionsQueryTextDebounce';
 import TimeSelector from '@/components/time-selector';
-import { Form, Input, Select, DatePicker, InputNumber, Button, Tooltip } from 'antd';
+import { Form, Input, Select, DatePicker, InputNumber, Button, Tooltip, Collapse } from 'antd';
 import type { FormInstance } from 'antd';
 import { SettingOutlined } from '@ant-design/icons';
 import { useTranslation } from '@/utils/i18n';
@@ -19,7 +19,17 @@ import type {
 } from '@/app/ops-analysis/types/dataSource';
 import CompactEmptyState from '@/components/compact-empty-state';
 import { ParamInputControl } from '@/app/ops-analysis/components/paramInputControl';
-import { normalizeInputConfig } from '@/app/ops-analysis/utils/paramInputConfigUtils';
+import { CatalogParamEditor } from '@/app/ops-analysis/components/catalogParamEditor';
+import { isCatalogControl, normalizeInputConfig } from '@/app/ops-analysis/utils/paramInputConfigUtils';
+import { isParamConditionallyRequired, isParamVisible } from '@/app/ops-analysis/utils/paramVisibility';
+import {
+  describeFieldGroupIssue,
+  inspectCondition,
+  inspectFieldGroup,
+  inspectOrder,
+  readFieldCatalog,
+  readOrderChoices,
+} from '@/app/ops-analysis/utils/conditionTree';
 import { getDataSourceFormParamInitialValue } from '@/app/ops-analysis/utils/dataSourceFormParams';
 import { readComponentOptionsQueryUpstream } from '@/app/ops-analysis/utils/optionsQueryCandidates';
 import {
@@ -106,6 +116,7 @@ interface DataSourceParamsConfigProps {
   globalFilterValues?: Record<string, FilterValue>;
   onEditInputConfig?: (param: ParamItem) => void;
   onParamOptionsResolved?: (param: ParamItem, options: InputOption[]) => void;
+  resultEmpty?: boolean;
 }
 
 const formParamValue = (
@@ -178,9 +189,11 @@ const DataSourceParamsConfig: React.FC<DataSourceParamsConfigProps> = ({
   globalFilterValues,
   onEditInputConfig,
   onParamOptionsResolved,
+  resultEmpty = false,
 }) => {
   const { t } = useTranslation();
   const [mounted, setMounted] = useState(false);
+  const resolvedOptionsRef = useRef(new Map<string, InputOption[]>());
   const form = Form.useFormInstance();
   // useWatch 负责在未注册字段变化时重渲染；当次渲染读 store，避免订阅值晚一拍。
   const watchedParams = Form.useWatch(fieldPrefix, { form, preserve: true }) as Record<string, unknown> | undefined;
@@ -297,6 +310,33 @@ const DataSourceParamsConfig: React.FC<DataSourceParamsConfigProps> = ({
       globalFilterValues,
     });
 
+    const rememberOptions = (resolvedOptions: InputOption[]) => {
+      resolvedOptionsRef.current.set(param.name, resolvedOptions);
+      onParamOptionsResolved?.(param, resolvedOptions);
+    };
+
+    if (inputConfig.control === 'condition' || inputConfig.control === 'fieldGroup' || inputConfig.control === 'order') {
+      const modelValue = formParams?.model_ids;
+      const selectedModelIds = Array.isArray(modelValue) ? modelValue.map(String) : [];
+      return (
+        <CatalogParamEditor
+          inputConfig={inputConfig}
+          disabled={isDisabled}
+          resolvedQueryParams={optionsQuery?.resolution.params}
+          optionsBlocked={optionsQuery?.resolution.blocked}
+          optionsBlockReason={optionsQuery?.resolution.blockReason}
+          optionsMissingRefs={optionsQuery?.resolution.missingRefs}
+          optionsQuerySignature={optionsQuery?.signature}
+          onOptionsResolved={rememberOptions}
+          selectedModelIds={selectedModelIds}
+          analysisMode={typeof formParams?.analysis_mode === 'string' ? formParams.analysis_mode : ''}
+          metrics={formParams?.metrics}
+          resultEmpty={resultEmpty}
+          onFocusModels={() => form.scrollToField([fieldPrefix, 'model_ids'])}
+        />
+      );
+    }
+
     return (
       <ParamInputControl
         inputConfig={inputConfig}
@@ -307,26 +347,26 @@ const DataSourceParamsConfig: React.FC<DataSourceParamsConfigProps> = ({
         optionsBlocked={optionsQuery?.resolution.blocked}
         optionsBlockReason={optionsQuery?.resolution.blockReason}
         optionsQuerySignature={optionsQuery?.signature}
-        onOptionsResolved={(resolvedOptions) =>
-          onParamOptionsResolved?.(param, resolvedOptions)
-        }
+        onOptionsResolved={rememberOptions}
       />
     );
   };
 
-  return (
-    <>
-      {configParams.map((param: ParamItem) => {
+  const foldInputGears = configParams.some((param) => param.formSection === 'more');
+  const canEditInput = (param: ParamItem) => Boolean(
+    onEditInputConfig
+    && (param.type || 'string') === 'string'
+    && param.filterType !== 'fixed'
+    && !readonly
+    && !isCatalogControl(normalizeInputConfig(param)),
+  );
+  const renderParamItem = (param: ParamItem, gear: 'inline' | 'hidden') => {
         const fieldName = [fieldPrefix, param.name];
         const initialValue = getDataSourceFormParamInitialValue(param);
         const labelText = param.alias_name || param.name;
         const isLongText = labelText.length > 18;
         const isVeryLongText = labelText.length > 30;
-        const showInputConfigButton =
-          onEditInputConfig &&
-          (param.type || 'string') === 'string' &&
-          param.filterType !== 'fixed' &&
-          !readonly;
+        const showInputConfigButton = gear === 'inline' && canEditInput(param);
 
         const getLabelStyle = (): React.CSSProperties => {
           const baseStyle = {
@@ -359,9 +399,13 @@ const DataSourceParamsConfig: React.FC<DataSourceParamsConfigProps> = ({
           };
         };
 
+        const visible = isParamVisible(param, formParams || {});
+        const required = visible && isParamConditionallyRequired(param, formParams || {});
+        const inputConfig = normalizeInputConfig(param);
         return (
           <Form.Item
             key={`${selectedDataSource?.id || 'default'}-${param.name}`}
+            hidden={!visible}
             label={
               <div className="flex items-center justify-start gap-1">
                 <div style={getLabelStyle()} title={labelText}>
@@ -385,16 +429,102 @@ const DataSourceParamsConfig: React.FC<DataSourceParamsConfigProps> = ({
             }
             name={fieldName}
             initialValue={!preserveValues && mounted ? initialValue : undefined}
-            tooltip={param.desc || undefined}
+            tooltip={param.descPlacement === 'extra' ? undefined : (param.desc || undefined)}
+            extra={param.descPlacement === 'extra' ? param.desc : undefined}
             style={{ marginBottom: isVeryLongText ? 20 : 16 }}
-            rules={[
-              { required: param.required, message: t('dataSource.paramRequired', '请配置{label}', { label: labelText }) },
-            ]}
+            rules={visible ? [
+              { required, message: t('dataSource.paramRequired', '请配置{label}', { label: labelText }) },
+              {
+                validator: async (_rule, current) => {
+                  if (inputConfig?.control === 'select' && inputConfig.missingOptionPolicy === 'retain') {
+                    const options = resolvedOptionsRef.current.get(param.name);
+                    if (!options) return;
+                    const selected = Array.isArray(current) ? current : current == null || current === '' ? [] : [current];
+                    const stale = selected.some((item) => !options.some((option) => String(option.value) === String(item)));
+                    if (stale) throw new Error(t('paramInput.staleOption'));
+                  }
+                  if (inputConfig?.control === 'condition') {
+                    const options = resolvedOptionsRef.current.get(param.name);
+                    const modelValue = formParams?.model_ids;
+                    const selectedModelIds = Array.isArray(modelValue) ? modelValue.map(String) : [];
+                    const issue = inspectCondition(
+                      current,
+                      readFieldCatalog(options),
+                      options !== undefined,
+                      selectedModelIds,
+                    );
+                    if (issue) throw new Error(t(`conditionBuilder.issue.${issue.code}`));
+                  }
+                  if (inputConfig?.control === 'order') {
+                    const options = resolvedOptionsRef.current.get(param.name);
+                    const mode = typeof formParams?.analysis_mode === 'string' ? formParams.analysis_mode : '';
+                    const issue = inspectOrder(
+                      current,
+                      readOrderChoices(options, mode, formParams?.metrics),
+                      options !== undefined,
+                    );
+                    if (issue) throw new Error(t('orderBuilder.stale'));
+                  }
+                  if (inputConfig?.control === 'fieldGroup' && inputConfig.variant) {
+                    const options = resolvedOptionsRef.current.get(param.name);
+                    const issue = inspectFieldGroup(current, readFieldCatalog(options), options !== undefined, inputConfig.variant);
+                    if (issue) {
+                      throw new Error(describeFieldGroupIssue(issue, {
+                        invalid: t('fieldGroup.issue.invalid'),
+                        required: t('fieldGroup.issue.required'),
+                        stale: t('fieldGroup.issue.stale'),
+                        incompatible: t('fieldGroup.issue.incompatible'),
+                        incompatibleNamed: t('fieldGroup.issue.incompatibleNamed', '{left} 和 {right} 的类型或单位不一致，不能合并'),
+                        enumConflict: t('fieldGroup.issue.enumConflict'),
+                      }));
+                    }
+                  }
+                },
+              },
+            ] : []}
           >
-            {renderParamInput(param)}
+            {visible ? renderParamInput(param) : null}
           </Form.Item>
         );
-      })}
+  };
+  const primaryParams = configParams.filter((param) => param.formSection !== 'more');
+  const advancedParams = configParams.filter((param) => param.formSection === 'more');
+  const gearParams = foldInputGears ? primaryParams.filter((param) => canEditInput(param)) : [];
+
+  return (
+    <>
+      {primaryParams.map((param) => renderParamItem(param, foldInputGears ? 'hidden' : 'inline'))}
+      {advancedParams.length > 0 ? (
+        <Collapse
+          ghost
+          items={[{
+            key: 'more',
+            forceRender: true,
+            label: t('paramInput.more', '更多'),
+            children: (
+              <div className="flex flex-col gap-2">
+                {advancedParams.map((param) => renderParamItem(param, 'inline'))}
+                {gearParams.length > 0 ? (
+                  <div className="flex flex-col gap-1">
+                    <div className="text-xs text-[var(--color-text-3)]">{t('paramInput.inputMethod', '取值方式')}</div>
+                    <div className="flex flex-wrap gap-2">
+                      {gearParams.map((param) => (
+                        <Button
+                          key={param.name}
+                          icon={<SettingOutlined />}
+                          onClick={() => onEditInputConfig?.(param)}
+                        >
+                          {param.alias_name || param.name}
+                        </Button>
+                      ))}
+                    </div>
+                  </div>
+                ) : null}
+              </div>
+            ),
+          }]}
+        />
+      ) : null}
     </>
   );
 };

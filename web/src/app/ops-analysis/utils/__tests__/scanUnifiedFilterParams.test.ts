@@ -218,4 +218,37 @@ describe('scan unified filter params', () => {
     });
     expect(params.server_room_id).toBe('room-b');
   });
+
+  it('does not scan query conditions into global filters and still merges same-name filters', () => {
+    const scanned = scanDataSourceFilterParams(layout([1, 2]), [
+      source(1, 'cmdb-query', [
+        {
+          name: 'conditions',
+          alias_name: '条件',
+          type: 'object',
+          filterType: 'params',
+          value: { logic: 'and', children: [] },
+          inputConfig: { control: 'condition', optionsSource: { type: 'static', staticItems: [] } },
+        },
+        {
+          name: 'organization',
+          alias_name: '组织',
+          type: 'string',
+          filterType: 'filter',
+          value: '',
+          inputConfig: { control: 'organization' },
+        },
+      ]),
+      source(2, 'other', [{
+        name: 'organization',
+        alias_name: '组织',
+        type: 'string',
+        filterType: 'filter',
+        value: '',
+        inputConfig: { control: 'organization' },
+      }]),
+    ]);
+    expect(scanned.map((item) => item.key)).toEqual(['organization']);
+    expect(scanned[0]?.componentCount).toBe(2);
+  });
 });

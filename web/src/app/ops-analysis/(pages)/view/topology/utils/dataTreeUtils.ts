@@ -10,7 +10,25 @@ import type { ResponseFieldDefinition } from '@/app/ops-analysis/types/dataSourc
 /**
  * 根据 field_schema 生成带备注的显示标题
  */
-function getDisplayTitle(key: string, fieldSchema?: ResponseFieldDefinition[]): ReactNode {
+export interface BuildTreeOptions {
+  envelopeCountLabel?: string;
+}
+
+function getDisplayTitle(
+  key: string,
+  fieldSchema?: ResponseFieldDefinition[],
+  envelopeCountLabel?: string,
+): ReactNode {
+  if (key === 'count' && envelopeCountLabel) {
+    return createElement('span', null, [
+      createElement('span', { key: 'key' }, key),
+      createElement(
+        'span',
+        { key: 'title', className: 'text-(--color-text-2)' },
+        `（${envelopeCountLabel}）`,
+      ),
+    ]);
+  }
   if (!fieldSchema || fieldSchema.length === 0) return key;
   const field = fieldSchema.find((f) => f.key === key);
   if (field && field.title) {
@@ -25,6 +43,21 @@ function getDisplayTitle(key: string, fieldSchema?: ResponseFieldDefinition[]): 
   }
   return key;
 }
+
+export const preferredInstanceCountKey = (
+  nodes: Array<{ key?: unknown; children?: unknown }>,
+): string | null => {
+  const found: string[] = [];
+  const walk = (list: Array<{ key?: unknown; children?: unknown }>) => {
+    list.forEach((node) => {
+      const key = String(node.key || '');
+      if (key === 'scope_count' || key.endsWith('.scope_count')) found.push(key);
+      if (Array.isArray(node.children)) walk(node.children as Array<{ key?: unknown; children?: unknown }>);
+    });
+  };
+  walk(nodes || []);
+  return found.find((key) => key.includes('.')) || found[0] || null;
+};
 
 /**
  * 构建树形数据结构
@@ -48,16 +81,30 @@ export const buildSchemaFieldTree = (
     }];
   });
 
+const collectLeafKeys = (nodes: TreeNode[], found = new Set<string>()) => {
+  nodes.forEach((node) => {
+    const key = String(node.key || '');
+    const leaf = key.split('.').pop();
+    if (leaf) found.add(leaf);
+    if (node.children?.length) collectLeafKeys(node.children, found);
+  });
+  return found;
+};
+
 export const mergeFieldTrees = (
   schemaTree: TreeNode[],
   sampleTree: TreeNode[],
 ): TreeNode[] => {
-  const sampleKeys = new Set(sampleTree.map((node) => String(node.key)));
-  const schemaOnly = schemaTree.filter((node) => !sampleKeys.has(String(node.key)));
+  const sampleKeys = collectLeafKeys(sampleTree);
+  const schemaOnly = schemaTree.filter((node) => !sampleKeys.has(String(node.key).split('.').pop()));
   return [...schemaOnly, ...sampleTree];
 };
 
-export const buildTreeData = (obj: unknown, fieldSchema?: ResponseFieldDefinition[]): TreeNode[] => {
+export const buildTreeData = (
+  obj: unknown,
+  fieldSchema?: ResponseFieldDefinition[],
+  options?: BuildTreeOptions,
+): TreeNode[] => {
   if (typeof obj !== 'object' || obj === null) {
     return [];
   }
@@ -67,7 +114,7 @@ export const buildTreeData = (obj: unknown, fieldSchema?: ResponseFieldDefinitio
   if (Array.isArray(obj) && obj.length > 0) {
     const firstElement = obj[0];
     if (typeof firstElement === 'object' && firstElement !== null) {
-      return buildTreeData(firstElement, fieldSchema);
+      return buildTreeData(firstElement, fieldSchema, { envelopeCountLabel: undefined });
     } else {
       return [
         {
@@ -84,12 +131,34 @@ export const buildTreeData = (obj: unknown, fieldSchema?: ResponseFieldDefinitio
   Object.keys(obj).forEach((key) => {
     const value = (obj as Record<string, unknown>)[key];
 
+    const envelopeCountLabel = key === 'count'
+      && Array.isArray((obj as Record<string, unknown>).items)
+      && !Array.isArray(value)
+      ? options?.envelopeCountLabel
+      : undefined;
+
+    if (Array.isArray(value) && value.length > 0 && value[0] && typeof value[0] === 'object') {
+      const children = buildTreeData(value[0], fieldSchema, { envelopeCountLabel: undefined });
+      if (children.length > 0) {
+        treeNodes.push({
+          title: getDisplayTitle(key, fieldSchema),
+          key,
+          children: children.map((child) => ({
+            ...child,
+            key: `${key}.${child.key}`,
+            value: `${key}.${child.value || child.key}`,
+          })),
+        });
+        return;
+      }
+    }
+
     if (
       typeof value === 'object' &&
       value !== null &&
       !Array.isArray(value)
     ) {
-      const children = buildTreeData(value, fieldSchema);
+      const children = buildTreeData(value, fieldSchema, options);
       if (children.length > 0) {
         treeNodes.push({
           title: getDisplayTitle(key, fieldSchema),
@@ -103,7 +172,7 @@ export const buildTreeData = (obj: unknown, fieldSchema?: ResponseFieldDefinitio
       }
     } else {
       treeNodes.push({
-        title: getDisplayTitle(key, fieldSchema),
+        title: getDisplayTitle(key, fieldSchema, envelopeCountLabel),
         key: key,
         value: key,
         isLeaf: true,

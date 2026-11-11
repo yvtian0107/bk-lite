@@ -27,7 +27,11 @@ import {
   type CardListAccentStyle,
 } from '@/app/ops-analysis/utils/cardList';
 import { buildPersistedNetworkStatusTopologyConfig } from '@/app/ops-analysis/utils/networkStatusTopologyLayout';
-import { validateComponentSwitchParams } from '@/app/ops-analysis/utils/componentParamSwitch';
+import {
+  isComponentSwitchCandidate,
+  supportsComponentSwitch,
+  validateComponentSwitchParams,
+} from '@/app/ops-analysis/utils/componentParamSwitch';
 import { persistRoom3DConfig } from '@/app/ops-analysis/utils/room3DConfig';
 import {
   APPLICATION_TOPOLOGY_DEPTH_FILTER_ID,
@@ -204,6 +208,35 @@ const applyInteractionLink = (
     delete result.interaction;
   }
   delete result.actions;
+};
+
+const withoutComponentSwitch = (param: ParamItem): ParamItem => {
+  const inputConfig = param.inputConfig;
+  if (!inputConfig || !('componentSwitch' in inputConfig)) return param;
+  const nextInputConfig = { ...inputConfig } as Record<string, unknown>;
+  delete nextInputConfig.componentSwitch;
+  return { ...param, inputConfig: nextInputConfig as ParamItem['inputConfig'] };
+};
+
+/**
+ * 不支持组件内切换的图表无法在参数齿轮里关掉继承来的开关。
+ * 多于一个时这些开关不会生效，提交前去掉，避免挡住保存。
+ * 只剩一个时保留；支持切换的图表仍拒绝多个开关。
+ */
+const withInapplicableComponentSwitchesRemoved = (
+  chartType: string,
+  values: WidgetConfigFormValues,
+): WidgetConfigFormValues => {
+  const params = values.dataSourceParams;
+  if (!params || supportsComponentSwitch(chartType) || !validateComponentSwitchParams(params)) {
+    return values;
+  }
+  return {
+    ...values,
+    dataSourceParams: params.map((param) => (
+      isComponentSwitchCandidate(param) ? withoutComponentSwitch(param) : param
+    )),
+  };
 };
 
 const buildWidgetConfigBase = (
@@ -702,8 +735,9 @@ export const buildWidgetSubmitConfig = ({
     return { config };
   }
 
-  const result: WidgetConfig = buildWidgetConfigBase(values, chartType);
-  if (validateComponentSwitchParams(values.dataSourceParams) && !forPreview) {
+  const submittedValues = withInapplicableComponentSwitchesRemoved(chartType, values);
+  const result: WidgetConfig = buildWidgetConfigBase(submittedValues, chartType);
+  if (validateComponentSwitchParams(submittedValues.dataSourceParams) && !forPreview) {
     return { error: 'multipleComponentSwitchParams' };
   }
 

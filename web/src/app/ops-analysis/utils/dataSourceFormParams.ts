@@ -10,6 +10,8 @@ export type DataSourceFormParamValue =
   | boolean
   | Dayjs
   | Array<string | number>
+  | Array<Record<string, unknown>>
+  | Record<string, unknown>
   | [number, number]
   | DateRangeValue
   | null
@@ -90,9 +92,10 @@ export const processDataSourceFormParamsForSubmit = (
       && (typeof value === 'string'
         || typeof value === 'number'
         || typeof value === 'boolean'
-        || Array.isArray(value))
+        || Array.isArray(value)
+        || (param.type === 'object' && typeof value === 'object'))
     ) {
-      processedParams[param.name] = value;
+      processedParams[param.name] = value as SubmittedParamValue;
     }
   });
 

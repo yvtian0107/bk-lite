@@ -62,7 +62,7 @@ export const parseTableLikeData = <RecordType extends Record<string, any>>(
         pageSize: queryPagination.pageSize,
         total: hasValidTotal ? total : items.length,
       },
-      isPaginated: supportsPagination && hasValidTotal,
+      isPaginated: supportsPagination && hasValidTotal && total > items.length,
     };
   }
 
@@ -114,12 +114,25 @@ interface TableLikeColumnConfigItem {
   order: number;
 }
 
+export const responseFieldsOf = (rawData: unknown): ResponseFieldDefinition[] => {
+  if (!rawData || typeof rawData !== 'object' || Array.isArray(rawData)) return [];
+  const fields = (rawData as { fields?: unknown }).fields;
+  if (!Array.isArray(fields)) return [];
+  return fields.filter((field): field is ResponseFieldDefinition => (
+    Boolean(field)
+    && typeof field === 'object'
+    && typeof (field as ResponseFieldDefinition).key === 'string'
+    && (field as ResponseFieldDefinition).key.trim().length > 0
+  ));
+};
+
 interface ResolveTableLikeColumnsInput<
   RecordType extends Record<string, any>,
   ColumnType extends TableLikeColumnConfigItem,
 > {
   configuredColumns?: ColumnType[];
   schemaFields?: ResponseFieldDefinition[];
+  responseFields?: ResponseFieldDefinition[];
   rows: RecordType[];
 }
 
@@ -129,10 +142,36 @@ export function resolveTableLikeColumns<
 >({
   configuredColumns = [],
   schemaFields = [],
+  responseFields = [],
   rows,
 }: ResolveTableLikeColumnsInput<RecordType, ColumnType>): ColumnType[] {
+  const fromResponse = (fields: ResponseFieldDefinition[], start = 0): ColumnType[] =>
+    fields.map(
+      (field, index) =>
+        ({
+          key: field.key,
+          title: field.title || field.key,
+          visible: true,
+          order: start + index,
+        }) as ColumnType,
+    );
+
   if (configuredColumns.length > 0) {
-    return [...configuredColumns].sort((a, b) => a.order - b.order);
+    const sorted = [...configuredColumns].sort((a, b) => a.order - b.order);
+    const known = new Set(sorted.map((column) => column.key));
+    const nextOrder = sorted.reduce((max, column) => Math.max(max, column.order), -1) + 1;
+    const extra = fromResponse(
+      responseFields.filter((field) => {
+        const key = field.key.trim();
+        return key && !key.startsWith('_') && !known.has(key);
+      }),
+      nextOrder,
+    );
+    return extra.length ? [...sorted, ...extra] : sorted;
+  }
+
+  if (responseFields.length > 0) {
+    return fromResponse(responseFields.filter((field) => !field.key.trim().startsWith('_')));
   }
 
   if (schemaFields.length > 0) {

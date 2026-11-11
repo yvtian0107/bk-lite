@@ -1,3 +1,4 @@
+import type { ParamVisibilityRule } from '@/app/ops-analysis/utils/paramVisibility';
 import type { DateRangeValue } from '@/app/ops-analysis/types/dateRange';
 
 export type ChartType =
@@ -129,6 +130,8 @@ export type DataSourceParamFilterType =
 export interface InputOption {
   label: string;
   value: string | number;
+  /** 选项查询整行。只有声明 keepItem 的目录控件会带上，普通下拉保持原样。 */
+  extra?: Record<string, unknown>;
 }
 
 export interface RestApiSourceRef {
@@ -149,7 +152,7 @@ export type OptionsQueryParamValue =
   | number
   | boolean
   | null
-  | { ref: string };
+  | { ref: string; whenEmpty?: 'omit' };
 
 export interface DynamicOptionsSource {
   type: 'dynamic';
@@ -159,6 +162,8 @@ export interface DynamicOptionsSource {
   labelField: string;
   /** 选项查询请求参数。值为字面量或 { ref }；YAML 整值 $name$ / $name:type$ 读入时归一成 { ref }。 */
   queryParams?: Record<string, OptionsQueryParamValue>;
+  /** 为真时选项保留源行，供条件目录读取运算符和枚举。默认不带，避免改变已有选项比较。 */
+  keepItem?: boolean;
 }
 
 export type InputControlConfig =
@@ -176,17 +181,39 @@ export type InputControlConfig =
     maxCount?: number;
     /** select 专用：dropdown 为默认下拉；table 点击后弹表格批量勾选 */
     picker?: 'dropdown' | 'table';
+    /** drop 会清掉不在选项里的值。retain 保留失效值，交给校验阻止提交。 */
+    missingOptionPolicy?: 'drop' | 'retain';
+  }
+  | {
+    control: 'condition';
+    optionsSource: DynamicOptionsSource;
+  }
+  | {
+    control: 'fieldGroup';
+    variant: 'group' | 'metrics';
+    optionsSource: DynamicOptionsSource;
+  }
+  | {
+    control: 'order';
+    optionsSource: DynamicOptionsSource | StaticOptionsSource;
   };
 
 export interface ParamItem {
   id?: string;
   name: string;
-  value: string | number | boolean | Array<string | number> | [number, number] | DateRangeValue | null | undefined;
+  value: string | number | boolean | Array<string | number> | Array<Record<string, unknown>> | Record<string, unknown> | [number, number] | DateRangeValue | null | undefined;
   alias_name: string;
   type?: string;
   filterType?: DataSourceParamFilterType;
   desc?: string;
   required?: boolean;
+  /** 与 requiredWhen 同一套规则。隐藏项仍留在编辑草稿里，但不会进入当前请求。 */
+  visibleWhen?: ParamVisibilityRule;
+  requiredWhen?: ParamVisibilityRule;
+  /** 查询表单里收到「更多」。没有这项的数据源仍按原顺序平铺。 */
+  formSection?: 'more';
+  /** extra 把说明放在控件下方；缺省仍是问号提示。 */
+  descPlacement?: 'tooltip' | 'extra';
   /**
    * 旧字段：手动下拉选项，只读兼容历史数据；
    * 新配置写入 inputConfig。

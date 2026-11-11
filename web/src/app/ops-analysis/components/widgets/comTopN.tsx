@@ -23,6 +23,7 @@ import {
   scaleScreenMetric,
 } from './shared/screenMetrics';
 import { isTopNContentReady, resolveTopNContentState } from '@/app/ops-analysis/utils/topNContentState';
+import PageSliceNotice from '@/app/ops-analysis/components/pageSliceNotice';
 import { formatVisibleChartValue } from '@/app/ops-analysis/utils/chartValueFormat';
 import {
   buildTopNItems,
@@ -284,6 +285,7 @@ const TopN: React.FC<TopNProps> = ({
 
   return (
     <div className="flex h-full min-h-0 flex-col">
+      <PageSliceNotice rawData={rawData} messageKey="dashboard.topNSliceNotice" />
       {componentSwitchControl ? (
         <div className="shrink-0 overflow-x-auto px-3 pt-2">
           {componentSwitchControl}

@@ -392,6 +392,43 @@ def test_init_source_api_data_retires_room3d_builtin_datasources(settings, caplo
 
 
 @pytest.mark.django_db
+def test_init_source_api_data_keeps_legacy_instance_detail_source(settings):
+    settings.NATS_SERVERS = "nats://admin:secret@127.0.0.1:4222"
+    call_command("init_default_namespace")
+    legacy = DataSourceAPIModel.objects.create(
+        name="CMDB 实例明细",
+        rest_api="cmdb/list_model_instances",
+        chart_type=["table"],
+        is_build_in=True,
+        is_active=True,
+        build_in_key="CMDB 实例明细::cmdb/list_model_instances",
+        created_by="system",
+        updated_by="system",
+    )
+
+    call_command("init_source_api_data")
+    legacy.refresh_from_db()
+    assert legacy.is_active is True
+    assert legacy.chart_type == ["table"]
+    assert legacy.build_in_key == "CMDB 实例明细::cmdb/list_model_instances"
+
+    call_command("init_source_api_data", rest_api=["cmdb/query_model_instances"])
+    legacy.refresh_from_db()
+    query = DataSourceAPIModel.objects.get(rest_api="cmdb/query_model_instances")
+    assert query.is_active is True
+    assert "table" in query.chart_type
+    assert legacy.is_active is True
+    assert legacy.chart_type == ["table"]
+
+    call_command("init_source_api_data")
+    legacy.refresh_from_db()
+    query.refresh_from_db()
+    assert legacy.is_active is True
+    assert legacy.chart_type == ["table"]
+    assert query.is_active is True
+
+
+@pytest.mark.django_db
 def test_init_source_api_data_creates_cloud_cost_distribution_contract(settings):
     settings.NATS_SERVERS = "nats://admin:secret@127.0.0.1:4222"
     call_command("init_default_namespace")
@@ -765,6 +802,93 @@ def test_init_default_groups_without_default_group_returns_early():
     Group.objects.filter(name="Default").delete()
     call_command("init_default_groups")
     assert True
+
+
+@pytest.mark.django_db
+def test_targeted_rest_api_updates_builtin_query_sources_without_force(settings):
+    settings.NATS_SERVERS = "nats://admin:secret@127.0.0.1:4222"
+    call_command("init_default_namespace")
+    stale_model = {
+        "name": "model_ids",
+        "type": "string",
+        "value": [],
+        "alias_name": "旧模型",
+        "filterType": "params",
+        "required": False,
+    }
+    builtin = DataSourceAPIModel.objects.create(
+        name="CMDB 实例查询",
+        rest_api="cmdb/query_model_instances",
+        build_in_key="CMDB 实例查询::cmdb/query_model_instances",
+        is_build_in=True,
+        params=[stale_model],
+        created_by="system",
+        updated_by="system",
+    )
+    options = DataSourceAPIModel.objects.create(
+        name="CMDB 模型列表（选项）",
+        rest_api="cmdb/get_model_options",
+        build_in_key="CMDB 模型列表::cmdb/get_model_options",
+        is_build_in=True,
+        params=[{"name": "classification_ids", "type": "string", "value": [], "filterType": "fixed"}],
+        created_by="system",
+        updated_by="system",
+    )
+    fields = DataSourceAPIModel.objects.create(
+        name="CMDB 实例查询字段（选项）",
+        rest_api="cmdb/get_instance_query_fields",
+        build_in_key="CMDB 实例查询字段::cmdb/get_instance_query_fields",
+        is_build_in=True,
+        params=[{"name": "model_ids", "type": "string", "value": [], "filterType": "fixed"}],
+        created_by="system",
+        updated_by="system",
+    )
+    custom = DataSourceAPIModel.objects.create(
+        name="我的实例查询",
+        rest_api="cmdb/query_model_instances",
+        desc="用户自定义同接口",
+        params=[dict(stale_model)],
+        is_build_in=False,
+        created_by="user",
+        updated_by="user",
+    )
+
+    call_command("init_source_api_data")
+    builtin.refresh_from_db()
+    options.refresh_from_db()
+    fields.refresh_from_db()
+    custom.refresh_from_db()
+    assert builtin.params[0]["alias_name"] == "旧模型"
+    assert options.params[0]["filterType"] == "fixed"
+    assert fields.params[0]["filterType"] == "fixed"
+    assert custom.desc == "用户自定义同接口"
+    assert custom.params[0]["alias_name"] == "旧模型"
+
+    call_command(
+        "init_source_api_data",
+        rest_api=[
+            "cmdb/query_model_instances",
+            "cmdb/get_model_options",
+            "cmdb/get_instance_query_fields",
+        ],
+    )
+    builtin.refresh_from_db()
+    options.refresh_from_db()
+    fields.refresh_from_db()
+    custom.refresh_from_db()
+    model = next(item for item in builtin.params if item["name"] == "model_ids")
+    assert model["required"] is True
+    assert model["inputConfig"]["optionsSource"]["queryParams"]["classification_ids"]["whenEmpty"] == "omit"
+    assert options.params[0]["filterType"] == "params"
+    assert {item["name"]: item["filterType"] for item in fields.params} == {
+        "classification_ids": "params",
+        "model_ids": "params",
+        "analysis_mode": "params",
+    }
+    assert custom.desc == "用户自定义同接口"
+    assert custom.is_build_in is False
+    assert custom.params[0]["alias_name"] == "旧模型"
+    assert custom.pk != builtin.pk
 
 
 # --------------------------------------------------------------------------
