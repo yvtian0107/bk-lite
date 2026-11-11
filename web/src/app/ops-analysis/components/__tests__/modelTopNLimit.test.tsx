@@ -5,6 +5,7 @@ import { Button, Form } from 'antd';
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import DataSourceParamsConfig from '@/app/ops-analysis/components/paramsConfig';
 import type { DatasourceItem, ParamItem } from '@/app/ops-analysis/types/dataSource';
+import { processDataSourceParams } from '@/app/ops-analysis/utils/widgetDataTransform';
 
 vi.mock('@/app/ops-analysis/api/dataSource', () => ({
   useDataSourceApi: () => ({
@@ -15,10 +16,7 @@ vi.mock('@/app/ops-analysis/api/dataSource', () => ({
 
 vi.mock('@/utils/i18n', () => ({
   useTranslation: () => ({
-    t: (key: string, fallback?: string, values?: Record<string, unknown>) => {
-      const template = fallback || key;
-      return template.replace(/\{(\w+)\}/g, (_match, name: string) => String(values?.[name] ?? ''));
-    },
+    t: (key: string, fallback?: string) => fallback || key,
   }),
 }));
 
@@ -49,118 +47,97 @@ const source = {
       alias_name: '分析方式',
       type: 'string',
       filterType: 'params',
-      value: 'detail',
-      hidden: true,
+      value: 'distribution',
       inputConfig: {
         control: 'select',
         optionsSource: {
           type: 'static',
           staticItems: [
-            { label: '明细', value: 'detail', charts: ['table'], result: { structure: 'table' } },
-            { label: '计数', value: 'count', charts: ['single'], result: { structure: 'value' } },
-            { label: '分布', value: 'distribution', charts: ['bar', 'pie', 'topN'], result: { structure: 'category' } },
+            { label: '明细', value: 'detail' },
+            { label: '计数', value: 'count' },
+            { label: '分布', value: 'distribution' },
           ],
         },
       },
     },
     {
-      name: 'top_n',
-      alias_name: '展示前几名',
+      name: 'page',
+      alias_name: '页码',
       type: 'number',
       filterType: 'params',
-      value: 10,
-      integer: true,
-      maximum: 500,
-      required: true,
-      visible_modes: ['distribution'],
-      visible_charts: ['topN'],
+      value: null,
+    },
+    {
+      name: 'page_size',
+      alias_name: '每页条数',
+      type: 'number',
+      filterType: 'params',
+      value: null,
     },
   ] as ParamItem[],
 } as DatasourceItem;
 
 const Harness = () => {
   const [form] = Form.useForm();
-  const [message, setMessage] = useState('');
-  const [stored, setStored] = useState('');
+  const [chartType, setChartType] = useState('topN');
+  const pageSize = Form.useWatch(['params', 'page_size'], { form, preserve: true });
   useEffect(() => {
-    form.setFieldsValue({ chartType: 'topN', params: { analysis_mode: 'detail', top_n: 10 } });
+    form.setFieldsValue({
+      chartType: 'topN',
+      params: { analysis_mode: 'distribution', page: null, page_size: 10 },
+    });
   }, [form]);
+  const request = processDataSourceParams({
+    sourceParams: source.params,
+    userParams: form.getFieldsValue(true)?.params,
+    chartType,
+  });
   return (
     <Form form={form} layout="vertical">
       <DataSourceParamsConfig selectedDataSource={source} />
-      <Button onClick={() => form.setFieldValue('chartType', 'bar')}>切到柱状图</Button>
-      <Button onClick={() => form.setFieldValue('chartType', 'topN')}>切回排行榜</Button>
-      <Button
-        onClick={() => {
-          setStored(String(form.getFieldValue(['params', 'top_n'])));
-        }}
+      <Button onClick={() => {
+        setChartType('bar');
+        form.setFieldValue('chartType', 'bar');
+      }}
       >
-        读取名次
+        切到柱状图
       </Button>
-      <Button
-        onClick={async () => {
-          try {
-            await form.validateFields();
-            setMessage('ok');
-          } catch (error) {
-            const fields = (error as { errorFields?: Array<{ errors?: string[] }> }).errorFields;
-            setMessage(fields?.[0]?.errors?.[0] || 'failed');
-          }
-        }}
+      <Button onClick={() => {
+        setChartType('pie');
+        form.setFieldValue('chartType', 'pie');
+      }}
       >
-        校验名次
+        切到饼图
       </Button>
-      <div data-testid="stored">{stored}</div>
-      <div data-testid="message">{message}</div>
+      <div data-testid="page-size">{pageSize === undefined || pageSize === null ? '' : String(pageSize)}</div>
+      <div data-testid="request">{JSON.stringify(request)}</div>
     </Form>
   );
 };
 
-describe('model ranking limit control', () => {
-  it('shows the limit only on the ranking chart and keeps the value across switches', async () => {
+describe('model paging stays on ranking, bar and pie', () => {
+  it('keeps the page size when the chart changes and omits it after clearing', async () => {
     render(<Harness />);
-    const input = await screen.findByRole('spinbutton');
-    expect((input as HTMLInputElement).value).toBe('10');
-    expect(screen.getByText('展示前几名')).toBeTruthy();
+    const inputs = await screen.findAllByRole('spinbutton');
+    expect(screen.queryByText('展示前几名')).toBeNull();
+    expect(inputs).toHaveLength(2);
+    expect((inputs[1] as HTMLInputElement).value).toBe('10');
 
-    fireEvent.change(input, { target: { value: '5' } });
     fireEvent.click(screen.getByRole('button', { name: '切到柱状图' }));
     await waitFor(() => {
-      expect(screen.queryByRole('spinbutton')).toBeNull();
+      expect(screen.getByTestId('page-size').textContent).toBe('10');
     });
-    fireEvent.click(screen.getByRole('button', { name: '读取名次' }));
-    expect(screen.getByTestId('stored').textContent).toBe('5');
+    expect(JSON.parse(screen.getByTestId('request').textContent || '{}').page_size).toBe(10);
+    expect(JSON.parse(screen.getByTestId('request').textContent || '{}').analysis_mode).toBe('distribution');
 
-    fireEvent.click(screen.getByRole('button', { name: '切回排行榜' }));
-    const restored = await screen.findByRole('spinbutton');
-    expect((restored as HTMLInputElement).value).toBe('5');
-  });
-
-  it('rejects zero, decimals and values above the group limit', async () => {
-    render(<Harness />);
-    const input = await screen.findByRole('spinbutton');
-    fireEvent.change(input, { target: { value: '0' } });
-    fireEvent.click(screen.getByRole('button', { name: '校验名次' }));
+    fireEvent.click(screen.getByRole('button', { name: '切到饼图' }));
+    const pieInputs = screen.getAllByRole('spinbutton');
+    fireEvent.change(pieInputs[1], { target: { value: '' } });
     await waitFor(() => {
-      expect(screen.getByTestId('message').textContent).toBe('展示前几名必须是 1 到 500 的正整数');
+      expect(screen.getByTestId('page-size').textContent).toBe('');
     });
-
-    fireEvent.change(input, { target: { value: '1.5' } });
-    fireEvent.click(screen.getByRole('button', { name: '校验名次' }));
-    await waitFor(() => {
-      expect(screen.getByTestId('message').textContent).toBe('展示前几名必须是 1 到 500 的正整数');
-    });
-
-    fireEvent.change(input, { target: { value: '501' } });
-    fireEvent.click(screen.getByRole('button', { name: '校验名次' }));
-    await waitFor(() => {
-      expect(screen.getByTestId('message').textContent).toBe('展示前几名必须是 1 到 500 的正整数');
-    });
-
-    fireEvent.change(input, { target: { value: '5' } });
-    fireEvent.click(screen.getByRole('button', { name: '校验名次' }));
-    await waitFor(() => {
-      expect(screen.getByTestId('message').textContent).toBe('ok');
-    });
+    const request = JSON.parse(screen.getByTestId('request').textContent || '{}');
+    expect(request.page_size).toBeUndefined();
+    expect(request.analysis_mode).toBe('distribution');
   });
 });

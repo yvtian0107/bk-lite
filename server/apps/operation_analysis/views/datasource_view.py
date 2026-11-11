@@ -510,7 +510,7 @@ def _normalize_runtime_params(request_data):
     if "namespace_id" in request_data:
         runtime_params["namespace_id"] = request_data["namespace_id"]
 
-    if "page" in request_data:
+    if "page" in request_data and request_data["page"] not in (None, ""):
         try:
             page = int(request_data["page"])
         except (TypeError, ValueError):
@@ -519,7 +519,7 @@ def _normalize_runtime_params(request_data):
             raise ValueError(oa_message("messages.page_must_be_positive", "参数 page 必须大于 0"))
         runtime_params["page"] = page
 
-    if "page_size" in request_data:
+    if "page_size" in request_data and request_data["page_size"] not in (None, ""):
         try:
             page_size = int(request_data["page_size"])
         except (TypeError, ValueError):
@@ -555,31 +555,6 @@ def _unspecified_host_top_instance_ids(instance, param_name, default_value):
     return getattr(instance, "rest_api", None) == "monitor/get_host_resource_top" and param_name == "instance_ids" and default_value == []
 
 
-def _effective_analysis_mode(allowed_specs, sanitized_request) -> str:
-    raw = sanitized_request.get("analysis_mode")
-    if raw not in (None, ""):
-        return str(raw)
-    spec = allowed_specs.get("analysis_mode")
-    if isinstance(spec, dict) and spec.get("value") not in (None, ""):
-        return str(spec.get("value"))
-    return ""
-
-
-def _skip_omitted_default(spec, analysis_mode: str) -> bool:
-    """图表专属参数和当前分析方式不可见的参数，省略时不回填默认值。
-
-    客户端显式传来的值仍原样下发。分布请求因此不会被种子里的 page=1 或
-    排行榜 top_n=10 重新截断。
-    """
-    charts = spec.get("visible_charts")
-    if isinstance(charts, list) and charts:
-        return True
-    modes = spec.get("visible_modes")
-    if isinstance(modes, list) and modes and analysis_mode not in modes:
-        return True
-    return False
-
-
 def _resolve_request_params(instance, request_data):
     configured_params = instance.params if isinstance(instance.params, list) else []
     allowed_specs = {
@@ -594,7 +569,6 @@ def _resolve_request_params(instance, request_data):
         sanitized_request.pop("group_by", None)
         allowed_specs.pop("group_by", None)
 
-    analysis_mode = _effective_analysis_mode(allowed_specs, sanitized_request)
     allowed_request_keys = set(allowed_specs.keys()) | RUNTIME_ALLOWED_KEYS
     unknown_keys = sorted(str(key) for key in sanitized_request.keys() if key not in allowed_request_keys)
     if unknown_keys:
@@ -610,14 +584,17 @@ def _resolve_request_params(instance, request_data):
             raw_value = default_value
         elif param_name in sanitized_request:
             raw_value = sanitized_request[param_name]
+            # 明确空值不传，也不回填种子默认值。否则清空的分页会被补回，计数一直失败。
+            if raw_value in (None, ""):
+                continue
             # timeRange 空值视为"无过滤"跳过,避免 _normalize_time_range("") 抛 ValueError
             # 导致整个请求 400(空字符串、null、空数组都被视为"未选时段")
-            if param_type == "timeRange" and raw_value in (None, "", [], {}):
+            if param_type == "timeRange" and raw_value in ([], {}):
                 continue
-        elif (
-            default_value not in (None, "")
-            and not _unspecified_host_top_instance_ids(instance, param_name, default_value)
-            and not _skip_omitted_default(spec, analysis_mode)
+        elif default_value not in (None, "") and not _unspecified_host_top_instance_ids(
+            instance,
+            param_name,
+            default_value,
         ):
             raw_value = default_value
         else:

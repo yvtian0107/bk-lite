@@ -7,7 +7,6 @@ from types import SimpleNamespace
 import pytest
 
 from apps.alerts.constants.constants import AlertStatus, EventLevel, EventStatus
-from apps.cmdb.services.generic_query_limits import STAT_GROUP_MAX
 from apps.monitor.models.monitor_policy import MonitorAlert, MonitorEvent
 
 SEED = Path(__file__).resolve().parents[1] / "support-files" / "source_api.json"
@@ -65,10 +64,10 @@ def test_generic_query_seed_declares_analysis_modes_and_paging_defaults():
             assert has_page is False
         else:
             assert has_page is True
-            assert _param(source, "page")["value"] == 1
-            assert _param(source, "page_size")["value"] == 20
-            assert _param(source, "page")["visible_modes"] == ["detail"]
-            assert _param(source, "page_size")["visible_modes"] == ["detail"]
+            assert _param(source, "page")["value"] is None
+            assert _param(source, "page_size")["value"] is None
+            assert "visible_modes" not in _param(source, "page")
+            assert "visible_charts" not in _param(source, "page_size")
 
 
 def test_generic_query_seed_enums_match_module_constants():
@@ -117,10 +116,16 @@ def test_generic_query_seed_uses_chart_driven_filters_and_order():
         modes = {item["value"]: item["charts"] for item in _param(source, "analysis_mode")["inputConfig"]["optionsSource"]["staticItems"]}
         assert "topN" not in modes["detail"]
         assert "topN" in modes["distribution"]
-        assert _param(source, "order")["inputConfig"]["control"] == "order"
-    assert _param(models, "result_filter")["inputConfig"]["control"] == "conditionFilter"
-    assert "distribution" in _param(models, "result_filter")["visible_modes"]
-    assert _param(models, "result_op")["hidden"] is True
+        names = [param["name"] for param in source["params"]]
+        if rest_api == "cmdb/query_cmdb_models":
+            assert "order" not in names
+        else:
+            assert _param(source, "order")["inputConfig"]["control"] == "order"
+    model_names = [param["name"] for param in models["params"]]
+    assert "result_filter" not in model_names
+    assert "result_op" not in model_names
+    assert "count_metric" not in model_names
+    assert "top_n" not in model_names
     assert _param(sources["cmdb/query_cmdb_instances"], "filters")["inputConfig"]["fields"]["kind"] == "modelAttrs"
     assert _param(sources["cmdb/query_cmdb_one_hop"], "end_filters")["inputConfig"]["fields"]["kind"] == "endModelAttrs"
     assert _param(sources["alert/query_alert_center"], "filters")["type"] == "conditionFilter"
@@ -182,42 +187,24 @@ def test_model_query_schema_matches_detail_rows_without_touching_other_status():
         "instance_count",
     ]
     assert "各模型权限内实例数" in models["desc"]
-    assert "默认 10" in models["desc"]
+    assert "每页 10" in models["desc"]
     assert "分类汇总" not in models["desc"]
-    assert "默认模型数量" in models["desc"]
-    assert "实例总数" in models["desc"]
+    assert "模型数量" in models["desc"]
+    assert "实例总数" not in models["desc"]
+    assert "空模型" not in models["desc"]
+    assert "非空" not in models["desc"]
     assert "TOP5" not in models["desc"]
-    metric = _param(models, "count_metric")
-    assert metric["alias_name"] == "统计内容"
-    assert metric["type"] == "string"
-    assert metric["value"] == "model_count"
-    assert metric["filterType"] == "params"
-    assert metric["visible_modes"] == ["count"]
-    assert metric.get("visible_charts") in (None, [])
-    assert metric.get("hidden") is not True
-    assert metric["inputConfig"]["control"] == "select"
-    assert [(item["value"], item["label"]) for item in metric["inputConfig"]["optionsSource"]["staticItems"]] == [
-        ("model_count", "模型数量"),
-        ("instance_total", "实例总数"),
-    ]
-    top_n = _param(models, "top_n")
-    assert top_n["value"] == 10
-    assert top_n["alias_name"] == "展示前几名"
-    assert top_n["visible_modes"] == ["distribution"]
-    assert top_n["visible_charts"] == ["topN"]
-    assert top_n["integer"] is True
-    assert top_n["maximum"] == STAT_GROUP_MAX
-    assert _param(models, "order")["visible_charts"] == ["table", "bar", "pie"]
+    assert _param(models, "analysis_mode")["value"] == "detail"
+    assert _param(models, "page")["value"] is None
+    assert _param(models, "page_size")["value"] is None
     assert models["chart_type"] == ["table", "topN", "single", "bar", "pie"]
     assert models["rest_api"] == "cmdb/query_cmdb_models"
     for rest_api, source in sources.items():
         names = [param["name"] for param in source["params"]]
-        if rest_api == "cmdb/query_cmdb_models":
-            assert names.count("top_n") == 1
-            assert names.count("count_metric") == 1
-        else:
-            assert "top_n" not in names
-            assert "count_metric" not in names
+        assert "top_n" not in names
+        assert "count_metric" not in names
+        if rest_api != "cmdb/query_cmdb_models":
+            assert "result_filter" not in names
     alerts = sources["monitor/query_monitor_alerts"]
     center = sources["alert/query_alert_center"]
     assert "status" in {field["key"] for field in alerts["field_schema"]}
@@ -269,8 +256,21 @@ def test_model_query_resolver_keeps_explicit_values_and_skips_hidden_defaults():
     )
     explicit = _resolve_request_params(
         instance,
-        {"analysis_mode": "distribution", "page": 2, "page_size": 20, "top_n": 5},
+        {"analysis_mode": "distribution", "page": 2, "page_size": 20},
     )
+    cleared = _resolve_request_params(
+        instance,
+        {"analysis_mode": "count", "page": None, "page_size": ""},
+    )
+    refilled = SimpleNamespace(
+        rest_api="cmdb/query_cmdb_models",
+        params=[
+            {"name": "analysis_mode", "type": "string", "value": "count", "filterType": "params"},
+            {"name": "page", "type": "number", "value": 1, "filterType": "params"},
+            {"name": "page_size", "type": "number", "value": 10, "filterType": "params"},
+        ],
+    )
+    omitted = _resolve_request_params(refilled, {"analysis_mode": "count", "page": None, "page_size": ""})
     detail = _resolve_request_params(instance, {"analysis_mode": "detail"})
     legacy = SimpleNamespace(
         rest_api="legacy/query",
@@ -283,11 +283,11 @@ def test_model_query_resolver_keeps_explicit_values_and_skips_hidden_defaults():
 
     assert "page" not in distribution
     assert "page_size" not in distribution
-    assert "top_n" not in distribution
     assert explicit["page"] == 2
     assert explicit["page_size"] == 20
-    assert explicit["top_n"] == 5
-    assert detail["page"] == 1
-    assert detail["page_size"] == 20
-    assert "top_n" not in detail
+    assert "page" not in cleared
+    assert "page_size" not in cleared
+    assert omitted == {"analysis_mode": "count"}
+    assert "page" not in detail
+    assert "page_size" not in detail
     assert kept == {"page": 2, "page_size": 15}

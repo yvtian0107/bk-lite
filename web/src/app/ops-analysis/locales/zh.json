@@ -1152,6 +1152,14 @@
     "selectModel": "请选择模型",
     "selectInstance": "请选择实例",
     "dataFormatMismatch": "数据格式不匹配",
+    "structureMismatch": "当前结果结构是 {current}，这个图表需要 {required}。请修改分析方式或更换图表。",
+    "structureName": {
+      "table": "表格",
+      "value": "单值",
+      "category": "分类",
+      "series": "序列"
+    },
+    "piePageShare": "当前页占比，不是全部结果（第 {page} 页，每页 {pageSize}，共 {count} 项）",
     "optionPageLimitExceeded": "选项超过分页上限，无法继续加载",
     "selectClassificationFirst": "请先选择分类",
     "selectModelRelationFirst": "请先选择起点模型、关系和方向",
