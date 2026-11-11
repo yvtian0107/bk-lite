@@ -22,6 +22,12 @@ from apps.core.utils.condition_group import ConditionGroupError, parse_condition
 MODEL_MODES = ("detail", "count", "distribution")
 INSTANCE_MODES = ("detail", "count", "distribution", "aggregate")
 ONE_HOP_MODES = ("detail", "count", "distribution")
+MODEL_COUNT_METRIC = "model_count"
+INSTANCE_TOTAL_METRIC = "instance_total"
+_COUNT_METRICS = {
+    MODEL_COUNT_METRIC: "模型计数",
+    INSTANCE_TOTAL_METRIC: "实例总数",
+}
 
 _RESULT_OPS = {
     "gt": lambda left, right: left > right,
@@ -72,11 +78,16 @@ def query_models(
     result_op: str | None = None,
     result_value=None,
     result_filter=None,
+    count_metric: str | None = None,
     order: str | None = None,
     page=None,
     page_size=None,
 ) -> dict:
-    """模型查询。零实例模型保留为 0；统计超过扫描上限时失败。"""
+    """模型查询。零实例模型保留为 0；统计超过扫描上限时失败。
+
+    单值计数默认数模型。count_metric=instance_total 时改为这些模型权限内实例数之和。
+    明细和分布忽略 count_metric，避免切图后改口径。
+    """
     mode = _mode(analysis_mode, MODEL_MODES)
     if mode != "detail":
         _parse_page(page, page_size, enabled=False)
@@ -95,7 +106,11 @@ def query_models(
         _ensure_scan(scanned)
     rows = _apply_result_filter(rows, result_op, result_value, result_filter)
     if mode == "count":
-        return _value_payload(len(rows), unit="个", aggregation="模型计数")
+        metric = _resolve_count_metric(count_metric)
+        if metric == INSTANCE_TOTAL_METRIC:
+            total = sum(int(row["instance_count"]) for row in rows)
+            return _value_payload(total, unit="个", aggregation=_COUNT_METRICS[metric])
+        return _value_payload(len(rows), unit="个", aggregation=_COUNT_METRICS[MODEL_COUNT_METRIC])
     if mode == "distribution":
         # 分类和模型只缩小范围。每个可见模型一项，不再按分类把实例数加总。
         items = _model_distribution_items(rows)
@@ -461,6 +476,15 @@ def _attr_kind(attr_types: dict[str, str], field: str) -> str:
     if raw in _NUMBER_ATTR_TYPES:
         return "number"
     return "string"
+
+
+def _resolve_count_metric(value) -> str:
+    text = str(value or "").strip()
+    if not text:
+        return MODEL_COUNT_METRIC
+    if text not in _COUNT_METRICS:
+        raise GenericQueryError("统计内容不受支持")
+    return text
 
 
 def _mode(value: str | None, allowed: tuple[str, ...]) -> str:

@@ -9,6 +9,7 @@ import {
 import { mergeDetectedFieldsWithSchema } from '@/app/ops-analysis/components/widgetConfig/utils/columnProbing';
 import { resolveTableLikeColumns } from '@/app/ops-analysis/utils/tableLikeData';
 import { buildCompareRequestParams } from '@/app/ops-analysis/utils/compareQuery';
+import { processDataSourceFormParamsForSubmit } from '@/app/ops-analysis/utils/dataSourceFormParams';
 import {
   buildWidgetRequestParams,
   fetchWidgetData,
@@ -296,5 +297,71 @@ describe('chart requests drop paging outside detail', () => {
     const probed = mergeDetectedFieldsWithSchema(schema.map((field) => field.key), schema);
     assert.deepEqual(probed.map((column) => column.key), schema.map((field) => field.key));
     assert.equal(probed.some((column) => column.key === 'name' || column.key === 'value'), false);
+  });
+});
+
+const countMetricParam = (value: string = 'model_count'): ParamItem => ({
+  name: 'count_metric',
+  alias_name: '统计内容',
+  type: 'string',
+  filterType: 'params',
+  value,
+  visible_modes: ['count'],
+  inputConfig: {
+    control: 'select',
+    optionsSource: {
+      type: 'static',
+      staticItems: [
+        { label: '模型数量', value: 'model_count' },
+        { label: '实例总数', value: 'instance_total' },
+      ],
+    },
+  },
+});
+
+describe('model single-value count metric stays on the count request', () => {
+  it('sends the default only for single and drops it for bar, pie, ranking and table', () => {
+    const params = [...modelCatalog(), countMetricParam('instance_total')];
+    const single = buildWidgetRequestParams({
+      config: { chartType: 'single', dataSourceParams: params },
+      dataSource: { params: modelCatalog().concat(countMetricParam()) },
+    });
+    assert.equal(single.analysis_mode, 'count');
+    assert.equal(single.count_metric, 'instance_total');
+    assert.equal(single.page, undefined);
+    assert.equal(single.page_size, undefined);
+
+    for (const chartType of ['bar', 'pie', 'topN', 'table']) {
+      const request = buildWidgetRequestParams({
+        config: { chartType, dataSourceParams: params },
+        dataSource: { params },
+      });
+      assert.equal(request.count_metric, undefined, chartType);
+      assert.equal(request.page, chartType === 'table' ? 1 : undefined, chartType);
+      assert.equal(request.page_size, chartType === 'table' ? 20 : undefined, chartType);
+    }
+  });
+
+  it('keeps a saved metric while the request follows visible modes', () => {
+    const definition = [...modelCatalog(), countMetricParam()];
+    const saved = processDataSourceFormParamsForSubmit(
+      { count_metric: 'instance_total', analysis_mode: 'distribution', page: 2, page_size: 20 },
+      definition,
+    );
+    assert.equal(saved.find((param) => param.name === 'count_metric')?.value, 'instance_total');
+    const request = buildWidgetRequestParams({
+      config: { chartType: 'pie', dataSourceParams: saved },
+      dataSource: { params: definition },
+    });
+    assert.equal(request.analysis_mode, 'distribution');
+    assert.equal(request.count_metric, undefined);
+    assert.equal(request.page, undefined);
+    const back = buildWidgetRequestParams({
+      config: { chartType: 'single', dataSourceParams: saved },
+      dataSource: { params: definition },
+    });
+    assert.equal(back.analysis_mode, 'count');
+    assert.equal(back.count_metric, 'instance_total');
+    assert.equal(back.page, undefined);
   });
 });

@@ -182,6 +182,21 @@ def test_model_query_schema_matches_detail_rows_without_touching_other_status():
     ]
     assert "按模型给出权限内实例数" in models["desc"]
     assert "分类汇总" not in models["desc"]
+    assert "默认模型数量" in models["desc"]
+    metric = _param(models, "count_metric")
+    assert metric["alias_name"] == "统计内容"
+    assert metric["type"] == "string"
+    assert metric["value"] == "model_count"
+    assert metric["filterType"] == "params"
+    assert metric["visible_modes"] == ["count"]
+    assert metric.get("hidden") is not True
+    assert metric["inputConfig"]["control"] == "select"
+    assert [(item["value"], item["label"]) for item in metric["inputConfig"]["optionsSource"]["staticItems"]] == [
+        ("model_count", "模型数量"),
+        ("instance_total", "实例总数"),
+    ]
+    assert models["chart_type"] == ["table", "topN", "single", "bar", "pie"]
+    assert models["rest_api"] == "cmdb/query_cmdb_models"
     alerts = sources["monitor/query_monitor_alerts"]
     center = sources["alert/query_alert_center"]
     assert "status" in {field["key"] for field in alerts["field_schema"]}
