@@ -62,42 +62,33 @@ def test_model_detail_keeps_zero_instance_models_and_top_sort():
         ],
         instance_counts={"host": 5, "room": 0},
         analysis_mode="detail",
-        order="-instance_count",
         page=1,
         page_size=2,
     )
 
     assert rows["status"] == "ok"
     assert rows["count"] == 3
-    assert [item["model_id"] for item in rows["items"]] == ["host", "net"]
-    assert rows["items"][1]["instance_count"] == 0
+    assert [item["model_id"] for item in rows["items"]] == ["room", "host"]
+    assert rows["items"][0]["instance_count"] == 0
 
 
-def test_model_count_splits_empty_and_non_empty_without_dropping_zeros_first():
+def test_model_count_is_the_number_of_models_in_scope():
     models = [
         _model("host", "主机", "compute", "计算"),
         _model("net", "网络", "compute", "计算"),
     ]
     counts = {"host": 2, "net": 0}
-
-    non_empty = query_models(
+    counted = query_models(models=models, instance_counts=counts, analysis_mode="count")
+    narrowed = query_models(
         models=models,
         instance_counts=counts,
         analysis_mode="count",
-        result_op="gt",
-        result_value=0,
-    )
-    empty = query_models(
-        models=models,
-        instance_counts=counts,
-        analysis_mode="count",
-        result_op="eq",
-        result_value=0,
+        model_ids=["net"],
     )
 
-    assert non_empty == {"structure": "value", "status": "ok", "value": 1, "unit": "个", "aggregation": "模型计数"}
-    assert empty["value"] == 1
-    assert empty["status"] == "ok"
+    assert counted == {"structure": "value", "status": "ok", "value": 2, "unit": "个", "aggregation": "模型计数"}
+    assert narrowed["value"] == 1
+    assert narrowed["aggregation"] == "模型计数"
 
 
 def test_model_distribution_is_one_item_per_model_and_keeps_zero():
@@ -110,12 +101,6 @@ def test_model_distribution_is_one_item_per_model_and_keeps_zero():
         models=models,
         instance_counts={"host": 2, "net": 3},
         analysis_mode="distribution",
-    )
-    by_name = query_models(
-        models=models,
-        instance_counts={"host": 2, "net": 3},
-        analysis_mode="distribution",
-        order="name",
     )
     classified = query_models(
         models=models,
@@ -137,6 +122,9 @@ def test_model_distribution_is_one_item_per_model_and_keeps_zero():
     )
 
     assert payload["status"] == "ok"
+    assert payload["page"] == 1
+    assert payload["page_size"] == 10
+    assert payload["count"] == 3
     assert payload["unit"] == "个"
     assert payload["aggregation"] == "按模型统计权限内实例数，含零实例模型"
     assert payload["items"] == [
@@ -144,7 +132,6 @@ def test_model_distribution_is_one_item_per_model_and_keeps_zero():
         {"name": "主机", "model_id": "host", "value": 2},
         {"name": "机房", "model_id": "room", "value": 0},
     ]
-    assert [item["name"] for item in by_name["items"]] == ["主机", "机房", "网络"]
     assert [item["model_id"] for item in classified["items"]] == ["net", "host"]
     assert selected["items"] == [{"name": "机房", "model_id": "room", "value": 0}]
     assert counted["value"] == 2
@@ -171,35 +158,16 @@ def test_model_distribution_keeps_ties_and_disambiguates_duplicate_names():
     ]
 
 
-def test_model_distribution_rejects_paging_and_group_limit():
-    with pytest.raises(GenericQueryError, match="不支持分页"):
-        query_models(
-            models=[_model("host", "主机", "compute", "计算")],
-            instance_counts={"host": 1},
-            analysis_mode="distribution",
-            page=1,
-            page_size=20,
-        )
-    too_many = [_model(f"m{index}", f"模型{index}", "compute", "计算") for index in range(STAT_GROUP_MAX + 1)]
-    with pytest.raises(GenericQueryError, match=str(STAT_GROUP_MAX)):
-        query_models(
-            models=too_many,
-            instance_counts={},
-            analysis_mode="distribution",
-        )
-
-
-def test_model_ranking_limits_after_filter_and_keeps_ties():
+def test_model_distribution_counts_everything_then_pages():
     models = [_model(f"m{index:02d}", f"模型{index:02d}", "compute", "计算") for index in range(12)]
     counts = {model["model_id"]: 100 - index for index, model in enumerate(models)}
-    full = query_models(models=models, instance_counts=counts, analysis_mode="distribution")
-    top_ten = query_models(models=models, instance_counts=counts, analysis_mode="distribution", top_n=10)
-    top_five = query_models(models=models, instance_counts=counts, analysis_mode="distribution", top_n="5")
+    first = query_models(models=models, instance_counts=counts, analysis_mode="distribution")
+    second = query_models(models=models, instance_counts=counts, analysis_mode="distribution", page=2, page_size=10)
+    blank = query_models(models=models, instance_counts=counts, analysis_mode="distribution", page=3, page_size=10)
     short = query_models(
         models=models[:3],
         instance_counts={"m00": 2, "m01": 0, "m02": 1},
         analysis_mode="distribution",
-        top_n=10,
     )
     tied = query_models(
         models=[
@@ -209,67 +177,36 @@ def test_model_ranking_limits_after_filter_and_keeps_ties():
         ],
         instance_counts={"b": 4, "a": 4, "c": 1},
         analysis_mode="distribution",
-        order="name",
-        top_n=2,
-    )
-    filtered = query_models(
-        models=[
-            _model("low", "低", "compute", "计算"),
-            _model("high", "高", "compute", "计算"),
-            _model("mid", "中", "compute", "计算"),
-            _model("zero", "零", "compute", "计算"),
-        ],
-        instance_counts={"low": 1, "high": 9, "mid": 8, "zero": 0},
-        analysis_mode="distribution",
-        result_filter={"logic": "AND", "items": [{"field": "instance_count", "op": "gt", "value": 3}]},
-        top_n=5,
-    )
-    ranked_names = query_models(
-        models=[
-            _model("host", "主机", "compute", "计算"),
-            _model("room", "机房", "space", "空间"),
-            _model("host_shadow", "主机", "ops", "运维"),
-        ],
-        instance_counts={"host": 10, "room": 9, "host_shadow": 1},
-        analysis_mode="distribution",
-        top_n=2,
-    )
-    all_names = query_models(
-        models=[
-            _model("host", "主机", "compute", "计算"),
-            _model("room", "机房", "space", "空间"),
-            _model("host_shadow", "主机", "ops", "运维"),
-        ],
-        instance_counts={"host": 10, "room": 9, "host_shadow": 1},
-        analysis_mode="distribution",
-        top_n=3,
+        page_size=2,
     )
 
-    assert len(full["items"]) == 12
-    assert [item["model_id"] for item in top_ten["items"]] == [f"m{index:02d}" for index in range(10)]
-    assert [item["value"] for item in top_five["items"]] == [100, 99, 98, 97, 96]
+    assert first["count"] == 12
+    assert first["page"] == 1
+    assert first["page_size"] == 10
+    assert [item["model_id"] for item in first["items"]] == [f"m{index:02d}" for index in range(10)]
+    assert [item["model_id"] for item in second["items"]] == ["m10", "m11"]
+    assert second["count"] == 12
+    assert blank["items"] == []
+    assert blank["status"] == "empty"
+    assert blank["count"] == 12
+    assert blank["page"] == 3
     assert [(item["model_id"], item["value"]) for item in short["items"]] == [("m00", 2), ("m02", 1), ("m01", 0)]
-    assert [item["model_id"] for item in tied["items"]] == ["b", "a"]
-    assert [item["model_id"] for item in filtered["items"]] == ["high", "mid"]
-    assert [item["name"] for item in ranked_names["items"]] == ["主机", "机房"]
-    assert [item["name"] for item in all_names["items"]] == ["主机 (host)", "机房", "主机 (host_shadow)"]
-    with pytest.raises(GenericQueryError, match="正整数"):
-        query_models(models=models[:1], instance_counts={}, analysis_mode="distribution", top_n=0)
-    with pytest.raises(GenericQueryError, match="正整数"):
-        query_models(models=models[:1], instance_counts={}, analysis_mode="distribution", top_n=1.5)
-    with pytest.raises(GenericQueryError, match="正整数"):
-        query_models(models=models[:1], instance_counts={}, analysis_mode="distribution", top_n=True)
-    with pytest.raises(GenericQueryError, match=str(STAT_GROUP_MAX)):
-        query_models(models=models[:1], instance_counts={}, analysis_mode="distribution", top_n=STAT_GROUP_MAX + 1)
-    with pytest.raises(GenericQueryError, match="不支持展示前几名"):
-        query_models(models=models[:1], instance_counts={}, analysis_mode="count", top_n=5)
-    with pytest.raises(GenericQueryError, match="不支持展示前几名"):
-        query_models(models=models[:1], instance_counts={}, analysis_mode="detail", top_n=5)
+    assert tied["count"] == 3
+    assert [item["model_id"] for item in tied["items"]] == ["a", "b"]
     with pytest.raises(GenericQueryError, match="不支持分页"):
-        query_models(models=models[:1], instance_counts={}, analysis_mode="distribution", top_n=5, page=1)
+        query_models(models=models[:1], instance_counts={}, analysis_mode="count", page=1)
+    with pytest.raises(GenericQueryError, match="不支持分页"):
+        query_models(models=models[:1], instance_counts={}, analysis_mode="count", page_size=10)
+    with pytest.raises(GenericQueryError, match="每页最多"):
+        query_models(
+            models=models[:1],
+            instance_counts={},
+            analysis_mode="distribution",
+            page_size=DETAIL_PAGE_SIZE_MAX + 1,
+        )
     too_many = [_model(f"g{index}", f"组{index}", "compute", "计算") for index in range(STAT_GROUP_MAX + 1)]
     with pytest.raises(GenericQueryError, match="统计分组超过"):
-        query_models(models=too_many, instance_counts={}, analysis_mode="distribution", top_n=10)
+        query_models(models=too_many, instance_counts={}, analysis_mode="distribution", page_size=10)
 
 
 def test_model_statistics_fail_when_scan_exceeds_limit():
@@ -288,7 +225,7 @@ def test_model_detail_defaults_page_when_unfilled_and_keeps_explicit_size():
         analysis_mode="detail",
     )
     assert payload["page"] == 1
-    assert payload["page_size"] == 20
+    assert payload["page_size"] == 10
     explicit = query_models(
         models=[_model("host", "主机", "compute", "计算")],
         instance_counts={"host": 1},
@@ -508,7 +445,7 @@ def test_generic_query_handlers_accept_unknown_kwargs(monkeypatch):
         ),
     )
     monkeypatch.setattr("apps.cmdb.nats.generic_query.count_by_attr", lambda *args, **kwargs: {"low": 1, "high": 4})
-    ranked = query_cmdb_models(analysis_mode="distribution", top_n=1, user_info={"user": "demo"})
+    ranked = query_cmdb_models(analysis_mode="distribution", page=1, page_size=1, user_info={"user": "demo"})
     untouched = query_cmdb_models(analysis_mode="distribution", user_info={"user": "demo"})
     assert [item["model_id"] for item in ranked["data"]["items"]] == ["high"]
     assert [item["model_id"] for item in untouched["data"]["items"]] == ["high", "low"]
@@ -714,53 +651,6 @@ def test_attribute_operators_and_or_group_compile():
         )
     empty_logic, empty_items = compile_attribute_conditions(types, None, None, None, {"logic": "OR", "items": []})
     assert (empty_logic, empty_items) == ("OR", [])
-
-
-def test_instance_count_filter_runs_before_distribution_and_keeps_legacy_and():
-    models = [
-        _model("host", "主机", "compute", "计算"),
-        _model("net", "网络", "compute", "计算"),
-        _model("room", "机房", "space", "空间"),
-    ]
-    counts = {"host": 5, "net": 1, "room": 0}
-    grouped = query_models(
-        models=models,
-        instance_counts=counts,
-        analysis_mode="distribution",
-        result_filter={
-            "logic": "OR",
-            "items": [{"field": "instance_count", "op": "gt", "value": 3}, {"field": "instance_count", "op": "eq", "value": 0}],
-        },
-        order="name",
-    )
-    assert grouped["items"] == [
-        {"name": "主机", "model_id": "host", "value": 5},
-        {"name": "机房", "model_id": "room", "value": 0},
-    ]
-    assert grouped["unit"] == "个"
-    assert grouped["aggregation"] == "按模型统计权限内实例数，含零实例模型"
-    widened = query_models(
-        models=models,
-        instance_counts=counts,
-        analysis_mode="count",
-        result_filter={
-            "logic": "OR",
-            "items": [{"field": "instance_count", "op": "gt", "value": 3}, {"field": "instance_count", "op": "eq", "value": 0}],
-        },
-    )
-    narrowed = query_models(
-        models=models,
-        instance_counts=counts,
-        analysis_mode="count",
-        result_op="gt",
-        result_value=0,
-        result_filter={
-            "logic": "OR",
-            "items": [{"field": "instance_count", "op": "gt", "value": 3}, {"field": "instance_count", "op": "eq", "value": 0}],
-        },
-    )
-    assert widened["value"] == 2
-    assert narrowed["value"] == 1
 
 
 def test_one_hop_or_group_stays_parenthesized_with_permission(monkeypatch):
@@ -1254,233 +1144,7 @@ def _scope_models():
 _SCOPE_COUNTS = {"host": 100, "vm": 50}
 
 
-def test_single_value_count_metric_keeps_model_count_until_asked_for_instances():
-    models = _scope_models()
-    counted = query_models(models=models, instance_counts=_SCOPE_COUNTS, analysis_mode="count")
-    blank = query_models(models=models, instance_counts=_SCOPE_COUNTS, analysis_mode="count", count_metric="")
-    named = query_models(models=models, instance_counts=_SCOPE_COUNTS, analysis_mode="count", count_metric=" model_count ")
-    total = query_models(models=models, instance_counts=_SCOPE_COUNTS, analysis_mode="count", count_metric="instance_total")
-    selected = query_models(
-        models=models,
-        instance_counts=_SCOPE_COUNTS,
-        analysis_mode="count",
-        model_ids=["host"],
-    )
-    selected_total = query_models(
-        models=models,
-        instance_counts=_SCOPE_COUNTS,
-        analysis_mode="count",
-        model_ids=["host"],
-        count_metric="instance_total",
-    )
-
-    assert counted == {"structure": "value", "status": "ok", "value": 3, "unit": "个", "aggregation": "模型计数"}
-    assert set(counted) == {"structure", "status", "value", "unit", "aggregation"}
-    assert blank == counted
-    assert named == counted
-    assert total == {"structure": "value", "status": "ok", "value": 150, "unit": "个", "aggregation": "实例总数"}
-    assert selected["value"] == 1
-    assert selected["aggregation"] == "模型计数"
-    assert selected_total["value"] == 100
-    assert selected_total["aggregation"] == "实例总数"
-    assert "page" not in total
-    assert "items" not in total
-
-
-def test_count_metric_uses_the_same_scope_before_instance_filters():
-    models = _scope_models()
-    classified = query_models(
-        models=models,
-        instance_counts=_SCOPE_COUNTS,
-        analysis_mode="count",
-        classification_id="compute",
-        count_metric="instance_total",
-    )
-    classified_models = query_models(
-        models=models,
-        instance_counts=_SCOPE_COUNTS,
-        analysis_mode="count",
-        classification_id="compute",
-    )
-    router = query_models(
-        models=models,
-        instance_counts=_SCOPE_COUNTS,
-        analysis_mode="count",
-        model_ids=["router"],
-        count_metric="instance_total",
-    )
-    narrowed = query_models(
-        models=models,
-        instance_counts=_SCOPE_COUNTS,
-        analysis_mode="count",
-        result_filter={
-            "logic": "AND",
-            "items": [
-                {"field": "instance_count", "op": "gt", "value": 0},
-                {"field": "instance_count", "op": "lt", "value": 80},
-            ],
-        },
-    )
-    narrowed_total = query_models(
-        models=models,
-        instance_counts=_SCOPE_COUNTS,
-        analysis_mode="count",
-        count_metric="instance_total",
-        result_filter={
-            "logic": "AND",
-            "items": [
-                {"field": "instance_count", "op": "gt", "value": 0},
-                {"field": "instance_count", "op": "lt", "value": 80},
-            ],
-        },
-    )
-    or_filter = {
-        "logic": "OR",
-        "items": [
-            {"field": "instance_count", "op": "gt", "value": 80},
-            {"field": "instance_count", "op": "eq", "value": 0},
-        ],
-    }
-    either = query_models(
-        models=models,
-        instance_counts=_SCOPE_COUNTS,
-        analysis_mode="count",
-        count_metric="instance_total",
-        result_filter=or_filter,
-    )
-    either_models = query_models(
-        models=models,
-        instance_counts=_SCOPE_COUNTS,
-        analysis_mode="count",
-        result_filter=or_filter,
-    )
-    legacy_and = query_models(
-        models=models,
-        instance_counts=_SCOPE_COUNTS,
-        analysis_mode="count",
-        count_metric="instance_total",
-        result_op="gt",
-        result_value=0,
-        result_filter=or_filter,
-    )
-    none = query_models(
-        models=models,
-        instance_counts=_SCOPE_COUNTS,
-        analysis_mode="count",
-        count_metric="instance_total",
-        result_filter={"logic": "AND", "items": [{"field": "instance_count", "op": "gt", "value": 1000}]},
-    )
-    none_models = query_models(
-        models=models,
-        instance_counts=_SCOPE_COUNTS,
-        analysis_mode="count",
-        result_filter={"logic": "AND", "items": [{"field": "instance_count", "op": "gt", "value": 1000}]},
-    )
-    empty_models = query_models(
-        models=models,
-        instance_counts=_SCOPE_COUNTS,
-        analysis_mode="count",
-        result_op="eq",
-        result_value=0,
-    )
-    empty_total = query_models(
-        models=models,
-        instance_counts=_SCOPE_COUNTS,
-        analysis_mode="count",
-        count_metric="instance_total",
-        result_op="eq",
-        result_value=0,
-    )
-
-    assert classified_models["value"] == 2
-    assert classified["value"] == 150
-    assert router == {"structure": "value", "status": "ok", "value": 0, "unit": "个", "aggregation": "实例总数"}
-    assert narrowed["value"] == 1
-    assert narrowed["aggregation"] == "模型计数"
-    assert narrowed_total["value"] == 50
-    assert either_models["value"] == 2
-    assert either["value"] == 100
-    assert legacy_and["value"] == 100
-    assert none["status"] == "ok"
-    assert none["value"] == 0
-    assert none["aggregation"] == "实例总数"
-    assert none_models["status"] == "ok"
-    assert none_models["value"] == 0
-    assert empty_models["value"] == 1
-    assert empty_total["value"] == 0
-
-
-def test_count_metric_is_ignored_outside_count_and_rejects_unknown_values():
-    models = _scope_models()
-    detail = query_models(
-        models=models,
-        instance_counts=_SCOPE_COUNTS,
-        analysis_mode="detail",
-        count_metric="instance_total",
-        page=1,
-        page_size=1,
-        order="model_id",
-    )
-    plain_detail = query_models(
-        models=models,
-        instance_counts=_SCOPE_COUNTS,
-        analysis_mode="detail",
-        page=1,
-        page_size=1,
-        order="model_id",
-    )
-    distribution = query_models(
-        models=models,
-        instance_counts=_SCOPE_COUNTS,
-        analysis_mode="distribution",
-        count_metric="by_classification",
-    )
-    plain_distribution = query_models(
-        models=models,
-        instance_counts=_SCOPE_COUNTS,
-        analysis_mode="distribution",
-    )
-
-    assert detail == plain_detail
-    assert detail["count"] == 3
-    assert len(detail["items"]) == 1
-    assert list(detail["items"][0]) == list(DETAIL_COLUMNS)
-    assert distribution == plain_distribution
-    assert [item["model_id"] for item in distribution["items"]] == ["host", "vm", "router"]
-    assert distribution["aggregation"] == "按模型统计权限内实例数，含零实例模型"
-    with pytest.raises(GenericQueryError, match="统计内容不受支持"):
-        query_models(
-            models=models,
-            instance_counts=_SCOPE_COUNTS,
-            analysis_mode="count",
-            count_metric="by_classification",
-        )
-    with pytest.raises(GenericQueryError, match="不支持分页"):
-        query_models(
-            models=models,
-            instance_counts=_SCOPE_COUNTS,
-            analysis_mode="count",
-            count_metric="instance_total",
-            page=1,
-            page_size=1,
-        )
-
-
-def test_instance_total_keeps_the_scan_limit_before_filtering():
-    with pytest.raises(GenericQueryError, match=str(SCAN_INSTANCE_MAX)):
-        query_models(
-            models=[
-                _model("host", "主机", "compute", "计算"),
-                _model("router", "路由", "network", "网络"),
-            ],
-            instance_counts={"host": SCAN_INSTANCE_MAX + 1, "router": 0},
-            analysis_mode="count",
-            count_metric="instance_total",
-            result_filter={"logic": "AND", "items": [{"field": "instance_count", "op": "eq", "value": 0}]},
-        )
-
-
-def test_count_metric_permission_failure_is_not_reported_as_zero(monkeypatch):
+def test_model_count_permission_failure_is_not_reported_as_zero(monkeypatch):
     from apps.cmdb.nats.generic_query import query_cmdb_models
 
     calls = {"count": 0}
@@ -1497,7 +1161,6 @@ def test_count_metric_permission_failure_is_not_reported_as_zero(monkeypatch):
 
     denied = query_cmdb_models(
         analysis_mode="count",
-        count_metric="instance_total",
         user_info={"user": "demo", "team": 7},
     )
     assert denied["result"] is False
@@ -1512,7 +1175,6 @@ def test_count_metric_permission_failure_is_not_reported_as_zero(monkeypatch):
     monkeypatch.setattr("apps.cmdb.nats.generic_query._build_nats_permission_map", lambda user_info: None)
     denied_instances = query_cmdb_models(
         analysis_mode="count",
-        count_metric="model_count",
         model_id="host",
         user_info={"user": "demo", "team": 7},
     )
@@ -1522,7 +1184,7 @@ def test_count_metric_permission_failure_is_not_reported_as_zero(monkeypatch):
     assert calls["count"] == 0
 
 
-def test_handler_count_metric_uses_full_permission_counts(monkeypatch):
+def test_handler_model_count_uses_full_permission_counts(monkeypatch):
     from apps.cmdb.nats.generic_query import query_cmdb_models
     from apps.cmdb.services.generic_query import ensure_payload_limit
 
@@ -1542,9 +1204,10 @@ def test_handler_count_metric_uses_full_permission_counts(monkeypatch):
 
     monkeypatch.setattr("apps.cmdb.nats.generic_query.count_by_attr", fake_count)
 
-    total = query_cmdb_models(analysis_mode="count", count_metric="instance_total", user_info={"user": "demo"})
+    total = query_cmdb_models(analysis_mode="count", user_info={"user": "demo"})
     assert total["result"] is True
-    assert total["data"]["value"] == 150
+    assert total["data"]["value"] == 3
+    assert total["data"]["aggregation"] == "模型计数"
     assert total["data"]["status"] == "ok"
     ensure_payload_limit(total["data"])
     assert calls == [("model_id", [], {"7": {"inst_names": ["visible-host"]}})]
@@ -1556,14 +1219,12 @@ def test_handler_count_metric_uses_full_permission_counts(monkeypatch):
     classified = query_cmdb_models(
         analysis_mode="count",
         classification_id="compute",
-        count_metric="model_count",
         user_info={"user": "demo"},
     )
     assert classified["data"]["value"] == 2
 
     paged = query_cmdb_models(
         analysis_mode="count",
-        count_metric="instance_total",
         page=1,
         page_size=1,
         user_info={"user": "demo"},
@@ -1571,22 +1232,28 @@ def test_handler_count_metric_uses_full_permission_counts(monkeypatch):
     assert paged["result"] is False
     assert "分页" in paged["message"]
 
+    cleared = query_cmdb_models(
+        analysis_mode="count",
+        page="",
+        page_size=None,
+        user_info={"user": "demo"},
+    )
+    assert cleared["result"] is True
+    assert cleared["data"]["value"] == 3
+
     detail = query_cmdb_models(
         analysis_mode="detail",
-        count_metric="instance_total",
         page=1,
         page_size=1,
-        order="model_name",
         user_info={"user": "demo"},
     )
     assert detail["result"] is True
     assert detail["data"]["count"] == 3
-    assert len(detail["data"]["items"]) == 1
+    assert detail["data"]["items"][0]["model_id"] == "router"
     assert list(detail["data"]["items"][0]) == list(DETAIL_COLUMNS)
 
     missing = query_cmdb_models(
         analysis_mode="count",
-        count_metric="instance_total",
         model_id="secret",
         user_info={"user": "demo"},
     )
@@ -1595,7 +1262,6 @@ def test_handler_count_metric_uses_full_permission_counts(monkeypatch):
 
     unknown_class = query_cmdb_models(
         analysis_mode="count",
-        count_metric="instance_total",
         classification_id="secret",
         user_info={"user": "demo"},
     )
@@ -1603,18 +1269,8 @@ def test_handler_count_metric_uses_full_permission_counts(monkeypatch):
     assert unknown_class["data"] == {"status": "forbidden"}
     assert "value" not in unknown_class["data"]
 
-    illegal = query_cmdb_models(
-        analysis_mode="count",
-        count_metric="by_classification",
-        user_info={"user": "demo"},
-    )
-    assert illegal["result"] is False
-    assert illegal["data"] == {"status": "failed"}
-    assert "统计内容" in illegal["message"]
-
     distribution = query_cmdb_models(
         analysis_mode="distribution",
-        count_metric="instance_total",
         user_info={"user": "demo"},
     )
     assert distribution["result"] is True
@@ -1649,18 +1305,18 @@ def test_http_resolution_reaches_handler_without_hidden_paging_or_cross_chart_pa
         resolved = _resolve_request_params(instance, request)
         return resolved, query_cmdb_models(user_info={"user": "demo"}, **resolved)
 
-    hidden = ("page", "page_size", "top_n", "count_metric")
     distribution, distribution_result = run({"analysis_mode": "distribution"})
-    assert all(key not in distribution for key in hidden)
+    assert "page" not in distribution
+    assert "page_size" not in distribution
     assert distribution_result["result"] is True
+    assert distribution_result["data"]["page"] == 1
+    assert distribution_result["data"]["page_size"] == 10
     assert [item["model_id"] for item in distribution_result["data"]["items"]] == ["host", "vm", "router"]
     assert distribution_result["data"]["aggregation"] == "按模型统计权限内实例数，含零实例模型"
 
     counted, counted_result = run({"analysis_mode": "count"})
-    assert counted["count_metric"] == "model_count"
     assert "page" not in counted
     assert "page_size" not in counted
-    assert "top_n" not in counted
     assert counted_result["data"] == {
         "structure": "value",
         "status": "ok",
@@ -1669,40 +1325,30 @@ def test_http_resolution_reaches_handler_without_hidden_paging_or_cross_chart_pa
         "aggregation": "模型计数",
     }
 
-    total, total_result = run({"analysis_mode": "count", "count_metric": "instance_total"})
-    assert total["count_metric"] == "instance_total"
-    assert "page" not in total
-    assert "top_n" not in total
-    assert total_result["data"]["value"] == 150
-    assert total_result["data"]["aggregation"] == "实例总数"
-    assert total_result["data"]["status"] == "ok"
+    cleared, cleared_result = run({"analysis_mode": "count", "page": None, "page_size": ""})
+    assert "page" not in cleared
+    assert "page_size" not in cleared
+    assert cleared_result["data"]["value"] == 3
 
-    ranking, ranking_result = run({"analysis_mode": "distribution", "top_n": 2})
-    assert ranking["top_n"] == 2
-    assert "page" not in ranking
-    assert "count_metric" not in ranking
-    assert [item["model_id"] for item in ranking_result["data"]["items"]] == ["host", "vm"]
+    blocked, blocked_result = run({"analysis_mode": "count", "page": 1, "page_size": 10})
+    assert blocked["page"] == 1
+    assert blocked["page_size"] == 10
+    assert blocked_result["result"] is False
+    assert "分页" in blocked_result["message"]
+
+    second, second_result = run({"analysis_mode": "distribution", "page": 2, "page_size": 10})
+    assert second["page"] == 2
+    assert second_result["result"] is True
+    assert second_result["data"]["items"] == []
+    assert second_result["data"]["count"] == 3
 
     detail, detail_result = run({"analysis_mode": "detail"})
-    assert detail["page"] == 1
-    assert detail["page_size"] == 20
-    assert "count_metric" not in detail
-    assert "top_n" not in detail
+    assert "page" not in detail
+    assert "page_size" not in detail
     assert detail_result["result"] is True
     assert detail_result["data"]["page"] == 1
-    assert detail_result["data"]["page_size"] == 20
+    assert detail_result["data"]["page_size"] == 10
     assert detail_result["data"]["count"] == 3
 
-    leaked, leaked_result = run({"analysis_mode": "count", "count_metric": "instance_total", "top_n": 10})
-    assert leaked["top_n"] == 10
-    assert leaked_result["result"] is False
-    assert leaked_result["data"] == {"status": "failed"}
-    assert "展示前几名" in leaked_result["message"]
-    assert "value" not in leaked_result["data"]
-
-    paged, paged_result = run({"analysis_mode": "distribution", "page": 1, "page_size": 20})
-    assert paged["page"] == 1
-    assert paged["page_size"] == 20
-    assert "top_n" not in paged
-    assert paged_result["result"] is False
-    assert "分页" in paged_result["message"]
+    with pytest.raises(ValueError, match="未声明参数"):
+        run({"analysis_mode": "count", "count_metric": "instance_total", "top_n": 10})

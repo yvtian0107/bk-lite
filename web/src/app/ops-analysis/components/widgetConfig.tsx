@@ -372,7 +372,6 @@ const ViewConfig: React.FC<ViewConfigPropsWithManager> = ({
     const resolvedMode = resolveAnalysisModeValue({
       params: dataSource?.params,
       selected: knownMode ? mode : '',
-      chartType,
     });
     const compatible = filterChartTypesForAnalysisMode(
       available,
@@ -384,7 +383,7 @@ const ViewConfig: React.FC<ViewConfigPropsWithManager> = ({
 
   const getDataSourceChartTypes = useMemo(() => {
     return getFilteredChartTypes(selectedDataSource, watchedAnalysisMode);
-  }, [selectedDataSource, surface, watchedAnalysisMode, chartType]);
+  }, [selectedDataSource, surface, watchedAnalysisMode]);
 
   const canonicalSelectedDataSource = useMemo(
     () => (
@@ -963,16 +962,16 @@ const ViewConfig: React.FC<ViewConfigPropsWithManager> = ({
 
   useEffect(() => {
     const options = analysisModeOptions(selectedDataSource?.params);
-    if (!options.length || !chartType) return;
+    if (!options.length) return;
     const current = String(watchedAnalysisMode ?? '');
+    if (current && options.some((item) => item.value === current)) return;
     const next = resolveAnalysisModeValue({
       params: selectedDataSource?.params,
       selected: current,
-      chartType,
     });
     if (!next || next === current) return;
     form.setFieldValue(['params', ANALYSIS_MODE_PARAM], next);
-  }, [selectedDataSource, watchedAnalysisMode, chartType, form]);
+  }, [selectedDataSource, watchedAnalysisMode, form]);
 
   const initializeItemForm = async (
     widgetItem: ViewConfigItem,

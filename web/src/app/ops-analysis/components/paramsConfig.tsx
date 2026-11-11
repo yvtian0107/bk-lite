@@ -29,11 +29,7 @@ import {
   type ResolvedOptionsQuery,
 } from '@/app/ops-analysis/utils/optionsQueryParamRefs';
 import {
-  ANALYSIS_MODE_PARAM,
-  isParamVisibleForAnalysisMode,
-  isParamVisibleForChart,
   resolveAnalysisModeValue,
-  shouldShowAnalysisMode,
 } from '@/app/ops-analysis/utils/analysisMode';
 import ConditionFilterControl from '@/app/ops-analysis/components/conditionFilterControl';
 import OrderControl from '@/app/ops-analysis/components/orderControl';
@@ -196,7 +192,6 @@ const DataSourceParamsConfig: React.FC<DataSourceParamsConfigProps> = ({
   const watchedParams = Form.useWatch(fieldPrefix, { form, preserve: true }) as Record<string, unknown> | undefined;
   const storedParams = form.getFieldsValue(true)?.[fieldPrefix] as Record<string, unknown> | undefined;
   const formParams = storedParams ?? watchedParams;
-  const chartType = Form.useWatch('chartType', { form, preserve: true }) as string | undefined;
   const resolveOptionsQuery = globalFilters !== undefined;
 
   useEffect(() => {
@@ -216,15 +211,11 @@ const DataSourceParamsConfig: React.FC<DataSourceParamsConfigProps> = ({
   const analysisMode = resolveAnalysisModeValue({
     params: sourceParams,
     selected: formParams?.analysis_mode,
-    chartType,
   });
   const configParams = sourceParams.filter(
     (param: ParamItem) =>
       !param.hidden
-      && includeFilterTypes.includes(param.filterType || 'fixed')
-      && isParamVisibleForAnalysisMode(param, analysisMode, sourceParams)
-      && isParamVisibleForChart(param, chartType)
-      && (param.name !== ANALYSIS_MODE_PARAM || shouldShowAnalysisMode(sourceParams, chartType)),
+      && includeFilterTypes.includes(param.filterType || 'fixed'),
   );
 
   if (configParams.length === 0) {

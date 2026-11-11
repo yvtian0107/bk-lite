@@ -23,21 +23,7 @@ from apps.core.utils.condition_group import ConditionGroupError, parse_condition
 MODEL_MODES = ("detail", "count", "distribution")
 INSTANCE_MODES = ("detail", "count", "distribution", "aggregate")
 ONE_HOP_MODES = ("detail", "count", "distribution")
-MODEL_COUNT_METRIC = "model_count"
-INSTANCE_TOTAL_METRIC = "instance_total"
-_COUNT_METRICS = {
-    MODEL_COUNT_METRIC: "模型计数",
-    INSTANCE_TOTAL_METRIC: "实例总数",
-}
-
-_RESULT_OPS = {
-    "gt": lambda left, right: left > right,
-    "gte": lambda left, right: left >= right,
-    "eq": lambda left, right: left == right,
-    "lt": lambda left, right: left < right,
-    "lte": lambda left, right: left <= right,
-    "ne": lambda left, right: left != right,
-}
+MODEL_PAGE_SIZE_DEFAULT = 10
 _FILTER_TYPES = {
     ("string", "eq"): "str=",
     ("string", "ne"): "str<>",
@@ -76,23 +62,18 @@ def query_models(
     analysis_mode: str,
     classification_id: str | None = None,
     model_ids: list[str] | None = None,
-    result_op: str | None = None,
-    result_value=None,
-    result_filter=None,
-    count_metric: str | None = None,
-    order: str | None = None,
     page=None,
     page_size=None,
-    top_n=None,
 ) -> dict:
-    """模型查询。零实例模型保留为 0；统计超过扫描上限时失败。
+    """模型查询。分类和模型只缩小范围，零实例模型保留。
 
-    单值计数默认数模型。count_metric=instance_total 时改为这些模型权限内实例数之和。
-    明细和分布忽略 count_metric，避免切图后改口径。
+    单值固定为范围内模型数量。分布先统计全部可见模型的实例数，
+    按实例数从高到低、模型标识升序稳定排序，再按页截取。
+    未传分页时默认第 1 页、每页 10 条。计数不接受非空分页。
     """
     mode = _mode(analysis_mode, MODEL_MODES)
-    if mode != "detail":
-        _parse_page(page, page_size, enabled=False)
+    if mode == "count" and (page not in (None, "") or page_size not in (None, "")):
+        raise GenericQueryError("当前分析方式不支持分页")
     rows = [_model_row(item, instance_counts) for item in models]
     if classification_id:
         rows = [row for row in rows if row["classification_id"] == classification_id]
@@ -106,39 +87,38 @@ def query_models(
     scanned = sum(int(row["instance_count"]) for row in rows)
     if mode != "detail":
         _ensure_scan(scanned)
-    rows = _apply_result_filter(rows, result_op, result_value, result_filter)
     if mode == "count":
-        if top_n not in (None, ""):
-            raise GenericQueryError("当前分析方式不支持展示前几名")
-        metric = _resolve_count_metric(count_metric)
-        if metric == INSTANCE_TOTAL_METRIC:
-            total = sum(int(row["instance_count"]) for row in rows)
-            return _value_payload(total, unit="个", aggregation=_COUNT_METRICS[metric])
-        return _value_payload(len(rows), unit="个", aggregation=_COUNT_METRICS[MODEL_COUNT_METRIC])
+        return _value_payload(len(rows), unit="个", aggregation="模型计数")
     if mode == "distribution":
         # 分类和模型只缩小范围。每个可见模型一项，不再按分类把实例数加总。
-        # 未传 top_n 时返回全部模型，供柱状图和饼图使用。
+        # 先完成全部统计和排序，再截取当前页。
         items = _model_distribution_items(rows)
         _ensure_groups(len(items))
-        if top_n not in (None, ""):
-            # 排行榜固定按实例数从高到低取前 N，不沿用排序参数，也不先分页。
-            limit = _parse_model_top_n(top_n)
-            items.sort(key=lambda item: (item.get("value") is None, item.get("value")), reverse=True)
-            items = items[:limit]
-        else:
-            field, desc = _parse_order(order, {"name", "value"}, default="value")
-            items.sort(key=lambda item: (item.get(field) is None, item.get(field)), reverse=desc)
+        items.sort(key=lambda item: str(item.get("model_id") or ""))
+        items.sort(key=lambda item: int(item.get("value") or 0), reverse=True)
         _unique_distribution_names(items)
-        return _category_payload(items, unit="个", aggregation="按模型统计权限内实例数，含零实例模型")
-    if top_n not in (None, ""):
-        raise GenericQueryError("当前分析方式不支持展示前几名")
-    field, desc = _parse_order(
-        order,
-        {"model_name", "model_id", "classification_name", "instance_count"},
-        default="model_name",
+        page_no, size = _model_page(page, page_size)
+        start = (page_no - 1) * size
+        page_items = items[start : start + size]
+        return {
+            "structure": "category",
+            "status": "empty" if not page_items else "ok",
+            "items": page_items,
+            "count": len(items),
+            "page": page_no,
+            "page_size": size,
+            "unit": "个",
+            "aggregation": "按模型统计权限内实例数，含零实例模型",
+        }
+    rows.sort(
+        key=lambda item: (
+            str(item.get("classification_name") or ""),
+            str(item.get("model_name") or ""),
+            str(item.get("model_id") or ""),
+        )
     )
-    rows.sort(key=lambda item: (item.get(field) is None, item.get(field)), reverse=desc)
-    paged = _page_payload(rows, page, page_size)
+    page_no, size = _model_page(page, page_size)
+    paged = _page_payload(rows, page_no, size)
     paged["items"] = [_public_model_detail(row) for row in paged["items"]]
     return paged
 
@@ -427,44 +407,6 @@ def _unique_distribution_names(items: list[dict]) -> None:
         item["name"] = candidate
 
 
-def _apply_result_filter(rows: list[dict], op: str | None, value, result_filter=None) -> list[dict]:
-    try:
-        logic, items = parse_condition_group(result_filter)
-    except ConditionGroupError as exc:
-        raise GenericQueryError(exc.message) from exc
-    comparisons = []
-    for item in items:
-        if item.get("field") not in (None, "", "instance_count"):
-            raise GenericQueryError("实例数筛选只支持实例数")
-        comparisons.append(_result_comparison(item.get("op"), item.get("value")))
-    legacy = None
-    if op not in (None, "") or value not in (None, ""):
-        if op not in _RESULT_OPS or value in (None, ""):
-            raise GenericQueryError("统计结果筛选必须同时给出受支持的运算符和数值")
-        legacy = _result_comparison(op, value)
-
-    def keep(row: dict) -> bool:
-        count = row["instance_count"]
-        grouped = True
-        if comparisons:
-            checks = [compare(count, expected) for compare, expected in comparisons]
-            grouped = all(checks) if logic == "AND" else any(checks)
-        if legacy:
-            compare, expected = legacy
-            grouped = grouped and compare(count, expected)
-        return grouped
-
-    if not comparisons and legacy is None:
-        return rows
-    return [row for row in rows if keep(row)]
-
-
-def _result_comparison(op, value):
-    if op not in _RESULT_OPS:
-        raise GenericQueryError("实例数筛选运算符不受支持")
-    return _RESULT_OPS[op], _as_number(value)
-
-
 def _validate_sort_field(field: str) -> None:
     try:
         CQLValidator.validate_field(field)
@@ -489,15 +431,6 @@ def _attr_kind(attr_types: dict[str, str], field: str) -> str:
     if raw in _NUMBER_ATTR_TYPES:
         return "number"
     return "string"
-
-
-def _resolve_count_metric(value) -> str:
-    text = str(value or "").strip()
-    if not text:
-        return MODEL_COUNT_METRIC
-    if text not in _COUNT_METRICS:
-        raise GenericQueryError("统计内容不受支持")
-    return text
 
 
 def _mode(value: str | None, allowed: tuple[str, ...]) -> str:
@@ -526,6 +459,16 @@ def _parse_order(order: str | None, allowed: set[str], *, default: str) -> tuple
     if field not in allowed:
         raise GenericQueryError(f"不支持的排序字段: {field}")
     return field, descending
+
+
+def _model_page(page, page_size) -> tuple[int, int]:
+    page_no = 1 if page in (None, "") else _as_int(page, "page")
+    size = MODEL_PAGE_SIZE_DEFAULT if page_size in (None, "") else _as_int(page_size, "page_size")
+    if page_no < 1:
+        raise GenericQueryError("page 必须大于 0")
+    if size < 1 or size > DETAIL_PAGE_SIZE_MAX:
+        raise GenericQueryError(f"每页最多 {DETAIL_PAGE_SIZE_MAX} 条")
+    return page_no, size
 
 
 def _parse_page(page, page_size, *, enabled: bool) -> tuple[int, int]:
@@ -598,26 +541,6 @@ def load_instances_by_uuids(uuids: list[str]) -> list[dict]:
 
     with GraphClient() as client:
         return client.query_entity_by_inst_uuids(unique) or []
-
-
-def _parse_model_top_n(value) -> int:
-    """排行榜名次。空值由调用方视为不截断；非法值和超限直接失败。"""
-    if isinstance(value, bool) or isinstance(value, float):
-        raise GenericQueryError("展示前几名必须是正整数")
-    if isinstance(value, str):
-        text = value.strip()
-        if not text.isdigit():
-            raise GenericQueryError("展示前几名必须是正整数")
-        number = int(text)
-    elif isinstance(value, int):
-        number = value
-    else:
-        raise GenericQueryError("展示前几名必须是正整数")
-    if number < 1:
-        raise GenericQueryError("展示前几名必须是正整数")
-    if number > STAT_GROUP_MAX:
-        raise GenericQueryError(f"展示前几名不能超过统计分组上限 {STAT_GROUP_MAX}")
-    return number
 
 
 def _as_int(value, name: str) -> int:

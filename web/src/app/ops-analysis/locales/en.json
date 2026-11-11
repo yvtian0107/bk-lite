@@ -1152,6 +1152,14 @@
     "selectModel": "Please select model",
     "selectInstance": "Please select instance",
     "dataFormatMismatch": "Data format mismatch",
+    "structureMismatch": "Current result structure is {current}; this chart needs {required}. Change the analysis mode or the chart.",
+    "structureName": {
+      "table": "table",
+      "value": "single value",
+      "category": "category",
+      "series": "series"
+    },
+    "piePageShare": "Share of the current page, not the full result (page {page}, {pageSize} per page, {count} items)",
     "optionPageLimitExceeded": "Option page limit exceeded",
     "selectClassificationFirst": "Select a classification first",
     "selectModelRelationFirst": "Select the start model, relation, and direction first",

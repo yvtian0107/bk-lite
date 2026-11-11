@@ -141,17 +141,8 @@ const modelParams = (): ParamItem[] => [
       },
     },
   },
-  { name: 'page', alias_name: '页码', type: 'number', filterType: 'params', value: 1, visible_modes: ['detail'] },
-  { name: 'page_size', alias_name: '每页', type: 'number', filterType: 'params', value: 20, visible_modes: ['detail'] },
-  {
-    name: 'top_n',
-    alias_name: '展示前几名',
-    type: 'number',
-    filterType: 'params',
-    value: 10,
-    visible_modes: ['distribution'],
-    visible_charts: ['topN'],
-  },
+  { name: 'page', alias_name: '页码', type: 'number', filterType: 'params', value: null },
+  { name: 'page_size', alias_name: '每页', type: 'number', filterType: 'params', value: null },
 ];
 
 describe('useTableConfig probe requests', () => {
@@ -202,7 +193,7 @@ describe('useTableConfig probe requests', () => {
     ]);
   });
 
-  it('does not put paging back when the probe chart is not a detail table', async () => {
+  it('does not change the saved mode or paging when the probe chart is not a table', async () => {
     const calls: Array<Record<string, unknown>> = [];
     const { result } = renderHook(() =>
       useTableConfig({
@@ -222,18 +213,17 @@ describe('useTableConfig probe requests', () => {
     await act(async () => {
       await result.current.probeDefaultDisplayColumns(
         { id: 9, params: modelParams(), namespaces: [] } as never,
-        { analysis_mode: 'detail', page: 1, page_size: 20, top_n: 5 },
+        { analysis_mode: 'detail', page: 1, page_size: 20 },
         'topN',
       );
     });
 
-    expect(calls[0]?.analysis_mode).toBe('distribution');
-    expect(calls[0]?.top_n).toBe(5);
-    expect(calls[0]?.page).toBeUndefined();
-    expect(calls[0]?.page_size).toBeUndefined();
+    expect(calls[0]?.analysis_mode).toBe('detail');
+    expect(calls[0]?.page).toBe(1);
+    expect(calls[0]?.page_size).toBe(20);
   });
 
-  it('does not send the ranking limit when probing a bar chart', async () => {
+  it('keeps distribution paging when the probe chart is a bar', async () => {
     const calls: Array<Record<string, unknown>> = [];
     const { result } = renderHook(() =>
       useTableConfig({
@@ -253,14 +243,14 @@ describe('useTableConfig probe requests', () => {
     await act(async () => {
       await result.current.probeDefaultDisplayColumns(
         { id: 9, params: modelParams(), namespaces: [] } as never,
-        { analysis_mode: 'distribution', top_n: 5, page: 2, page_size: 20 },
+        { analysis_mode: 'distribution', page: 2, page_size: 20 },
         'bar',
       );
     });
 
     expect(calls[0]?.analysis_mode).toBe('distribution');
-    expect(calls[0]?.top_n).toBeUndefined();
-    expect(calls[0]?.page).toBeUndefined();
+    expect(calls[0]?.page).toBe(2);
+    expect(calls[0]?.page_size).toBe(20);
   });
 
   it('keeps the configured table page instead of forcing page 1', async () => {
@@ -288,7 +278,7 @@ describe('useTableConfig probe requests', () => {
       );
     });
 
-    expect(calls[0]?.analysis_mode).toBe('detail');
+    expect(calls[0]?.analysis_mode).toBe('distribution');
     expect(calls[0]?.page).toBe(4);
     expect(calls[0]?.page_size).toBe(50);
   });
