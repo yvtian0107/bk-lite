@@ -139,6 +139,32 @@ def _load_model_attrs(model_id: str, user_info) -> list:
         raise GenericQueryError("指定模型不存在或无权访问", status="forbidden") from exc
 
 
+def _group_declaration(attrs: list, group_by) -> tuple[str | None, str | None]:
+    """分布分组的标题和类型来自模型属性，不把属性名改写成 name。"""
+    key = str(group_by or "").strip()
+    if not key:
+        return None, None
+    attr = next((item for item in attrs or [] if str(item.get("attr_id") or "") == key), None)
+    if key == "inst_name":
+        title = "实例名称"
+        raw_type = "string"
+    elif key == "inst_uuid":
+        title = "实例标识"
+        raw_type = "string"
+    elif isinstance(attr, dict):
+        title = str(attr.get("attr_name") or key)
+        raw_type = str(attr.get("attr_type") or "string").lower()
+    else:
+        return key, None
+    if raw_type in {"int", "integer", "float", "number", "long", "double"}:
+        value_type = "number"
+    elif raw_type in {"bool", "boolean"}:
+        value_type = "boolean"
+    else:
+        value_type = "string"
+    return title, value_type
+
+
 def _attr_types_from(attrs: list) -> dict[str, str]:
     types = {"inst_name": "string", "inst_uuid": "string"}
     for attr in attrs or []:
@@ -216,6 +242,7 @@ def query_cmdb_instances(
         raise GenericQueryError("指定模型不存在或无权访问", status="forbidden")
     _require_model_classification(_models, model_id, classification_id)
     attrs = _load_model_attrs(str(model_id), user_info)
+    group_title, group_value_type = _group_declaration(attrs, group_by)
     data = query_instances(
         model_id=str(model_id),
         analysis_mode=analysis_mode or "detail",
@@ -231,6 +258,8 @@ def query_cmdb_instances(
         order=order,
         page=page,
         page_size=page_size,
+        group_title=group_title,
+        group_value_type=group_value_type,
     )
     if data.get("structure") == "table":
         data["column_fields"] = build_instance_column_fields(attrs, model_key=str(model_id))

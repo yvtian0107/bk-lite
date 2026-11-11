@@ -1,6 +1,7 @@
 import type { DatasourceItem, ResponseFieldDefinition } from '@/app/ops-analysis/types/dataSource';
 import type { TableColumnConfigItem, ValueConfig } from '@/app/ops-analysis/types/dashBoard';
 import { ChartDataTransformer } from '@/app/ops-analysis/utils/chartDataTransform';
+import { readDeclaredFields, resolveChartBinding } from '@/app/ops-analysis/utils/chartFieldContract';
 import {
   hasExplicitLineBarMapping,
   toLineBarFieldMapping,
@@ -251,23 +252,51 @@ export const buildLineBarCsvTable = (
   };
 };
 
+const schemaWithResultTitles = (
+  schema: ResponseFieldDefinition[] | undefined,
+  rawData: unknown,
+): ResponseFieldDefinition[] => {
+  const merged = [...(schema || [])];
+  (readDeclaredFields(rawData) || []).forEach((field) => {
+    const index = merged.findIndex((item) => item.key === field.key);
+    const next = {
+      key: field.key,
+      title: field.title || field.key,
+      value_type: (field.value_type as ResponseFieldDefinition['value_type']) || 'string',
+    };
+    if (index >= 0) {
+      merged[index] = { ...merged[index], title: field.title || merged[index].title };
+      return;
+    }
+    merged.push(next);
+  });
+  return merged;
+};
+
 export const buildPieCsvTable = (
   rawData: unknown,
   config: ValueConfig | undefined,
   labels: WidgetCsvLabels,
   schema?: ResponseFieldDefinition[],
 ): CsvTable => {
+  const binding = resolveChartBinding(rawData, {
+    dimensionField: config?.dimensionField,
+    valueField: config?.valueField,
+  });
   const slices = ChartDataTransformer.transformToPieData(rawData, {
     dimensionField: config?.dimensionField,
     valueField: config?.valueField,
     pieScalarFields: config?.pieScalarFields,
   });
+  const titles = schemaWithResultTitles(schema, rawData);
+  const dimensionKey = config?.dimensionField || binding.dimensionField;
+  const valueKey = config?.valueField || binding.measureField;
   return {
     headers: [
-      fieldDisplayName(schema, config?.dimensionField) || labels.dimension,
-      appendUnit(fieldDisplayName(schema, config?.valueField) || labels.value, config),
+      fieldDisplayName(titles, dimensionKey) || labels.dimension,
+      appendUnit(fieldDisplayName(titles, valueKey) || labels.value, config),
     ],
-    rows: slices.map((slice) => [slice.name, formatChartCell(slice.value, config)]),
+    rows: slices.map((slice) => [slice.label || slice.name, formatChartCell(slice.value, config)]),
   };
 };
 

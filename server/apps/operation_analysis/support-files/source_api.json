@@ -2182,23 +2182,53 @@
                 {
                     "key": "classification_name",
                     "title": "分类",
-                    "value_type": "string"
+                    "value_type": "string",
+                    "modes": [
+                        "detail",
+                        "distribution"
+                    ]
                 },
                 {
                     "key": "model_name",
                     "title": "模型名称",
-                    "value_type": "string"
+                    "value_type": "string",
+                    "role": "dimension",
+                    "modes": [
+                        "detail",
+                        "distribution"
+                    ]
                 },
                 {
                     "key": "model_id",
                     "title": "模型标识",
-                    "value_type": "string"
+                    "value_type": "string",
+                    "role": "identity",
+                    "modes": [
+                        "detail",
+                        "distribution"
+                    ]
                 },
                 {
                     "key": "instance_count",
                     "title": "实例数",
                     "value_type": "number",
-                    "description": "权限内可见实例数，零实例为 0"
+                    "description": "权限内可见实例数，零实例为 0",
+                    "role": "measure",
+                    "modes": [
+                        "detail",
+                        "distribution"
+                    ]
+                },
+                {
+                    "key": "model_count",
+                    "title": "模型数",
+                    "value_type": "number",
+                    "description": "范围内模型数量，含零实例模型",
+                    "role": "measure",
+                    "modes": [
+                        "count"
+                    ],
+                    "table": false
                 }
             ]
         },
@@ -2514,15 +2544,8 @@
                                 ]
                             },
                             {
-                                "value": "name",
-                                "label": "名称",
-                                "modes": [
-                                    "distribution"
-                                ]
-                            },
-                            {
-                                "value": "value",
-                                "label": "值",
+                                "value": "instance_count",
+                                "label": "实例数",
                                 "modes": [
                                     "distribution"
                                 ]
@@ -2530,7 +2553,8 @@
                         ],
                         "modelParam": "model_id",
                         "includeModelAttrsInModes": [
-                            "detail"
+                            "detail",
+                            "distribution"
                         ]
                     }
                 },
@@ -2564,43 +2588,49 @@
                     "key": "inst_uuid",
                     "title": "实例标识",
                     "value_type": "string",
+                    "modes": [
+                        "detail"
+                    ],
                     "table": false
                 },
                 {
                     "key": "inst_name",
                     "title": "实例名称",
-                    "value_type": "string"
-                },
-                {
-                    "key": "name",
-                    "title": "名称",
                     "value_type": "string",
-                    "description": "分布分组名；明细可配合实例名",
-                    "table": false
+                    "modes": [
+                        "detail"
+                    ]
                 },
                 {
-                    "key": "value",
-                    "title": "值",
+                    "key": "instance_count",
+                    "title": "实例数",
                     "value_type": "number",
+                    "description": "范围内实例数量，零为 0",
+                    "role": "measure",
+                    "modes": [
+                        "count",
+                        "distribution"
+                    ],
                     "table": false
                 },
                 {
-                    "key": "unit",
-                    "title": "单位",
-                    "value_type": "string",
+                    "key": "aggregate_value",
+                    "title": "聚合值",
+                    "value_type": "number",
+                    "description": "数值聚合结果",
+                    "role": "measure",
+                    "modes": [
+                        "aggregate"
+                    ],
                     "table": false
                 },
                 {
-                    "key": "aggregation",
-                    "title": "聚合口径",
+                    "key": "aggregate_field",
+                    "title": "聚合属性",
                     "value_type": "string",
-                    "table": false
-                },
-                {
-                    "key": "status",
-                    "title": "结果状态",
-                    "value_type": "string",
-                    "description": "ok 为零值；empty 为没有可聚合实例；missing 为缺数据",
+                    "modes": [
+                        "aggregate"
+                    ],
                     "table": false
                 }
             ]
@@ -2936,15 +2966,15 @@
                                 ]
                             },
                             {
-                                "value": "name",
-                                "label": "名称",
+                                "value": "end_name",
+                                "label": "终点名称",
                                 "modes": [
                                     "distribution"
                                 ]
                             },
                             {
-                                "value": "value",
-                                "label": "值",
+                                "value": "start_count",
+                                "label": "起点数",
                                 "modes": [
                                     "distribution"
                                 ]
@@ -2982,61 +3012,78 @@
                     "key": "start_uuid",
                     "title": "起点标识",
                     "value_type": "string",
+                    "modes": [
+                        "detail"
+                    ],
                     "table": false
                 },
                 {
                     "key": "start_name",
                     "title": "起点名称",
-                    "value_type": "string"
+                    "value_type": "string",
+                    "modes": [
+                        "detail"
+                    ]
                 },
                 {
                     "key": "start_model_id",
                     "title": "起点模型",
                     "value_type": "string",
+                    "modes": [
+                        "detail"
+                    ],
                     "table": false
                 },
                 {
                     "key": "end_uuid",
                     "title": "终点标识",
                     "value_type": "string",
+                    "role": "identity",
+                    "modes": [
+                        "detail",
+                        "distribution"
+                    ],
                     "table": false
                 },
                 {
                     "key": "end_name",
                     "title": "终点名称",
-                    "value_type": "string"
+                    "value_type": "string",
+                    "role": "dimension",
+                    "modes": [
+                        "detail",
+                        "distribution"
+                    ]
                 },
                 {
                     "key": "end_model_id",
                     "title": "终点模型",
                     "value_type": "string",
+                    "modes": [
+                        "detail"
+                    ],
                     "table": false
                 },
                 {
-                    "key": "name",
-                    "title": "名称",
-                    "value_type": "string",
-                    "description": "分布时为终点名称",
-                    "table": false
-                },
-                {
-                    "key": "value",
-                    "title": "值",
+                    "key": "relation_count",
+                    "title": "关联数",
                     "value_type": "number",
                     "description": "按起点计数，同一起点关联多个终点时分别计数",
+                    "role": "measure",
+                    "modes": [
+                        "count"
+                    ],
                     "table": false
                 },
                 {
-                    "key": "unit",
-                    "title": "单位",
-                    "value_type": "string",
-                    "table": false
-                },
-                {
-                    "key": "aggregation",
-                    "title": "聚合口径",
-                    "value_type": "string",
-                    "description": "按起点计数，不做全局去重",
+                    "key": "start_count",
+                    "title": "起点数",
+                    "value_type": "number",
+                    "description": "按终点统计起点数，不做全局去重",
+                    "role": "measure",
+                    "modes": [
+                        "distribution"
+                    ],
                     "table": false
                 }
             ]
@@ -3369,55 +3416,89 @@
                 {
                     "key": "instance_id",
                     "title": "实例标识",
-                    "value_type": "string"
+                    "value_type": "string",
+                    "modes": [
+                        "detail"
+                    ]
                 },
                 {
                     "key": "name",
                     "title": "名称",
-                    "value_type": "string"
+                    "value_type": "string",
+                    "modes": [
+                        "detail"
+                    ]
                 },
                 {
                     "key": "ip",
                     "title": "IP",
-                    "value_type": "string"
+                    "value_type": "string",
+                    "modes": [
+                        "detail"
+                    ]
                 },
                 {
                     "key": "cmdb_id",
                     "title": "CMDB 标识",
-                    "value_type": "string"
+                    "value_type": "string",
+                    "modes": [
+                        "detail"
+                    ]
                 },
                 {
                     "key": "cmdb_bind_status",
                     "title": "CMDB 绑定",
                     "value_type": "string",
-                    "description": "bound 或 unbound，未绑定仍返回该行"
+                    "description": "bound 或 unbound，未绑定仍返回该行",
+                    "modes": [
+                        "detail"
+                    ]
                 },
                 {
                     "key": "monitor_object_id",
                     "title": "监控对象",
-                    "value_type": "string"
+                    "value_type": "string",
+                    "modes": [
+                        "detail"
+                    ]
                 },
                 {
                     "key": "status",
                     "title": "状态",
-                    "value_type": "string"
+                    "value_type": "string",
+                    "role": "dimension",
+                    "modes": [
+                        "detail",
+                        "distribution"
+                    ]
                 },
                 {
-                    "key": "value",
-                    "title": "值",
+                    "key": "is_active",
+                    "title": "是否启用",
+                    "value_type": "boolean",
+                    "modes": [
+                        "distribution"
+                    ],
+                    "table": false
+                },
+                {
+                    "key": "cloud_region_id",
+                    "title": "云区域",
+                    "value_type": "string",
+                    "modes": [
+                        "distribution"
+                    ],
+                    "table": false
+                },
+                {
+                    "key": "instance_count",
+                    "title": "实例数",
                     "value_type": "number",
-                    "table": false
-                },
-                {
-                    "key": "unit",
-                    "title": "单位",
-                    "value_type": "string",
-                    "table": false
-                },
-                {
-                    "key": "aggregation",
-                    "title": "聚合口径",
-                    "value_type": "string",
+                    "role": "measure",
+                    "modes": [
+                        "count",
+                        "distribution"
+                    ],
                     "table": false
                 }
             ]
@@ -3658,29 +3739,50 @@
             {
                 "key": "time",
                 "title": "时间",
-                "value_type": "datetime"
+                "value_type": "datetime",
+                "role": "dimension",
+                "modes": [
+                    "series"
+                ]
             },
             {
                 "key": "value",
                 "title": "值",
-                "value_type": "number"
+                "value_type": "number",
+                "role": "measure",
+                "modes": [
+                    "series",
+                    "value"
+                ]
             },
             {
                 "key": "unit",
                 "title": "单位",
                 "value_type": "string",
-                "description": "指标单位，写在每个点或单值对象上"
+                "description": "指标单位，写在每个点或单值对象上",
+                "modes": [
+                    "series",
+                    "value"
+                ]
             },
             {
                 "key": "aggregation",
                 "title": "聚合口径",
-                "value_type": "string"
+                "value_type": "string",
+                "modes": [
+                    "series",
+                    "value"
+                ]
             },
             {
                 "key": "status",
                 "title": "结果状态",
                 "value_type": "string",
-                "description": "没有样本时为 missing，数值 0 为 ok"
+                "description": "没有样本时为 missing，数值 0 为 ok",
+                "modes": [
+                    "series",
+                    "value"
+                ]
             }
         ]
     },
@@ -4068,15 +4170,36 @@
                                 ]
                             },
                             {
-                                "value": "name",
-                                "label": "名称",
+                                "value": "level",
+                                "label": "级别",
                                 "modes": [
                                     "distribution"
                                 ]
                             },
                             {
-                                "value": "value",
-                                "label": "值",
+                                "value": "status",
+                                "label": "状态",
+                                "modes": [
+                                    "distribution"
+                                ]
+                            },
+                            {
+                                "value": "alert_type",
+                                "label": "告警类型",
+                                "modes": [
+                                    "distribution"
+                                ]
+                            },
+                            {
+                                "value": "monitor_instance_id",
+                                "label": "实例",
+                                "modes": [
+                                    "distribution"
+                                ]
+                            },
+                            {
+                                "value": "alert_count",
+                                "label": "告警数",
                                 "modes": [
                                     "distribution"
                                 ]
@@ -4113,59 +4236,106 @@
                 {
                     "key": "id",
                     "title": "告警标识",
-                    "value_type": "string"
+                    "value_type": "string",
+                    "modes": [
+                        "detail"
+                    ]
                 },
                 {
                     "key": "monitor_instance_id",
                     "title": "实例标识",
-                    "value_type": "string"
+                    "value_type": "string",
+                    "modes": [
+                        "detail",
+                        "distribution"
+                    ]
                 },
                 {
                     "key": "monitor_instance_name",
                     "title": "实例名称",
-                    "value_type": "string"
+                    "value_type": "string",
+                    "modes": [
+                        "detail"
+                    ]
                 },
                 {
                     "key": "level",
                     "title": "级别",
-                    "value_type": "string"
+                    "value_type": "string",
+                    "role": "dimension",
+                    "modes": [
+                        "detail",
+                        "distribution"
+                    ]
                 },
                 {
                     "key": "status",
                     "title": "状态",
-                    "value_type": "string"
+                    "value_type": "string",
+                    "modes": [
+                        "detail",
+                        "distribution"
+                    ]
                 },
                 {
                     "key": "alert_type",
                     "title": "告警类型",
-                    "value_type": "string"
+                    "value_type": "string",
+                    "modes": [
+                        "detail",
+                        "distribution"
+                    ]
                 },
                 {
                     "key": "value",
-                    "title": "值",
-                    "value_type": "number"
-                },
-                {
-                    "key": "name",
-                    "title": "名称",
-                    "value_type": "string",
-                    "table": false
+                    "title": "采样值",
+                    "value_type": "number",
+                    "description": "触发或升级时保存的告警值，不是分布条数",
+                    "modes": [
+                        "detail"
+                    ]
                 },
                 {
                     "key": "start_event_time",
                     "title": "开始时间",
-                    "value_type": "datetime"
+                    "value_type": "datetime",
+                    "modes": [
+                        "detail"
+                    ]
                 },
                 {
-                    "key": "unit",
-                    "title": "单位",
-                    "value_type": "string",
-                    "table": false
+                    "key": "end_event_time",
+                    "title": "结束时间",
+                    "value_type": "datetime",
+                    "modes": [
+                        "detail"
+                    ]
                 },
                 {
-                    "key": "aggregation",
-                    "title": "聚合口径",
-                    "value_type": "string",
+                    "key": "created_at",
+                    "title": "创建时间",
+                    "value_type": "datetime",
+                    "modes": [
+                        "detail"
+                    ]
+                },
+                {
+                    "key": "updated_at",
+                    "title": "更新时间",
+                    "value_type": "datetime",
+                    "modes": [
+                        "detail"
+                    ]
+                },
+                {
+                    "key": "alert_count",
+                    "title": "告警数",
+                    "value_type": "number",
+                    "role": "measure",
+                    "modes": [
+                        "count",
+                        "distribution"
+                    ],
                     "table": false
                 }
             ]
@@ -4671,15 +4841,42 @@
                                 ]
                             },
                             {
-                                "value": "name",
-                                "label": "名称",
+                                "value": "level",
+                                "label": "级别",
                                 "modes": [
                                     "distribution"
                                 ]
                             },
                             {
-                                "value": "value",
-                                "label": "值",
+                                "value": "status",
+                                "label": "状态",
+                                "modes": [
+                                    "distribution"
+                                ]
+                            },
+                            {
+                                "value": "source_name",
+                                "label": "来源名称",
+                                "modes": [
+                                    "distribution"
+                                ],
+                                "query_objects": [
+                                    "alert"
+                                ]
+                            },
+                            {
+                                "value": "source_id",
+                                "label": "来源标识",
+                                "modes": [
+                                    "distribution"
+                                ],
+                                "query_objects": [
+                                    "event"
+                                ]
+                            },
+                            {
+                                "value": "record_count",
+                                "label": "条数",
                                 "modes": [
                                     "distribution"
                                 ]
@@ -4717,62 +4914,179 @@
                     "key": "alert_id",
                     "title": "告警标识",
                     "value_type": "string",
-                    "description": "查询对象为告警时返回"
+                    "description": "查询对象为告警时返回",
+                    "modes": [
+                        "detail"
+                    ]
                 },
                 {
                     "key": "event_id",
                     "title": "事件标识",
                     "value_type": "string",
-                    "description": "查询对象为事件时返回"
+                    "description": "查询对象为事件时返回",
+                    "modes": [
+                        "detail"
+                    ]
                 },
                 {
                     "key": "title",
                     "title": "标题",
-                    "value_type": "string"
+                    "value_type": "string",
+                    "modes": [
+                        "detail"
+                    ]
                 },
                 {
                     "key": "level",
                     "title": "级别",
-                    "value_type": "string"
+                    "value_type": "string",
+                    "role": "dimension",
+                    "modes": [
+                        "detail",
+                        "distribution"
+                    ]
                 },
                 {
                     "key": "status",
                     "title": "状态",
-                    "value_type": "string"
+                    "value_type": "string",
+                    "modes": [
+                        "detail",
+                        "distribution"
+                    ]
                 },
                 {
                     "key": "source_name",
                     "title": "来源名称",
-                    "value_type": "string"
+                    "value_type": "string",
+                    "modes": [
+                        "detail",
+                        "distribution"
+                    ]
                 },
                 {
                     "key": "source_id",
                     "title": "来源标识",
-                    "value_type": "string"
-                },
-                {
-                    "key": "name",
-                    "title": "名称",
                     "value_type": "string",
-                    "table": false
+                    "modes": [
+                        "detail",
+                        "distribution"
+                    ]
                 },
                 {
-                    "key": "value",
-                    "title": "值",
+                    "key": "resource_id",
+                    "title": "资源标识",
+                    "value_type": "string",
+                    "modes": [
+                        "detail"
+                    ]
+                },
+                {
+                    "key": "resource_name",
+                    "title": "资源名称",
+                    "value_type": "string",
+                    "modes": [
+                        "detail"
+                    ]
+                },
+                {
+                    "key": "resource_type",
+                    "title": "资源类型",
+                    "value_type": "string",
+                    "modes": [
+                        "detail"
+                    ]
+                },
+                {
+                    "key": "monitor_id",
+                    "title": "监控标识",
+                    "value_type": "string",
+                    "modes": [
+                        "detail"
+                    ]
+                },
+                {
+                    "key": "cmdb_id",
+                    "title": "CMDB 标识",
+                    "value_type": "string",
+                    "modes": [
+                        "detail"
+                    ]
+                },
+                {
+                    "key": "created_at",
+                    "title": "创建时间",
+                    "value_type": "datetime",
+                    "modes": [
+                        "detail"
+                    ]
+                },
+                {
+                    "key": "updated_at",
+                    "title": "更新时间",
+                    "value_type": "datetime",
+                    "modes": [
+                        "detail"
+                    ]
+                },
+                {
+                    "key": "first_event_time",
+                    "title": "首次事件时间",
+                    "value_type": "datetime",
+                    "modes": [
+                        "detail"
+                    ]
+                },
+                {
+                    "key": "last_event_time",
+                    "title": "末次事件时间",
+                    "value_type": "datetime",
+                    "modes": [
+                        "detail"
+                    ]
+                },
+                {
+                    "key": "closed_at",
+                    "title": "关闭时间",
+                    "value_type": "datetime",
+                    "modes": [
+                        "detail"
+                    ]
+                },
+                {
+                    "key": "received_at",
+                    "title": "接收时间",
+                    "value_type": "datetime",
+                    "modes": [
+                        "detail"
+                    ]
+                },
+                {
+                    "key": "start_time",
+                    "title": "开始时间",
+                    "value_type": "datetime",
+                    "modes": [
+                        "detail"
+                    ]
+                },
+                {
+                    "key": "end_time",
+                    "title": "结束时间",
+                    "value_type": "datetime",
+                    "modes": [
+                        "detail"
+                    ]
+                },
+                {
+                    "key": "record_count",
+                    "title": "条数",
                     "value_type": "number",
-                    "table": false
-                },
-                {
-                    "key": "unit",
-                    "title": "单位",
-                    "value_type": "string",
-                    "table": false
-                },
-                {
-                    "key": "aggregation",
-                    "title": "聚合口径",
-                    "value_type": "string",
-                    "description": "告警与事件的口径分开",
+                    "description": "告警或事件的计数，不与明细字段混用",
+                    "role": "measure",
+                    "modes": [
+                        "count",
+                        "distribution"
+                    ],
                     "table": false
                 }
             ]

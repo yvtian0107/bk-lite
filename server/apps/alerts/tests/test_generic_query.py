@@ -76,7 +76,8 @@ def test_alert_and_event_queries_do_not_share_rows():
     assert alerts["page"] == 1
     assert alerts["page_size"] == 20
     assert "event_id" not in alerts["items"][0]
-    assert events["value"] == 1
+    assert events["record_count"] == 1
+    assert events["query_object"] == "event"
     assert events["aggregation"].startswith("事件")
 
 
@@ -91,7 +92,7 @@ def test_alert_center_requires_time_and_rejects_ranges_over_90_days():
         time_field="created_at",
         time_range=_range(RANGE_MAX_SECONDS),
     )
-    assert allowed["value"] == 1
+    assert allowed["record_count"] == 1
     with pytest.raises(GenericQueryError, match="90"):
         query_alert_center(
             Alert.objects.all(),
@@ -138,7 +139,8 @@ def test_alert_center_page_group_and_empty_results():
     assert empty["status"] == "empty"
     assert empty["items"] == []
     assert zero["status"] == "ok"
-    assert zero["value"] == 0
+    assert zero["record_count"] == 0
+    assert zero["fields"][0]["title"] == "告警数"
 
     for index in range(STAT_GROUP_MAX + 1):
         _alert(f"ALERT-{index}", level=f"L{index}", created_at=START + timedelta(minutes=1))
@@ -182,8 +184,9 @@ def test_alert_source_filter_does_not_multiply_distribution_count():
         group_by="level",
     )
 
-    assert counted["value"] == 1
-    assert grouped["items"] == [{"name": "warning", "value": 1}]
+    assert counted["record_count"] == 1
+    assert grouped["items"] == [{"level": "warning", "record_count": 1}]
+    assert grouped["fields"][0]["role"] == "dimension"
 
 
 def test_status_options_follow_query_object():
@@ -249,7 +252,7 @@ def test_event_queryset_follows_event_rules_and_is_empty_without_rules(monkeypat
         user_info=user_info,
     )
     assert empty["result"] is True
-    assert empty["data"]["value"] == 0
+    assert empty["data"]["record_count"] == 0
 
     rules = {"team": [1], "instance": []}
     scoped = handler(
@@ -269,7 +272,7 @@ def test_event_queryset_follows_event_rules_and_is_empty_without_rules(monkeypat
         time_range=day,
         user_info=user_info,
     )
-    assert by_instance["data"]["value"] == 1
+    assert by_instance["data"]["record_count"] == 1
 
     denied = handler(
         query_object="event",
@@ -289,7 +292,7 @@ def test_event_queryset_follows_event_rules_and_is_empty_without_rules(monkeypat
         user_info={**user_info, "permission": {"alarm": ["Alarms-View"]}},
     )
     assert allowed["result"] is True
-    assert allowed["data"]["value"] == 1
+    assert allowed["data"]["record_count"] == 1
 
 
 def test_alert_or_group_cannot_leave_the_authorized_queryset_or_multiply_count():
@@ -331,9 +334,9 @@ def test_alert_or_group_cannot_leave_the_authorized_queryset_or_multiply_count()
         time_range=day,
         filters=filters,
     )
-    assert counted["value"] == 2
-    assert {item["name"]: item["value"] for item in grouped["items"]} == {"warning": 1, "fatal": 1}
-    assert scoped["value"] == 1
+    assert counted["record_count"] == 2
+    assert {item["level"]: item["record_count"] for item in grouped["items"]} == {"warning": 1, "fatal": 1}
+    assert scoped["record_count"] == 1
 
 
 def test_handler_rejects_unsupported_filters():

@@ -81,7 +81,7 @@ const OsPie: React.FC<OsPieProps> = ({
     [config?.dimensionField, config?.pieScalarFields, config?.valueField, rawData],
   );
   const isDataReady = chartData.some(
-    (item) => Number.isFinite(item.value) && item.value > 0,
+    (item) => Number.isFinite(item.value) && item.value >= 0,
   );
   const showLegend = isDataReady;
   const { onEvents: finishedEvents } = useEchartsFinishedReady({
@@ -131,7 +131,7 @@ const OsPie: React.FC<OsPieProps> = ({
             <div style="margin-bottom: ${tooltipGap}px; font-weight: bold;">${params.seriesName}</div>
             <div style="display: flex; align-items: center;">
               <span style="display: inline-block; width: ${markerSize}px; height: ${markerSize}px; background-color: ${params.color}; border-radius: 50%; margin-right: ${markerGap}px;"></span>
-              <span>${params.name}: ${formatVisibleChartValue(params.value, config)} (${percent.toFixed(1)}%)</span>
+              <span>${params.data?.label || params.name}: ${formatVisibleChartValue(params.value, config)} (${percent.toFixed(1)}%)</span>
             </div>
           </div>
         `;
@@ -256,7 +256,11 @@ const OsPie: React.FC<OsPieProps> = ({
       {/* 图例区域 - 带百分比 */}
       {showLegend && (
         <ChartLegend
-          data={chartData.map((item: any) => ({ name: item.name, value: item.value }))}
+          data={chartData.map((item: any) => ({
+            name: item.name,
+            label: item.label,
+            value: item.value,
+          }))}
           colors={chartColors}
           layout="vertical"
           showPercent={true}
