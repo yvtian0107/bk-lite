@@ -3,6 +3,7 @@
 import pytest
 
 from apps.cmdb.services.generic_query import GenericQueryError, query_instances, query_models, query_one_hop_relations
+from apps.cmdb.services.generic_query_columns import build_instance_column_fields, build_one_hop_column_fields, project_one_hop_rows
 from apps.cmdb.services.generic_query_limits import DETAIL_PAGE_SIZE_MAX, ONE_HOP_RESULT_MAX, ONE_HOP_START_MAX, SCAN_INSTANCE_MAX, STAT_GROUP_MAX
 
 
@@ -834,7 +835,10 @@ def test_instance_classification_does_not_replace_model_permission(monkeypatch):
     from apps.cmdb.nats.generic_query import query_cmdb_instances
 
     monkeypatch.setattr("apps.cmdb.nats.generic_query._visible_models", lambda user_info: _visible_cmdb_models())
-    monkeypatch.setattr("apps.cmdb.nats.generic_query._attr_types", lambda model_id, user_info: {"inst_name": "string"})
+    monkeypatch.setattr(
+        "apps.cmdb.nats.generic_query._load_model_attrs",
+        lambda model_id, user_info: [{"attr_id": "inst_name", "attr_name": "实例名称", "attr_type": "str"}],
+    )
     monkeypatch.setattr(
         "apps.cmdb.nats.generic_query.query_instances",
         lambda **kwargs: {"structure": "value", "status": "ok", "value": 1, "unit": "个", "aggregation": "实例计数"},
@@ -847,6 +851,7 @@ def test_instance_classification_does_not_replace_model_permission(monkeypatch):
         user_info={"user": "demo"},
     )
     assert matched["result"] is True
+    assert "column_fields" not in matched["data"]
 
     empty_classification = query_cmdb_instances(
         model_id="host",
@@ -920,6 +925,321 @@ def test_one_hop_loads_associations_after_classification_matches(monkeypatch):
     )
     assert loaded["result"] is True
     assert listed == ["host"]
+
+
+def test_instance_detail_hides_password_and_describes_business_columns(monkeypatch):
+    captured = {}
+
+    def fake_list(**kwargs):
+        captured.update(kwargs)
+        return [
+            {
+                "_id": 9,
+                "inst_name": "web-1",
+                "inst_uuid": "uuid-1",
+                "cpu": 0,
+                "enabled": False,
+                "status": "1",
+                "status_display": "运行中",
+                "organization": [7],
+                "organization_display": "研发",
+                "password": "secret-value",
+                "password_display": "secret-display",
+                "owner": "user-1",
+            }
+        ], 1
+
+    monkeypatch.setattr("apps.cmdb.services.generic_query.InstanceManage.instance_list", fake_list)
+    payload = query_instances(
+        model_id="host",
+        analysis_mode="detail",
+        attr_types={
+            "inst_name": "str",
+            "cpu": "int",
+            "enabled": "bool",
+            "status": "enum",
+            "organization": "organization",
+            "password": "pwd",
+            "owner": "user",
+        },
+        permission_map={"1": {"inst_names": []}},
+        page=1,
+        page_size=20,
+    )
+    row = payload["items"][0]
+    assert row["cpu"] == 0
+    assert row["enabled"] is False
+    assert row["status"] == "1"
+    assert row["status_display"] == "运行中"
+    assert "password" not in row
+    assert "password_display" not in row
+    assert "_id" not in row
+    assert "name" not in row
+    assert captured["page_size"] == 20
+
+    fields = build_instance_column_fields(
+        [
+            {"attr_id": "inst_name", "attr_name": "实例名称", "attr_type": "str"},
+            {"attr_id": "cpu", "attr_name": "CPU", "attr_type": "int"},
+            {"attr_id": "status", "attr_name": "运行状态", "attr_type": "enum", "option": [{"id": "1", "name": "运行中"}, {"id": 0, "name": "停止"}]},
+            {"attr_id": "status_display", "attr_name": "运行状态", "attr_type": "str", "is_display_field": True},
+            {"attr_id": "password", "attr_name": "密码", "attr_type": "pwd"},
+            {"attr_id": "password_display", "attr_name": "密码", "attr_type": "str", "is_display_field": True},
+            {"attr_id": "inst_uuid", "attr_name": "实例标识", "attr_type": "str"},
+            {"attr_id": "node_id", "attr_name": "节点", "attr_type": "str", "is_system_link": True},
+        ],
+        model_key="host",
+    )
+    by_key = {field["key"]: field for field in fields["fields"]}
+    assert [field["key"] for field in fields["fields"] if field["default_visible"]][:2] == ["inst_name", "cpu"]
+    assert by_key["inst_name"]["title"] == "实例名称"
+    assert by_key["status"]["title"] == "运行状态"
+    assert by_key["status"]["options"] == [{"value": "1", "label": "运行中"}, {"value": "0", "label": "停止"}]
+    assert by_key["inst_uuid"]["default_visible"] is False
+    assert by_key["node_id"]["default_visible"] is False
+    assert "password" not in by_key
+    assert "status_display" not in by_key
+    assert "name" not in by_key
+    assert "unit" not in by_key
+
+
+def test_instance_detail_empty_page_stays_paged(monkeypatch):
+    monkeypatch.setattr(
+        "apps.cmdb.services.generic_query.InstanceManage.instance_list",
+        lambda **kwargs: ([], 0),
+    )
+    payload = query_instances(
+        model_id="host",
+        analysis_mode="detail",
+        attr_types={"inst_name": "str", "status": "enum"},
+        permission_map={"1": {"inst_names": []}},
+    )
+    assert payload["items"] == []
+    assert payload["status"] == "empty"
+    assert payload["page_size"] == 20
+
+
+def test_one_hop_detail_projects_both_sides_and_skips_protocol_columns():
+    rows = project_one_hop_rows(
+        [
+            {
+                "start_uuid": "s1",
+                "start_name": "主机甲",
+                "start_model_id": "host",
+                "end_uuid": "e1",
+                "end_name": "应用甲",
+                "end_model_id": "app",
+            }
+        ],
+        starts=[
+            {
+                "inst_uuid": "s1",
+                "inst_name": "主机甲",
+                "model_id": "host",
+                "cpu": 0,
+                "password": "secret",
+                "password_display": "secret-display",
+                "_id": 1,
+            }
+        ],
+        ends=[
+            {
+                "inst_uuid": "e1",
+                "inst_name": "应用甲",
+                "model_id": "app",
+                "status": "up",
+                "status_display": "在线",
+                "enabled": False,
+            }
+        ],
+        start_attrs=[
+            {"attr_id": "cpu", "attr_type": "int"},
+            {"attr_id": "password", "attr_type": "pwd"},
+        ],
+        end_attrs=[
+            {"attr_id": "status", "attr_type": "enum"},
+            {"attr_id": "enabled", "attr_type": "bool"},
+        ],
+    )
+    row = rows[0]
+    assert row["start:cpu"] == 0
+    assert row["end:enabled"] is False
+    assert row["end:status_display"] == "在线"
+    assert "password" not in row
+    assert "start:password" not in row
+    assert "start:password_display" not in row
+    assert "_id" not in row
+    assert "name" not in row
+    columns = build_one_hop_column_fields(
+        [
+            {"attr_id": "inst_name", "attr_name": "实例名称", "attr_type": "str"},
+            {"attr_id": "cpu", "attr_name": "CPU", "attr_type": "int"},
+            {"attr_id": "password", "attr_name": "密码", "attr_type": "pwd"},
+        ],
+        [
+            {"attr_id": "inst_name", "attr_name": "实例名称", "attr_type": "str"},
+            {"attr_id": "status", "attr_name": "状态", "attr_type": "enum", "option": [{"id": "up", "name": "在线"}]},
+        ],
+        model_key="host|out|host_belong_app|app",
+    )
+    keys = [field["key"] for field in columns["fields"]]
+    assert keys[:3] == ["start_name", "start:cpu", "end_name"]
+    assert "end:status" in keys
+    assert "name" not in keys
+    assert "value" not in keys
+    assert "unit" not in keys
+    assert "aggregation" not in keys
+    assert next(field for field in columns["fields"] if field["key"] == "start_uuid")["default_visible"] is False
+
+
+def test_instance_detail_handler_attaches_model_columns_and_strips_password(monkeypatch):
+    from apps.cmdb.nats.generic_query import query_cmdb_instances
+
+    monkeypatch.setattr("apps.cmdb.nats.generic_query._visible_models", lambda user_info: _visible_cmdb_models())
+    monkeypatch.setattr(
+        "apps.cmdb.nats.generic_query._load_model_attrs",
+        lambda model_id, user_info: [
+            {"attr_id": "inst_name", "attr_name": "实例名称", "attr_type": "str"},
+            {"attr_id": "status", "attr_name": "运行状态", "attr_type": "enum", "option": [{"id": "1", "name": "运行中"}]},
+            {"attr_id": "password", "attr_name": "密码", "attr_type": "pwd"},
+        ],
+    )
+    monkeypatch.setattr(
+        "apps.cmdb.services.generic_query.InstanceManage.instance_list",
+        lambda **kwargs: (
+            [
+                {
+                    "_id": 3,
+                    "inst_name": "web-1",
+                    "status": "1",
+                    "status_display": "运行中",
+                    "password": "secret-value",
+                    "password_display": "secret-display",
+                    "cpu": 0,
+                }
+            ],
+            1,
+        ),
+    )
+
+    loaded = query_cmdb_instances(
+        model_id="host",
+        classification_id="compute",
+        analysis_mode="detail",
+        user_info={"user": "demo"},
+    )
+    assert loaded["result"] is True
+    row = loaded["data"]["items"][0]
+    assert row["cpu"] == 0
+    assert "password" not in row
+    assert "password_display" not in row
+    assert "_id" not in row
+    fields = {field["key"]: field for field in loaded["data"]["column_fields"]["fields"]}
+    assert loaded["data"]["column_fields"]["model_key"] == "host"
+    assert fields["status"]["title"] == "运行状态"
+    assert "password" not in fields
+    assert loaded["data"]["page_size"] == 20
+
+
+def test_one_hop_detail_handler_projects_business_columns(monkeypatch):
+    from apps.cmdb.nats.generic_query import query_cmdb_one_hop
+
+    monkeypatch.setattr("apps.cmdb.nats.generic_query._visible_models", lambda user_info: _visible_cmdb_models())
+    monkeypatch.setattr("apps.cmdb.nats.generic_query._attr_types", lambda model_id, user_info: {"inst_name": "string"})
+    monkeypatch.setattr(
+        "apps.cmdb.nats.generic_query.list_model_association_options",
+        lambda language, model_id: [
+            {
+                "model_asst_id": "host_belong_app",
+                "src_model_id": "host",
+                "dst_model_id": "app",
+                "label": "属于",
+            }
+        ],
+    )
+
+    def attrs_for(model_id, user_info):
+        if model_id == "host":
+            return [
+                {"attr_id": "inst_name", "attr_name": "实例名称", "attr_type": "str"},
+                {"attr_id": "cpu", "attr_name": "CPU", "attr_type": "int"},
+                {"attr_id": "password", "attr_name": "密码", "attr_type": "pwd"},
+            ]
+        return [
+            {"attr_id": "inst_name", "attr_name": "实例名称", "attr_type": "str"},
+            {"attr_id": "status", "attr_name": "状态", "attr_type": "enum", "option": [{"id": "up", "name": "在线"}]},
+        ]
+
+    monkeypatch.setattr("apps.cmdb.nats.generic_query._load_model_attrs", attrs_for)
+    monkeypatch.setattr(
+        "apps.cmdb.nats.generic_query.load_start_instances",
+        lambda **kwargs: (
+            [
+                {
+                    "inst_uuid": "s1",
+                    "inst_name": "主机甲",
+                    "model_id": "host",
+                    "cpu": 0,
+                    "password": "secret",
+                    "password_display": "secret-display",
+                    "_id": 1,
+                }
+            ],
+            1,
+        ),
+    )
+    monkeypatch.setattr(
+        "apps.cmdb.nats.generic_query.query_one_hop",
+        lambda **kwargs: {
+            "pair_count": 1,
+            "groups": [],
+            "pairs": [
+                {
+                    "start_uuid": "s1",
+                    "start_name": "主机甲",
+                    "start_model_id": "host",
+                    "end_uuid": "e1",
+                    "end_name": "应用甲",
+                    "end_model_id": "app",
+                }
+            ],
+        },
+    )
+    monkeypatch.setattr(
+        "apps.cmdb.nats.generic_query.load_instances_by_uuids",
+        lambda uuids: [
+            {
+                "inst_uuid": "e1",
+                "inst_name": "应用甲",
+                "model_id": "app",
+                "status": "up",
+                "status_display": "在线",
+                "enabled": False,
+            }
+        ],
+    )
+
+    loaded = query_cmdb_one_hop(
+        start_model_id="host",
+        classification_id="compute",
+        model_asst_id="host_belong_app",
+        direction="out",
+        analysis_mode="detail",
+        user_info={"user": "demo"},
+    )
+    assert loaded["result"] is True
+    row = loaded["data"]["items"][0]
+    assert row["start:cpu"] == 0
+    assert row["end:enabled"] is False
+    assert row["end:status"] == "up"
+    assert "start:password" not in row
+    assert "start:password_display" not in row
+    assert loaded["data"]["column_fields"]["model_key"] == "host|out|host_belong_app|app"
+    keys = [field["key"] for field in loaded["data"]["column_fields"]["fields"]]
+    assert "start:cpu" in keys
+    assert "end:status" in keys
+    assert "name" not in keys
+    assert "unit" not in keys
 
 
 def _scope_models():

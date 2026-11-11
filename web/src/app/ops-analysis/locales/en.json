@@ -1154,6 +1154,7 @@
     "dataFormatMismatch": "Data format mismatch",
     "optionPageLimitExceeded": "Option page limit exceeded",
     "selectClassificationFirst": "Select a classification first",
+    "selectModelRelationFirst": "Select the start model, relation, and direction first",
     "conditionFilter": {
       "add": "Add condition",
       "delete": "Delete condition",

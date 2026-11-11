@@ -93,6 +93,12 @@ import {
   buildDisplayColumnsFromSchema,
   isDisplayableDefaultField,
 } from './widgetConfig/utils/columnProbing';
+import {
+  isModelAttrTableSource,
+  modelTableBindingKey,
+  modelTableEmptyText,
+  reconcileSavedModelColumns,
+} from '@/app/ops-analysis/utils/modelTableColumns';
 import { buildRoleFieldOptions, dropRoleValueMissingFrom } from './widgetConfig/utils/chartFieldOptions';
 import { ChartRoleFieldsSection, buildChartRoleFields, chartRoleValuePaths } from './widgetConfig/sections/chartRoleFieldsSection';
 import { PieScalarFieldsSection } from './widgetConfig/sections/pieScalarFieldsSection';
@@ -438,6 +444,9 @@ const ViewConfig: React.FC<ViewConfigPropsWithManager> = ({
     builtinNamespaceId: effectiveNamespaceId,
     t,
   });
+  const appliedModelBindingRef = useRef<string | null>(null);
+  const modelColumnEpochRef = useRef(0);
+  const watchedParams = Form.useWatch('params', form) as Record<string, unknown> | undefined;
   const {
     isTableLike: isTableLikeChartType,
     isNetworkStatusTopology,
@@ -451,6 +460,39 @@ const ViewConfig: React.FC<ViewConfigPropsWithManager> = ({
     chartType,
     form.getFieldValue('sceneWidgetType'),
   );
+  const modelBindingKey = modelTableBindingKey(
+    canonicalSelectedDataSource?.rest_api,
+    watchedParams,
+  );
+  useEffect(() => {
+    if (!open || !isTableLikeChartType || !isModelAttrTableSource(canonicalSelectedDataSource?.rest_api)) {
+      return;
+    }
+    if (appliedModelBindingRef.current === null || appliedModelBindingRef.current === modelBindingKey) {
+      return;
+    }
+    const epoch = modelColumnEpochRef.current + 1;
+    modelColumnEpochRef.current = epoch;
+    appliedModelBindingRef.current = modelBindingKey;
+    const source = canonicalSelectedDataSource;
+    if (!source) return;
+    void tableConfig.probeDefaultDisplayColumns(source, watchedParams || {}, chartType).then((columns) => {
+      if (modelColumnEpochRef.current !== epoch) return;
+      const modelKey = tableConfig.probedModelKeyRef.current;
+      if (modelBindingKey && !modelKey) return;
+      tableConfig.setColumnModelKey(modelKey);
+      tableConfig.setDetectedDisplayColumns(columns);
+      tableConfig.setDisplayColumns(columns);
+    });
+  }, [
+    open,
+    isTableLikeChartType,
+    canonicalSelectedDataSource,
+    modelBindingKey,
+    chartType,
+    tableConfig,
+    watchedParams,
+  ]);
   const networkTopologyConfig = useNetworkStatusTopologyConfig({
     open,
     enabled: isNetworkStatusTopology,
@@ -524,6 +566,8 @@ const ViewConfig: React.FC<ViewConfigPropsWithManager> = ({
       setFilterBindings({});
       setWidgetParamOverrides([]);
       tableConfig.resetTableConfig();
+      appliedModelBindingRef.current = '';
+      modelColumnEpochRef.current += 1;
       singleValueConfig.resetSingleValueConfig();
 
       // 加载完整数据源（brief 模式不含 params）
@@ -935,6 +979,8 @@ const ViewConfig: React.FC<ViewConfigPropsWithManager> = ({
     requestId: number,
   ): Promise<void> => {
     resolvedParamOptionsRef.current.clear();
+    appliedModelBindingRef.current = null;
+    modelColumnEpochRef.current += 1;
     if (!isCurrentConfigRequest(requestId)) {
       return;
     }
@@ -1042,7 +1088,50 @@ const ViewConfig: React.FC<ViewConfigPropsWithManager> = ({
       const storedColumns = originalColumns.filter(
         (column) => column.columnType !== 'actions',
       );
-      if (storedColumns.length) {
+      if (
+        isModelAttrTableSource(targetDataSource.rest_api)
+        && (formValues.chartType === 'table' || formValues.chartType === 'eventTable')
+      ) {
+        const probedColumns = await tableConfig.probeDefaultDisplayColumns(
+          targetDataSource,
+          formValues.params || {},
+          formValues.chartType,
+        );
+        if (!isCurrentConfigRequest(requestId)) {
+          return;
+        }
+        const modelKey = tableConfig.probedModelKeyRef.current;
+        const savedKey = valueConfig?.tableConfig?.columnModelKey || '';
+        const binding = modelTableBindingKey(targetDataSource.rest_api, formValues.params);
+        if (binding && !modelKey && savedKey && storedColumns.length) {
+          const keptColumns = storedColumns.map((column, index) => ({
+            ...column,
+            id: `column_saved_${index}_${column.key}`,
+            isDefault: true,
+          }));
+          tableConfig.setColumnModelKey(savedKey);
+          tableConfig.setDetectedDisplayColumns(keptColumns);
+          tableConfig.setDisplayColumns(keptColumns);
+        } else {
+          const resolvedColumns = savedKey && savedKey === modelKey
+            ? reconcileSavedModelColumns(storedColumns, probedColumns)
+            : probedColumns;
+          const nextColumns = resolvedColumns.map((column, index) => ({
+            ...column,
+            id: 'id' in column && column.id
+              ? String(column.id)
+              : `column_model_${index}_${column.key}`,
+            isDefault: true,
+          }));
+          tableConfig.setColumnModelKey(modelKey);
+          tableConfig.setDetectedDisplayColumns(probedColumns);
+          tableConfig.setDisplayColumns(nextColumns);
+        }
+        appliedModelBindingRef.current = modelTableBindingKey(
+          targetDataSource.rest_api,
+          formValues.params,
+        );
+      } else if (storedColumns.length) {
         const schemaDefaultKeys = new Set(
           (targetDataSource?.field_schema || [])
             .map((field) => field.key)
@@ -1123,6 +1212,15 @@ const ViewConfig: React.FC<ViewConfigPropsWithManager> = ({
           }
         }
       }
+      if (
+        isModelAttrTableSource(targetDataSource.rest_api)
+        && appliedModelBindingRef.current === null
+      ) {
+        appliedModelBindingRef.current = modelTableBindingKey(
+          targetDataSource.rest_api,
+          formValues.params,
+        );
+      }
     } else {
       setSelectedDataSource(undefined);
       if (!valueConfig?.tableConfig?.columns?.length) {
@@ -1178,6 +1276,8 @@ const ViewConfig: React.FC<ViewConfigPropsWithManager> = ({
     abandonInteractionSample('');
     networkTopologyConfig.resetInstanceOptions();
     tableConfig.resetTableConfig();
+    appliedModelBindingRef.current = null;
+    modelColumnEpochRef.current += 1;
     singleValueConfig.resetSingleValueConfig();
   };
 
@@ -1397,6 +1497,7 @@ const ViewConfig: React.FC<ViewConfigPropsWithManager> = ({
       filterBindings,
       displayColumns: tableConfig.displayColumns,
       filterFields: tableConfig.filterFields,
+      columnModelKey: tableConfig.columnModelKey,
       includeSingleStyle: showSingleValueStyle,
     });
   }, [
@@ -1411,6 +1512,7 @@ const ViewConfig: React.FC<ViewConfigPropsWithManager> = ({
     singleValueConfig.thresholdColors,
     tableConfig.displayColumns,
     tableConfig.filterFields,
+    tableConfig.columnModelKey,
   ]);
 
   const liveDraft = useMemo(() => {
@@ -1551,6 +1653,7 @@ const ViewConfig: React.FC<ViewConfigPropsWithManager> = ({
         filterBindings,
         displayColumns: tableConfig.displayColumns,
         filterFields: tableConfig.filterFields,
+        columnModelKey: tableConfig.columnModelKey,
         includeSingleStyle: showSingleValueStyle,
       });
 
@@ -1865,6 +1968,11 @@ const ViewConfig: React.FC<ViewConfigPropsWithManager> = ({
                 isProbingColumns={tableConfig.isProbingColumns}
                 paramsChangedAfterProbe={tableConfig.paramsChangedAfterProbe}
                 displayColumnsError={tableConfig.displayColumnsError}
+                columnHint={modelTableEmptyText(
+                  selectedDataSource?.rest_api,
+                  watchedParams,
+                  t,
+                )}
                 onAddFilterField={tableConfig.handleAddFilterField}
                 onDeleteFilterField={tableConfig.handleDeleteFilterField}
                 onFilterFieldChange={tableConfig.handleFilterFieldChange}

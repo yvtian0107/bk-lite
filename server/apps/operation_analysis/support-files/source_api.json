@@ -2396,7 +2396,7 @@
         {
         "key": "CMDB 实例通用查询::cmdb/query_cmdb_instances",
         "name": "CMDB 实例通用查询",
-        "desc": "按模型查询实例明细、数量、属性分布或数值聚合。机房、应用系统等实例选项也复用本查询并翻页，不另做只取第一页的列表",
+        "desc": "按模型查询实例明细、数量、属性分布或数值聚合。机房、应用系统等实例选项也复用本查询并翻页，不另做只取第一页的列表。明细列按所选模型属性生成，统计协议字段不进入表格。",
         "rest_api": "cmdb/query_cmdb_instances",
         "tag": [
             "cmdb"
@@ -2773,7 +2773,8 @@
             {
                 "key": "inst_uuid",
                 "title": "实例标识",
-                "value_type": "string"
+                "value_type": "string",
+                "table": false
             },
             {
                 "key": "inst_name",
@@ -2784,35 +2785,40 @@
                 "key": "name",
                 "title": "名称",
                 "value_type": "string",
-                "description": "分布分组名；明细可配合实例名"
+                "description": "分布分组名；明细可配合实例名",
+                "table": false
             },
             {
                 "key": "value",
                 "title": "值",
-                "value_type": "number"
+                "value_type": "number",
+                "table": false
             },
             {
                 "key": "unit",
                 "title": "单位",
-                "value_type": "string"
+                "value_type": "string",
+                "table": false
             },
             {
                 "key": "aggregation",
                 "title": "聚合口径",
-                "value_type": "string"
+                "value_type": "string",
+                "table": false
             },
             {
                 "key": "status",
                 "title": "结果状态",
                 "value_type": "string",
-                "description": "ok 为零值；empty 为没有可聚合实例；missing 为缺数据"
+                "description": "ok 为零值；empty 为没有可聚合实例；missing 为缺数据",
+                "table": false
             }
         ]
     },
         {
         "key": "CMDB 一跳关联通用查询::cmdb/query_cmdb_one_hop",
         "name": "CMDB 一跳关联通用查询",
-        "desc": "按具名关系只跨一层。计数按起点计，同一起点落到多个终点时各计 1 次，各柱之和等于合计",
+        "desc": "按具名关系只跨一层。计数按起点计，同一起点落到多个终点时各计 1 次，各柱之和等于合计。明细列按起点和终点模型属性生成，统计协议字段不进入表格。",
         "rest_api": "cmdb/query_cmdb_one_hop",
         "tag": [
             "cmdb"
@@ -3195,7 +3201,8 @@
             {
                 "key": "start_uuid",
                 "title": "起点标识",
-                "value_type": "string"
+                "value_type": "string",
+                "table": false
             },
             {
                 "key": "start_name",
@@ -3205,12 +3212,14 @@
             {
                 "key": "start_model_id",
                 "title": "起点模型",
-                "value_type": "string"
+                "value_type": "string",
+                "table": false
             },
             {
                 "key": "end_uuid",
                 "title": "终点标识",
-                "value_type": "string"
+                "value_type": "string",
+                "table": false
             },
             {
                 "key": "end_name",
@@ -3220,30 +3229,35 @@
             {
                 "key": "end_model_id",
                 "title": "终点模型",
-                "value_type": "string"
+                "value_type": "string",
+                "table": false
             },
             {
                 "key": "name",
                 "title": "名称",
                 "value_type": "string",
-                "description": "分布时为终点名称"
+                "description": "分布时为终点名称",
+                "table": false
             },
             {
                 "key": "value",
                 "title": "值",
                 "value_type": "number",
-                "description": "按起点计数，同一起点关联多个终点时分别计数"
+                "description": "按起点计数，同一起点关联多个终点时分别计数",
+                "table": false
             },
             {
                 "key": "unit",
                 "title": "单位",
-                "value_type": "string"
+                "value_type": "string",
+                "table": false
             },
             {
                 "key": "aggregation",
                 "title": "聚合口径",
                 "value_type": "string",
-                "description": "按起点计数，不做全局去重"
+                "description": "按起点计数，不做全局去重",
+                "table": false
             }
         ]
     },
@@ -3623,17 +3637,20 @@
             {
                 "key": "value",
                 "title": "值",
-                "value_type": "number"
+                "value_type": "number",
+                "table": false
             },
             {
                 "key": "unit",
                 "title": "单位",
-                "value_type": "string"
+                "value_type": "string",
+                "table": false
             },
             {
                 "key": "aggregation",
                 "title": "聚合口径",
-                "value_type": "string"
+                "value_type": "string",
+                "table": false
             }
         ]
     },
@@ -4378,7 +4395,8 @@
             {
                 "key": "name",
                 "title": "名称",
-                "value_type": "string"
+                "value_type": "string",
+                "table": false
             },
             {
                 "key": "start_event_time",
@@ -4388,12 +4406,14 @@
             {
                 "key": "unit",
                 "title": "单位",
-                "value_type": "string"
+                "value_type": "string",
+                "table": false
             },
             {
                 "key": "aggregation",
                 "title": "聚合口径",
-                "value_type": "string"
+                "value_type": "string",
+                "table": false
             }
         ]
     },
@@ -4992,23 +5012,27 @@
             {
                 "key": "name",
                 "title": "名称",
-                "value_type": "string"
+                "value_type": "string",
+                "table": false
             },
             {
                 "key": "value",
                 "title": "值",
-                "value_type": "number"
+                "value_type": "number",
+                "table": false
             },
             {
                 "key": "unit",
                 "title": "单位",
-                "value_type": "string"
+                "value_type": "string",
+                "table": false
             },
             {
                 "key": "aggregation",
                 "title": "聚合口径",
                 "value_type": "string",
-                "description": "告警与事件的口径分开"
+                "description": "告警与事件的口径分开",
+                "table": false
             }
         ]
     }

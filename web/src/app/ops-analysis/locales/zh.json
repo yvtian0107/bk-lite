@@ -1154,6 +1154,7 @@
     "dataFormatMismatch": "数据格式不匹配",
     "optionPageLimitExceeded": "选项超过分页上限，无法继续加载",
     "selectClassificationFirst": "请先选择分类",
+    "selectModelRelationFirst": "请先选择起点模型、关系和方向",
     "conditionFilter": {
       "add": "添加条件",
       "delete": "删除条件",

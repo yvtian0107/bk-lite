@@ -1,4 +1,5 @@
 import type { ResponseFieldDefinition } from '@/app/ops-analysis/types/dataSource';
+import { schemaFieldsForTable } from '@/app/ops-analysis/utils/modelTableColumns';
 import type { TableColumnConfigItem } from '@/app/ops-analysis/types/dashBoard';
 
 export type DisplayColumnRow = TableColumnConfigItem & {
@@ -24,7 +25,7 @@ export const isDisplayableDefaultField = (key: string): boolean => {
 export const buildDisplayColumnsFromSchema = (
   fields: ResponseFieldDefinition[],
 ): DisplayColumnRow[] => {
-  return (fields || [])
+  return schemaFieldsForTable(fields || [])
     .filter((field) => isDisplayableDefaultField(field.key))
     .map((field, idx) => ({
       id: `column_schema_${Date.now()}_${idx}`,
