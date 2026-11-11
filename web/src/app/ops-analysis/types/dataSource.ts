@@ -35,6 +35,10 @@ export interface ResponseFieldDefinition {
   description?: string;
   /** false 时不作为明细表默认列。旧数据源缺省仍显示。 */
   table?: boolean;
+  /** 该字段属于哪些分析方式。缺省表示全部方式，避免把当前方式没有的字段并进候选。 */
+  modes?: string[];
+  /** 图表未手选字段时的默认角色。同一键不因图表改成 name/value。 */
+  role?: 'dimension' | 'measure' | 'identity';
 }
 
 /** 接口字段定义配置（数据源级别） */

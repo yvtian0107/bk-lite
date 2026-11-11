@@ -416,6 +416,23 @@
     "fieldTitle": "Display Name",
     "fieldValueType": "Data Type",
     "fieldDescription": "Description",
+    "fieldRole": "Chart role",
+    "fieldRolePlaceholder": "Unspecified",
+    "fieldModes": "Analysis modes",
+    "fieldModesPlaceholder": "All modes",
+    "fieldRoles": {
+      "dimension": "Dimension",
+      "measure": "Measure",
+      "identity": "Identity"
+    },
+    "analysisModes": {
+      "detail": "Detail",
+      "count": "Count",
+      "distribution": "Distribution",
+      "aggregate": "Aggregate",
+      "series": "Series",
+      "value": "Value"
+    },
     "duplicateFieldKeys": "Duplicate field names: ",
     "valueTypes": {
       "string": "String",
@@ -1152,6 +1169,7 @@
     "selectModel": "Please select model",
     "selectInstance": "Please select instance",
     "dataFormatMismatch": "Data format mismatch",
+    "chartFieldMissing": "Field {field} is not in the current result",
     "structureMismatch": "Current result structure is {current}; this chart needs {required}. Change the analysis mode or the chart.",
     "structureName": {
       "table": "table",

@@ -13,9 +13,15 @@ import {
   seriesLabelForField,
 } from '@/app/ops-analysis/utils/lineBarFieldMapping';
 import { coerceTopNNumericValue, unwrapTopNData } from '@/app/ops-analysis/utils/topNData';
+import {
+  chartFieldMissingMessage,
+  resolveChartBinding,
+} from '@/app/ops-analysis/utils/chartFieldContract';
 
 export interface ChartDataItem {
   name: string;
+  /** 展示文案。饼图 name 在有身份字段时用身份，避免同名扇区被合并。 */
+  label?: string;
   value: number;
   __link?: ChartLinkPoint;
 }
@@ -190,6 +196,8 @@ export class ChartDataTransformer {
       return !Array.isArray(rawData.items) || rawData.items.length === 0;
     }
     if (structure === 'value') {
+      if (rawData.status === 'empty' || rawData.status === 'missing') return true;
+      if (rawData.status === 'ok') return false;
       return this.readNullableNumber(rawData.value) === null;
     }
     const series = rawData.series;
@@ -379,6 +387,51 @@ export class ChartDataTransformer {
     return String(value);
   }
 
+  /** 序列点优先读 time。旧点仍用 name，避免把业务字段改成图表轴。 */
+  private static seriesPointAxis(item: unknown): { raw: unknown; key: string } | null {
+    if (!item || typeof item !== 'object') return null;
+    if ('time' in item) return { raw: (item as { time: unknown }).time, key: 'time' };
+    if ('name' in item) return { raw: (item as { name: unknown }).name, key: 'name' };
+    return null;
+  }
+
+  private static pieFromBinding(
+    rows: unknown[],
+    binding: { dimensionField?: string; measureField?: string; identityField?: string },
+  ): PieChartData {
+    const dimensionField = binding.dimensionField || '';
+    const measureField = binding.measureField || '';
+    const identityField = binding.identityField || '';
+    const slices: PieChartData = [];
+    rows.forEach((item) => {
+      if (!isPlainRecord(item)) return;
+      const value = coerceTopNNumericValue(item[measureField]);
+      if (value === null) return;
+      const identityRaw = identityField ? item[identityField] : undefined;
+      const identity = identityRaw === null || identityRaw === undefined || identityRaw === ''
+        ? ''
+        : String(identityRaw);
+      const dimensionText = this.formatCategoryValue(item[dimensionField]);
+      const label = dimensionText || identity;
+      const name = identity || dimensionText;
+      if (!name && !label) return;
+      slices.push({
+        name,
+        label: label || name,
+        value,
+        __link: this.linkPoint({
+          seriesName: label || name,
+          dimension: item[dimensionField],
+          dimensionKey: dimensionField || undefined,
+          numeric: value,
+          raw: item[measureField],
+          row: item,
+        }),
+      });
+    });
+    return slices;
+  }
+
   private static transformGenericSeries(seriesMap: unknown): LineBarChartData {
     if (!seriesMap || typeof seriesMap !== 'object' || Array.isArray(seriesMap)) {
       return { categories: [], values: [] };
@@ -390,7 +443,8 @@ export class ChartDataTransformer {
     const rawNames: unknown[] = [];
     entries.forEach(([, points]) => {
       points.forEach((item) => {
-        if (item && typeof item === 'object' && 'name' in item) rawNames.push(item.name);
+        const axis = this.seriesPointAxis(item);
+        if (axis) rawNames.push(axis.raw);
       });
     });
     const shouldFormatAsTime = this.shouldFormatAsTimeDimension(rawNames);
@@ -406,7 +460,8 @@ export class ChartDataTransformer {
     };
     entries.forEach(([, points]) => {
       points.forEach((item) => {
-        if (item && typeof item === 'object' && 'name' in item) remember(item.name);
+        const axis = this.seriesPointAxis(item);
+        if (axis) remember(axis.raw);
       });
     });
     categories.sort();
@@ -416,15 +471,16 @@ export class ChartDataTransformer {
       const valueMap = new Map<string, number | null>();
       const pointMap = new Map<string, ChartLinkPoint>();
       points.forEach((item) => {
-        if (!item || typeof item !== 'object' || !('name' in item)) return;
-        const key = this.formatDimensionValue(item.name, shouldFormatAsTime);
+        const axis = this.seriesPointAxis(item);
+        if (!axis || !item || typeof item !== 'object') return;
+        const key = this.formatDimensionValue(axis.raw, shouldFormatAsTime);
         const numeric = this.readNullableNumber(item.value);
         if (numeric !== null) anyNumber = true;
         valueMap.set(key, numeric);
         pointMap.set(key, this.linkPoint({
           seriesName: name,
-          dimension: item.name,
-          dimensionKey: 'name',
+          dimension: axis.raw,
+          dimensionKey: axis.key,
           isTime: shouldFormatAsTime,
           numeric,
           raw: item.value,
@@ -455,8 +511,21 @@ export class ChartDataTransformer {
     if (this.genericStructure(rawData) === 'series') {
       return this.transformGenericSeries(rawData.series);
     }
-    if (this.genericStructure(rawData) === 'category') {
-      return this.transformToLineBarData(Array.isArray(rawData.items) ? rawData.items : [], mapping);
+    if (this.genericStructure(rawData) === 'category' || this.genericStructure(rawData) === 'table') {
+      const binding = resolveChartBinding(rawData, mapping);
+      const rows = Array.isArray(rawData.items) ? rawData.items : [];
+      const pivoted = Boolean(mapping?.seriesField?.trim())
+        || (mapping?.valueFields || []).filter((field) => field?.trim()).length > 1;
+      if (
+        !pivoted
+        && (binding.source === 'explicit' || binding.source === 'role')
+        && binding.dimensionField
+        && binding.measureField
+        && !binding.missingField
+      ) {
+        return this.transformMappedSingleSeries(rows.filter(isPlainRecord), binding.dimensionField, binding.measureField);
+      }
+      return this.transformToLineBarData(rows, mapping);
     }
     if (hasExplicitLineBarMapping(mapping)) {
       return this.transformMappedLineBar(rawData, mapping);
@@ -795,8 +864,21 @@ export class ChartDataTransformer {
     rawData: any,
     mapping?: ChartFieldMapping,
   ): PieChartData {
-    if (this.genericStructure(rawData) === 'category') {
-      return this.transformToPieData(Array.isArray(rawData.items) ? rawData.items : [], mapping);
+    if (this.genericStructure(rawData) === 'category' || this.genericStructure(rawData) === 'table') {
+      const rows = Array.isArray(rawData.items) ? rawData.items : [];
+      if (scalarPieFields(mapping).length >= 2) {
+        return this.transformToPieData(rows, mapping);
+      }
+      const binding = resolveChartBinding(rawData, mapping);
+      if (
+        (binding.source === 'explicit' || binding.source === 'role')
+        && binding.dimensionField
+        && binding.measureField
+        && !binding.missingField
+      ) {
+        return this.pieFromBinding(rows, binding);
+      }
+      return this.transformToPieData(rows, mapping);
     }
     const scalarFields = scalarPieFields(mapping);
     if (
@@ -901,17 +983,20 @@ export class ChartDataTransformer {
     errorMessage?: string,
     mapping?: ChartFieldMapping,
   ): { isValid: boolean; message?: string } {
+    const plan = planLineBarMapping(mapping);
+    if (plan.kind === 'conflict') {
+      return { isValid: false, message: 'dashboard.lineBarSeriesFieldConflict' };
+    }
+    const binding = resolveChartBinding(rawData, mapping);
+    if (binding.source === 'explicit' && binding.missingField) {
+      return { isValid: false, message: chartFieldMissingMessage(binding.missingField) };
+    }
     if (this.isStructurallyEmpty(rawData)) {
       return { isValid: true };
     }
 
     try {
       const transformedData = this.transformToLineBarData(rawData, mapping);
-
-      const plan = planLineBarMapping(mapping);
-      if (plan.kind === 'conflict') {
-        return { isValid: false, message: 'dashboard.lineBarSeriesFieldConflict' };
-      }
 
       if (!transformedData.categories || transformedData.categories.length === 0) {
         return { isValid: false, message: errorMessage || 'dashboard.dataFormatMismatch' };
@@ -953,6 +1038,10 @@ export class ChartDataTransformer {
     errorMessage?: string,
     mapping?: ChartFieldMapping,
   ): { isValid: boolean; message?: string } {
+    const binding = resolveChartBinding(rawData, mapping);
+    if (binding.source === 'explicit' && binding.missingField) {
+      return { isValid: false, message: chartFieldMissingMessage(binding.missingField) };
+    }
     if (this.isStructurallyEmpty(rawData)) {
       return { isValid: true };
     }

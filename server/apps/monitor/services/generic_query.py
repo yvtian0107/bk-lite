@@ -25,8 +25,16 @@ METRIC_MODES = ("series", "value")
 ALERT_MODES = ("detail", "count", "distribution")
 INSTANCE_FILTER_FIELDS = {"name", "ip", "cmdb_id"}
 INSTANCE_GROUP_FIELDS = {"status", "is_active", "cloud_region_id"}
+_INSTANCE_GROUP_TITLES = {"status": "状态", "is_active": "是否启用", "cloud_region_id": "云区域"}
+_INSTANCE_GROUP_TYPES = {"status": "string", "is_active": "boolean", "cloud_region_id": "string"}
 ALERT_TIME_FIELDS = {"start_event_time", "end_event_time", "created_at", "updated_at"}
 ALERT_GROUP_FIELDS = {"level", "status", "alert_type", "monitor_instance_id"}
+_ALERT_GROUP_TITLES = {
+    "level": "级别",
+    "status": "状态",
+    "alert_type": "告警类型",
+    "monitor_instance_id": "实例标识",
+}
 ALERT_SORT_FIELDS = {
     "start_event_time",
     "end_event_time",
@@ -43,6 +51,18 @@ class GenericQueryError(Exception):
         super().__init__(message)
         self.message = message
         self.status = status
+
+
+def _result_field(key: str, title: str, value_type: str, role: str | None = None) -> dict:
+    field = {"key": key, "title": title, "value_type": value_type}
+    if role:
+        field["role"] = role
+    return field
+
+
+def _with_fields(payload: dict, fields: list[dict]) -> dict:
+    payload["fields"] = fields
+    return payload
 
 
 def ensure_payload_limit(data: Any) -> None:
@@ -71,29 +91,42 @@ def query_instances(
         _reject_paging(page, page_size)
     queryset = _filter_instances(queryset, status, filter_field, filter_op, filter_value, instance_ids, filters)
     if mode == "count":
-        return _value(queryset.count(), unit="个", aggregation="监控实例计数")
+        return _value(queryset.count(), field="instance_count", title="实例数", unit="个", aggregation="监控实例计数")
     if mode == "distribution":
         field = group_by or "status"
         if field not in INSTANCE_GROUP_FIELDS:
             raise GenericQueryError("分组字段不受支持")
         if field == "status":
-            grouped = queryset.values("is_active").annotate(value=Count("id"))
+            grouped = queryset.values("is_active").annotate(instance_count=Count("id"))
             group_count = grouped.count()
             _ensure_groups(group_count)
             items = [
                 {
-                    "name": "active" if row["is_active"] else "inactive",
-                    "value": row["value"],
+                    "status": "active" if row["is_active"] else "inactive",
+                    "instance_count": row["instance_count"],
                 }
                 for row in grouped
             ]
+            dimension = _result_field("status", "状态", "string", "dimension")
         else:
-            grouped = queryset.values(field).annotate(value=Count("id"))
+            grouped = queryset.values(field).annotate(instance_count=Count("id"))
             _ensure_groups(grouped.count())
-            items = [{"name": "" if row[field] is None else str(row[field]), "value": row["value"]} for row in grouped]
-        if not items:
-            return {"structure": "category", "status": "empty", "items": [], "unit": "个", "aggregation": f"按 {field} 计数"}
-        return {"structure": "category", "status": "ok", "items": items, "unit": "个", "aggregation": f"按 {field} 计数"}
+            items = [{field: row[field], "instance_count": row["instance_count"]} for row in grouped]
+            dimension = _result_field(field, _INSTANCE_GROUP_TITLES[field], _INSTANCE_GROUP_TYPES[field], "dimension")
+        fields = [dimension, _result_field("instance_count", "实例数", "number", "measure")]
+        payload = {
+            "structure": "category",
+            "status": "empty" if not items else "ok",
+            "items": items,
+            "unit": "个",
+            "aggregation": f"按 {field} 计数",
+        }
+        if order not in (None, ""):
+            order_field = _order(order, {field, "instance_count"}, default="instance_count")
+            descending = order_field.startswith("-")
+            sort_key = order_field[1:] if descending else order_field
+            items.sort(key=lambda item: (item.get(sort_key) is None, item.get(sort_key)), reverse=descending)
+        return _with_fields(payload, fields)
     page_no, size = _parse_page(page, page_size)
     order_field = _order(order, {"name", "ip", "cmdb_id", "is_active", "id"}, default="name")
     total = queryset.count()
@@ -163,7 +196,7 @@ def build_metric_result(*, mode: str, response: dict, unit: str, aggregation: st
                 numbers.append(numeric)
             points.append(
                 {
-                    "name": _epoch_name(sample[0]),
+                    "time": _epoch_name(sample[0]),
                     "value": numeric,
                     "instance_id": instance_id,
                     "unit": unit,
@@ -173,34 +206,48 @@ def build_metric_result(*, mode: str, response: dict, unit: str, aggregation: st
             )
         series_payload[name] = points
     missing = [item for item in requested_ids if item not in seen_ids]
+    metric_fields = [
+        _result_field("time", "时间", "datetime", "dimension"),
+        _result_field("value", "值", "number", "measure"),
+    ]
     if mode == "value":
+        value_fields = [_result_field("value", "值", "number", "measure")]
         if not numbers:
-            return {
+            return _with_fields(
+                {
+                    "structure": "value",
+                    "status": "missing",
+                    "value": None,
+                    "unit": unit,
+                    "aggregation": aggregation,
+                    "unbound_instance_ids": missing,
+                },
+                value_fields,
+            )
+        reduced = _reduce(numbers, aggregation)
+        return _with_fields(
+            {
                 "structure": "value",
-                "status": "missing",
-                "value": None,
+                "status": "ok",
+                "value": reduced,
                 "unit": unit,
                 "aggregation": aggregation,
                 "unbound_instance_ids": missing,
-            }
-        reduced = _reduce(numbers, aggregation)
-        return {
-            "structure": "value",
-            "status": "ok",
-            "value": reduced,
+            },
+            value_fields,
+        )
+    has_value = any(point.get("value") is not None for points in series_payload.values() for point in points)
+    return _with_fields(
+        {
+            "structure": "series",
+            "status": "ok" if has_value else "missing",
             "unit": unit,
             "aggregation": aggregation,
-            "unbound_instance_ids": missing,
-        }
-    has_value = any(point.get("value") is not None for points in series_payload.values() for point in points)
-    return {
-        "structure": "series",
-        "status": "ok" if has_value else "missing",
-        "unit": unit,
-        "aggregation": aggregation,
-        "series": series_payload,
-        "unbound_instance_ids": missing or requested_ids,
-    }
+            "series": series_payload,
+            "unbound_instance_ids": missing or requested_ids,
+        },
+        metric_fields,
+    )
 
 
 def query_alerts(
@@ -224,17 +271,33 @@ def query_alerts(
         _reject_paging(page, page_size)
     queryset = _filter_alerts(queryset, level, status, alert_type, instance_id, time_field, time_range, filters)
     if mode == "count":
-        return _value(queryset.count(), unit="条", aggregation="监控告警计数")
+        return _value(queryset.count(), field="alert_count", title="告警数", unit="条", aggregation="监控告警计数")
     if mode == "distribution":
         field = group_by or "level"
         if field not in ALERT_GROUP_FIELDS:
             raise GenericQueryError("分组字段不受支持")
-        grouped = queryset.values(field).annotate(value=Count("id"))
+        grouped = queryset.values(field).annotate(alert_count=Count("id"))
         _ensure_groups(grouped.count())
-        items = [{"name": "" if row[field] is None else str(row[field]), "value": row["value"]} for row in grouped]
-        if not items:
-            return {"structure": "category", "status": "empty", "items": [], "unit": "条", "aggregation": f"按 {field} 计数"}
-        return {"structure": "category", "status": "ok", "items": items, "unit": "条", "aggregation": f"按 {field} 计数"}
+        items = [{field: row[field], "alert_count": row["alert_count"]} for row in grouped]
+        fields = [
+            _result_field(field, _ALERT_GROUP_TITLES[field], "string", "dimension"),
+            _result_field("alert_count", "告警数", "number", "measure"),
+        ]
+        if order not in (None, ""):
+            order_field = _order(order, {field, "alert_count"}, default="alert_count")
+            descending = order_field.startswith("-")
+            sort_key = order_field[1:] if descending else order_field
+            items.sort(key=lambda item: (item.get(sort_key) is None, item.get(sort_key)), reverse=descending)
+        return _with_fields(
+            {
+                "structure": "category",
+                "status": "empty" if not items else "ok",
+                "items": items,
+                "unit": "条",
+                "aggregation": f"按 {field} 计数",
+            },
+            fields,
+        )
     page_no, size = _parse_page(page, page_size)
     order_field = _order(order, ALERT_SORT_FIELDS, default="-start_event_time")
     total = queryset.count()
@@ -387,8 +450,11 @@ def _alert_row(alert) -> dict:
     }
 
 
-def _value(value, *, unit: str, aggregation: str) -> dict:
-    return {"structure": "value", "status": "ok", "value": value, "unit": unit, "aggregation": aggregation}
+def _value(value, *, field: str, title: str, unit: str, aggregation: str) -> dict:
+    return _with_fields(
+        {"structure": "value", "status": "ok", field: value, "unit": unit, "aggregation": aggregation},
+        [_result_field(field, title, "number", "measure")],
+    )
 
 
 def _table(rows, total, page, page_size) -> dict:

@@ -51,9 +51,11 @@ def test_monitor_instance_detail_count_and_unbound_identity():
     assert detail["page_size"] == 20
     unbound = next(item for item in detail["items"] if item["instance_id"] == "host-2")
     assert unbound["cmdb_bind_status"] == "unbound"
-    assert counted["value"] == 1
+    assert counted["instance_count"] == 1
     assert counted["status"] == "ok"
-    assert {item["name"] for item in grouped["items"]} == {"active", "inactive"}
+    assert {item["status"] for item in grouped["items"]} == {"active", "inactive"}
+    assert {item["instance_count"] for item in grouped["items"]} == {1}
+    assert "name" not in grouped["items"][0]
 
 
 def test_instance_or_group_matches_either_row_and_empty_group_does_not_filter():
@@ -86,9 +88,9 @@ def test_instance_or_group_matches_either_row_and_empty_group_does_not_filter():
         },
     )
     cleared = query_instances(base, analysis_mode="count", filters={"logic": "OR", "items": []})
-    assert either["value"] == 2
-    assert both["value"] == 0
-    assert cleared["value"] == 2
+    assert either["instance_count"] == 2
+    assert both["instance_count"] == 0
+    assert cleared["instance_count"] == 2
 
 
 def test_monitor_instance_page_size_and_statistics_group_limits():
@@ -102,6 +104,20 @@ def test_monitor_instance_page_size_and_statistics_group_limits():
         )
     with pytest.raises(GenericQueryError, match="不支持分页"):
         query_instances(MonitorInstance.objects.all(), analysis_mode="count", page_size=10)
+
+
+def test_monitor_instance_distribution_keeps_false_without_renaming_it():
+    obj = _object()
+    _instance(obj, "host-1", active=False)
+    grouped = query_instances(
+        MonitorInstance.objects.filter(monitor_object=obj),
+        analysis_mode="distribution",
+        group_by="is_active",
+    )
+    assert grouped["items"] == [{"is_active": False, "instance_count": 1}]
+    assert grouped["fields"][0]["value_type"] == "boolean"
+    detail = query_instances(MonitorInstance.objects.filter(monitor_object=obj), analysis_mode="detail")
+    assert detail["items"][0]["name"] == "host-1"
 
 
 def test_metric_point_and_instance_limits_fail_before_query():
@@ -154,6 +170,8 @@ def test_metric_series_over_limit_missing_and_zero_are_distinct():
     assert zero["status"] == "ok"
     assert zero["value"] == 0
     assert zero["unit"] == "%"
+    assert [field["key"] for field in zero["fields"]] == ["value"]
+    assert missing["fields"][0]["role"] == "measure"
 
     partial = build_metric_result(
         mode="series",
@@ -168,6 +186,10 @@ def test_metric_series_over_limit_missing_and_zero_are_distinct():
     assert partial["structure"] == "series"
     assert partial["status"] == "ok"
     assert [point["value"] for point in partial["series"]["a"]] == [1.0, None, 0.0]
+    assert [point["time"] for point in partial["series"]["a"]]
+    assert "name" not in partial["series"]["a"][0]
+    assert partial["fields"][0]["key"] == "time"
+    assert partial["fields"][1]["role"] == "measure"
     assert partial["unbound_instance_ids"] == ["b"]
     missing_series = build_metric_result(
         mode="series",
@@ -216,7 +238,17 @@ def test_monitor_alert_range_is_capped_at_90_days_and_failure_is_explicit():
         time_field="start_event_time",
         time_range=[start.isoformat(), (start + timedelta(seconds=ALERT_RANGE_MAX_SECONDS)).isoformat()],
     )
-    assert within["value"] == 1
+    assert within["alert_count"] == 1
+    grouped = query_alerts(
+        MonitorAlert.objects.all(),
+        analysis_mode="distribution",
+        time_field="start_event_time",
+        time_range=[start.isoformat(), (start + timedelta(days=2)).isoformat()],
+        group_by="level",
+    )
+    assert grouped["items"] == [{"level": "warning", "alert_count": 1}]
+    assert "name" not in grouped["items"][0]
+    assert "value" not in grouped["items"][0]
     with pytest.raises(GenericQueryError, match="90"):
         query_alerts(
             MonitorAlert.objects.all(),

@@ -1,3 +1,4 @@
+import { resolveChartBinding } from '@/app/ops-analysis/utils/chartFieldContract';
 import { getValueByPath } from '@/app/ops-analysis/utils/objectPath';
 
 export interface TopNItem {
@@ -115,7 +116,11 @@ export const buildTopNItems = (
   data: unknown,
   labelField?: string,
   valueField?: string,
-  options?: { scalarFields?: Array<{ field?: string; label?: string } | null> | null },
+  options?: {
+    scalarFields?: Array<{ field?: string; label?: string } | null> | null;
+    keepBlankLabel?: boolean;
+    identityField?: string;
+  },
 ): TopNItem[] => {
   const scalarFields = normalizeTopNScalarFields(options?.scalarFields);
   if (scalarFields.length > 0 && isScalarTopNObject(data)) {
@@ -124,6 +129,21 @@ export const buildTopNItems = (
 
   if (isTopNRecord(data) && (data.structure === 'category' || data.structure === 'table')) {
     const rows = Array.isArray(data.items) ? data.items : [];
+    const binding = resolveChartBinding(data, {
+      dimensionField: labelField,
+      valueField,
+    });
+    if (
+      (binding.source === 'explicit' || binding.source === 'role')
+      && binding.dimensionField
+      && binding.measureField
+      && !binding.missingField
+    ) {
+      return buildTopNItems(rows, binding.dimensionField, binding.measureField, {
+        keepBlankLabel: true,
+        identityField: binding.identityField,
+      });
+    }
     return buildTopNItems(rows, labelField || 'name', valueField || 'value');
   }
 
@@ -134,8 +154,14 @@ export const buildTopNItems = (
 
   const items = rows
     .map((row, index) => {
-      const name = toTopNName(getValueByPath(row, labelField));
-      if (!name) {
+      let name = toTopNName(getValueByPath(row, labelField));
+      if (!name && options?.identityField && isTopNRecord(row)) {
+        const identity = row[options.identityField];
+        if (identity !== null && identity !== undefined && String(identity).trim()) {
+          name = String(identity);
+        }
+      }
+      if (!name && !options?.keepBlankLabel) {
         return null;
       }
 

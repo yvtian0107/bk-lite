@@ -34,6 +34,26 @@ class GenericQueryError(Exception):
         self.status = status
 
 
+def _result_field(key: str, title: str, value_type: str, role: str | None = None) -> dict:
+    field = {"key": key, "title": title, "value_type": value_type}
+    if role:
+        field["role"] = role
+    return field
+
+
+def _with_fields(payload: dict, fields: list[dict]) -> dict:
+    payload["fields"] = fields
+    return payload
+
+
+_CENTER_GROUP_TITLES = {
+    "level": "级别",
+    "status": "状态",
+    "source_name": "来源名称",
+    "source_id": "来源标识",
+}
+
+
 def ensure_payload_limit(data: Any) -> None:
     encoded = json.dumps(data, ensure_ascii=False, default=str).encode("utf-8")
     if len(encoded) > NATS_MESSAGE_MAX_BYTES:
@@ -88,34 +108,38 @@ def query_alert_center(
             matched = queryset.filter(events__source__source_id=str(source)).values("pk")
             queryset = queryset.filter(pk__in=Subquery(matched))
     queryset = _apply_center_conditions(queryset, target, filters)
+    count_title = f"{_label(target)}数"
     if mode == "count":
-        return _value(queryset.count(), unit="条", aggregation=f"{_label(target)}计数")
+        return _value(queryset.count(), title=count_title, unit="条", aggregation=f"{_label(target)}计数", query_object=target)
     if mode == "distribution":
-        fields = ALERT_GROUP_FIELDS if target == "alert" else EVENT_GROUP_FIELDS
+        group_fields = ALERT_GROUP_FIELDS if target == "alert" else EVENT_GROUP_FIELDS
         field = group_by or "level"
-        if field not in fields:
+        if field not in group_fields:
             raise GenericQueryError("分组字段不受支持")
-        grouped = queryset.values(field).annotate(value=Count("id"))
+        grouped = queryset.values(field).annotate(record_count=Count("id"))
         if grouped.count() > STAT_GROUP_MAX:
             raise GenericQueryError(f"统计分组超过 {STAT_GROUP_MAX} 组")
-        items = [{"name": "" if row[field] is None else str(row[field]), "value": row["value"]} for row in grouped]
-        if not items:
-            return {
+        items = [{field: row[field], "record_count": row["record_count"]} for row in grouped]
+        declared = [
+            _result_field(field, _CENTER_GROUP_TITLES[field], "string", "dimension"),
+            _result_field("record_count", count_title, "number", "measure"),
+        ]
+        if order not in (None, ""):
+            order_text = _order(order, {field, "record_count"}, default="record_count")
+            descending = order_text.startswith("-")
+            sort_key = order_text[1:] if descending else order_text
+            items.sort(key=lambda item: (item.get(sort_key) is None, item.get(sort_key)), reverse=descending)
+        return _with_fields(
+            {
                 "structure": "category",
-                "status": "empty",
-                "items": [],
+                "status": "empty" if not items else "ok",
+                "items": items,
                 "unit": "条",
                 "aggregation": f"按 {field} 计数",
                 "query_object": target,
-            }
-        return {
-            "structure": "category",
-            "status": "ok",
-            "items": items,
-            "unit": "条",
-            "aggregation": f"按 {field} 计数",
-            "query_object": target,
-        }
+            },
+            declared,
+        )
     page_no, size = _parse_page(page, page_size)
     sort_fields = ALERT_SORT_FIELDS if target == "alert" else EVENT_SORT_FIELDS
     order_text = _order(order, sort_fields, default=f"-{time_field}")
@@ -239,8 +263,18 @@ def _source_q(target: str, op: str, value):
     return ~clause if op == "ne" else clause
 
 
-def _value(value, *, unit: str, aggregation: str) -> dict:
-    return {"structure": "value", "status": "ok", "value": value, "unit": unit, "aggregation": aggregation}
+def _value(value, *, title: str, unit: str, aggregation: str, query_object: str) -> dict:
+    return _with_fields(
+        {
+            "structure": "value",
+            "status": "ok",
+            "record_count": value,
+            "unit": unit,
+            "aggregation": aggregation,
+            "query_object": query_object,
+        },
+        [_result_field("record_count", title, "number", "measure")],
+    )
 
 
 def _label(target: str) -> str:

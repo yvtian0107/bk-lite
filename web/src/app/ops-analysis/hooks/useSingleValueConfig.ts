@@ -4,7 +4,7 @@
  */
 import { useState, useCallback, useEffect } from 'react';
 import type { FormInstance } from 'antd';
-import { message } from 'antd';
+import { Form, message } from 'antd';
 import { useTranslation } from '@/utils/i18n';
 import type { DatasourceItem } from '@/app/ops-analysis/types/dataSource';
 import { processDataSourceParams } from '@/app/ops-analysis/utils/widgetDataTransform';
@@ -15,6 +15,11 @@ import {
   buildTreeData,
   mergeFieldTrees,
 } from '@/app/ops-analysis/(pages)/view/topology/utils/dataTreeUtils';
+import {
+  candidateFields,
+  readDeclaredFields,
+  schemaDeclaresModes,
+} from '@/app/ops-analysis/utils/chartFieldContract';
 import { canEnableCompare } from '@/app/ops-analysis/utils/compareQuery';
 import { getDateRangeTimezone } from '@/app/ops-analysis/utils/dateRange';
 
@@ -171,9 +176,21 @@ export function useSingleValueConfig({
   }, []);
 
   const sampleForTree = previewRawData ?? fetchedSample;
+  const analysisMode = Form.useWatch(['params', 'analysis_mode'], form);
 
   useEffect(() => {
     const schema = selectedDataSource?.field_schema;
+    const mode = typeof analysisMode === 'string' ? analysisMode : undefined;
+    const declared = readDeclaredFields(sampleForTree);
+    if (declared || schemaDeclaresModes(schema)) {
+      const fields = candidateFields(schema, sampleForTree ?? undefined, mode).map((field) => ({
+        key: field.key,
+        title: field.title || field.key,
+        value_type: (field.value_type as 'string') || 'string',
+      }));
+      setSingleValueTreeData(buildSchemaFieldTree(fields));
+      return;
+    }
     if (sampleForTree != null) {
       setSingleValueTreeData(
         mergeFieldTrees(
@@ -184,7 +201,7 @@ export function useSingleValueConfig({
       return;
     }
     setSingleValueTreeData(buildSchemaFieldTree(schema));
-  }, [sampleForTree, selectedDataSource]);
+  }, [analysisMode, sampleForTree, selectedDataSource]);
 
   const fetchSingleValueDataFields = useCallback(async () => {
     const resolvedId = dataSourceId ?? selectedDataSource?.id;
