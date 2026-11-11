@@ -9,6 +9,7 @@ import {
 import { mergeDetectedFieldsWithSchema } from '@/app/ops-analysis/components/widgetConfig/utils/columnProbing';
 import { resolveTableLikeColumns } from '@/app/ops-analysis/utils/tableLikeData';
 import { buildCompareRequestParams } from '@/app/ops-analysis/utils/compareQuery';
+import { processDataSourceFormParamsForSubmit } from '@/app/ops-analysis/utils/dataSourceFormParams';
 import {
   buildWidgetRequestParams,
   fetchWidgetData,
@@ -299,6 +300,72 @@ describe('chart requests drop paging outside detail', () => {
   });
 });
 
+const countMetricParam = (value: string = 'model_count'): ParamItem => ({
+  name: 'count_metric',
+  alias_name: '统计内容',
+  type: 'string',
+  filterType: 'params',
+  value,
+  visible_modes: ['count'],
+  inputConfig: {
+    control: 'select',
+    optionsSource: {
+      type: 'static',
+      staticItems: [
+        { label: '模型数量', value: 'model_count' },
+        { label: '实例总数', value: 'instance_total' },
+      ],
+    },
+  },
+});
+
+describe('model single-value count metric stays on the count request', () => {
+  it('sends the default only for single and drops it for bar, pie, ranking and table', () => {
+    const params = [...modelCatalog(), countMetricParam('instance_total')];
+    const single = buildWidgetRequestParams({
+      config: { chartType: 'single', dataSourceParams: params },
+      dataSource: { params: modelCatalog().concat(countMetricParam()) },
+    });
+    assert.equal(single.analysis_mode, 'count');
+    assert.equal(single.count_metric, 'instance_total');
+    assert.equal(single.page, undefined);
+    assert.equal(single.page_size, undefined);
+
+    for (const chartType of ['bar', 'pie', 'topN', 'table']) {
+      const request = buildWidgetRequestParams({
+        config: { chartType, dataSourceParams: params },
+        dataSource: { params },
+      });
+      assert.equal(request.count_metric, undefined, chartType);
+      assert.equal(request.page, chartType === 'table' ? 1 : undefined, chartType);
+      assert.equal(request.page_size, chartType === 'table' ? 20 : undefined, chartType);
+    }
+  });
+
+  it('keeps a saved metric while the request follows visible modes', () => {
+    const definition = [...modelCatalog(), countMetricParam()];
+    const saved = processDataSourceFormParamsForSubmit(
+      { count_metric: 'instance_total', analysis_mode: 'distribution', page: 2, page_size: 20 },
+      definition,
+    );
+    assert.equal(saved.find((param) => param.name === 'count_metric')?.value, 'instance_total');
+    const request = buildWidgetRequestParams({
+      config: { chartType: 'pie', dataSourceParams: saved },
+      dataSource: { params: definition },
+    });
+    assert.equal(request.analysis_mode, 'distribution');
+    assert.equal(request.count_metric, undefined);
+    assert.equal(request.page, undefined);
+    const back = buildWidgetRequestParams({
+      config: { chartType: 'single', dataSourceParams: saved },
+      dataSource: { params: definition },
+    });
+    assert.equal(back.analysis_mode, 'count');
+    assert.equal(back.count_metric, 'instance_total');
+    assert.equal(back.page, undefined);
+  });
+});
+
 const rankingCatalog = (): ParamItem[] => [
   ...modelCatalog(),
   {
@@ -391,5 +458,52 @@ describe('model ranking top N stays on the ranking chart', () => {
     assert.equal(request.page, 2);
     assert.equal(request.page_size, 15);
     assert.equal(request.top_n, undefined);
+  });
+});
+
+describe('single value metric and ranking limit stay on their own charts', () => {
+  it('does not carry the other chart’s hidden params or paging', () => {
+    const catalog = [...rankingCatalog(), countMetricParam('instance_total')];
+    const single = buildWidgetRequestParams({
+      config: { chartType: 'single', dataSourceParams: catalog },
+      dataSource: { params: catalog },
+    });
+    assert.equal(single.analysis_mode, 'count');
+    assert.equal(single.count_metric, 'instance_total');
+    assert.equal(single.top_n, undefined);
+    assert.equal(single.page, undefined);
+    assert.equal(single.page_size, undefined);
+    assert.equal(single.order, undefined);
+
+    const ranking = buildWidgetRequestParams({
+      config: { chartType: 'topN', dataSourceParams: catalog },
+      dataSource: { params: catalog },
+    });
+    assert.equal(ranking.analysis_mode, 'distribution');
+    assert.equal(ranking.top_n, 10);
+    assert.equal(ranking.count_metric, undefined);
+    assert.equal(ranking.page, undefined);
+    assert.equal(ranking.page_size, undefined);
+    assert.equal(ranking.order, undefined);
+
+    const bar = buildWidgetRequestParams({
+      config: { chartType: 'bar', dataSourceParams: catalog },
+      dataSource: { params: catalog },
+    });
+    assert.equal(bar.analysis_mode, 'distribution');
+    assert.equal(bar.top_n, undefined);
+    assert.equal(bar.count_metric, undefined);
+    assert.equal(bar.page, undefined);
+    assert.equal(bar.order, 'name');
+
+    const table = buildWidgetRequestParams({
+      config: { chartType: 'table', dataSourceParams: catalog },
+      dataSource: { params: catalog },
+    });
+    assert.equal(table.analysis_mode, 'detail');
+    assert.equal(table.page, 1);
+    assert.equal(table.page_size, 20);
+    assert.equal(table.count_metric, undefined);
+    assert.equal(table.top_n, undefined);
   });
 });
