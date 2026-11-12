@@ -12,8 +12,8 @@ METRIC_INSTANCE_MAX = 50
 # 指标查询最多返回 20 条序列。
 METRIC_SERIES_MAX = 20
 
-# 每条序列最多 500 个点。点数 = 时间范围 ÷ 步长。
-METRIC_POINTS_MAX = 500
+# 每条序列最多 1000 个点，与监控大盘的时间范围预算一致。点数 = 时间范围 ÷ 步长。
+METRIC_POINTS_MAX = 1000
 
 # 监控告警时间范围最长 90 天。
 ALERT_RANGE_MAX_DAYS = 90

@@ -301,6 +301,20 @@ describe('chart requests keep the saved analysis mode and paging', () => {
     assert.deepEqual(probed.map((column) => column.key), schema.map((field) => field.key));
     assert.equal(probed.some((column) => column.key === 'name' || column.key === 'value'), false);
   });
+
+  it('keeps raw alert and object identifiers out of the default table', () => {
+    const schema = [
+      { key: 'content', title: '告警名称', value_type: 'string' as const },
+      { key: 'monitor_object_name', title: '监控对象', value_type: 'string' as const },
+      { key: 'id', title: '告警标识', value_type: 'string' as const, table: false },
+      { key: 'monitor_object_id', title: '监控对象标识', value_type: 'string' as const, table: false },
+    ];
+    const probed = mergeDetectedFieldsWithSchema(
+      ['content', 'monitor_object_name', 'id', 'monitor_object_id'],
+      schema,
+    );
+    assert.deepEqual(probed.map((column) => column.key), ['content', 'monitor_object_name']);
+  });
 });
 
 const optionalPaging = (): ParamItem[] => modelCatalog().map((param) => (

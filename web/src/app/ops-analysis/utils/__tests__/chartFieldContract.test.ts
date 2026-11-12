@@ -90,20 +90,58 @@ test('empty result is not a missing field, but authoritative fields still are', 
   }, ['model_name']), 'model_name');
 });
 
-test('one hop end_name and metric time map without source-specific names', () => {
+test('unfilled distribution categories show as -- and share one count', () => {
+  const payload = {
+    structure: 'category',
+    status: 'ok',
+    items: [
+      { status: null, instance_count: 2 },
+      { status: '已上线', instance_count: 8 },
+      { status: '', instance_count: 3 },
+      { status: 0, instance_count: 1 },
+      { status: false, instance_count: 4 },
+    ],
+    fields: [
+      { key: 'status', title: '运行状态', value_type: 'string', role: 'dimension' as const },
+      { key: 'instance_count', title: '实例数', value_type: 'number', role: 'measure' as const },
+    ],
+  };
+  const bar = ChartDataTransformer.transformToLineBarData(payload);
+  const pie = ChartDataTransformer.transformToPieData(payload);
+  const ranked = buildTopNItems(payload);
+  assert.deepEqual(bar.categories, ['--', '已上线', '0', 'false']);
+  assert.deepEqual(bar.values, [5, 8, 1, 4]);
+  assert.equal(bar.points?.[0]?.numeric, 5);
+  assert.equal(bar.points?.[0]?.fields?.status, null);
+  assert.deepEqual(pie.map((item) => item.name), ['--', '已上线', '0', 'false']);
+  assert.deepEqual(pie.map((item) => item.value), [5, 8, 1, 4]);
+  assert.deepEqual(ranked.map((item) => [item.name, item.value]), [
+    ['已上线', 8],
+    ['--', 5],
+    ['false', 4],
+    ['0', 1],
+  ]);
+  assert.equal(payload.items[0].status, null);
+  assert.equal(payload.items[2].status, '');
+});
+
+test('one hop blank start name and metric time map without source-specific names', () => {
   const hop = {
     structure: 'category',
     status: 'ok',
-    items: [{ end_name: '', end_uuid: 'end-1', start_count: 2 }],
+    items: [{ start_name: '', start_uuid: 'start-1', relation_count: 2 }],
     fields: [
-      { key: 'end_name', title: '终点名称', value_type: 'string', role: 'dimension' },
-      { key: 'end_uuid', title: '终点标识', value_type: 'string', role: 'identity' },
-      { key: 'start_count', title: '起点数', value_type: 'number', role: 'measure' },
+      { key: 'start_name', title: '起点名称', value_type: 'string', role: 'dimension' },
+      { key: 'start_uuid', title: '起点标识', value_type: 'string', role: 'identity' },
+      { key: 'relation_count', title: '关联数', value_type: 'number', role: 'measure' },
     ],
   };
+  const ranked = buildTopNItems(hop);
+  assert.equal(ranked[0]?.name, 'start-1');
+  assert.equal(ranked[0]?.value, 2);
   const pie = ChartDataTransformer.transformToPieData(hop);
-  assert.equal(pie[0]?.name, 'end-1');
-  assert.equal(pie[0]?.label, 'end-1');
+  assert.equal(pie[0]?.name, 'start-1');
+  assert.equal(pie[0]?.label, 'start-1');
   assert.equal(pie[0]?.value, 2);
 
   const series = {

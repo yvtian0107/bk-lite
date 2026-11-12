@@ -54,10 +54,7 @@ export const modelTableBindingKey = (
   if (restApi === ONE_HOP_QUERY_API) {
     const start = String(params?.start_model_id || '').trim();
     const association = String(params?.model_asst_id || '').trim();
-    const direction = String(params?.direction || '').trim();
-    return start && association && direction
-      ? `onehop:${start}:${association}:${direction}`
-      : '';
+    return start && association ? `onehop:${start}:${association}` : '';
   }
   return '';
 };
@@ -237,7 +234,6 @@ export const modelTableEmptyText = (
     && (
       !String(params?.start_model_id || '').trim()
       || !String(params?.model_asst_id || '').trim()
-      || !String(params?.direction || '').trim()
     )
   ) {
     return t('dashboard.selectModelRelationFirst');

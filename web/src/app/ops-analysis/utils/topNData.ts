@@ -66,11 +66,22 @@ export const coerceTopNNumericValue = (raw: unknown): number | null => {
   return Number.isFinite(numericValue) ? numericValue : null;
 };
 
+export const UNFILLED_CATEGORY_LABEL = '--';
+
+export const isUnfilledCategoryValue = (value: unknown): boolean =>
+  value === null || value === undefined || value === '';
+
 const toTopNName = (raw: unknown): string => {
-  if (raw === undefined || raw === null) {
+  if (isUnfilledCategoryValue(raw)) {
     return '';
   }
   return String(raw).trim();
+};
+
+const addTopNValue = (left: number | null, right: number | null): number | null => {
+  if (left === null) return right;
+  if (right === null) return left;
+  return left + right;
 };
 
 export const normalizeTopNScalarFields = (
@@ -152,29 +163,45 @@ export const buildTopNItems = (
     return [];
   }
 
-  const items = rows
-    .map((row, index) => {
-      let name = toTopNName(getValueByPath(row, labelField));
-      if (!name && options?.identityField && isTopNRecord(row)) {
-        const identity = row[options.identityField];
-        if (identity !== null && identity !== undefined && String(identity).trim()) {
-          name = String(identity);
-        }
+  const items: Array<{ index: number; item: TopNItem }> = [];
+  let unfilledItem: TopNItem | null = null;
+  rows.forEach((row, index) => {
+    const rawName = getValueByPath(row, labelField);
+    const unfilled = isUnfilledCategoryValue(rawName);
+    let name = toTopNName(rawName);
+    if (!name && options?.identityField && isTopNRecord(row)) {
+      const identity = row[options.identityField];
+      if (!isUnfilledCategoryValue(identity) && String(identity).trim()) {
+        name = String(identity);
       }
-      if (!name && !options?.keepBlankLabel) {
-        return null;
+    }
+    if (!name && !options?.keepBlankLabel) {
+      return;
+    }
+    const value = coerceTopNNumericValue(getValueByPath(row, valueField));
+    if (!name && options?.keepBlankLabel) {
+      if (unfilledItem) {
+        unfilledItem.value = addTopNValue(unfilledItem.value, value);
+        return;
       }
-
-      return {
-        index,
-        item: {
-          name,
-          value: coerceTopNNumericValue(getValueByPath(row, valueField)),
-          ...(isTopNRecord(row) ? { source: row } : {}),
-        },
+      unfilledItem = {
+        name: UNFILLED_CATEGORY_LABEL,
+        value,
+        ...(isTopNRecord(row) ? { source: row } : {}),
       };
-    })
-    .filter((entry): entry is { index: number; item: TopNItem } => entry !== null);
+      items.push({ index, item: unfilledItem });
+      return;
+    }
+
+    items.push({
+      index,
+      item: {
+        name,
+        value,
+        ...(isTopNRecord(row) ? { source: row } : {}),
+      },
+    });
+  });
 
   // 排名图按数值从大到小。空值靠后，相同数值保持原顺序。
   items.sort((left, right) => {

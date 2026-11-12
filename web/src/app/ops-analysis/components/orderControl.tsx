@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import type { OrderFieldOption } from '@/app/ops-analysis/types/dataSource';
 import { useDataSourceApi } from '@/app/ops-analysis/api/dataSource';
 import OrderInput from '@/app/ops-analysis/components/orderInput';
@@ -31,6 +31,9 @@ const OrderControl: React.FC<OrderControlProps> = ({
   disabled = false,
 }) => {
   const api = useDataSourceApi();
+  // 这个 hook 每次渲染都返回新对象。放进依赖后，属性加载的 setState 会立刻再发一次请求。
+  const apiRef = useRef(api);
+  apiRef.current = api;
   const [modelFields, setModelFields] = useState<OrderFieldOption[]>([]);
   const [attrsReady, setAttrsReady] = useState(false);
   const modelId = modelParam ? String(formParams?.[modelParam] ?? '') : '';
@@ -40,12 +43,14 @@ const OrderControl: React.FC<OrderControlProps> = ({
     return true;
   });
   const visibleKey = visible.map((field) => field.value).join('\0');
+  const modelAttrModesKey = (includeModelAttrsInModes ?? []).join('\0');
 
   useEffect(() => {
+    const modes = modelAttrModesKey ? modelAttrModesKey.split('\0') : [];
     const shouldLoad = Boolean(
       modelParam
       && modelId
-      && (!includeModelAttrsInModes?.length || (analysisMode && includeModelAttrsInModes.includes(analysisMode))),
+      && (!modes.length || (analysisMode && modes.includes(analysisMode))),
     );
     if (!shouldLoad) {
       // 空数组每次都是新引用。表单参数对象每轮渲染都会换，直接 setState 会把配置抽屉打成死循环。
@@ -55,7 +60,7 @@ const OrderControl: React.FC<OrderControlProps> = ({
     }
     setAttrsReady(false);
     let cancelled = false;
-    void loadConditionModelFields(api, modelId).then((loaded) => {
+    void loadConditionModelFields(apiRef.current, modelId).then((loaded) => {
       if (!cancelled) {
         setModelFields(loaded.map((field) => ({ value: field.value, label: field.label })));
         setAttrsReady(true);
@@ -69,7 +74,7 @@ const OrderControl: React.FC<OrderControlProps> = ({
     return () => {
       cancelled = true;
     };
-  }, [analysisMode, api, includeModelAttrsInModes, modelId, modelParam]);
+  }, [analysisMode, modelAttrModesKey, modelId, modelParam]);
 
   const modelFieldKey = modelFields.map((field) => field.value).join('\0');
   useEffect(() => {

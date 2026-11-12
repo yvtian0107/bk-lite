@@ -470,7 +470,10 @@ export function useTableConfig({
           setDisplayColumns(probedColumns);
           return;
         }
-        const schemaColumns = buildDisplayColumnsFromSchema(availableFields);
+        const schemaColumns = buildDisplayColumnsFromSchema(
+          availableFields,
+          currentParams?.query_object,
+        );
 
         if (schemaColumns.length > 0) {
           setDetectedDisplayColumns(schemaColumns);

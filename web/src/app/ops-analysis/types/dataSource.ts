@@ -39,6 +39,8 @@ export interface ResponseFieldDefinition {
   modes?: string[];
   /** 图表未手选字段时的默认角色。同一键不因图表改成 name/value。 */
   role?: 'dimension' | 'measure' | 'identity';
+  /** 该字段属于哪些查询对象。缺省表示当前数据源的全部对象。 */
+  query_objects?: string[];
 }
 
 /** 接口字段定义配置（数据源级别） */
@@ -156,13 +158,18 @@ export interface ConditionFieldOption {
   label: string;
   valueType?: ConditionFieldValueType;
   options?: Array<{ label: string; value: string | number; query_objects?: string[] }>;
-  optionsSource?: DynamicOptionsSource;
   query_objects?: string[];
 }
 
 export interface ConditionFieldSource {
-  kind: 'static' | 'modelAttrs' | 'endModelAttrs';
+  kind: 'static' | 'dynamic' | 'modelAttrs' | 'endModelAttrs';
   items?: ConditionFieldOption[];
+  sourceId?: number;
+  sourceRef?: SourceRef;
+  valueField?: string;
+  labelField?: string;
+  queryParams?: Record<string, OptionsQueryParamValue>;
+  /** 旧配置。新的字段来源用 dynamic，和字符串下拉同一套数据源配置。 */
   modelParam?: string;
   startModelParam?: string;
   associationParam?: string;

@@ -298,10 +298,23 @@ const DataSourceParamsConfig: React.FC<DataSourceParamsConfigProps> = ({
     })();
 
     if (inputConfig?.control === 'conditionFilter') {
+      const fieldQuery = inputConfig.fields.kind === 'dynamic'
+        ? resolveParamOptionsQuery({
+          inputConfig,
+          enabled: resolveOptionsQuery,
+          formParams: optionsQueryFormParams,
+          sourceParams,
+          globalFilters,
+          filterBindings,
+          globalFilterValues,
+        })
+        : undefined;
       return (
         <ConditionFilterControl
           source={inputConfig.fields}
           formParams={formParams}
+          resolvedFieldQuery={fieldQuery?.resolution}
+          fieldQuerySignature={fieldQuery?.signature}
           queryObject={queryObject === undefined || queryObject === null ? '' : String(queryObject)}
           disabled={isDisabled}
         />
@@ -361,9 +374,11 @@ const DataSourceParamsConfig: React.FC<DataSourceParamsConfigProps> = ({
         const labelText = param.alias_name || param.name;
         const isLongText = labelText.length > 18;
         const isVeryLongText = labelText.length > 30;
+        const isConditionFilter = param.type === 'conditionFilter'
+          || param.inputConfig?.control === 'conditionFilter';
         const showInputConfigButton =
           onEditInputConfig &&
-          (param.type || 'string') === 'string' &&
+          ((param.type || 'string') === 'string' || isConditionFilter) &&
           param.filterType !== 'fixed' &&
           !readonly;
 

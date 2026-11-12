@@ -93,6 +93,7 @@ import {
   buildDisplayColumnsFromSchema,
   isDisplayableDefaultField,
 } from './widgetConfig/utils/columnProbing';
+import { fieldAppliesToQueryObject } from '@/app/ops-analysis/utils/tableLikeData';
 import {
   isModelAttrTableSource,
   modelTableBindingKey,
@@ -352,9 +353,12 @@ const ViewConfig: React.FC<ViewConfigPropsWithManager> = ({
     processFormParamsForSubmit,
   } = dataSourceManager;
 
+  const watchedQueryObject = Form.useWatch(['params', 'query_object'], form) as unknown;
   const availableFields = useMemo((): ResponseFieldDefinition[] => {
-    return selectedDataSource?.field_schema || [];
-  }, [selectedDataSource]);
+    return (selectedDataSource?.field_schema || []).filter((field) =>
+      fieldAppliesToQueryObject(field, watchedQueryObject),
+    );
+  }, [selectedDataSource, watchedQueryObject]);
 
   const watchedAnalysisMode = Form.useWatch(['params', 'analysis_mode'], form) as unknown;
   const getFilteredChartTypes = (
@@ -619,7 +623,7 @@ const ViewConfig: React.FC<ViewConfigPropsWithManager> = ({
         const schemaFields = fullItem.field_schema;
         if (schemaFields && schemaFields.length > 0) {
           tableConfig.setDetectedDisplayColumns(
-            buildDisplayColumnsFromSchema(schemaFields),
+            buildDisplayColumnsFromSchema(schemaFields, params?.query_object),
           );
         } else {
           const probedColumns = await tableConfig.probeDefaultDisplayColumns(
@@ -1091,6 +1095,7 @@ const ViewConfig: React.FC<ViewConfigPropsWithManager> = ({
           (targetDataSource?.field_schema || []).length > 0
             ? buildDisplayColumnsFromSchema(
               targetDataSource?.field_schema || [],
+              formValues.params?.query_object,
             )
             : probedColumns,
         );
@@ -1129,7 +1134,10 @@ const ViewConfig: React.FC<ViewConfigPropsWithManager> = ({
         const schemaFields = targetDataSource?.field_schema;
         const replaceActionOnlyColumns = originalColumns.length > 0;
         if (schemaFields && schemaFields.length > 0) {
-          const defaults = buildDisplayColumnsFromSchema(schemaFields);
+          const defaults = buildDisplayColumnsFromSchema(
+            schemaFields,
+            formValues.params?.query_object,
+          );
           tableConfig.setDetectedDisplayColumns(defaults);
           if (replaceActionOnlyColumns) {
             tableConfig.setDisplayColumns(defaults);
@@ -2121,6 +2129,12 @@ const ViewConfig: React.FC<ViewConfigPropsWithManager> = ({
       <ParamInputConfigEditor
         key={editingInputConfigParam?.name ?? 'closed'}
         open={editingInputConfigParam !== null}
+        variant={
+          editingInputConfigParam?.type === 'conditionFilter'
+          || editingInputConfigParam?.inputConfig?.control === 'conditionFilter'
+            ? 'conditionFields'
+            : 'param'
+        }
         value={editingInputConfigParam?.inputConfig}
         onConfirm={handleInputConfigConfirm}
         onCancel={() => setEditingInputConfigParam(null)}

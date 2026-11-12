@@ -5,8 +5,16 @@ from datetime import datetime, timedelta, timezone
 import pytest
 
 from apps.monitor.models.monitor_object import MonitorInstance, MonitorObject
-from apps.monitor.models.monitor_policy import MonitorAlert
-from apps.monitor.services.generic_query import GenericQueryError, build_metric_result, query_alerts, query_instances, validate_metric_request
+from apps.monitor.models.monitor_policy import MonitorAlert, MonitorPolicy
+from apps.monitor.services.generic_query import (
+    GenericQueryError,
+    _order_instances,
+    build_metric_result,
+    metric_instance_labels,
+    query_alerts,
+    query_instances,
+    validate_metric_request,
+)
 from apps.monitor.services.generic_query_limits import (
     ALERT_RANGE_MAX_SECONDS,
     DETAIL_PAGE_SIZE_MAX,
@@ -33,64 +41,91 @@ def _instance(obj, instance_id, *, active=True, cmdb_id="", name=""):
     )
 
 
-def test_monitor_instance_detail_count_and_unbound_identity():
+def test_monitor_instance_detail_keeps_identity_and_the_full_count():
+    from apps.node_mgmt.models.cloud_region import CloudRegion
+
     obj = _object()
-    _instance(obj, "host-1", cmdb_id="cmdb-1")
-    _instance(obj, "host-2", active=False)
+    region = CloudRegion.objects.create(name="生产")
+    enabled = _instance(obj, "host-1", cmdb_id="cmdb-1", name="web")
+    enabled.summary_facts = {"asset.ip": "10.1.1.1"}
+    enabled.cloud_region_id = region.id
+    enabled.save(update_fields=["summary_facts", "cloud_region_id"])
+    _instance(obj, "host-2", active=False, name="idle")
 
     detail = query_instances(MonitorInstance.objects.filter(monitor_object=obj), analysis_mode="detail", order="id")
-    counted = query_instances(
+    stopped = query_instances(
         MonitorInstance.objects.filter(monitor_object=obj),
-        analysis_mode="count",
+        analysis_mode="detail",
         status="inactive",
     )
-    grouped = query_instances(MonitorInstance.objects.filter(monitor_object=obj), analysis_mode="distribution", group_by="status")
 
     assert detail["count"] == 2
-    assert detail["page"] == 1
-    assert detail["page_size"] == 20
-    unbound = next(item for item in detail["items"] if item["instance_id"] == "host-2")
-    assert unbound["cmdb_bind_status"] == "unbound"
-    assert counted["instance_count"] == 1
-    assert counted["status"] == "ok"
-    assert {item["status"] for item in grouped["items"]} == {"active", "inactive"}
-    assert {item["instance_count"] for item in grouped["items"]} == {1}
-    assert "name" not in grouped["items"][0]
+    assert detail["unit"] == "个"
+    assert "一台算一个" in detail["aggregation"]
+    assert [field["key"] for field in detail["fields"]] == [
+        "instance_id",
+        "name",
+        "ip",
+        "cloud_region",
+        "cmdb_id",
+        "monitor_object_id",
+        "status",
+    ]
+    enabled_row = next(item for item in detail["items"] if item["instance_id"] == "host-1")
+    assert enabled_row["ip"] == "10.1.1.1"
+    assert enabled_row["cloud_region"] == "生产"
+    assert enabled_row["cmdb_id"] == "cmdb-1"
+    assert enabled_row["monitor_object_id"] == obj.name
+    assert enabled_row["status"] == "启用"
+    assert "cmdb_bind_status" not in enabled_row
+    stopped_row = stopped["items"][0]
+    assert stopped["count"] == 1
+    assert stopped_row["status"] == "停用"
+    assert stopped_row["cmdb_id"] == ""
+    assert stopped_row["ip"] == "10.0.0.8"
 
 
-def test_instance_or_group_matches_either_row_and_empty_group_does_not_filter():
+def test_monitor_instance_column_uses_the_language_display_name(monkeypatch):
+    obj = MonitorObject.objects.create(name="Host", display_name="库内展示名", level="base")
+    _instance(obj, "host-1", name="web")
+
+    class Loader:
+        def __init__(self, app, default_lang):
+            self.lang = default_lang
+
+        def get(self, key, default=None):
+            if self.lang == "zh-Hans" and key == "monitor_object.Host":
+                return "主机"
+            return default
+
+    monkeypatch.setattr("apps.monitor.services.generic_query.LanguageLoader", Loader)
+    detail = query_instances(
+        MonitorInstance.objects.filter(monitor_object=obj),
+        analysis_mode="detail",
+        locale="zh-Hans",
+    )
+    assert detail["items"][0]["monitor_object_id"] == "主机"
+
+    monkeypatch.setattr(
+        "apps.monitor.services.generic_query.LanguageLoader",
+        type("EmptyLoader", (), {"__init__": lambda self, app, default_lang: None, "get": lambda self, key, default=None: None}),
+    )
+    stored = query_instances(MonitorInstance.objects.filter(monitor_object=obj), analysis_mode="detail", locale="en")
+    assert stored["items"][0]["monitor_object_id"] == "库内展示名"
+
+
+def test_monitor_instance_rejects_filters_distribution_and_missing_ids():
     obj = _object()
     _instance(obj, "host-1", name="alpha")
-    other = _instance(obj, "host-2", name="beta")
-    other.ip = "10.9.9.9"
-    other.save(update_fields=["ip"])
     base = MonitorInstance.objects.filter(monitor_object=obj)
-    either = query_instances(
-        base,
-        analysis_mode="count",
-        filters={
-            "logic": "OR",
-            "items": [
-                {"field": "name", "op": "eq", "value": "alpha"},
-                {"field": "ip", "op": "eq", "value": "10.9.9.9"},
-            ],
-        },
-    )
-    both = query_instances(
-        base,
-        analysis_mode="count",
-        filters={
-            "logic": "AND",
-            "items": [
-                {"field": "name", "op": "eq", "value": "alpha"},
-                {"field": "ip", "op": "eq", "value": "10.9.9.9"},
-            ],
-        },
-    )
-    cleared = query_instances(base, analysis_mode="count", filters={"logic": "OR", "items": []})
-    assert either["instance_count"] == 2
-    assert both["instance_count"] == 0
-    assert cleared["instance_count"] == 2
+    with pytest.raises(GenericQueryError, match="属性过滤"):
+        query_instances(base, analysis_mode="detail", filters={"logic": "AND", "items": [{"field": "name", "op": "eq", "value": "alpha"}]})
+    with pytest.raises(GenericQueryError, match="分组"):
+        query_instances(base, analysis_mode="detail", group_by="status")
+    with pytest.raises(GenericQueryError, match="分析方式不受支持"):
+        query_instances(base, analysis_mode="count")
+    with pytest.raises(GenericQueryError, match="无权访问"):
+        query_instances(base, analysis_mode="detail", instance_ids=["host-1", "gone"])
 
 
 def test_monitor_instance_page_size_and_statistics_group_limits():
@@ -102,22 +137,47 @@ def test_monitor_instance_page_size_and_statistics_group_limits():
             analysis_mode="detail",
             page_size=DETAIL_PAGE_SIZE_MAX + 1,
         )
-    with pytest.raises(GenericQueryError, match="不支持分页"):
-        query_instances(MonitorInstance.objects.all(), analysis_mode="count", page_size=10)
 
 
-def test_monitor_instance_distribution_keeps_false_without_renaming_it():
+def test_monitor_modes_reject_group_and_order_they_do_not_use():
+    with pytest.raises(GenericQueryError, match="不支持分组"):
+        query_alerts(None, analysis_mode="detail", group_by="level")
+
+
+def test_monitor_instance_orders_by_the_ip_people_see():
     obj = _object()
-    _instance(obj, "host-1", active=False)
-    grouped = query_instances(
-        MonitorInstance.objects.filter(monitor_object=obj),
-        analysis_mode="distribution",
-        group_by="is_active",
-    )
-    assert grouped["items"] == [{"is_active": False, "instance_count": 1}]
-    assert grouped["fields"][0]["value_type"] == "boolean"
-    detail = query_instances(MonitorInstance.objects.filter(monitor_object=obj), analysis_mode="detail")
-    assert detail["items"][0]["name"] == "host-1"
+    first = _instance(obj, "host-1", name="b")
+    first.summary_facts = {"asset.ip": "10.2.0.1"}
+    first.ip = "192.168.0.1"
+    first.save(update_fields=["summary_facts", "ip"])
+    second = _instance(obj, "host-2", name="a")
+    second.ip = "10.1.0.1"
+    second.save(update_fields=["ip"])
+    queryset = MonitorInstance.objects.filter(monitor_object=obj)
+    ordered = query_instances(queryset, analysis_mode="detail", order="ip")
+    assert [item["instance_id"] for item in ordered["items"]] == ["host-2", "host-1"]
+    assert [item["ip"] for item in ordered["items"]] == ["10.1.0.1", "10.2.0.1"]
+    assert "CAST" in str(_order_instances(queryset, "ip").query)
+
+
+def test_monitor_distribution_uses_return_limit_and_rejects_page():
+    _alert_row = {
+        "monitor_instance_id": "host-1",
+        "monitor_instance_name": "host-1",
+        "status": "new",
+        "alert_type": "alert",
+        "start_event_time": datetime(2026, 1, 1, tzinfo=timezone.utc),
+    }
+    MonitorAlert.objects.create(level="warning", **_alert_row)
+    MonitorAlert.objects.create(level="warning", **{**_alert_row, "monitor_instance_id": "host-2"})
+    MonitorAlert.objects.create(level="fatal", **{**_alert_row, "monitor_instance_id": "host-3"})
+    alerts = query_alerts(MonitorAlert.objects.all(), analysis_mode="distribution", group_by="level", page_size=1)
+    assert alerts["items"] == [{"level": "warning", "alert_count": 2}]
+    assert alerts["count"] == 2
+    second = query_alerts(MonitorAlert.objects.all(), analysis_mode="distribution", group_by="level", page=2, page_size=1)
+    assert second["items"] == [{"level": "fatal", "alert_count": 1}]
+    assert second["count"] == 2
+    assert sum(item["alert_count"] for item in alerts["items"]) + sum(item["alert_count"] for item in second["items"]) == 3
 
 
 def test_metric_point_and_instance_limits_fail_before_query():
@@ -144,6 +204,12 @@ def test_metric_point_and_instance_limits_fail_before_query():
         )
     with pytest.raises(GenericQueryError, match="实例范围不能为空"):
         validate_metric_request(instance_ids=[], time_range=[start.isoformat(), (start + timedelta(minutes=5)).isoformat()], step="60s")
+    with pytest.raises(GenericQueryError, match="步长最短 1 秒"):
+        validate_metric_request(
+            instance_ids=["host-1"],
+            time_range=[start.isoformat(), (start + timedelta(minutes=5)).isoformat()],
+            step=0.4,
+        )
 
 
 def test_metric_series_over_limit_missing_and_zero_are_distinct():
@@ -165,13 +231,67 @@ def test_metric_series_over_limit_missing_and_zero_are_distinct():
         aggregation="avg",
         requested_ids=["a"],
     )
+    assert missing["structure"] == "table"
     assert missing["status"] == "missing"
-    assert missing["value"] is None
+    assert missing["items"][0]["instance_id"] == "a"
+    assert missing["items"][0]["value"] == "无数据"
+    assert missing["items"][0]["aggregation"] == "平均"
+    assert "status" not in missing["items"][0]
+    assert "dimension" not in missing["items"][0]
     assert zero["status"] == "ok"
-    assert zero["value"] == 0
-    assert zero["unit"] == "%"
-    assert [field["key"] for field in zero["fields"]] == ["value"]
-    assert missing["fields"][0]["role"] == "measure"
+    assert zero["items"][0]["value"] == 0
+    assert zero["items"][0]["unit"] == "%"
+    assert zero["items"][0]["aggregation"] == "平均"
+    assert "status" not in zero["items"][0]
+    assert [field["key"] for field in zero["fields"]] == [
+        "instance_id",
+        "value",
+        "unit",
+        "aggregation",
+    ]
+
+    separate = build_metric_result(
+        mode="value",
+        response={
+            "status": "success",
+            "data": {
+                "result": [
+                    {"metric": {"instance_id": "a"}, "values": [[1, "1"], [2, "3"]]},
+                    {"metric": {"instance_id": "b", "ifDescr": "eth0"}, "values": [[1, "10"]]},
+                ]
+            },
+        },
+        unit="%",
+        aggregation="sum",
+        requested_ids=["a", "b"],
+        instance_names={"b": "网卡主机"},
+    )
+    by_id = {item["instance_id"]: item for item in separate["items"]}
+    assert by_id["a"]["value"] == 4
+    assert by_id["网卡主机"]["value"] == 10
+    assert by_id["网卡主机"]["aggregation"] == "求和"
+    assert "dimension" not in by_id["网卡主机"]
+
+    latest = build_metric_result(
+        mode="latest",
+        response={"status": "success", "data": {"result": [{"metric": {"instance_id": "a"}, "values": [[1, "1"], [2, "9"]]}]}},
+        unit="%",
+        aggregation="avg",
+        requested_ids=["a"],
+        instance_names={"a": "分块演示-主机-01"},
+    )
+    assert latest["items"][0]["instance_id"] == "分块演示-主机-01"
+    assert latest["items"][0]["value"] == 9
+    assert latest["items"][0]["aggregation"] == "平均"
+    assert latest["aggregation"] == "平均"
+    assert "time" in latest["items"][0]
+    assert [field["key"] for field in latest["fields"]] == [
+        "instance_id",
+        "value",
+        "time",
+        "unit",
+        "aggregation",
+    ]
 
     partial = build_metric_result(
         mode="series",
@@ -191,6 +311,32 @@ def test_metric_series_over_limit_missing_and_zero_are_distinct():
     assert partial["fields"][0]["key"] == "time"
     assert partial["fields"][1]["role"] == "measure"
     assert partial["unbound_instance_ids"] == ["b"]
+    complete = build_metric_result(
+        mode="series",
+        response={"status": "success", "data": {"result": [{"metric": {"instance_id": "a"}, "values": [[1, "1"]]}]}},
+        unit="%",
+        aggregation="avg",
+        requested_ids=["a"],
+    )
+    assert complete["unbound_instance_ids"] == []
+    split = build_metric_result(
+        mode="series",
+        response={
+            "status": "success",
+            "data": {
+                "result": [
+                    {"metric": {"instance_id": "host", "device": "sda", "path": "/"}, "values": [[1, "40"]]},
+                    {"metric": {"instance_id": "host", "device": "sdb", "path": "/data"}, "values": [[1, "80"]]},
+                ]
+            },
+        },
+        unit="%",
+        aggregation="avg",
+        requested_ids=["host"],
+    )
+    assert set(split["series"]) == {"host device=sda, path=/", "host device=sdb, path=/data"}
+    assert split["series"]["host device=sda, path=/"][0]["value"] == 40
+    assert split["series"]["host device=sdb, path=/data"][0]["value"] == 80
     missing_series = build_metric_result(
         mode="series",
         response={"status": "success", "data": {"result": []}},
@@ -203,12 +349,74 @@ def test_metric_series_over_limit_missing_and_zero_are_distinct():
     assert missing_series["series"] == {}
 
 
+def test_metric_table_uses_the_instance_name():
+    obj = _object()
+    _instance(obj, "mock-disk-split-01", name="分块演示-主机-01")
+    _instance(obj, "('demo-web-01',)", name="演示网站")
+    blank = _instance(obj, "blank-name", name="temporary")
+    blank.name = ""
+    blank.save(update_fields=["name"])
+
+    labels = metric_instance_labels(["mock-disk-split-01", "('demo-web-01',)", "blank-name"])
+    assert labels["mock-disk-split-01"] == "分块演示-主机-01"
+    assert labels["demo-web-01"] == "演示网站"
+    assert labels["blank-name"] == "blank-name"
+
+    named = build_metric_result(
+        mode="value",
+        response={"status": "success", "data": {"result": [{"metric": {"instance_id": "demo-web-01"}, "values": [[1, "0"]]}]}},
+        unit="%",
+        aggregation="max",
+        requested_ids=["demo-web-01", "blank-name"],
+        instance_names=labels,
+    )
+    by_name = {item["instance_id"]: item for item in named["items"]}
+    assert by_name["演示网站"]["value"] == 0
+    assert by_name["演示网站"]["aggregation"] == "最大"
+    assert by_name["blank-name"]["value"] == "无数据"
+
+
+def test_empty_aggregation_rejects_open_dimensions_before_the_query(mocker):
+    from types import SimpleNamespace
+
+    from apps.monitor.nats.generic_query import query_monitor_metric
+
+    mocker.patch(
+        "apps.monitor.nats.generic_query._normalize_permission_user",
+        return_value=SimpleNamespace(username="admin", domain="domain"),
+    )
+    mocker.patch(
+        "apps.monitor.nats.generic_query.AuthorizedMetricQueryService.prepare",
+        return_value=SimpleNamespace(
+            metric=SimpleNamespace(
+                dimensions=[{"name": "device"}, {"name": "path"}, {"name": "fstype"}],
+                instance_id_keys=["instance_id"],
+                monitor_object=SimpleNamespace(instance_id_keys=["instance_id"]),
+            ),
+            query="unused",
+        ),
+    )
+    queried = mocker.patch("apps.monitor.nats.generic_query.VictoriaMetricsAPI")
+    result = query_monitor_metric(
+        metric_id="507",
+        instance_ids=["mock-disk-split-01"],
+        time_range=["2026-01-01T00:00:00+00:00", "2026-01-01T01:00:00+00:00"],
+        step="5m",
+        analysis_mode="series",
+        aggregation="",
+        user_info={"user": {"username": "admin"}, "team": "1", "domain": "domain"},
+    )
+    assert result["result"] is False
+    assert result["message"] == "这个指标在同一时间点可能有多个数，请选择聚合方式，或用维度过滤指定其中某一个。"
+    queried.assert_not_called()
+
+
 def test_metric_handler_rejects_non_list_filters():
     from apps.monitor.nats.generic_query import query_monitor_instances, query_monitor_metric
 
     instances = query_monitor_instances(monitor_object_id="1", filters={"label": "cpu"})
     assert instances["result"] is False
-    assert "条件过滤" in instances["message"]
+    assert "属性过滤" in instances["message"]
     metric = query_monitor_metric(
         metric_id="cpu",
         instance_ids=["host-1"],
@@ -218,6 +426,15 @@ def test_metric_handler_rejects_non_list_filters():
     )
     assert metric["result"] is False
     assert "filters" in metric["message"]
+    unnamed = query_monitor_metric(
+        metric_id="cpu",
+        instance_ids=["host-1"],
+        time_range=["2026-01-01T00:00:00+00:00", "2026-01-01T01:00:00+00:00"],
+        step="60s",
+        filters={"logic": "AND", "items": [{"op": "eq", "value": "eth0"}]},
+    )
+    assert unnamed["result"] is False
+    assert "维度名" in unnamed["message"]
 
 
 def test_monitor_alert_range_is_capped_at_90_days_and_failure_is_explicit():
@@ -260,6 +477,122 @@ def test_monitor_alert_range_is_capped_at_90_days_and_failure_is_explicit():
         query_alerts(
             MonitorAlert.objects.all(),
             analysis_mode="detail",
-            time_field="not_a_field",
+            time_field="updated_at",
             time_range=[start.isoformat(), (start + timedelta(days=1)).isoformat()],
         )
+
+
+def test_alert_handler_keeps_object_optional_and_rejects_removed_params(monkeypatch):
+    from apps.monitor.nats.generic_query import query_monitor_alerts
+
+    rejected = query_monitor_alerts(filters={"logic": "AND", "items": [{"field": "level", "op": "eq", "value": "warning"}]})
+    assert rejected["result"] is False
+    assert "条件过滤" in rejected["message"]
+    legacy = query_monitor_alerts(instance_id="host-1")
+    assert legacy["result"] is False
+    assert "实例参数" in legacy["message"]
+
+    obj = _object()
+    policy = MonitorPolicy.objects.create(monitor_object=obj, name="主机策略", algorithm="avg")
+    MonitorAlert.objects.create(
+        policy_id=policy.id,
+        monitor_instance_id="host-1",
+        level="warning",
+        status="new",
+        alert_type="alert",
+    )
+    monkeypatch.setattr(
+        "apps.monitor.nats.generic_query._get_nats_actor_scope",
+        lambda user_info: (user_info, 1, False, [1], False, None),
+    )
+    monkeypatch.setattr(
+        "apps.monitor.nats.generic_query._get_nats_accessible_policy_queryset",
+        lambda user_info: (MonitorPolicy.objects.all(), None),
+    )
+    monkeypatch.setattr(
+        "apps.monitor.nats.generic_query._filter_nats_visible_alerts",
+        lambda queryset, scope_ids, policies: queryset,
+    )
+    user_info = {"user": "ada", "team": 1, "domain": "example.com"}
+    counted = query_monitor_alerts(analysis_mode="count", user_info=user_info)
+    assert counted["result"] is True
+    assert counted["data"]["alert_count"] == 1
+    missing = query_monitor_alerts(monitor_object_id="missing-object", analysis_mode="count", user_info=user_info)
+    assert missing["result"] is False
+    assert "不存在或无权访问" in missing["message"]
+
+
+def test_monitor_alerts_reject_unknown_choices_filters_and_missing_group():
+    with pytest.raises(GenericQueryError, match="级别不受支持"):
+        query_alerts(MonitorAlert.objects.none(), analysis_mode="count", level="info")
+    with pytest.raises(GenericQueryError, match="条件过滤"):
+        query_alerts(
+            MonitorAlert.objects.none(),
+            analysis_mode="count",
+            filters={"logic": "AND", "items": [{"field": "level", "op": "eq", "value": "warning"}]},
+        )
+    with pytest.raises(GenericQueryError, match="必须选择分组"):
+        query_alerts(MonitorAlert.objects.none(), analysis_mode="distribution")
+    empty = query_alerts(MonitorAlert.objects.none(), analysis_mode="count")
+    assert empty["alert_count"] == 0
+    assert empty["status"] == "ok"
+    assert empty["unit"] == "条"
+
+
+def test_monitor_alerts_sort_level_by_severity_and_keep_deleted_policy_group(monkeypatch):
+    class EmptyLoader:
+        def __init__(self, app, default_lang):
+            del app, default_lang
+
+        def get(self, key, default=None):
+            del key
+            return default
+
+    monkeypatch.setattr("apps.monitor.services.generic_query.LanguageLoader", EmptyLoader)
+    obj = _object()
+    obj.display_name = "主机"
+    obj.save(update_fields=["display_name"])
+    policy = MonitorPolicy.objects.create(monitor_object=obj, name="主机策略", algorithm="avg")
+    moment = datetime(2026, 1, 1, tzinfo=timezone.utc)
+    MonitorAlert.objects.create(
+        policy_id=policy.id,
+        monitor_instance_id="host-1",
+        monitor_instance_name="alpha",
+        level="warning",
+        status="new",
+        alert_type="alert",
+        content="磁盘满了",
+        start_event_time=moment,
+    )
+    MonitorAlert.objects.create(
+        policy_id=0,
+        monitor_instance_id="host-2",
+        monitor_instance_name="beta",
+        level="critical",
+        status="new",
+        alert_type="alert",
+        start_event_time=moment,
+    )
+    MonitorAlert.objects.create(
+        policy_id=policy.id,
+        monitor_instance_id="host-3",
+        monitor_instance_name="gamma",
+        level="no_data",
+        status="closed",
+        alert_type="no_data",
+        start_event_time=moment,
+    )
+    ordered = query_alerts(MonitorAlert.objects.all(), analysis_mode="detail", order="level")
+    assert [item["level"] for item in ordered["items"]] == ["no_data", "warning", "critical"]
+    warning = next(item for item in ordered["items"] if item["level"] == "warning")
+    assert warning["content"] == "磁盘满了"
+    assert warning["monitor_object_name"] == "主机"
+    assert warning["monitor_object_id"] == str(obj.id)
+    assert "updated_at" not in warning
+    grouped = query_alerts(MonitorAlert.objects.all(), analysis_mode="distribution", group_by="monitor_object_id", page_size=100)
+    assert sum(item["alert_count"] for item in grouped["items"]) == 3
+    orphan = next(item for item in grouped["items"] if item["monitor_object_id"] == "")
+    assert orphan["monitor_object_name"] == "策略已删除"
+    assert orphan["alert_count"] == 1
+    active = query_alerts(MonitorAlert.objects.all(), analysis_mode="count", status=["new", "closed"], level=["warning", "no_data"])
+    assert active["alert_count"] == 2

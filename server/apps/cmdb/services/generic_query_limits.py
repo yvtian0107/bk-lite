@@ -12,10 +12,6 @@ STAT_GROUP_MAX = 500
 # 模型 / 实例统计前，扫描实例最多 5 万。
 SCAN_INSTANCE_MAX = 50_000
 
-# 一跳关联：起点最多 20，结果最多 200。
-ONE_HOP_START_MAX = 20
-ONE_HOP_RESULT_MAX = 200
-
 # 图查询超时（毫秒）。FalkorDB 使用该值；Neo4j 事务使用 30 秒。
 QUERY_TIMEOUT_MS = 30_000
 

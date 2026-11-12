@@ -103,6 +103,40 @@ def test_alert_center_requires_time_and_rejects_ranges_over_90_days():
         )
 
 
+def test_alert_center_rejects_group_and_order_the_mode_does_not_use():
+    with pytest.raises(GenericQueryError, match="不支持分组、排序"):
+        query_alert_center(None, query_object="alert", analysis_mode="count", group_by="level", order="-created_at")
+
+
+def test_alert_center_distribution_uses_return_limit_and_rejects_page():
+    day = _range(24 * 60 * 60)
+    _alert("ALERT-1", created_at=START + timedelta(hours=1))
+    _alert("ALERT-2", level="fatal", created_at=START + timedelta(hours=2))
+    _alert("ALERT-3", created_at=START + timedelta(hours=3))
+    limited = query_alert_center(
+        Alert.objects.all(),
+        query_object="alert",
+        analysis_mode="distribution",
+        time_field="created_at",
+        time_range=day,
+        group_by="level",
+        page_size=1,
+    )
+    assert limited["items"] == [{"level": "预警", "record_count": 2}]
+    assert limited["count"] == 2
+    assert limited["page_size"] == 1
+    with pytest.raises(GenericQueryError, match="不支持页码"):
+        query_alert_center(
+            Alert.objects.all(),
+            query_object="alert",
+            analysis_mode="distribution",
+            time_field="created_at",
+            time_range=day,
+            group_by="level",
+            page=2,
+        )
+
+
 def test_alert_center_page_group_and_empty_results():
     with pytest.raises(GenericQueryError, match=str(DETAIL_PAGE_SIZE_MAX)):
         query_alert_center(
@@ -185,7 +219,7 @@ def test_alert_source_filter_does_not_multiply_distribution_count():
     )
 
     assert counted["record_count"] == 1
-    assert grouped["items"] == [{"level": "warning", "record_count": 1}]
+    assert grouped["items"] == [{"level": "预警", "record_count": 1}]
     assert grouped["fields"][0]["role"] == "dimension"
 
 
@@ -295,48 +329,69 @@ def test_event_queryset_follows_event_rules_and_is_empty_without_rules(monkeypat
     assert allowed["data"]["record_count"] == 1
 
 
-def test_alert_or_group_cannot_leave_the_authorized_queryset_or_multiply_count():
+def test_named_filters_are_and_and_source_name_follows_the_alert_source():
     source = _source()
     other = AlertSource.objects.create(name="other", source_id="src-2", source_type=AlertsSourceTypes.WEBHOOK)
     alert = _alert("ALERT-1", created_at=START + timedelta(hours=1))
+    alert.source_name = "旧名称"
+    alert.save(update_fields=["source_name"])
     alert.events.add(_event("EVENT-1", source), _event("EVENT-2", source), _event("EVENT-3", other))
-    _alert("ALERT-2", level="fatal", created_at=START + timedelta(hours=2))
+    fatal = _alert("ALERT-2", level="fatal", created_at=START + timedelta(hours=2))
     day = _range(24 * 60 * 60)
-    filters = {
-        "logic": "OR",
-        "items": [
-            {"field": "source", "op": "eq", "value": "src-1"},
-            {"field": "level", "op": "eq", "value": "fatal"},
-        ],
-    }
+
     counted = query_alert_center(
         Alert.objects.all(),
         query_object="alert",
         analysis_mode="count",
+        source="src-1",
+        level="fatal",
         time_field="created_at",
         time_range=day,
-        filters=filters,
     )
     grouped = query_alert_center(
         Alert.objects.all(),
         query_object="alert",
         analysis_mode="distribution",
+        source="src-1",
         time_field="created_at",
         time_range=day,
-        group_by="level",
-        filters=filters,
+        group_by="source_name",
     )
-    scoped = query_alert_center(
-        Alert.objects.filter(alert_id="ALERT-1"),
+    detail = query_alert_center(
+        Alert.objects.filter(pk=alert.pk),
         query_object="alert",
-        analysis_mode="count",
+        analysis_mode="detail",
         time_field="created_at",
         time_range=day,
-        filters=filters,
     )
-    assert counted["record_count"] == 2
-    assert {item["level"]: item["record_count"] for item in grouped["items"]} == {"warning": 1, "fatal": 1}
-    assert scoped["record_count"] == 1
+    assert counted["record_count"] == 0
+    assert grouped["items"] == [{"source_name": "other", "record_count": 1}]
+    event_detail = query_alert_center(
+        Event.objects.filter(event_id="EVENT-1"),
+        query_object="event",
+        analysis_mode="detail",
+        time_field="start_time",
+        time_range=day,
+    )
+    event_grouped = query_alert_center(
+        Event.objects.all(),
+        query_object="event",
+        analysis_mode="distribution",
+        time_field="start_time",
+        time_range=day,
+        group_by="source_name",
+    )
+    assert detail["items"][0]["source_name"] == "other"
+    assert detail["items"][0]["level"] == "预警"
+    assert detail["items"][0]["status"] == "未分派"
+    assert "event_id" not in detail["items"][0]
+    assert [field["key"] for field in detail["fields"]][0] == "alert_id"
+    assert event_detail["items"][0]["source_id"] == "src-1"
+    assert event_detail["items"][0]["source_name"] == "webhook"
+    assert event_detail["items"][0]["level"] == "预警"
+    assert "alert_id" not in event_detail["items"][0]
+    assert {item["source_name"]: item["record_count"] for item in event_grouped["items"]} == {"webhook": 2, "other": 1}
+    assert fatal.alert_id == "ALERT-2"
 
 
 def test_handler_rejects_unsupported_filters():
@@ -344,7 +399,7 @@ def test_handler_rejects_unsupported_filters():
 
     result = handler(query_object="alert", analysis_mode="count", user_info={}, filters=[{"field": "level"}])
     assert result["result"] is False
-    assert "条件过滤" in result["message"]
+    assert "filters" in result["message"]
 
 
 def test_handler_rejects_unknown_query_object_and_keeps_extra_kwargs():

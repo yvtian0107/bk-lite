@@ -33,6 +33,7 @@ MONITOR_NATS_HANDLER_NAMES = frozenset(
         "monitor_instances_exist",
         "monitor_list_cmdb_bind_candidates",
         "monitor_instance_metrics",
+        "list_metric_dimensions",
         "monitor_metrics",
         "monitor_object_instance_count",
         "license_monitor_instance_count",

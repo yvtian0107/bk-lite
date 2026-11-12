@@ -1,6 +1,6 @@
 import React from 'react';
 import '@ant-design/v5-patch-for-react-19';
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { Form } from 'antd';
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import DataSourceParamsConfig from '@/app/ops-analysis/components/paramsConfig';
@@ -16,7 +16,11 @@ const api = vi.hoisted(() => ({
 }));
 
 vi.mock('@/app/ops-analysis/api/dataSource', () => ({
-  useDataSourceApi: () => api,
+  // 真实 hook 每次渲染都返回新对象。稳定引用会藏住属性加载的重复请求。
+  useDataSourceApi: () => ({
+    getDataSourceList: api.getDataSourceList,
+    getSourceDataByApiId: api.getSourceDataByApiId,
+  }),
 }));
 
 vi.mock('@/utils/i18n', () => ({
@@ -374,5 +378,185 @@ describe('cmdb classification cascade', () => {
       expect((next.filters as { items: unknown[] }).items).toEqual([]);
       expect((next.end_filters as { items: unknown[] }).items).toEqual([]);
     });
+  });
+
+  const attrCallsFor = (modelId: string) => api.getSourceDataByApiId.mock.calls.filter(
+    ([id, params]) => id === 3 && (params as { model_id?: string } | undefined)?.model_id === modelId,
+  ).length;
+
+  const expectAttrLoadsToSettle = async (modelId: string, count: number) => {
+    await waitFor(() => {
+      expect(attrCallsFor(modelId)).toBe(count);
+    });
+    const settled = attrCallsFor(modelId);
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 30));
+    });
+    expect(attrCallsFor(modelId)).toBe(settled);
+  };
+
+  it('loads model attributes once for the condition filter and the sort control', async () => {
+    api.getSourceDataByApiId.mockResolvedValue({
+      data: [{ attr_id: 'cpu', attr_name: 'CPU', value_type: 'number', options: [] }],
+      warnings: [],
+    });
+    render(
+      <QueryForm
+        source={{
+          id: 24,
+          name: 'CMDB 实例通用查询',
+          params: [
+            analysisMode(),
+            {
+              name: 'filters',
+              alias_name: '条件过滤',
+              type: 'conditionFilter',
+              filterType: 'params',
+              value: { logic: 'AND', items: [] },
+              inputConfig: {
+                control: 'conditionFilter',
+                fields: { kind: 'modelAttrs', modelParam: 'model_id' },
+              },
+            },
+            {
+              name: 'order',
+              alias_name: '排序',
+              type: 'order',
+              filterType: 'params',
+              value: '',
+              inputConfig: {
+                control: 'order',
+                modelParam: 'model_id',
+                includeModelAttrsInModes: ['detail'],
+                fields: [{ value: 'inst_name', label: '实例名', modes: ['detail'] }],
+              },
+            },
+          ],
+        } as DatasourceItem}
+        initialParams={{
+          model_id: 'host',
+          analysis_mode: 'detail',
+          filters: { logic: 'AND', items: [] },
+          order: '',
+        }}
+      />,
+    );
+
+    await expectAttrLoadsToSettle('host', 2);
+  });
+
+  it('loads start-model attributes once for the one-hop condition filter', async () => {
+    api.getSourceDataByApiId.mockResolvedValue({
+      data: [{ attr_id: 'cpu', attr_name: 'CPU', value_type: 'number', options: [] }],
+      warnings: [],
+    });
+    render(
+      <QueryForm
+        source={{
+          id: 25,
+          name: 'CMDB 一跳关联通用查询',
+          params: [
+            {
+              name: 'filters',
+              alias_name: '起点条件',
+              type: 'conditionFilter',
+              filterType: 'params',
+              value: { logic: 'AND', items: [] },
+              inputConfig: {
+                control: 'conditionFilter',
+                fields: { kind: 'modelAttrs', modelParam: 'start_model_id' },
+              },
+            },
+          ],
+        } as DatasourceItem}
+        initialParams={{
+          start_model_id: 'host',
+          filters: { logic: 'AND', items: [] },
+        }}
+      />,
+    );
+
+    await expectAttrLoadsToSettle('host', 1);
+  });
+
+  it('keeps a saved enum condition while the model attribute list is loading', async () => {
+    let resolveAttrs: ((value: unknown) => void) | undefined;
+    api.getSourceDataByApiId.mockImplementation(
+      () => new Promise((resolve) => {
+        resolveAttrs = resolve;
+      }),
+    );
+    const forms: Array<ReturnType<typeof Form.useForm>[0]> = [];
+    const Harness = () => {
+      const [form] = Form.useForm();
+      forms[0] = form;
+      return (
+        <Form form={form} initialValues={{ chartType: 'table', params: { model_id: '', filters: { logic: 'AND', items: [] } } }}>
+          <DataSourceParamsConfig
+            selectedDataSource={{
+              id: 26,
+              name: 'CMDB 实例通用查询',
+              params: [{
+                name: 'filters',
+                alias_name: '条件过滤',
+                type: 'conditionFilter',
+                filterType: 'params',
+                value: { logic: 'AND', items: [] },
+                inputConfig: {
+                  control: 'conditionFilter',
+                  fields: { kind: 'modelAttrs', modelParam: 'model_id' },
+                },
+              }],
+            } as DatasourceItem}
+            includeFilterTypes={['params', 'fixed']}
+            globalFilters={[]}
+            filterBindings={{}}
+            globalFilterValues={{}}
+          />
+          <Form.Item shouldUpdate noStyle>
+            {() => (
+              <pre data-testid="form-params">{JSON.stringify(form.getFieldsValue(true)?.params ?? {})}</pre>
+            )}
+          </Form.Item>
+        </Form>
+      );
+    };
+    render(<Harness />);
+    await act(async () => {
+      await Promise.resolve();
+    });
+    await act(async () => {
+      forms[0].setFieldsValue({
+        params: {
+          model_id: 'system',
+          filters: { logic: 'AND', items: [{ field: 'status', op: 'eq', value: '1' }] },
+        },
+      });
+    });
+    const savedItems = () => (
+      readParams().filters as { items: Array<{ field?: string; op?: string; value?: string }> }
+    ).items;
+    expect(savedItems()).toEqual([{ field: 'status', op: 'eq', value: '1' }]);
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(savedItems()).toEqual([{ field: 'status', op: 'eq', value: '1' }]);
+
+    resolveAttrs?.({
+      data: [{
+        attr_id: 'status',
+        attr_name: '运行状态',
+        value_type: 'enum',
+        options: [
+          { label: '已上线', value: '1' },
+          { label: '测试中', value: '2' },
+        ],
+      }],
+      warnings: [],
+    });
+    await waitFor(() => {
+      expect(savedItems()).toEqual([{ field: 'status', op: 'eq', value: '1' }]);
+    });
+    expect(screen.getByText('已上线')).toBeTruthy();
   });
 });

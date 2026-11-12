@@ -26,6 +26,8 @@ interface ConditionFilterInputProps {
 const operatorLabel = (op: string, t: (key: string) => string) => {
   if (op === 'eq') return t('dashboard.conditionFilter.eq');
   if (op === 'ne') return t('dashboard.conditionFilter.ne');
+  if (op === 'regex') return t('dashboard.conditionFilter.regex');
+  if (op === 'notRegex') return t('dashboard.conditionFilter.notRegex');
   if (op === 'contains') return t('dashboard.conditionFilter.contains');
   if (op === 'empty') return t('dashboard.conditionFilter.empty');
   if (op === 'gt') return t('dashboard.conditionFilter.gt');

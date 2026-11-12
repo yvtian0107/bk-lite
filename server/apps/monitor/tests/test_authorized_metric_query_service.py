@@ -121,7 +121,7 @@ def test_range_query_forwards_gap_detection_and_card_budget(mocker):
     }
 
 
-def test_default_avg_aggregates_by_instance_and_declared_dimensions(mocker):
+def test_default_avg_aggregates_declared_dimensions_into_the_instance(mocker):
     monitor_object, metric, allowed, _ = _build_metric_contract()
     service = _service(mocker, allowed)
     vm_query = mocker.patch(
@@ -142,9 +142,7 @@ def test_default_avg_aggregates_by_instance_and_declared_dimensions(mocker):
         }
     )
 
-    assert vm_query.call_args.args[0] == (
-        'avg(cpu_usage{instance_id=~"allowed\\\\-host"}) by (instance_id, mode)'
-    )
+    assert vm_query.call_args.args[0] == ('avg(cpu_usage{instance_id=~"allowed\\\\-host"}) by (instance_id)')
 
 
 def test_host_process_scope_authorizes_parent_host_and_builds_process_matchers(mocker):
@@ -270,6 +268,101 @@ def test_composite_instances_do_not_cross_product_unauthorized_pairs(mocker):
     assert " or " in query
     assert 'instance_id=~"' not in query
     assert 'process_name=~"' not in query
+
+
+def test_dimension_or_splits_queries_and_contains_is_rejected(mocker):
+    monitor_object, metric, allowed, _ = _build_metric_contract()
+    service = _service(mocker, allowed)
+    vm_query = mocker.patch(
+        "apps.monitor.services.authorized_metric_query.Metrics.get_metrics_range",
+        return_value={"status": "success", "data": {"result": []}},
+    )
+
+    service.query_range(
+        {
+            "monitor_object_id": monitor_object.id,
+            "metric_id": metric.id,
+            "instance_ids": [allowed.id],
+            "filters": {
+                "logic": "OR",
+                "items": [
+                    {"field": "mode", "op": "eq", "value": "idle"},
+                    {"field": "mode", "op": "regex", "value": "user|system"},
+                ],
+            },
+            "start": 1000,
+            "end": 61000,
+            "step": "60s",
+        }
+    )
+    query = vm_query.call_args.args[0]
+    assert " or " in query
+    assert 'mode="idle"' in query
+    assert 'mode=~"user|system"' in query
+
+    with pytest.raises(AuthorizedMetricQueryError, match="不支持该运算符"):
+        service.query_range(
+            {
+                "monitor_object_id": monitor_object.id,
+                "metric_id": metric.id,
+                "instance_ids": [allowed.id],
+                "filters": {"logic": "AND", "items": [{"field": "mode", "op": "contains", "value": "idle"}]},
+                "start": 1000,
+                "end": 61000,
+                "step": "60s",
+            }
+        )
+
+
+def test_plain_primary_key_is_used_as_stored(mocker):
+    monitor_object, metric, _, _ = _build_metric_contract()
+    plain = MonitorInstance.objects.create(
+        id="plain-host",
+        name="plain-host",
+        monitor_object=monitor_object,
+    )
+    service = _service(mocker, plain)
+    vm_query = mocker.patch(
+        "apps.monitor.services.authorized_metric_query.Metrics.get_metrics_range",
+        return_value={"status": "success", "data": {"result": []}},
+    )
+
+    service.query_range(
+        {
+            "monitor_object_id": monitor_object.id,
+            "metric_id": metric.id,
+            "instance_ids": ["plain-host"],
+            "start": 1000,
+            "end": 61000,
+            "step": "60s",
+        }
+    )
+
+    query = vm_query.call_args.args[0]
+    assert 'instance_id=~"plain\\\\-host"' in query
+    assert "('plain-host',)" not in query
+
+
+def test_bare_name_resolves_to_tuple_primary_key(mocker):
+    monitor_object, metric, allowed, _ = _build_metric_contract()
+    service = _service(mocker, allowed)
+    vm_query = mocker.patch(
+        "apps.monitor.services.authorized_metric_query.Metrics.get_metrics_range",
+        return_value={"status": "success", "data": {"result": []}},
+    )
+
+    service.query_range(
+        {
+            "monitor_object_id": monitor_object.id,
+            "metric_id": metric.id,
+            "instance_ids": ["allowed-host"],
+            "start": 1000,
+            "end": 61000,
+            "step": "60s",
+        }
+    )
+
+    assert 'instance_id=~"allowed\\\\-host"' in vm_query.call_args.args[0]
 
 
 def test_mixed_authorized_and_denied_instances_fail_before_vm_query(mocker):
@@ -440,6 +533,6 @@ def test_instant_query_uses_server_template_and_range_end_as_eval_time(mocker):
 
     assert result["status"] == "success"
     vm_query.assert_called_once_with(
-        'avg(cpu_usage{instance_id=~"allowed\\\\-host"}) by (instance_id, mode)',
+        'avg(cpu_usage{instance_id=~"allowed\\\\-host"}) by (instance_id)',
         time=61.0,
     )

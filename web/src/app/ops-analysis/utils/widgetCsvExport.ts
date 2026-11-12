@@ -381,6 +381,7 @@ const exportColumns = (
     columnModelKey: config?.tableConfig?.columnModelKey,
     modelColumns: readModelColumnPayload(rawData),
     schemaFields: dataSource?.field_schema,
+    queryObject: rawData && typeof rawData === 'object' ? (rawData as { query_object?: unknown }).query_object : undefined,
     rows,
   }).filter((column) => column.visible && column.columnType !== 'actions');
 };

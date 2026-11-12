@@ -197,6 +197,7 @@ const ComTable: React.FC<ComTableProps> = ({
       columnModelKey: config?.tableConfig?.columnModelKey,
       modelColumns: readModelColumnPayload(rawData),
       schemaFields: dataSource?.field_schema,
+      queryObject: rawData?.query_object,
       rows: tableData,
     }).filter((col) => col.visible);
     return withInteractionActionColumn(visible, dataLink, surface, {

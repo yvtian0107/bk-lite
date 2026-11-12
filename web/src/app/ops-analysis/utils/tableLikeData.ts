@@ -119,6 +119,21 @@ interface TableLikeColumnConfigItem {
   order: number;
 }
 
+export const fieldAppliesToQueryObject = (
+  field: Pick<ResponseFieldDefinition, 'query_objects'>,
+  queryObject?: unknown,
+): boolean => {
+  const objects = field.query_objects?.filter(Boolean);
+  if (!objects?.length) {
+    return true;
+  }
+  const selected = String(queryObject ?? '').trim();
+  if (!selected) {
+    return true;
+  }
+  return objects.includes(selected);
+};
+
 interface ResolveTableLikeColumnsInput<
   RecordType extends Record<string, any>,
   ColumnType extends TableLikeColumnConfigItem,
@@ -127,6 +142,7 @@ interface ResolveTableLikeColumnsInput<
   columnModelKey?: string;
   modelColumns?: ModelColumnPayload | null;
   schemaFields?: ResponseFieldDefinition[];
+  queryObject?: unknown;
   rows: RecordType[];
 }
 
@@ -138,6 +154,7 @@ export function resolveTableLikeColumns<
   columnModelKey,
   modelColumns,
   schemaFields = [],
+  queryObject,
   rows,
 }: ResolveTableLikeColumnsInput<RecordType, ColumnType>): ColumnType[] {
   if (modelColumns?.fields.length) {
@@ -149,10 +166,19 @@ export function resolveTableLikeColumns<
   }
 
   if (configuredColumns.length > 0) {
-    return [...configuredColumns].sort((a, b) => a.order - b.order);
+    const hiddenKeys = new Set(
+      schemaFields
+        .filter((field) => !fieldAppliesToQueryObject(field, queryObject))
+        .map((field) => field.key),
+    );
+    return [...configuredColumns]
+      .filter((column) => !hiddenKeys.has(column.key))
+      .sort((a, b) => a.order - b.order);
   }
 
-  const tableSchema = schemaFieldsForTable(schemaFields);
+  const tableSchema = schemaFieldsForTable(schemaFields).filter((field) =>
+    fieldAppliesToQueryObject(field, queryObject),
+  );
   if (tableSchema.length > 0) {
     return tableSchema.map(
       (field, index) =>

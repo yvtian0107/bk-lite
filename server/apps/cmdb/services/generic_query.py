@@ -5,17 +5,11 @@ from __future__ import annotations
 import json
 from typing import Any
 
+from apps.cmdb.display_field.constants import DISPLAY_VALUES_SEPARATOR
 from apps.cmdb.graph.validators import CQLValidator
 from apps.cmdb.services.generic_query_columns import public_instance, sensitive_hidden_keys
 from apps.cmdb.services.generic_query_graph import GenericQueryGraphError, aggregate_numeric, count_by_attr
-from apps.cmdb.services.generic_query_limits import (
-    DETAIL_PAGE_SIZE_MAX,
-    NATS_MESSAGE_MAX_BYTES,
-    ONE_HOP_RESULT_MAX,
-    ONE_HOP_START_MAX,
-    SCAN_INSTANCE_MAX,
-    STAT_GROUP_MAX,
-)
+from apps.cmdb.services.generic_query_limits import DETAIL_PAGE_SIZE_MAX, NATS_MESSAGE_MAX_BYTES, SCAN_INSTANCE_MAX, STAT_GROUP_MAX
 from apps.cmdb.services.instance import InstanceManage
 from apps.core.exceptions.base_app_exception import BaseAppException
 from apps.core.utils.condition_group import ConditionGroupError, parse_condition_group
@@ -34,9 +28,6 @@ _FILTER_TYPES = {
     ("number", "gte"): "int>=",
     ("number", "lt"): "int<",
     ("number", "lte"): "int<=",
-    ("enum", "eq"): "str=",
-    ("enum", "ne"): "str<>",
-    ("enum", "in"): "str[]",
 }
 _ENUM_ATTR_TYPES = {"enum"}
 _NUMBER_ATTR_TYPES = {"int", "integer", "float", "number", "long", "double"}
@@ -47,6 +38,21 @@ class GenericQueryError(Exception):
         super().__init__(message)
         self.message = message
         self.status = status
+
+
+def _filled(value) -> bool:
+    if value is None or value == "":
+        return False
+    if isinstance(value, (list, dict)) and not value:
+        return False
+    return True
+
+
+def _reject_unused(mode: str, checks: list[tuple[Any, str, tuple[str, ...]]]) -> None:
+    """当前分析方式用不到、但请求里写了值的参数直接拒绝。空值视为没填。"""
+    blocked = [label for value, label, allowed in checks if mode not in allowed and _filled(value)]
+    if blocked:
+        raise GenericQueryError("当前分析方式不支持" + "、".join(blocked))
 
 
 def ensure_payload_limit(data: Any) -> None:
@@ -68,10 +74,12 @@ def query_models(
     """模型查询。分类和模型只缩小范围，零实例模型保留。
 
     单值固定为范围内模型数量。分布先统计全部可见模型的实例数，
-    按实例数从高到低、模型标识升序稳定排序，再按页截取。
-    未传分页时默认第 1 页、每页 10 条。计数不接受非空分页。
+    按实例数从高到低、模型标识升序稳定排序。分布不接受页码。
+    未传每页条数时返回全部；传入时只取排序后的前若干条。计数不接受非空分页。
     """
     mode = _mode(analysis_mode, MODEL_MODES)
+    if mode == "distribution" and page not in (None, ""):
+        raise GenericQueryError("当前分析方式不支持页码")
     if mode == "count" and (page not in (None, "") or page_size not in (None, "")):
         raise GenericQueryError("当前分析方式不支持分页")
     rows = [_model_row(item, instance_counts) for item in models]
@@ -101,17 +109,16 @@ def query_models(
         items = _model_distribution_items(rows)
         _ensure_groups(len(items))
         items.sort(key=lambda item: (-int(item.get("instance_count") or 0), str(item.get("model_id") or "")))
-        page_no, size = _model_page(page, page_size)
-        start = (page_no - 1) * size
-        page_items = items[start : start + size]
+        limit = _distribution_return_limit(page_size)
+        page_items = items if limit is None else items[:limit]
         return _with_fields(
             {
                 "structure": "category",
                 "status": "empty" if not page_items else "ok",
                 "items": page_items,
                 "count": len(items),
-                "page": page_no,
-                "page_size": size,
+                "page": 1,
+                "page_size": len(items) if limit is None else limit,
                 "unit": "个",
                 "aggregation": "按模型统计权限内实例数，含零实例模型",
             },
@@ -148,11 +155,22 @@ def query_instances(
     page_size=None,
     group_title: str | None = None,
     group_value_type: str | None = None,
+    group_labels: dict[str, str] | None = None,
 ) -> dict:
     if not str(model_id or "").strip():
         raise GenericQueryError("模型不能为空")
     mode = _mode(analysis_mode, INSTANCE_MODES)
-    if mode != "detail":
+    _reject_unused(
+        mode,
+        [
+            (group_by, "分布属性", ("distribution",)),
+            (aggregate_field, "聚合属性", ("aggregate",)),
+            (aggregate_op, "聚合方式", ("aggregate",)),
+            (order, "排序", ("detail", "distribution")),
+        ],
+    )
+    distribution_limit = _distribution_window(mode, page, page_size) if mode == "distribution" else None
+    if mode in {"count", "aggregate"}:
         _parse_page(page, page_size, enabled=False)
     base_params = [{"field": "model_id", "type": "str=", "value": str(model_id)}]
     logic, condition_params = _attribute_filters(attr_types, filter_field, filter_op, filter_value, filters)
@@ -236,7 +254,7 @@ def query_instances(
             unit="个",
             aggregation="实例计数",
         )
-    items = [{group_field: _bucket_value(key), "instance_count": int(value or 0)} for key, value in grouped_counts.items()]
+    items = _distribution_items(group_field, grouped_counts, group_labels)
     _ensure_groups(len(items))
     field, desc = _parse_order(
         order,
@@ -245,6 +263,7 @@ def query_instances(
         default_descending=True,
     )
     items.sort(key=lambda item: (item.get(field) is None, item.get(field)), reverse=desc)
+    shown, window = _slice_distribution(items, distribution_limit)
     distribution_fields = [
         _result_field(
             group_field,
@@ -254,83 +273,110 @@ def query_instances(
         ),
         _result_field("instance_count", "实例数", "number", "measure"),
     ]
-    if not items:
+    if not shown:
         return _with_fields(
-            {"structure": "category", "status": "empty", "items": [], "unit": "个", "aggregation": f"按 {group_by} 计数"},
+            {
+                "structure": "category",
+                "status": "empty",
+                "items": [],
+                "unit": "个",
+                "aggregation": f"按 {group_by} 计数",
+                **window,
+            },
             distribution_fields,
         )
-    return _category_payload(items, unit="个", aggregation=f"按 {group_by} 计数", fields=distribution_fields)
+    return _category_payload(
+        shown,
+        unit="个",
+        aggregation=f"按 {group_by} 计数",
+        fields=distribution_fields,
+        extra=window,
+    )
+
+
+_ONE_HOP_RELATION_AGGREGATION = "起点内去重后的对应关系条数。同一起点关联多个终点时分别计数，同一个终点被多个起点关联时不合并"
+_ONE_HOP_RANK_AGGREGATION = "按起点统计关联数量。同一起点到同一终点只计 1，不同起点连到同一终点时分别计数"
+
+
+def one_hop_query_plan(analysis_mode: str | None, page, page_size) -> dict:
+    """定下图查询要取的那一块。明细按起点、终点名称翻页，分布按关联数取前几名。"""
+    mode = _mode(analysis_mode, ONE_HOP_MODES)
+    if mode == "count":
+        _parse_page(page, page_size, enabled=False)
+        return {"part": "count"}
+    if mode == "distribution":
+        return {"part": "distribution", "limit": _distribution_window(mode, page, page_size)}
+    page_no, size = _parse_page(page, page_size, enabled=True)
+    return {"part": "detail", "skip": (page_no - 1) * size, "limit": size}
 
 
 def query_one_hop_relations(
     *,
     analysis_mode: str,
-    start_instances: list[dict],
-    start_total: int,
     graph_result: dict,
-    order: str | None = None,
     page=None,
     page_size=None,
 ) -> dict:
-    """一跳结果按起点计数：同一起点落在多个终点时，各终点各计 1，各柱之和等于合计。"""
+    """一跳关联：计数是对应关系条数，分布是每个起点的关联数量。"""
     mode = _mode(analysis_mode, ONE_HOP_MODES)
-    if mode != "detail":
+    distribution_limit = _distribution_window(mode, page, page_size) if mode == "distribution" else None
+    if mode == "count":
         _parse_page(page, page_size, enabled=False)
-    if start_total > ONE_HOP_START_MAX:
-        raise GenericQueryError(f"一跳关联起点超过 {ONE_HOP_START_MAX} 个")
-    pair_count = int((graph_result or {}).get("pair_count") or 0)
-    if pair_count > ONE_HOP_RESULT_MAX:
-        raise GenericQueryError(f"一跳关联结果超过 {ONE_HOP_RESULT_MAX} 条")
-    groups = graph_result.get("groups") or []
-    pairs = graph_result.get("pairs") or []
+    graph_result = graph_result or {}
+    pair_count = int(graph_result.get("pair_count") or 0)
     if mode == "count":
         return _value_payload(
             pair_count,
             field="relation_count",
             title="关联数",
             unit="个",
-            aggregation="按起点计数，同一起点关联多个终点时分别计数",
+            aggregation=_ONE_HOP_RELATION_AGGREGATION,
         )
     if mode == "distribution":
         items = [
             {
-                "end_name": item.get("end_name") or "",
-                "end_uuid": item.get("end_uuid") or "",
-                "start_count": int(item.get("value") or 0),
+                "start_name": item.get("start_name") or "",
+                "start_uuid": item.get("start_uuid") or "",
+                "relation_count": int(item.get("relation_count", item.get("value")) or 0),
             }
-            for item in groups
+            for item in graph_result.get("groups") or []
         ]
-        _ensure_groups(len(items))
-        if len(items) > ONE_HOP_RESULT_MAX:
-            raise GenericQueryError(f"一跳关联结果超过 {ONE_HOP_RESULT_MAX} 条")
-        field, desc = _parse_order(
-            order,
-            {"end_name", "end_uuid", "start_count"},
-            default="start_count",
-            default_descending=True,
-        )
-        items.sort(key=lambda item: (item.get(field) is None, item.get(field)), reverse=desc)
+        total = int(graph_result["group_count"]) if "group_count" in graph_result else len(items)
+        if distribution_limit is None:
+            _ensure_groups(total)
+        items.sort(key=lambda item: (-(item.get("relation_count") or 0), item.get("start_uuid") or ""))
+        if "group_count" in graph_result:
+            shown = items
+            window = {
+                "count": total,
+                "page": 1,
+                "page_size": total if distribution_limit is None else distribution_limit,
+            }
+        else:
+            shown, window = _slice_distribution(items, distribution_limit)
         distribution_fields = [
-            _result_field("end_name", "终点名称", "string", "dimension"),
-            _result_field("end_uuid", "终点标识", "string", "identity"),
-            _result_field("start_count", "起点数", "number", "measure"),
+            _result_field("start_name", "起点名称", "string", "dimension"),
+            _result_field("start_uuid", "起点标识", "string", "identity"),
+            _result_field("relation_count", "关联数", "number", "measure"),
         ]
-        if not items:
+        if not shown:
             return _with_fields(
                 {
                     "structure": "category",
                     "status": "empty",
                     "items": [],
                     "unit": "个",
-                    "aggregation": "按终点统计起点数，不做全局去重",
+                    "aggregation": _ONE_HOP_RANK_AGGREGATION,
+                    **window,
                 },
                 distribution_fields,
             )
         return _category_payload(
-            items,
+            shown,
             unit="个",
-            aggregation="按终点统计起点数，不做全局去重",
+            aggregation=_ONE_HOP_RANK_AGGREGATION,
             fields=distribution_fields,
+            extra=window,
         )
     rows = [
         {
@@ -341,39 +387,31 @@ def query_one_hop_relations(
             "end_name": item.get("end_name") or "",
             "end_model_id": item.get("end_model_id") or "",
         }
-        for item in pairs
+        for item in graph_result.get("pairs") or []
     ]
-    field, desc = _parse_order(
-        order,
-        {"start_name", "start_uuid", "end_name", "end_uuid"},
-        default="start_name",
+    if graph_result.get("paged"):
+        return _page_payload(rows, page, page_size, count=pair_count)
+    rows.sort(
+        key=lambda item: (
+            item.get("start_name") or "",
+            item.get("end_name") or "",
+            item.get("start_uuid") or "",
+            item.get("end_uuid") or "",
+        )
     )
-    rows.sort(key=lambda item: (item.get(field) is None, item.get(field)), reverse=desc)
-    del start_instances
     return _page_payload(rows, page, page_size)
 
 
-def load_start_instances(
-    *,
-    model_id: str,
-    params: list,
-    permission_map: dict,
-    page: int,
-    page_size: int,
-    condition_params: list | None = None,
-    condition_logic: str = "AND",
-):
-    _validate_sort_field("inst_name")
-    return InstanceManage.instance_list(
-        model_id=model_id,
-        params=list(params),
-        page=page,
-        page_size=page_size,
-        order="inst_name",
-        permission_map=permission_map,
-        condition_params=condition_params,
-        condition_logic=condition_logic,
-    )
+def _enum_membership_values(value, *, split_commas: bool) -> list[str]:
+    """枚举入库统一是 id 列表。等于、不等于、属于都按成员关系比较。"""
+    if isinstance(value, list):
+        return [str(item) for item in value if item not in (None, "")]
+    if value in (None, ""):
+        return []
+    text = str(value)
+    if split_commas:
+        return [part.strip() for part in text.split(",") if part.strip()]
+    return [text]
 
 
 def build_attribute_filter(attr_types: dict[str, str], field: str | None, op: str | None, value) -> dict | None:
@@ -382,6 +420,17 @@ def build_attribute_filter(attr_types: dict[str, str], field: str | None, op: st
     if field in (None, "") or op in (None, ""):
         raise GenericQueryError("属性过滤必须同时给出字段和运算符")
     kind = _attr_kind(attr_types, field)
+    if kind == "enum":
+        if op not in {"eq", "ne", "in"}:
+            raise GenericQueryError("属性过滤运算符不受支持")
+        selected = _enum_membership_values(value, split_commas=op == "in")
+        if not selected:
+            raise GenericQueryError("属性过滤必须给出值")
+        return {
+            "field": field,
+            "type": "list_none[]" if op == "ne" else "list_any[]",
+            "value": selected,
+        }
     mapped = _FILTER_TYPES.get((kind, op))
     if mapped is None:
         raise GenericQueryError("属性过滤运算符不受支持")
@@ -475,6 +524,40 @@ def _bucket_value(key):
     return str(key)
 
 
+def _distribution_items(group_field: str, grouped_counts: dict, group_labels: dict[str, str] | None) -> list[dict]:
+    """枚举分布按选项名称出分类，同一名称的计数合并。其他类型保持原分组键。"""
+    merged: dict[Any, int] = {}
+    for key, value in grouped_counts.items():
+        presented = _present_group_value(key, group_labels)
+        merged[presented] = merged.get(presented, 0) + int(value or 0)
+    return [{group_field: key, "instance_count": count} for key, count in merged.items()]
+
+
+def _present_group_value(key, group_labels: dict[str, str] | None):
+    if group_labels is None:
+        return _bucket_value(key)
+    if key is None:
+        return None
+    parts = _enum_id_parts(key)
+    if parts is None:
+        return group_labels.get(str(key), str(key))
+    names = [group_labels.get(str(part), str(part)) for part in parts if part not in (None, "")]
+    return DISPLAY_VALUES_SEPARATOR.join(names)
+
+
+def _enum_id_parts(key):
+    if isinstance(key, list):
+        return key
+    if isinstance(key, str) and key.startswith("["):
+        try:
+            parsed = json.loads(key)
+        except json.JSONDecodeError:
+            return None
+        if isinstance(parsed, list):
+            return parsed
+    return None
+
+
 def _declared_value_type(attr_types: dict[str, str], field: str) -> str:
     kind = _attr_kind(attr_types, field) if field in attr_types else "string"
     if kind == "number":
@@ -547,6 +630,30 @@ def _parse_order(
     return field, descending
 
 
+def _distribution_window(mode: str, page, page_size) -> int | None:
+    """分布不接受页码。返回条数空着表示全部，写了就取排序后的前几条。"""
+    del mode
+    if page not in (None, ""):
+        raise GenericQueryError("当前分析方式不支持页码")
+    return _distribution_return_limit(page_size)
+
+
+def _slice_distribution(items: list, limit: int | None) -> tuple[list, dict]:
+    total = len(items)
+    shown = items if limit is None else items[:limit]
+    return shown, {"count": total, "page": 1, "page_size": total if limit is None else limit}
+
+
+def _distribution_return_limit(page_size) -> int | None:
+    """分布只看返回条数。页码不读。空条数表示全部，显式条数仍受每页上限约束。"""
+    if page_size in (None, ""):
+        return None
+    size = _as_int(page_size, "page_size")
+    if size < 1 or size > DETAIL_PAGE_SIZE_MAX:
+        raise GenericQueryError(f"每页最多 {DETAIL_PAGE_SIZE_MAX} 条")
+    return size
+
+
 def _model_page(page, page_size) -> tuple[int, int]:
     page_no = 1 if page in (None, "") else _as_int(page, "page")
     size = MODEL_PAGE_SIZE_DEFAULT if page_size in (None, "") else _as_int(page_size, "page_size")
@@ -609,17 +716,17 @@ def _value_payload(
     return _with_fields(payload, fields or [_result_field(field, title, "number", "measure")])
 
 
-def _category_payload(items: list[dict], *, unit: str, aggregation: str, fields: list[dict]) -> dict:
-    return _with_fields(
-        {
-            "structure": "category",
-            "status": "ok",
-            "items": items,
-            "unit": unit,
-            "aggregation": aggregation,
-        },
-        fields,
-    )
+def _category_payload(items: list[dict], *, unit: str, aggregation: str, fields: list[dict], extra: dict | None = None) -> dict:
+    payload = {
+        "structure": "category",
+        "status": "ok",
+        "items": items,
+        "unit": unit,
+        "aggregation": aggregation,
+    }
+    if extra:
+        payload.update(extra)
+    return _with_fields(payload, fields)
 
 
 def _public_instance(row: dict, hidden: set[str] | None = None) -> dict:

@@ -9,14 +9,13 @@ from apps.cmdb.services.generic_query import (
     compile_attribute_conditions,
     ensure_payload_limit,
     load_instances_by_uuids,
-    load_start_instances,
+    one_hop_query_plan,
     query_instances,
     query_models,
     query_one_hop_relations,
 )
 from apps.cmdb.services.generic_query_columns import build_instance_column_fields, build_one_hop_column_fields, project_one_hop_rows
 from apps.cmdb.services.generic_query_graph import GenericQueryGraphError, count_by_attr, query_one_hop
-from apps.cmdb.services.generic_query_limits import ONE_HOP_START_MAX
 from apps.cmdb.services.model import ModelManage
 from apps.core.logger import cmdb_logger as logger
 
@@ -165,6 +164,25 @@ def _group_declaration(attrs: list, group_by) -> tuple[str | None, str | None]:
     return title, value_type
 
 
+def _enum_group_labels(attrs: list, group_by) -> dict[str, str] | None:
+    """枚举分布用选项名称做分类。没有这份对照时，图里的分组键是选项 id。"""
+    key = str(group_by or "").strip()
+    if not key:
+        return None
+    attr = next((item for item in attrs or [] if str(item.get("attr_id") or "") == key), None)
+    if not isinstance(attr, dict) or str(attr.get("attr_type") or "").lower() != "enum":
+        return None
+    labels = {}
+    for option in ModelManage.resolve_runtime_enum_options(attr) or []:
+        if not isinstance(option, dict):
+            continue
+        option_id = option.get("id")
+        if option_id in (None, ""):
+            continue
+        labels[str(option_id)] = str(option.get("name") or option.get("label") or option_id)
+    return labels
+
+
 def _attr_types_from(attrs: list) -> dict[str, str]:
     types = {"inst_name": "string", "inst_uuid": "string"}
     for attr in attrs or []:
@@ -260,10 +278,24 @@ def query_cmdb_instances(
         page_size=page_size,
         group_title=group_title,
         group_value_type=group_value_type,
+        group_labels=_enum_group_labels(attrs, group_by),
     )
     if data.get("structure") == "table":
         data["column_fields"] = build_instance_column_fields(attrs, model_key=str(model_id))
     return _ok(data)
+
+
+def _one_hop_direction(start_model_id: str, association: dict) -> tuple[str, str]:
+    """起点在关系左侧则向外，在右侧则向内。两端相同无法由起点决定。"""
+    src = str(association.get("src_model_id") or "")
+    dst = str(association.get("dst_model_id") or "")
+    if src == start_model_id and dst == start_model_id:
+        raise GenericQueryError("关系两端相同，无法由起点确定走向")
+    if src == start_model_id:
+        return "out", dst
+    if dst == start_model_id:
+        return "in", src
+    raise GenericQueryError("关系方向与起点模型不一致")
 
 
 @nats_client.register
@@ -272,7 +304,6 @@ def query_cmdb_one_hop(
     start_model_id=None,
     classification_id=None,
     model_asst_id=None,
-    direction=None,
     filter_field=None,
     filter_op=None,
     filter_value=None,
@@ -282,7 +313,6 @@ def query_cmdb_one_hop(
     filters=None,
     end_filters=None,
     analysis_mode=None,
-    order=None,
     page=None,
     page_size=None,
     user_info=None,
@@ -290,8 +320,8 @@ def query_cmdb_one_hop(
 ):
     _reject_unsupported_filters(kwargs)
     del kwargs
-    if not start_model_id or not model_asst_id or not direction:
-        raise GenericQueryError("起点模型、关系和方向不能为空")
+    if not start_model_id or not model_asst_id:
+        raise GenericQueryError("起点模型和关系不能为空")
     models, instance_permissions, _names = _visible_models(user_info)
     visible_ids = {str(item.get("model_id")) for item in models}
     if str(start_model_id) not in visible_ids:
@@ -302,13 +332,7 @@ def query_cmdb_one_hop(
     association = next((item for item in associations if item.get("model_asst_id") == model_asst_id), None)
     if association is None:
         raise GenericQueryError("关系不存在或无权访问", status="forbidden")
-    if direction == "out" and association.get("src_model_id") != start_model_id:
-        raise GenericQueryError("关系方向与起点模型不一致")
-    if direction == "in" and association.get("dst_model_id") != start_model_id:
-        raise GenericQueryError("关系方向与起点模型不一致")
-    if direction not in {"out", "in"}:
-        raise GenericQueryError("关系方向不受支持")
-    end_model_id = association.get("dst_model_id") if direction == "out" else association.get("src_model_id")
+    direction, end_model_id = _one_hop_direction(str(start_model_id), association)
     if str(end_model_id) not in visible_ids:
         raise GenericQueryError("终点模型不存在或无权访问", status="forbidden")
     attr_types = _attr_types(str(start_model_id), user_info)
@@ -319,31 +343,6 @@ def query_cmdb_one_hop(
         filter_value,
         _require_condition_group(filters),
     )
-    _preview, total = load_start_instances(
-        model_id=str(start_model_id),
-        params=[],
-        permission_map=instance_permissions,
-        page=1,
-        page_size=1,
-        condition_params=start_conditions,
-        condition_logic=start_logic,
-    )
-    if int(total or 0) > ONE_HOP_START_MAX:
-        raise GenericQueryError(f"一跳关联起点超过 {ONE_HOP_START_MAX} 个")
-    starts, _count = (
-        ([], 0)
-        if not total
-        else load_start_instances(
-            model_id=str(start_model_id),
-            params=[],
-            permission_map=instance_permissions,
-            page=1,
-            page_size=int(total),
-            condition_params=start_conditions,
-            condition_logic=start_logic,
-        )
-    )
-    start_uuids = [str(item.get("inst_uuid")) for item in starts or [] if item.get("inst_uuid")]
     end_types = _attr_types(str(end_model_id), user_info) if end_filter_field or end_filters else {"inst_name": "string"}
     end_logic, end_conditions = compile_attribute_conditions(
         end_types,
@@ -352,37 +351,46 @@ def query_cmdb_one_hop(
         end_filter_value if end_filter_field else None,
         _require_condition_group(end_filters),
     )
+    plan = one_hop_query_plan(analysis_mode or "detail", page, page_size)
     graph_result = query_one_hop(
-        start_uuids=start_uuids,
+        start_model_id=str(start_model_id),
         model_asst_id=str(model_asst_id),
         direction=direction,
         end_model_id=str(end_model_id),
         permission_map=instance_permissions,
+        start_conditions=start_conditions,
+        start_logic=start_logic,
         end_conditions=end_conditions,
         end_logic=end_logic,
+        part=plan["part"],
+        skip=int(plan.get("skip") or 0),
+        limit=plan.get("limit"),
     )
     data = query_one_hop_relations(
         analysis_mode=analysis_mode or "detail",
-        start_instances=starts or [],
-        start_total=int(total or 0),
         graph_result=graph_result,
-        order=order,
         page=page,
         page_size=page_size,
     )
     if data.get("structure") == "table":
         start_attrs = _load_model_attrs(str(start_model_id), user_info)
         end_attrs = _load_model_attrs(str(end_model_id), user_info)
+        start_uuids = []
         end_uuids = []
+        seen_start = set()
         seen_end = set()
         for row in data.get("items") or []:
+            start_uuid = str((row or {}).get("start_uuid") or "").strip()
             end_uuid = str((row or {}).get("end_uuid") or "").strip()
+            if start_uuid and start_uuid not in seen_start:
+                seen_start.add(start_uuid)
+                start_uuids.append(start_uuid)
             if end_uuid and end_uuid not in seen_end:
                 seen_end.add(end_uuid)
                 end_uuids.append(end_uuid)
         data["items"] = project_one_hop_rows(
             data.get("items") or [],
-            starts=starts or [],
+            starts=load_instances_by_uuids(start_uuids),
             ends=load_instances_by_uuids(end_uuids),
             start_attrs=start_attrs,
             end_attrs=end_attrs,
@@ -415,12 +423,38 @@ def list_cmdb_model_options(classification_id=None, user_info=None, **kwargs):
     return {"result": True, "data": data, "message": ""}
 
 
+def _attr_list_model_id(model_id, start_model_id, model_asst_id, user_info):
+    """直接模型优先。没传模型时，用起点和关联找到另一端。"""
+    if model_id not in (None, ""):
+        return str(model_id)
+    start = str(start_model_id or "").strip()
+    association = str(model_asst_id or "").strip()
+    if not start and not association:
+        return ""
+    if not start or not association:
+        raise GenericQueryError("模型不能为空")
+    language = _resolve_nats_cmdb_language(user_info)
+    row = next(
+        (item for item in list_model_association_options(language, start) if str(item.get("model_asst_id") or "") == association),
+        None,
+    )
+    if not row:
+        return None
+    src = str(row.get("src_model_id") or "")
+    dst = str(row.get("dst_model_id") or "")
+    return dst if src == start else src
+
+
 @nats_client.register
 @_guard("list_cmdb_attr_options")
-def list_cmdb_attr_options(model_id=None, user_info=None, **kwargs):
+def list_cmdb_attr_options(model_id=None, start_model_id=None, model_asst_id=None, user_info=None, **kwargs):
     del kwargs
-    if not model_id:
+    resolved = _attr_list_model_id(model_id, start_model_id, model_asst_id, user_info)
+    if resolved is None:
+        return {"result": True, "data": [], "message": ""}
+    if not resolved:
         raise GenericQueryError("模型不能为空")
+    model_id = resolved
     models, _permissions, _names = _visible_models(user_info)
     if str(model_id) not in {str(item.get("model_id")) for item in models}:
         raise GenericQueryError("指定模型不存在或无权访问", status="forbidden")

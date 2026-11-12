@@ -180,6 +180,30 @@ describe('model attribute columns', () => {
     }).find((column) => column.key === 'inst_name')?.title).toBe('实例名称');
   });
 
+  it('hides the other query object columns when a table already saved them', () => {
+    const schema = [
+      { key: 'alert_id', title: '告警标识', query_objects: ['alert'] },
+      { key: 'event_id', title: '事件标识', query_objects: ['event'] },
+      { key: 'title', title: '标题' },
+    ];
+    const configuredColumns = [
+      { key: 'alert_id', title: '告警标识', visible: true, order: 0 },
+      { key: 'event_id', title: '事件标识', visible: true, order: 1 },
+      { key: 'title', title: '标题', visible: true, order: 2 },
+    ];
+    expect(resolveTableLikeColumns({
+      configuredColumns,
+      schemaFields: schema,
+      queryObject: 'alert',
+      rows: [{ alert_id: 'A-1', title: '磁盘' }],
+    }).map((column) => column.key)).toEqual(['alert_id', 'title']);
+    expect(resolveTableLikeColumns({
+      schemaFields: schema,
+      queryObject: 'event',
+      rows: [],
+    }).map((column) => column.key)).toEqual(['event_id', 'title']);
+  });
+
   it('asks for a model or relation before querying and exports formatted cells', () => {
     const t = (key: string) => key;
     expect(modelTableEmptyText('cmdb/query_cmdb_instances', {}, t)).toBe('dashboard.selectModel');

@@ -12,7 +12,7 @@ export interface ConditionGroup {
 }
 
 const OPERATOR_BY_TYPE: Record<ConditionFieldValueType, string[]> = {
-  string: ['eq', 'ne', 'contains', 'empty'],
+  string: ['eq', 'ne', 'regex', 'notRegex', 'contains', 'empty'],
   number: ['gt', 'gte', 'eq', 'lte', 'lt'],
   enum: ['eq', 'ne', 'in'],
 };

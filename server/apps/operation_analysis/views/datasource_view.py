@@ -568,6 +568,10 @@ def _resolve_request_params(instance, request_data):
     if getattr(instance, "rest_api", None) in TREND_GROUP_BY_AUTO_REST_APIS:
         sanitized_request.pop("group_by", None)
         allowed_specs.pop("group_by", None)
+    # 一跳关联不再声明排序和方向。顺序固定，走向由起点在关系的哪一侧决定。
+    if getattr(instance, "rest_api", None) == "cmdb/query_cmdb_one_hop":
+        sanitized_request.pop("order", None)
+        sanitized_request.pop("direction", None)
 
     allowed_request_keys = set(allowed_specs.keys()) | RUNTIME_ALLOWED_KEYS
     unknown_keys = sorted(str(key) for key in sanitized_request.keys() if key not in allowed_request_keys)

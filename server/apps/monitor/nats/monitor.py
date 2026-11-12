@@ -819,14 +819,24 @@ def delete_monitor_policy(*args, **kwargs):
         return {"result": False, "data": [], "message": str(exc)}
 
 
+def _apply_monitor_object_display_names(results, user_info):
+    """与监控对象列表相同：语言包，否则库里的展示名，否则英文名。"""
+    locale = (user_info or {}).get("locale") or "en"
+    lan = LanguageLoader(app=LanguageConstants.APP, default_lang=locale)
+    for result in results:
+        key = f"{LanguageConstants.MONITOR_OBJECT}.{result['name']}"
+        result["display_name"] = lan.get(key) or result.get("display_name") or result["name"]
+
+
 @nats_client.register
 def monitor_objects(*args, **kwargs):
     """查询监控对象列表"""
     logger.info("=== monitor_objects called , args={}, kwargs={}===".format(args, kwargs))
     queryset = MonitorObject.objects.all().order_by("id")
     serializer = MonitorObjectSerializer(queryset, many=True)
-    result = {"result": True, "data": serializer.data, "message": ""}
-    return result
+    results = serializer.data
+    _apply_monitor_object_display_names(results, kwargs.get("user_info"))
+    return {"result": True, "data": results, "message": ""}
 
 
 @nats_client.register
@@ -902,6 +912,29 @@ def _license_monitor_instance_labels(data, kwargs):
 
 
 @nats_client.register
+def list_metric_dimensions(metric_id=None, **kwargs):
+    """所选指标上声明的维度，供条件过滤选字段。值由用户填写。"""
+    del kwargs
+    if metric_id in (None, ""):
+        return {"result": True, "data": [], "message": ""}
+    metric = Metric.objects.filter(id=metric_id).first()
+    if metric is None:
+        return {"result": False, "data": [], "message": "指标不存在"}
+    rows = []
+    for item in metric.dimensions or []:
+        if isinstance(item, dict):
+            name = str(item.get("name") or "").strip()
+            label = str(item.get("description") or "").strip() or name
+        else:
+            name = str(item or "").strip()
+            label = name
+        if not name:
+            continue
+        rows.append({"name": name, "label": label, "value_type": "string"})
+    return {"result": True, "data": rows, "message": ""}
+
+
+@nats_client.register
 def monitor_metrics(monitor_obj_id: str, *args, **kwargs):
     """查询指标信息"""
     logger.info("=== monitor_metrics called , monitor_obj_id={}, args={}, kwargs={}===".format(monitor_obj_id, args, kwargs))
@@ -921,6 +954,8 @@ def monitor_metrics(monitor_obj_id: str, *args, **kwargs):
     for result in results:
         lan_key = f"{LanguageConstants.MONITOR_OBJECT_METRIC}.{monitor_obj.name}.{result['name']}"
         result["display_name"] = lan.get(f"{lan_key}.name") or result.get("display_name") or result["name"]
+        plugin_name = str(result.get("monitor_plugin_name") or "").strip()
+        result["option_label"] = f"{result['display_name']}（{plugin_name}）" if plugin_name else result["display_name"]
         result["display_description"] = lan.get(f"{lan_key}.desc") or result.get("description")
         if (result.get("data_type") or "").lower() == "enum":
             result["unit"] = localize_metric_enum_unit(

@@ -7,12 +7,18 @@ import type {
 } from '@/app/ops-analysis/types/dataSource';
 import { useDataSourceApi } from '@/app/ops-analysis/api/dataSource';
 import ConditionFilterInput from '@/app/ops-analysis/components/conditionFilterInput';
+import { conditionFieldFromSourceRow, presentConditionField } from '@/app/ops-analysis/utils/conditionFieldSource';
 import { extractDataSourceItems, resolveDynamicSourceId } from '@/app/ops-analysis/utils/paramInputConfigUtils';
 import {
   parseConditionGroup,
   reconcileConditionRows,
   type ConditionGroup,
 } from '@/app/ops-analysis/utils/conditionFilter';
+import {
+  resolveOptionsQueryParams,
+  stableStringify,
+  type ResolvedOptionsQuery,
+} from '@/app/ops-analysis/utils/optionsQueryParamRefs';
 
 const sourceIds = new Map<string, number>();
 
@@ -38,6 +44,9 @@ interface ConditionFilterControlProps {
   onChange?: (value: ConditionGroup) => void;
   source?: ConditionFieldSource;
   formParams?: Record<string, unknown>;
+  /** 组件参数和全局筛都解析过的字段查询。缺省时只按 formParams 解析引用。 */
+  resolvedFieldQuery?: ResolvedOptionsQuery;
+  fieldQuerySignature?: string;
   queryObject?: string;
   disabled?: boolean;
 }
@@ -47,17 +56,15 @@ const ConditionFilterControl: React.FC<ConditionFilterControlProps> = ({
   onChange,
   source,
   formParams,
+  resolvedFieldQuery,
+  fieldQuerySignature,
   queryObject = '',
   disabled = false,
 }) => {
   const api = useDataSourceApi();
-  const [dynamicFields, setDynamicFields] = useState<ConditionFieldOption[]>([]);
-  const [loadedOptions, setLoadedOptions] = useState<Record<string, ConditionFieldOption['options']>>({});
-  const [ready, setReady] = useState(source?.kind === 'static' || !source);
-  const baseFields = source?.kind === 'static' || !source ? staticFields(source, queryObject) : dynamicFields;
-  const fields = baseFields.map((field) => (
-    loadedOptions[field.value] ? { ...field, options: loadedOptions[field.value] } : field
-  ));
+  // 这个 hook 每次渲染都返回新对象。放进依赖后，属性加载的 setState 会立刻再发一次请求。
+  const apiRef = useRef(api);
+  apiRef.current = api;
   const formParamsRef = useRef(formParams);
   formParamsRef.current = formParams;
   const modelScope = source?.kind === 'modelAttrs' ? readParam(formParams, source.modelParam) : '';
@@ -68,71 +75,104 @@ const ConditionFilterControl: React.FC<ConditionFilterControlProps> = ({
       readParam(formParams, source.directionParam),
     ].join('\0')
     : '';
+  const dynamicResolution = source?.kind === 'dynamic'
+    ? (resolvedFieldQuery ?? resolveOptionsQueryParams(source.queryParams, (ref) => formParams?.[ref]))
+    : undefined;
+  const dynamicScope = source?.kind === 'dynamic'
+    ? [
+      fieldQuerySignature || stableStringify(dynamicResolution),
+      source.sourceRef?.value || source.sourceId || '',
+      source.valueField || '',
+      source.labelField || '',
+    ].join('\0')
+    : '';
+  const fieldScope = source?.kind === 'modelAttrs'
+    ? `model\0${modelScope}`
+    : source?.kind === 'endModelAttrs'
+      ? `end\0${endScope}`
+      : source?.kind === 'dynamic'
+        ? `dynamic\0${dynamicScope}`
+        : '';
+  // 范围一切换，旧的字段列表就不能再拿来校验。否则重开抽屉时会在属性返回前把已存条件清掉。
+  const [loadedFields, setLoadedFields] = useState<{ scope: string; fields: ConditionFieldOption[] }>({
+    scope: '',
+    fields: [],
+  });
+  const fieldsReady = !source || source.kind === 'static' || loadedFields.scope === fieldScope;
+  const baseFields = source?.kind === 'static' || !source
+    ? staticFields(source, queryObject)
+    : (fieldsReady ? loadedFields.fields : []);
+  const fields = baseFields.map(presentConditionField);
 
   useEffect(() => {
-    if (!source || source.kind === 'static') {
-      setReady(true);
-      return undefined;
-    }
+    if (source?.kind !== 'modelAttrs' && source?.kind !== 'endModelAttrs') return undefined;
     let cancelled = false;
+    const scope = fieldScope;
     const load = async () => {
-      setReady(false);
       const modelId = source.kind === 'modelAttrs'
         ? modelScope
-        : await resolveEndModel(api, source, formParamsRef.current);
+        : await resolveEndModel(apiRef.current, source, formParamsRef.current);
+      if (cancelled) return;
       if (!modelId) {
-        if (!cancelled) {
-          setDynamicFields((current) => (current.length ? [] : current));
-          setReady(true);
-        }
+        setLoadedFields({ scope, fields: [] });
         return;
       }
-      const loaded = await loadConditionModelFields(api, modelId);
-      if (!cancelled) {
-        setDynamicFields(loaded);
-        setReady(true);
+      try {
+        const loaded = await loadConditionModelFields(apiRef.current, modelId);
+        if (!cancelled) setLoadedFields({ scope, fields: loaded });
+      } catch {
+        if (!cancelled) setLoadedFields({ scope, fields: [] });
       }
     };
     void load();
     return () => {
       cancelled = true;
     };
-  }, [api, endScope, modelScope, source]);
+  }, [fieldScope, modelScope, source]);
 
   useEffect(() => {
-    const pending = (source?.items || []).filter(
-      (field) => field.optionsSource?.type === 'dynamic' && field.optionsSource.sourceRef?.type === 'rest_api',
-    );
-    if (!pending.length) return undefined;
+    if (source?.kind !== 'dynamic') return undefined;
+    const scope = fieldScope;
+    const resolution = dynamicResolution;
+    if (!resolution || resolution.blocked) {
+      setLoadedFields({ scope, fields: [] });
+      return undefined;
+    }
+    const valueField = source.valueField || '';
+    const labelField = source.labelField || '';
     let cancelled = false;
     void (async () => {
-      const next: Record<string, ConditionFieldOption['options']> = {};
-      for (const field of pending) {
-        const restApi = field.optionsSource?.sourceRef?.type === 'rest_api' ? field.optionsSource.sourceRef.value : '';
-        const valueField = field.optionsSource?.type === 'dynamic' ? field.optionsSource.valueField : '';
-        const labelField = field.optionsSource?.type === 'dynamic' ? field.optionsSource.labelField : '';
-        if (!restApi) continue;
-        const sourceId = await resolveSourceId(api, restApi);
-        if (!sourceId) continue;
-        const { data } = await api.getSourceDataByApiId(sourceId, {});
-        next[field.value] = extractDataSourceItems(data).map((item) => ({
-          label: String(item[labelField] || item[valueField] || ''),
-          value: String(item[valueField] || ''),
-        })).filter((option) => option.value);
+      try {
+        const sourceId = source.sourceRef
+          ? await resolveSourceId(apiRef.current, source.sourceRef.value)
+          : source.sourceId;
+        if (cancelled) return;
+        if (!sourceId) {
+          setLoadedFields({ scope, fields: [] });
+          return;
+        }
+        const { data } = await apiRef.current.getSourceDataByApiId(sourceId, resolution.params);
+        if (cancelled) return;
+        const loaded = extractDataSourceItems(data)
+          .map((item) => conditionFieldFromSourceRow(item, valueField, labelField))
+          .filter((item): item is ConditionFieldOption => Boolean(item));
+        setLoadedFields({ scope, fields: loaded });
+      } catch {
+        if (!cancelled) setLoadedFields({ scope, fields: [] });
       }
-      if (!cancelled) setLoadedOptions(next);
     })();
     return () => {
       cancelled = true;
     };
-  }, [api, source]);
+    // 范围字符串已经带上查询结果、数据源和取值列。source 和解析对象每次渲染都可能是新的。
+  }, [fieldScope]);
 
   useEffect(() => {
-    if (!ready || !onChange) return;
+    if (!fieldsReady || !onChange) return;
     const group = parseConditionGroup(value);
     const next = reconcileConditionRows(group, fields);
     if (JSON.stringify(next) !== JSON.stringify(group)) onChange(next);
-  }, [fields, onChange, ready, value]);
+  }, [fields, fieldsReady, onChange, value]);
 
   return (
     <ConditionFilterInput

@@ -52,6 +52,7 @@ EXPECTED_MONITOR_NATS_HANDLER_NAMES = frozenset(
         "monitor_refresh_credential_refs",
         "monitor_list_cmdb_bind_candidates",
         "monitor_instance_metrics",
+        "list_metric_dimensions",
         "monitor_metrics",
         "monitor_object_instance_count",
         "license_monitor_instance_count",
@@ -122,6 +123,28 @@ class TestMonitorObjectsHandler:
         names = {o["name"] for o in out["data"]}
         assert {"NMObj1", "NMObj2"} <= names
 
+    def test_display_name_follows_language_then_stored_name(self, monkeypatch):
+        MonitorObject.objects.create(name="Host", display_name="", level="base")
+        MonitorObject.objects.create(name="CustomObj", display_name="自定义对象", level="base")
+        MonitorObject.objects.create(name="BareObj", display_name="", level="base")
+
+        class Loader:
+            def __init__(self, app, default_lang):
+                self.lang = default_lang
+
+            def get(self, key, default=None):
+                if self.lang == "zh-Hans" and key == "monitor_object.Host":
+                    return "主机"
+                return default
+
+        monkeypatch.setattr(nm, "LanguageLoader", Loader)
+        out = nm.monitor_objects(user_info={"locale": "zh-Hans"})
+        rows = {item["name"]: item for item in out["data"]}
+        assert rows["Host"]["display_name"] == "主机"
+        assert rows["Host"]["name"] == "Host"
+        assert rows["CustomObj"]["display_name"] == "自定义对象"
+        assert rows["BareObj"]["display_name"] == "BareObj"
+
 
 class TestMonitorObjectInstanceCount:
     def test_counts_per_object(self):
@@ -190,6 +213,25 @@ class TestLicenseMonitorInstanceCount:
         assert "Pod" not in license_out["data"]
 
 
+class TestListMetricDimensions:
+    def test_returns_declared_names(self):
+        obj = MonitorObject.objects.create(name="DimObj", level="base")
+        plugin = MonitorPlugin.objects.create(name="DimPlugin")
+        group = MetricGroup.objects.create(monitor_object=obj, monitor_plugin=plugin, name="g")
+        metric = Metric.objects.create(
+            monitor_object=obj,
+            monitor_plugin=plugin,
+            metric_group=group,
+            name="disk",
+            dimensions=[{"name": "device", "description": "磁盘设备"}, {"name": "", "description": "空"}],
+        )
+        found = nm.list_metric_dimensions(metric.id)
+        assert found["result"] is True
+        assert found["data"] == [{"name": "device", "label": "磁盘设备", "value_type": "string"}]
+        missing = nm.list_metric_dimensions(999999)
+        assert missing["result"] is False
+
+
 class TestMonitorMetricsHandler:
     def test_missing_object(self):
         out = nm.monitor_metrics(999999)
@@ -211,6 +253,8 @@ class TestMonitorMetricsHandler:
         assert out["result"] is True
         assert any(m["name"] == "cpu" for m in out["data"])
         assert next(m for m in out["data"] if m["name"] == "cpu")["monitor_plugin_name"] == "NMMPlugin"
+        cpu = next(m for m in out["data"] if m["name"] == "cpu")
+        assert cpu["option_label"] == f"{cpu['display_name']}（NMMPlugin）"
 
 
 class TestMonitorObjectInstancesHandler:

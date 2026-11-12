@@ -12,7 +12,12 @@ import {
   planLineBarMapping,
   seriesLabelForField,
 } from '@/app/ops-analysis/utils/lineBarFieldMapping';
-import { coerceTopNNumericValue, unwrapTopNData } from '@/app/ops-analysis/utils/topNData';
+import {
+  UNFILLED_CATEGORY_LABEL,
+  coerceTopNNumericValue,
+  isUnfilledCategoryValue,
+  unwrapTopNData,
+} from '@/app/ops-analysis/utils/topNData';
 import {
   chartFieldMissingMessage,
   resolveChartBinding,
@@ -403,18 +408,26 @@ export class ChartDataTransformer {
     const measureField = binding.measureField || '';
     const identityField = binding.identityField || '';
     const slices: PieChartData = [];
+    let unfilledAt = -1;
     rows.forEach((item) => {
       if (!isPlainRecord(item)) return;
       const value = coerceTopNNumericValue(item[measureField]);
       if (value === null) return;
       const identityRaw = identityField ? item[identityField] : undefined;
-      const identity = identityRaw === null || identityRaw === undefined || identityRaw === ''
-        ? ''
-        : String(identityRaw);
+      const identity = isUnfilledCategoryValue(identityRaw) ? '' : String(identityRaw);
       const dimensionText = this.formatCategoryValue(item[dimensionField]);
-      const label = dimensionText || identity;
-      const name = identity || dimensionText;
-      if (!name && !label) return;
+      const unfilled = !dimensionText && !identity;
+      const label = dimensionText || identity || UNFILLED_CATEGORY_LABEL;
+      const name = identity || dimensionText || UNFILLED_CATEGORY_LABEL;
+      if (unfilled && unfilledAt >= 0) {
+        const existing = slices[unfilledAt];
+        existing.value += value;
+        if (existing.__link && typeof existing.__link.numeric === 'number') {
+          existing.__link.numeric += value;
+        }
+        return;
+      }
+      if (unfilled) unfilledAt = slices.length;
       slices.push({
         name,
         label: label || name,
@@ -523,7 +536,12 @@ export class ChartDataTransformer {
         && binding.measureField
         && !binding.missingField
       ) {
-        return this.transformMappedSingleSeries(rows.filter(isPlainRecord), binding.dimensionField, binding.measureField);
+        return this.transformMappedSingleSeries(
+          rows.filter(isPlainRecord),
+          binding.dimensionField,
+          binding.measureField,
+          binding.identityField,
+        );
       }
       return this.transformToLineBarData(rows, mapping);
     }
@@ -652,24 +670,61 @@ export class ChartDataTransformer {
     rows: Array<Record<string, unknown>>,
     dimensionField: string,
     valueField: string,
+    identityField?: string,
   ): LineBarChartData {
     const dimensionValues = rows.map((row) => row[dimensionField]);
     const shouldFormatAsTime = this.shouldFormatAsTimeDimension(dimensionValues);
+    if (shouldFormatAsTime) {
+      return {
+        categories: dimensionValues.map((value) =>
+          this.formatDimensionValue(value, true),
+        ),
+        values: rows.map((row) => coerceTopNNumericValue(row[valueField])),
+        points: rows.map((row) => this.linkPoint({
+          dimension: row[dimensionField],
+          dimensionKey: dimensionField || undefined,
+          isTime: true,
+          numeric: coerceTopNNumericValue(row[valueField]),
+          raw: row[valueField],
+          row,
+        })),
+      };
+    }
 
-    return {
-      categories: dimensionValues.map((value) =>
-        this.formatDimensionValue(value, shouldFormatAsTime),
-      ),
-      values: rows.map((row) => coerceTopNNumericValue(row[valueField])),
-      points: rows.map((row) => this.linkPoint({
-        dimension: row[dimensionField],
+    const categories: string[] = [];
+    const values: Array<number | null> = [];
+    const points: ChartLinkPoint[] = [];
+    let unfilledAt = -1;
+    rows.forEach((row) => {
+      const raw = row[dimensionField];
+      const identityRaw = identityField ? row[identityField] : undefined;
+      const identity = isUnfilledCategoryValue(identityRaw) ? '' : String(identityRaw);
+      const text = this.formatCategoryValue(raw);
+      const unfilled = !text && !identity;
+      const label = text || identity || UNFILLED_CATEGORY_LABEL;
+      const numeric = coerceTopNNumericValue(row[valueField]);
+      if (unfilled && unfilledAt >= 0) {
+        const current = values[unfilledAt];
+        values[unfilledAt] = current === null ? numeric : numeric === null ? current : current + numeric;
+        if (points[unfilledAt] && typeof values[unfilledAt] === 'number') {
+          points[unfilledAt].numeric = values[unfilledAt];
+        }
+        return;
+      }
+      if (unfilled) unfilledAt = categories.length;
+      categories.push(label);
+      values.push(numeric);
+      points.push(this.linkPoint({
+        seriesName: label,
+        dimension: raw,
         dimensionKey: dimensionField || undefined,
-        isTime: shouldFormatAsTime,
-        numeric: coerceTopNNumericValue(row[valueField]),
+        numeric,
         raw: row[valueField],
         row,
-      })),
-    };
+      }));
+    });
+
+    return { categories, values, points };
   }
 
   /**

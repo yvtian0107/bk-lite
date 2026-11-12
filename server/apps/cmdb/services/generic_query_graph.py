@@ -7,7 +7,7 @@ from apps.cmdb.graph.drivers.graph_client import GraphClient
 from apps.cmdb.graph.falkordb_format import FormatDBResult
 from apps.cmdb.graph.format_type import ParameterCollector
 from apps.cmdb.graph.validators import CQLValidator
-from apps.cmdb.services.generic_query_limits import QUERY_TIMEOUT_MS
+from apps.cmdb.services.generic_query_limits import DETAIL_PAGE_SIZE_MAX, QUERY_TIMEOUT_MS, STAT_GROUP_MAX
 from apps.cmdb.services.instance import InstanceManage
 
 _AGGREGATIONS = {
@@ -72,85 +72,124 @@ def aggregate_numeric(
     return {"value": row.get("value"), "scanned": int(row.get("scanned") or 0)}
 
 
+_DETAIL_ORDER = "ORDER BY start_name ASC, end_name ASC, start_uuid ASC, end_uuid ASC"
+_RANK_ORDER = "ORDER BY relation_count DESC, start_uuid ASC"
+
+
 def query_one_hop(
     *,
-    start_uuids: list[str],
+    start_model_id: str,
     model_asst_id: str,
     direction: str,
     end_model_id: str,
     permission_map: dict,
-    end_field: str | None = None,
-    end_op: str | None = None,
-    end_value=None,
+    start_conditions: list | None = None,
+    start_logic: str = "AND",
     end_conditions: list | None = None,
     end_logic: str = "AND",
+    part: str = "detail",
+    skip: int = 0,
+    limit: int | None = None,
 ) -> dict:
-    """一跳关系统计。终点权限写进图查询，计数和结果上限都按过滤后的边计算。"""
+    """一跳关联在图里完成。起点和终点的权限、条件都写进同一条 MATCH。"""
     if direction not in {"out", "in"}:
         raise GenericQueryGraphError("关系方向不受支持")
-    if not start_uuids:
-        return {"pair_count": 0, "pairs": [], "groups": []}
-    CQLValidator.validate_field("inst_uuid")
-    # end_model_id、model_asst_id 只作为参数值，不拼进标识符位置。
+    if part not in {"count", "distribution", "detail"}:
+        raise GenericQueryGraphError("分析方式不受支持")
+    if not start_model_id or not model_asst_id or not end_model_id:
+        raise GenericQueryGraphError("起点模型、关系和终点模型不能为空")
     pattern = f"(s)-[e:{INSTANCE_ASSOCIATION}]->(t)" if direction == "out" else f"(s)<-[e:{INSTANCE_ASSOCIATION}]-(t)"
     where = [
-        "s.inst_uuid IN $start_uuids",
+        "s.model_id = $start_model_id",
         "e.model_asst_id = $model_asst_id",
         "t.model_id = $end_model_id",
     ]
     params = {
-        "start_uuids": list(start_uuids),
+        "start_model_id": str(start_model_id),
         "model_asst_id": str(model_asst_id),
         "end_model_id": str(end_model_id),
     }
-    if end_field not in (None, "") and end_value not in (None, ""):
-        validated = CQLValidator.validate_field(end_field)
-        op = str(end_op or "eq")
-        if op == "eq":
-            where.append(f"t.{validated} = $end_value")
-        elif op == "contains":
-            where.append(f"t.{validated} CONTAINS $end_value")
-        else:
-            raise GenericQueryGraphError("终点过滤运算符不受支持")
-        params["end_value"] = end_value
     with GraphClient() as client:
         collector = ParameterCollector()
-        permission_sql, collector = _permission_clause(client, permission_map, alias="t", collector=collector)
+        start_permission, collector = _permission_clause(client, permission_map, alias="s", collector=collector)
+        end_permission, collector = _permission_clause(client, permission_map, alias="t", collector=collector)
+        start_sql, collector = _condition_sql(client, start_conditions, start_logic, alias="s", collector=collector)
         end_sql, collector = _condition_sql(client, end_conditions, end_logic, alias="t", collector=collector)
         params.update(collector.get_params())
-        clauses = [*where, permission_sql]
+        clauses = [*where, start_permission, end_permission]
+        if start_sql:
+            clauses.append(start_sql)
         if end_sql:
             clauses.append(end_sql)
         where_sql = " AND ".join(clauses)
-        count_query = (
-            f"MATCH {pattern} WHERE {where_sql} " "WITH DISTINCT s.inst_uuid AS start_uuid, t.inst_uuid AS end_uuid " "RETURN count(*) AS pair_count"
-        )
-        count_rows = _run(client, count_query, params)
-        pair_count = int((count_rows[0].get("pair_count") if count_rows else 0) or 0)
-        if pair_count == 0:
-            return {"pair_count": 0, "pairs": [], "groups": []}
-        from apps.cmdb.services.generic_query_limits import ONE_HOP_RESULT_MAX
+        if part == "count":
+            return {"pair_count": _pair_count(client, pattern, where_sql, params)}
+        if part == "distribution":
+            return _rank_starts(client, pattern, where_sql, params, limit)
+        return _page_pairs(client, pattern, where_sql, params, skip, limit)
 
-        if pair_count > ONE_HOP_RESULT_MAX:
-            return {"pair_count": pair_count, "pairs": None, "groups": None}
-        group_query = (
-            f"MATCH {pattern} "
-            f"WHERE {where_sql} "
-            "WITH DISTINCT s.inst_uuid AS start_uuid, s.inst_name AS start_name, "
-            "t.inst_uuid AS end_uuid, t.inst_name AS end_name "
-            "RETURN end_uuid, end_name, count(start_uuid) AS value"
-        )
-        pair_query = (
-            f"MATCH {pattern} "
-            f"WHERE {where_sql} "
-            "WITH DISTINCT s.inst_uuid AS start_uuid, s.inst_name AS start_name, "
-            "s.model_id AS start_model_id, t.inst_uuid AS end_uuid, "
-            "t.inst_name AS end_name, t.model_id AS end_model_id "
-            "RETURN start_uuid, start_name, start_model_id, end_uuid, end_name, end_model_id"
-        )
-        groups = _run(client, group_query, params)
-        pairs = _run(client, pair_query, params)
-    return {"pair_count": pair_count, "pairs": pairs, "groups": groups}
+
+def _pair_count(client, pattern: str, where_sql: str, params: dict) -> int:
+    query = f"MATCH {pattern} WHERE {where_sql} " "WITH DISTINCT s.inst_uuid AS start_uuid, t.inst_uuid AS end_uuid " "RETURN count(*) AS pair_count"
+    rows = _run(client, query, params)
+    return int((rows[0].get("pair_count") if rows else 0) or 0)
+
+
+def _rank_starts(client, pattern: str, where_sql: str, params: dict, limit: int | None) -> dict:
+    count_query = f"MATCH {pattern} WHERE {where_sql} " "WITH DISTINCT s.inst_uuid AS start_uuid " "RETURN count(start_uuid) AS group_count"
+    count_rows = _run(client, count_query, params)
+    group_count = int((count_rows[0].get("group_count") if count_rows else 0) or 0)
+    bounded = _return_limit(limit)
+    if group_count == 0 or (bounded is None and group_count > STAT_GROUP_MAX):
+        return {"group_count": group_count, "groups": []}
+    query = (
+        f"MATCH {pattern} WHERE {where_sql} "
+        "WITH DISTINCT s.inst_uuid AS start_uuid, s.inst_name AS start_name, t.inst_uuid AS end_uuid "
+        "WITH start_uuid, start_name, count(end_uuid) AS relation_count "
+        "RETURN start_uuid, start_name, relation_count " + _RANK_ORDER
+    )
+    if bounded is not None:
+        query += f" LIMIT {bounded}"
+    return {"group_count": group_count, "groups": _run(client, query, params)}
+
+
+def _page_pairs(client, pattern: str, where_sql: str, params: dict, skip: int, limit: int | None) -> dict:
+    pair_count = _pair_count(client, pattern, where_sql, params)
+    bounded = _return_limit(limit)
+    if bounded is None:
+        raise GenericQueryGraphError("明细必须分页")
+    offset = _non_negative(skip)
+    if pair_count == 0:
+        return {"pair_count": 0, "pairs": [], "paged": True}
+    query = (
+        f"MATCH {pattern} WHERE {where_sql} "
+        "WITH DISTINCT s.inst_uuid AS start_uuid, s.inst_name AS start_name, "
+        "s.model_id AS start_model_id, t.inst_uuid AS end_uuid, "
+        "t.inst_name AS end_name, t.model_id AS end_model_id "
+        "RETURN start_uuid, start_name, start_model_id, end_uuid, end_name, end_model_id " + _DETAIL_ORDER + f" SKIP {offset} LIMIT {bounded}"
+    )
+    return {"pair_count": pair_count, "pairs": _run(client, query, params), "paged": True}
+
+
+def _return_limit(limit: int | None) -> int | None:
+    if limit is None:
+        return None
+    number = _non_negative(limit)
+    if number < 1 or number > DETAIL_PAGE_SIZE_MAX:
+        raise GenericQueryGraphError(f"每页最多 {DETAIL_PAGE_SIZE_MAX} 条")
+    return number
+
+
+def _non_negative(value) -> int:
+    if isinstance(value, bool):
+        raise GenericQueryGraphError("分页参数不受支持")
+    try:
+        number = int(value)
+    except (TypeError, ValueError) as exc:
+        raise GenericQueryGraphError("分页参数不受支持") from exc
+    if number < 0:
+        raise GenericQueryGraphError("分页参数不受支持")
+    return number
 
 
 def _permission_clause(client, permission_map: dict, alias: str, collector: ParameterCollector | None = None):

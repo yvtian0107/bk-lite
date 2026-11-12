@@ -143,7 +143,6 @@ const oneHopSource = buildSource(56, 'cmdb/query_cmdb_one_hop', [
   analysisModeParam(),
   { name: 'start_model_id', alias_name: '起点模型', type: 'string', filterType: 'params', value: '' },
   { name: 'model_asst_id', alias_name: '关联', type: 'string', filterType: 'params', value: '' },
-  { name: 'direction', alias_name: '方向', type: 'string', filterType: 'params', value: '' },
 ]);
 
 const savedParams = (source: DatasourceItem, values: Record<string, unknown>) =>
@@ -368,7 +367,6 @@ describe('ViewConfig analysis mode reopen', () => {
       analysis_mode: 'distribution',
       start_model_id: 'host',
       model_asst_id: 'run',
-      direction: 'out',
     }],
   ] as const)(
     'keeps the saved mode when %s table probing is still in flight',
