@@ -1,3 +1,4 @@
+import { resolveChartBinding } from '@/app/ops-analysis/utils/chartFieldContract';
 import { getValueByPath } from '@/app/ops-analysis/utils/objectPath';
 
 export interface TopNItem {
@@ -65,11 +66,22 @@ export const coerceTopNNumericValue = (raw: unknown): number | null => {
   return Number.isFinite(numericValue) ? numericValue : null;
 };
 
+export const UNFILLED_CATEGORY_LABEL = '--';
+
+export const isUnfilledCategoryValue = (value: unknown): boolean =>
+  value === null || value === undefined || value === '';
+
 const toTopNName = (raw: unknown): string => {
-  if (raw === undefined || raw === null) {
+  if (isUnfilledCategoryValue(raw)) {
     return '';
   }
   return String(raw).trim();
+};
+
+const addTopNValue = (left: number | null, right: number | null): number | null => {
+  if (left === null) return right;
+  if (right === null) return left;
+  return left + right;
 };
 
 export const normalizeTopNScalarFields = (
@@ -115,11 +127,35 @@ export const buildTopNItems = (
   data: unknown,
   labelField?: string,
   valueField?: string,
-  options?: { scalarFields?: Array<{ field?: string; label?: string } | null> | null },
+  options?: {
+    scalarFields?: Array<{ field?: string; label?: string } | null> | null;
+    keepBlankLabel?: boolean;
+    identityField?: string;
+  },
 ): TopNItem[] => {
   const scalarFields = normalizeTopNScalarFields(options?.scalarFields);
   if (scalarFields.length > 0 && isScalarTopNObject(data)) {
     return buildScalarTopNItems(data, scalarFields);
+  }
+
+  if (isTopNRecord(data) && (data.structure === 'category' || data.structure === 'table')) {
+    const rows = Array.isArray(data.items) ? data.items : [];
+    const binding = resolveChartBinding(data, {
+      dimensionField: labelField,
+      valueField,
+    });
+    if (
+      (binding.source === 'explicit' || binding.source === 'role')
+      && binding.dimensionField
+      && binding.measureField
+      && !binding.missingField
+    ) {
+      return buildTopNItems(rows, binding.dimensionField, binding.measureField, {
+        keepBlankLabel: true,
+        identityField: binding.identityField,
+      });
+    }
+    return buildTopNItems(rows, labelField || 'name', valueField || 'value');
   }
 
   const rows = unwrapTopNData(data);
@@ -127,23 +163,45 @@ export const buildTopNItems = (
     return [];
   }
 
-  const items = rows
-    .map((row, index) => {
-      const name = toTopNName(getValueByPath(row, labelField));
-      if (!name) {
-        return null;
+  const items: Array<{ index: number; item: TopNItem }> = [];
+  let unfilledItem: TopNItem | null = null;
+  rows.forEach((row, index) => {
+    const rawName = getValueByPath(row, labelField);
+    const unfilled = isUnfilledCategoryValue(rawName);
+    let name = toTopNName(rawName);
+    if (!name && options?.identityField && isTopNRecord(row)) {
+      const identity = row[options.identityField];
+      if (!isUnfilledCategoryValue(identity) && String(identity).trim()) {
+        name = String(identity);
       }
-
-      return {
-        index,
-        item: {
-          name,
-          value: coerceTopNNumericValue(getValueByPath(row, valueField)),
-          ...(isTopNRecord(row) ? { source: row } : {}),
-        },
+    }
+    if (!name && !options?.keepBlankLabel) {
+      return;
+    }
+    const value = coerceTopNNumericValue(getValueByPath(row, valueField));
+    if (!name && options?.keepBlankLabel) {
+      if (unfilledItem) {
+        unfilledItem.value = addTopNValue(unfilledItem.value, value);
+        return;
+      }
+      unfilledItem = {
+        name: UNFILLED_CATEGORY_LABEL,
+        value,
+        ...(isTopNRecord(row) ? { source: row } : {}),
       };
-    })
-    .filter((entry): entry is { index: number; item: TopNItem } => entry !== null);
+      items.push({ index, item: unfilledItem });
+      return;
+    }
+
+    items.push({
+      index,
+      item: {
+        name,
+        value,
+        ...(isTopNRecord(row) ? { source: row } : {}),
+      },
+    });
+  });
 
   // 排名图按数值从大到小。空值靠后，相同数值保持原顺序。
   items.sort((left, right) => {
@@ -220,6 +278,12 @@ export const validateTopNPayload = (
   const scalarFields = normalizeTopNScalarFields(options?.scalarFields);
   if (scalarFields.length > 0 && isScalarTopNObject(data)) {
     return buildTopNItems(data, options?.labelField, options?.valueField, { scalarFields }).length > 0;
+  }
+
+  if (isTopNRecord(data) && (data.structure === 'category' || data.structure === 'table')) {
+    const items = Array.isArray(data.items) ? data.items : [];
+    if (items.length === 0) return true;
+    return buildTopNItems(data, options?.labelField, options?.valueField).length > 0;
   }
 
   if (!Array.isArray(data)) {
