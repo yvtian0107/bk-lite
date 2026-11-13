@@ -2,7 +2,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from apps.monitor.models import Metric, MetricGroup, MonitorInstance, MonitorObject, MonitorPlugin
+from apps.monitor.models import Metric, MetricGroup, MonitorInstance, MonitorInstanceOrganization, MonitorObject, MonitorPlugin
 from apps.monitor.services.authorized_metric_query import AuthorizedMetricQueryError, AuthorizedMetricQueryService
 
 pytestmark = pytest.mark.django_db
@@ -142,7 +142,7 @@ def test_default_avg_aggregates_declared_dimensions_into_the_instance(mocker):
         }
     )
 
-    assert vm_query.call_args.args[0] == ('avg(cpu_usage{instance_id=~"allowed\\\\-host"}) by (instance_id)')
+    assert vm_query.call_args.args[0] == ('avg(cpu_usage{instance_id=~"allowed\\\\-host"}) by (instance_id, mode)')
 
 
 def test_host_process_scope_authorizes_parent_host_and_builds_process_matchers(mocker):
@@ -533,6 +533,77 @@ def test_instant_query_uses_server_template_and_range_end_as_eval_time(mocker):
 
     assert result["status"] == "success"
     vm_query.assert_called_once_with(
-        'avg(cpu_usage{instance_id=~"allowed\\\\-host"}) by (instance_id)',
+        'avg(cpu_usage{instance_id=~"allowed\\\\-host"}) by (instance_id, mode)',
         time=61.0,
     )
+
+
+def _range_payload(monitor_object, metric, instance_ids, **extra):
+    payload = {
+        "monitor_object_id": monitor_object.id,
+        "metric_id": metric.id,
+        "instance_ids": instance_ids,
+        "start": 1000,
+        "end": 61000,
+        "step": "60s",
+    }
+    payload.update(extra)
+    return payload
+
+
+def test_logical_writing_matches_the_same_stored_instance(mocker):
+    monitor_object, metric, allowed, _ = _build_metric_contract()
+    service = _service(mocker, allowed)
+    vm_query = mocker.patch(
+        "apps.monitor.services.authorized_metric_query.Metrics.get_metrics_range",
+        return_value={"status": "success", "data": {"result": []}},
+    )
+    service.query_range(_range_payload(monitor_object, metric, ["allowed-host"]))
+    assert 'instance_id=~"allowed\\\\-host"' in vm_query.call_args.args[0]
+
+
+def test_logical_request_does_not_authorize_a_different_instance(mocker):
+    monitor_object, metric, allowed, _ = _build_metric_contract()
+    MonitorInstance.objects.create(id="allowed-host", name="other-row", monitor_object=monitor_object)
+    service = _service(mocker, allowed)
+    with pytest.raises(AuthorizedMetricQueryError) as exc_info:
+        service.query_range(_range_payload(monitor_object, metric, ["allowed-host"]))
+    assert exc_info.value.code == "monitor_instance_forbidden"
+
+
+def test_superuser_scope_stays_inside_the_caller_organizations(mocker):
+    monitor_object, metric, allowed, foreign = _build_metric_contract()
+    MonitorInstanceOrganization.objects.create(monitor_instance=allowed, organization=1)
+    MonitorInstanceOrganization.objects.create(monitor_instance=foreign, organization=2)
+    scoped = AuthorizedMetricQueryService(
+        user=SimpleNamespace(username="root", domain="domain.com", is_superuser=True),
+        current_team=1,
+        include_children=False,
+        organization_scope=frozenset({1}),
+    )
+    mocker.patch(
+        "apps.monitor.services.authorized_metric_query.Metrics.get_metrics_range",
+        return_value={"status": "success", "data": {"result": []}},
+    )
+    scoped.query_range(_range_payload(monitor_object, metric, [allowed.id]))
+    with pytest.raises(AuthorizedMetricQueryError) as exc_info:
+        scoped.query_range(_range_payload(monitor_object, metric, [foreign.id]))
+    assert exc_info.value.code == "monitor_instance_forbidden"
+
+    unscoped = AuthorizedMetricQueryService(
+        user=SimpleNamespace(username="root", domain="domain.com", is_superuser=True),
+        current_team=1,
+        include_children=False,
+    )
+    unscoped.query_range(_range_payload(monitor_object, metric, [foreign.id]))
+
+
+def test_explicit_instance_grouping_overrides_the_global_average(mocker):
+    monitor_object, metric, allowed, _ = _build_metric_contract()
+    service = _service(mocker, allowed)
+    vm_query = mocker.patch(
+        "apps.monitor.services.authorized_metric_query.Metrics.get_metrics_range",
+        return_value={"status": "success", "data": {"result": []}},
+    )
+    service.query_range(_range_payload(monitor_object, metric, [allowed.id], grouping="instance"))
+    assert vm_query.call_args.args[0] == ('avg(cpu_usage{instance_id=~"allowed\\\\-host"}) by (instance_id)')

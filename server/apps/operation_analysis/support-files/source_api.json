@@ -2096,8 +2096,8 @@
     {
         "key": "监控对象列表::monitor/monitor_objects",
         "name": "监控对象列表（选项）",
-        "desc": "监控对象，供通用查询下拉使用，本身不直接出图",
-        "rest_api": "monitor/monitor_objects",
+        "desc": "监控对象，供通用查询下拉使用，本身不直接出图。展示名优先用语言包。",
+        "rest_api": "monitor/list_monitor_object_options",
         "tag": [
             "monitor"
         ],
@@ -2112,6 +2112,11 @@
             {
                 "key": "name",
                 "title": "监控对象",
+                "value_type": "string"
+            },
+            {
+                "key": "display_name",
+                "title": "展示名",
                 "value_type": "string"
             }
         ]
@@ -2193,7 +2198,7 @@
     {
         "key": "告警来源列表::alert/list_alert_source_options",
         "name": "告警来源列表（选项）",
-        "desc": "启用中的告警来源，供告警中心查询使用，本身不直接出图",
+        "desc": "供告警中心查询选择来源，本身不直接出图。来源没有组织字段，只返回调用者当前可见告警实际用到的启用来源。",
         "rest_api": "alert/list_alert_source_options",
         "tag": [
             "alerts"
@@ -3261,7 +3266,7 @@
             "type": "dynamic",
             "sourceRef": {
               "type": "rest_api",
-              "value": "monitor/monitor_objects"
+              "value": "monitor/list_monitor_object_options"
             },
             "valueField": "id",
             "labelField": "display_name"
@@ -3510,7 +3515,7 @@
             "type": "dynamic",
             "sourceRef": {
               "type": "rest_api",
-              "value": "monitor/monitor_objects"
+              "value": "monitor/list_monitor_object_options"
             },
             "valueField": "id",
             "labelField": "display_name"
@@ -3724,7 +3729,7 @@
                   {
     "key": "监控告警通用查询::monitor/query_monitor_alerts",
     "name": "监控告警通用查询",
-    "desc": "查询当前组织权限内的监控告警明细、数量或分布。不选监控对象就是全部对象。分布必须选择分组，策略已删除的告警单独成组。时间可空，填写后最长 90 天。告警值是触发或升级时留下的，不是当前采样。",
+    "desc": "查询当前组织权限内的监控告警明细、数量或分布。不选监控对象就是全部对象。分布必须选择分组，策略已删除的告警单独成组。分布不接受页码。未填返回条数时返回全部，仍不超过 500 组；填写后只取排序后的前若干条。时间可空，填写后最长 90 天。告警值是触发或升级时留下的，不是当前采样。",
     "rest_api": "monitor/query_monitor_alerts",
     "tag": [
       "monitor"
@@ -3797,7 +3802,7 @@
             "type": "dynamic",
             "sourceRef": {
               "type": "rest_api",
-              "value": "monitor/monitor_objects"
+              "value": "monitor/list_monitor_object_options"
             },
             "valueField": "id",
             "labelField": "display_name"

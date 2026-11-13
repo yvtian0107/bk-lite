@@ -174,16 +174,19 @@ def test_monitor_distribution_uses_return_limit_and_rejects_page():
     alerts = query_alerts(MonitorAlert.objects.all(), analysis_mode="distribution", group_by="level", page_size=1)
     assert alerts["items"] == [{"level": "warning", "alert_count": 2}]
     assert alerts["count"] == 2
-    second = query_alerts(MonitorAlert.objects.all(), analysis_mode="distribution", group_by="level", page=2, page_size=1)
-    assert second["items"] == [{"level": "fatal", "alert_count": 1}]
-    assert second["count"] == 2
-    assert sum(item["alert_count"] for item in alerts["items"]) + sum(item["alert_count"] for item in second["items"]) == 3
+    assert alerts["page"] == 1
+    assert alerts["page_size"] == 1
+    everything = query_alerts(MonitorAlert.objects.all(), analysis_mode="distribution", group_by="level")
+    assert {item["level"] for item in everything["items"]} == {"warning", "fatal"}
+    assert everything["page_size"] == 2
+    with pytest.raises(GenericQueryError, match="页码"):
+        query_alerts(MonitorAlert.objects.all(), analysis_mode="distribution", group_by="level", page=2, page_size=1)
 
 
 def test_metric_point_and_instance_limits_fail_before_query():
     start = datetime(2026, 1, 1, tzinfo=timezone.utc)
     step_seconds = 60
-    too_long = start + timedelta(seconds=step_seconds * (METRIC_POINTS_MAX + 1))
+    too_long = start + timedelta(seconds=step_seconds * METRIC_POINTS_MAX)
     with pytest.raises(GenericQueryError, match="两端"):
         validate_metric_request(
             instance_ids=["host-1"],
@@ -192,7 +195,7 @@ def test_metric_point_and_instance_limits_fail_before_query():
         )
     exact = validate_metric_request(
         instance_ids=["host-1"],
-        time_range=[start.isoformat(), (start + timedelta(seconds=step_seconds * METRIC_POINTS_MAX)).isoformat()],
+        time_range=[start.isoformat(), (start + timedelta(seconds=step_seconds * (METRIC_POINTS_MAX - 1))).isoformat()],
         step="60s",
     )
     assert exact["points"] == METRIC_POINTS_MAX
@@ -234,15 +237,16 @@ def test_metric_series_over_limit_missing_and_zero_are_distinct():
     assert missing["structure"] == "table"
     assert missing["status"] == "missing"
     assert missing["items"][0]["instance_id"] == "a"
-    assert missing["items"][0]["value"] == "无数据"
+    assert missing["items"][0]["value"] is None
+    assert missing["items"][0]["status"] == "missing"
+    assert missing["status"] == "missing"
     assert missing["items"][0]["aggregation"] == "平均"
-    assert "status" not in missing["items"][0]
     assert "dimension" not in missing["items"][0]
     assert zero["status"] == "ok"
     assert zero["items"][0]["value"] == 0
     assert zero["items"][0]["unit"] == "%"
     assert zero["items"][0]["aggregation"] == "平均"
-    assert "status" not in zero["items"][0]
+    assert zero["items"][0]["status"] == "ok"
     assert [field["key"] for field in zero["fields"]] == [
         "instance_id",
         "value",
@@ -373,7 +377,8 @@ def test_metric_table_uses_the_instance_name():
     by_name = {item["instance_id"]: item for item in named["items"]}
     assert by_name["演示网站"]["value"] == 0
     assert by_name["演示网站"]["aggregation"] == "最大"
-    assert by_name["blank-name"]["value"] == "无数据"
+    assert by_name["blank-name"]["value"] is None
+    assert by_name["blank-name"]["status"] == "missing"
 
 
 def test_metric_result_matches_storage_key_to_returned_labels():
@@ -469,7 +474,7 @@ def test_metric_result_matches_storage_key_to_returned_labels():
         requested_ids=["('web-01',)"],
         instance_names=names,
     )
-    assert [(item["instance_id"], item["value"]) for item in absent["items"]] == [("网站主机", "无数据")]
+    assert [(item["instance_id"], item["value"], item["status"]) for item in absent["items"]] == [("网站主机", None, "missing")]
 
 
 def test_empty_aggregation_rejects_open_dimensions_before_the_query(mocker):
@@ -478,8 +483,8 @@ def test_empty_aggregation_rejects_open_dimensions_before_the_query(mocker):
     from apps.monitor.nats.generic_query import query_monitor_metric
 
     mocker.patch(
-        "apps.monitor.nats.generic_query._normalize_permission_user",
-        return_value=SimpleNamespace(username="admin", domain="domain"),
+        "apps.monitor.nats.generic_query._get_nats_actor_scope",
+        return_value=(SimpleNamespace(username="admin", domain="domain", is_superuser=False), 1, False, frozenset({1}), False, None),
     )
     mocker.patch(
         "apps.monitor.nats.generic_query.AuthorizedMetricQueryService.prepare",
@@ -505,6 +510,71 @@ def test_empty_aggregation_rejects_open_dimensions_before_the_query(mocker):
     assert result["result"] is False
     assert result["message"] == "这个指标在同一时间点可能有多个数，请选择聚合方式，或用维度过滤指定其中某一个。"
     queried.assert_not_called()
+
+
+def test_nats_statistics_uses_persisted_superuser_when_caller_claims_false(mocker):
+    from types import SimpleNamespace
+
+    from apps.monitor.nats.generic_query import query_monitor_metric
+
+    captured = {}
+
+    class FakeService:
+        def __init__(self, *, user, current_team, include_children, organization_scope=None):
+            captured["user"] = user
+            captured["scope"] = organization_scope
+
+        def prepare(self, payload):
+            captured["grouping"] = payload.get("grouping")
+            raise RuntimeError("stop after scope")
+
+    mocker.patch(
+        "apps.monitor.nats.generic_query._get_nats_actor_scope",
+        return_value=(SimpleNamespace(username="admin", domain="domain"), 7, True, frozenset({7, 8}), True, None),
+    )
+    mocker.patch("apps.monitor.nats.generic_query.AuthorizedMetricQueryService", FakeService)
+    result = query_monitor_metric(
+        metric_id="507",
+        instance_ids=["host-1"],
+        time_range=["2026-01-01T00:00:00+00:00", "2026-01-01T01:00:00+00:00"],
+        step="5m",
+        analysis_mode="series",
+        user_info={"user": "admin", "domain": "domain", "team": 7, "include_children": True, "is_superuser": False},
+    )
+    assert result["result"] is False
+    assert captured["user"].is_superuser is True
+    assert captured["scope"] == frozenset({7, 8})
+    assert captured["grouping"] == "instance"
+
+
+def test_nats_statistics_rejects_forged_superuser_claim_for_object_permissions(mocker):
+    from types import SimpleNamespace
+
+    from apps.monitor.nats.generic_query import query_monitor_metric
+
+    captured = {}
+
+    class FakeService:
+        def __init__(self, *, user, current_team, include_children, organization_scope=None):
+            captured["user"] = user
+
+        def prepare(self, payload):
+            raise RuntimeError("stop after scope")
+
+    mocker.patch(
+        "apps.monitor.nats.generic_query._get_nats_actor_scope",
+        return_value=(SimpleNamespace(username="admin", domain="domain"), 7, False, frozenset({7}), False, None),
+    )
+    mocker.patch("apps.monitor.nats.generic_query.AuthorizedMetricQueryService", FakeService)
+    query_monitor_metric(
+        metric_id="507",
+        instance_ids=["host-1"],
+        time_range=["2026-01-01T00:00:00+00:00", "2026-01-01T01:00:00+00:00"],
+        step="5m",
+        analysis_mode="series",
+        user_info={"user": "admin", "domain": "domain", "team": 7, "include_children": False, "is_superuser": True},
+    )
+    assert captured["user"].is_superuser is False
 
 
 def test_metric_handler_rejects_non_list_filters():

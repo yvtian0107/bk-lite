@@ -342,8 +342,7 @@ def query_one_hop_relations(
             for item in graph_result.get("groups") or []
         ]
         total = int(graph_result["group_count"]) if "group_count" in graph_result else len(items)
-        if distribution_limit is None:
-            _ensure_groups(total)
+        _ensure_groups(total)
         items.sort(key=lambda item: (-(item.get("relation_count") or 0), item.get("start_uuid") or ""))
         if "group_count" in graph_result:
             shown = items

@@ -345,7 +345,6 @@ describe('cmdb classification cascade', () => {
                   kind: 'endModelAttrs',
                   startModelParam: 'start_model_id',
                   associationParam: 'model_asst_id',
-                  directionParam: 'direction',
                 },
               },
             },

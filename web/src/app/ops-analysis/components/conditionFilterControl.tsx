@@ -72,7 +72,6 @@ const ConditionFilterControl: React.FC<ConditionFilterControlProps> = ({
     ? [
       readParam(formParams, source.startModelParam),
       readParam(formParams, source.associationParam),
-      readParam(formParams, source.directionParam),
     ].join('\0')
     : '';
   const dynamicResolution = source?.kind === 'dynamic'

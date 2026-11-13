@@ -129,7 +129,7 @@ def _get_authorized_alert_queryset(user_info: dict):
         return None, {"result": False, "data": [], "message": "缺少组织信息"}
 
     if not _has_alerts_view_permission(user_info):
-        return None, {"result": False, "data": [], "message": "权限不足"}
+        return None, {"result": False, "data": [], "message": "Insufficient permissions"}
 
     team_ids = [int(current_team)]
     if user_info.get("include_children"):

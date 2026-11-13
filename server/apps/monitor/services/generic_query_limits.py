@@ -12,7 +12,8 @@ METRIC_INSTANCE_MAX = 50
 # 指标查询最多返回 20 条序列。
 METRIC_SERIES_MAX = 20
 
-# 每条序列最多 1000 个点，与监控大盘的时间范围预算一致。点数 = 时间范围 ÷ 步长。
+# 每条序列最多 1000 个点。query_range 闭区间包含起止两端，点数上界是
+# floor(时间范围秒 / 步长) + 1。请求校验与 VictoriaMetrics 实际返回用同一公式。
 METRIC_POINTS_MAX = 1000
 
 # 监控告警时间范围最长 90 天。

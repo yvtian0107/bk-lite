@@ -1,8 +1,10 @@
 """监控通用查询 NATS handler。统计在监控模块内完成，不把全量样本交回运营分析。"""
 
+from types import SimpleNamespace
+
 import nats_client
 from apps.core.logger import monitor_logger as logger
-from apps.monitor.models.monitor_object import MonitorObject
+from apps.monitor.models.monitor_object import MonitorInstance, MonitorObject
 from apps.monitor.models.monitor_policy import MonitorAlert, MonitorPolicy
 from apps.monitor.nats.monitor import (
     _filter_nats_visible_alerts,
@@ -11,9 +13,9 @@ from apps.monitor.nats.monitor import (
     _get_nats_accessible_instance_queryset,
     _get_nats_accessible_policy_queryset,
     _get_nats_actor_scope,
-    _normalize_permission_user,
 )
 from apps.monitor.services.authorized_metric_query import (
+    GROUPING_INSTANCE,
     AuthorizedMetricQueryError,
     AuthorizedMetricQueryService,
     _instance_lookup_candidates,
@@ -115,9 +117,16 @@ def _authorized_instances(user_info, monitor_object_id: str):
         raise GenericQueryError("监控对象不能为空")
     if not MonitorObject.objects.filter(id=monitor_object_id).exists():
         raise GenericQueryError("监控对象不存在或无权访问", status="forbidden")
-    _user, _team, _children, scope_ids, _superuser, scope_error = _get_nats_actor_scope(user_info or {})
+    _user, _team, _children, scope_ids, is_superuser, scope_error = _get_nats_actor_scope(user_info or {})
     if scope_error:
         raise GenericQueryError(scope_error.get("message") or "无权限", status="forbidden")
+    scoped = MonitorInstance.objects.filter(
+        monitor_object_id=monitor_object_id,
+        is_deleted=False,
+        monitorinstanceorganization__organization__in=list(scope_ids),
+    )
+    if is_superuser:
+        return scoped.distinct()
     permission, error = _get_monitor_instance_permission(str(monitor_object_id), user_info or {})
     if error:
         raise GenericQueryError(error.get("message") or "无权限", status="forbidden")
@@ -202,13 +211,19 @@ def query_monitor_metric(
         raise GenericQueryError("聚合方式不能为空")
     query_filters = _metric_condition_filters(filters)
     checked = validate_metric_request(instance_ids=instance_ids, time_range=time_range, step=step)
-    user = _normalize_permission_user((user_info or {}).get("user"), domain=(user_info or {}).get("domain"))
-    if user is None or (user_info or {}).get("team") in (None, ""):
-        raise GenericQueryError("无权限", status="forbidden")
+    actor, current_team, include_children, scope_ids, is_superuser, scope_error = _get_nats_actor_scope(user_info or {})
+    if scope_error:
+        raise GenericQueryError(scope_error.get("message") or "无权限", status="forbidden")
+    actor = SimpleNamespace(
+        username=getattr(actor, "username", ""),
+        domain=getattr(actor, "domain", ""),
+        is_superuser=bool(is_superuser),
+    )
     prepared = AuthorizedMetricQueryService(
-        user=user,
-        current_team=user_info.get("team"),
-        include_children=bool((user_info or {}).get("include_children", False)),
+        user=actor,
+        current_team=current_team,
+        include_children=include_children,
+        organization_scope=scope_ids,
     ).prepare(
         {
             "monitor_object_id": monitor_object_id,
@@ -219,6 +234,7 @@ def query_monitor_metric(
             "step": checked["step"],
             "aggregation": str(aggregation).upper() if aggregation else None,
             "filters": query_filters,
+            "grouping": GROUPING_INSTANCE,
         }
     )
     if (

@@ -830,8 +830,16 @@ def _apply_monitor_object_display_names(results, user_info):
 
 @nats_client.register
 def monitor_objects(*args, **kwargs):
-    """查询监控对象列表"""
+    """查询监控对象列表。展示名保持库内原值，语言包只走通用查询选项接口。"""
     logger.info("=== monitor_objects called , args={}, kwargs={}===".format(args, kwargs))
+    queryset = MonitorObject.objects.all().order_by("id")
+    serializer = MonitorObjectSerializer(queryset, many=True)
+    return {"result": True, "data": serializer.data, "message": ""}
+
+
+@nats_client.register
+def list_monitor_object_options(*args, **kwargs):
+    """通用查询下拉。语言包优先，否则库里的展示名，否则英文名。"""
     queryset = MonitorObject.objects.all().order_by("id")
     serializer = MonitorObjectSerializer(queryset, many=True)
     results = serializer.data
@@ -911,15 +919,40 @@ def _license_monitor_instance_labels(data, kwargs):
         return {}
 
 
+def _metric_visible_to_caller(metric, user_info) -> str | None:
+    """调用者要对这个指标所属的监控对象有可见权限。目录本身不按组织拆。"""
+    _user, _team, _children, _scope_ids, is_superuser, scope_error = _get_nats_actor_scope(user_info or {})
+    if scope_error:
+        return scope_error.get("message") or "无权限"
+    if is_superuser:
+        return None
+    permission, error = _get_monitor_instance_permission(str(metric.monitor_object_id), user_info or {})
+    if error:
+        return error.get("message") or "无权限"
+    has_instance = bool((permission or {}).get("instance") or (permission or {}).get("team"))
+    policies, policy_error = _get_nats_accessible_policy_queryset(user_info or {})
+    if policy_error:
+        return policy_error.get("message") or "无权限"
+    if has_instance or policies.filter(monitor_object_id=metric.monitor_object_id).exists():
+        return None
+    return "指标不存在或无权访问"
+
+
 @nats_client.register
-def list_metric_dimensions(metric_id=None, **kwargs):
+def list_metric_dimensions(metric_id=None, user_info=None, **kwargs):
     """所选指标上声明的维度，供条件过滤选字段。值由用户填写。"""
     del kwargs
     if metric_id in (None, ""):
+        _user, _team, _children, _scope_ids, _superuser, scope_error = _get_nats_actor_scope(user_info or {})
+        if scope_error:
+            return {"result": False, "data": [], "message": scope_error.get("message") or "无权限"}
         return {"result": True, "data": [], "message": ""}
     metric = Metric.objects.filter(id=metric_id).first()
     if metric is None:
         return {"result": False, "data": [], "message": "指标不存在"}
+    denied = _metric_visible_to_caller(metric, user_info)
+    if denied:
+        return {"result": False, "data": [], "message": denied}
     rows = []
     for item in metric.dimensions or []:
         if isinstance(item, dict):
