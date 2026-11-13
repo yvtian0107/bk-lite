@@ -20,6 +20,8 @@ describe('reconcileComponentParamValue multiple', () => {
   test('多选数组过滤已失效选项，空结果保持空数组', () => {
     expect(reconcileComponentParamValue(['9', '8'], OPTIONS)).toEqual([]);
     expect(reconcileComponentParamValue(['2', '9'], OPTIONS)).toEqual(['2']);
+    expect(reconcileComponentParamValue(['2', 'old'], OPTIONS, true)).toEqual(['2', 'old']);
+    expect(reconcileComponentParamValue('old', OPTIONS, true)).toBe('old');
   });
 
   test('标量失效时清空，不自动选中第一项', () => {

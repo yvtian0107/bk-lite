@@ -124,7 +124,12 @@ const QueryForm = ({
         globalFilters={[]}
         onParamOptionsResolved={(param, options) => {
           const current = form.getFieldValue(['params', param.name]);
-          const next = reconcileComponentParamValue(current, options);
+          const retain = Boolean(
+            param.inputConfig
+            && 'retainUnavailableValues' in param.inputConfig
+            && param.inputConfig.retainUnavailableValues,
+          );
+          const next = reconcileComponentParamValue(current, options, retain);
           if (next !== current) form.setFieldValue(['params', param.name], next);
         }}
       />
@@ -557,5 +562,268 @@ describe('cmdb classification cascade', () => {
       expect(savedItems()).toEqual([{ field: 'status', op: 'eq', value: '1' }]);
     });
     expect(screen.getByText('已上线')).toBeTruthy();
+  });
+
+  it('loads all models when classification is optional and drops models that leave the union', async () => {
+    api.getSourceDataByApiId.mockImplementation(async (id: number, params?: { classification_id?: string | string[]; model_id?: string | string[] }) => {
+      if (id === 1) {
+        return {
+          data: [
+            { classification_id: 'compute', classification_name: '计算' },
+            { classification_id: 'space', classification_name: '空间' },
+          ],
+          warnings: [],
+        };
+      }
+      if (id === 2) {
+        const selected = params?.classification_id;
+        const ids = Array.isArray(selected) ? selected : (selected ? [selected] : []);
+        const classOf: Record<string, string> = { host: 'compute', room: 'space' };
+        const rows = [
+          { model_id: 'host', model_name: '主机', classification_name: '计算' },
+          { model_id: 'room', model_name: '机房', classification_name: '空间' },
+        ].filter((row) => !ids.length || ids.includes(classOf[row.model_id]));
+        return { data: rows, warnings: [] };
+      }
+      const models = Array.isArray(params?.model_id) ? params.model_id : [params?.model_id];
+      const rows = [];
+      if (models.includes('host')) {
+        rows.push({
+          model_id: 'host', model_name: '主机', attr_id: 'cpu', attr_name: 'CPU',
+          field_key: 'host.cpu', value_type: 'number', options: [],
+        });
+      }
+      if (models.includes('room')) {
+        rows.push({
+          model_id: 'room', model_name: '机房', attr_id: 'area', attr_name: '面积',
+          field_key: 'room.area', value_type: 'number', options: [],
+        });
+      }
+      return { data: rows, warnings: [] };
+    });
+
+    render(
+      <QueryForm
+        source={{
+          id: 24,
+          name: 'CMDB 实例通用查询',
+          params: [
+            {
+              ...classification(),
+              inputConfig: {
+                control: 'select',
+                multiple: true,
+                optionsSource: {
+                  type: 'dynamic',
+                  sourceId: 1,
+                  valueField: 'classification_id',
+                  labelField: 'classification_name',
+                },
+              },
+            },
+            {
+              name: 'model_id',
+              alias_name: '模型',
+              type: 'string',
+              filterType: 'params',
+              value: '',
+              required: true,
+              inputConfig: {
+                control: 'select',
+                multiple: true,
+                maxCount: 20,
+                optionsSource: {
+                  type: 'dynamic',
+                  sourceId: 2,
+                  valueField: 'model_id',
+                  labelField: 'model_name',
+                  groupField: 'classification_name',
+                  queryParams: { classification_id: { ref: 'classification_id', optional: true } },
+                },
+              },
+            },
+            analysisMode(),
+            {
+              name: 'filters',
+              alias_name: '条件过滤',
+              type: 'modelConditionFilter',
+              filterType: 'params',
+              value: { by_model: {} },
+              inputConfig: { control: 'modelConditionFilter', modelParam: 'model_id' },
+            },
+            {
+              name: 'columns',
+              alias_name: '展示列',
+              type: 'modelColumns',
+              filterType: 'params',
+              value: null,
+              inputConfig: { control: 'modelColumns', modelParam: 'model_id' },
+            },
+            {
+              name: 'order',
+              alias_name: '排序',
+              type: 'order',
+              filterType: 'params',
+              value: '',
+              inputConfig: {
+                control: 'order',
+                modelParam: 'model_id',
+                fields: [{ value: 'inst_name', label: '实例名' }],
+              },
+            },
+          ],
+        } as DatasourceItem}
+        initialParams={{
+          classification_id: [],
+          model_id: ['host', 'room'],
+          analysis_mode: 'detail',
+          filters: {
+            by_model: {
+              host: { logic: 'AND', items: [{ field: 'cpu', op: 'gt', value: 1 }] },
+              room: { logic: 'OR', items: [{ field: 'area', op: 'gt', value: 2 }] },
+            },
+          },
+          columns: ['host.cpu', 'room.area'],
+          order: '-room.area',
+        }}
+      />,
+    );
+
+    await waitFor(() => {
+      expect(api.getSourceDataByApiId).toHaveBeenCalledWith(2, {}, undefined);
+      expect(readParams().model_id).toEqual(['host', 'room']);
+      expect(readParams().order).toBe('-room.area');
+    });
+
+    openSelect(0);
+    fireEvent.click(await screen.findByText('计算'));
+    await waitFor(() => {
+      const next = readParams();
+      expect(next.classification_id).toEqual(['compute']);
+      expect(next.model_id).toEqual(['host']);
+      expect(next.columns).toEqual(['host.cpu']);
+      expect(next.order).toBe('');
+      expect(next.filters).toEqual({
+        by_model: { host: { logic: 'AND', items: [{ field: 'cpu', op: 'gt', value: 1 }] } },
+      });
+    });
+    expect(api.getSourceDataByApiId).toHaveBeenCalledWith(2, { classification_id: ['compute'] }, undefined);
+  });
+
+  it('keeps an expired classification and asks the user to remove it', async () => {
+    api.getSourceDataByApiId.mockImplementation(async (id: number, params?: Record<string, unknown>) => {
+      if (id === 1) {
+        return { data: [{ classification_id: 'compute', classification_name: '计算' }], warnings: [] };
+      }
+      const requested = Array.isArray(params?.classification_id) ? params.classification_id : [];
+      const invalid = requested.filter((item) => item !== 'compute');
+      return {
+        data: {
+          items: requested.includes('compute') || requested.length === 0
+            ? [{ model_id: 'host', model_name: '主机', classification_name: '计算' }]
+            : [],
+          invalid_classification_ids: invalid,
+        },
+        warnings: [],
+      };
+    });
+    render(
+      <QueryForm
+        source={{
+          id: 25,
+          name: 'CMDB 模型通用查询',
+          params: [
+            {
+              ...classification(),
+              inputConfig: {
+                control: 'select',
+                multiple: true,
+                retainUnavailableValues: true,
+                optionsSource: {
+                  type: 'dynamic',
+                  sourceId: 1,
+                  valueField: 'classification_id',
+                  labelField: 'classification_name',
+                },
+              },
+            },
+            {
+              name: 'model_id',
+              alias_name: '模型',
+              type: 'string',
+              filterType: 'params',
+              value: '',
+              inputConfig: {
+                control: 'select',
+                multiple: true,
+                maxCount: 20,
+                optionsSource: {
+                  type: 'dynamic',
+                  sourceId: 2,
+                  valueField: 'model_id',
+                  labelField: 'model_name',
+                  queryParams: { classification_id: { ref: 'classification_id', optional: true } },
+                },
+              },
+            },
+          ],
+        } as DatasourceItem}
+        initialParams={{ classification_id: ['compute', 'old'], model_id: ['host'] }}
+      />,
+    );
+    await waitFor(() => {
+      expect(api.getSourceDataByApiId).toHaveBeenCalledWith(
+        2,
+        { classification_id: ['compute', 'old'] },
+        undefined,
+      );
+      expect(readParams().classification_id).toEqual(['compute', 'old']);
+      expect(screen.getByText('dashboard.invalidClassifications：old')).toBeTruthy();
+    });
+    expect(screen.queryByText('dashboard.selectCurrentCandidates')).toBeNull();
+  });
+
+  it('loads the one-hop model list when the saved classification has expired', async () => {
+    api.getSourceDataByApiId.mockImplementation(async (id: number) => {
+      if (id === 1) {
+        return { data: [{ classification_id: 'compute', classification_name: '计算' }], warnings: [] };
+      }
+      return {
+        data: { items: [], invalid_classification_ids: ['old'] },
+        warnings: [],
+      };
+    });
+    render(
+      <QueryForm
+        source={{
+          id: 26,
+          name: 'CMDB 一跳关联通用查询',
+          params: [
+            {
+              ...classification(),
+              inputConfig: {
+                control: 'select',
+                retainUnavailableValues: true,
+                optionsSource: {
+                  type: 'dynamic',
+                  sourceId: 1,
+                  valueField: 'classification_id',
+                  labelField: 'classification_name',
+                },
+              },
+            },
+            modelSelect('start_model_id', '起点模型'),
+          ],
+        } as DatasourceItem}
+        initialParams={{ classification_id: 'old', start_model_id: '' }}
+      />,
+    );
+    await waitFor(() => {
+      expect(api.getSourceDataByApiId).toHaveBeenCalledWith(2, { classification_id: 'old' }, undefined);
+      expect(readParams().classification_id).toBe('old');
+      expect(screen.getByText('dashboard.invalidClassifications：old')).toBeTruthy();
+    });
+    expect(screen.queryByText('请先选择分类')).toBeNull();
+    expect(screen.getAllByRole('combobox')).toHaveLength(2);
   });
 });

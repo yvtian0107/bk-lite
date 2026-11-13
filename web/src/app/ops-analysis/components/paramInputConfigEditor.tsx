@@ -84,6 +84,7 @@ interface QueryParamRow {
   literalText: string;
   literalRaw?: string | number | boolean | null;
   refName: string;
+  optional?: boolean;
 }
 
 interface ConditionOptionDraft {
@@ -154,6 +155,7 @@ const queryRowFromStored = (name: string, raw: unknown): QueryParamRow => {
       mode: 'ref',
       literalText: '',
       refName: normalized.value.ref,
+      optional: normalized.value.optional === true,
     };
   }
   const literal = normalized.ok ? normalized.value : '';
@@ -497,6 +499,8 @@ export const ParamInputConfigEditor: React.FC<ParamInputConfigEditorProps> = ({
       value.control === 'input'
       || value.control === 'organization'
       || value.control === 'order'
+      || value.control === 'modelConditionFilter'
+      || value.control === 'modelColumns'
     ) {
       setSourceType('static');
       setStaticRows([createRow()]);
@@ -650,6 +654,8 @@ export const ParamInputConfigEditor: React.FC<ParamInputConfigEditorProps> = ({
       value.control === 'organization' ||
       value.control === 'conditionFilter' ||
       value.control === 'order' ||
+      value.control === 'modelConditionFilter' ||
+      value.control === 'modelColumns' ||
       value.optionsSource.type !== 'dynamic' ||
       !value.optionsSource.sourceRef ||
       dataSourceList.length === 0
@@ -856,7 +862,7 @@ export const ParamInputConfigEditor: React.FC<ParamInputConfigEditorProps> = ({
 
   const buildOptionControlExtras = (): Pick<
     Extract<InputControlConfig, { control: 'select' | 'radio' }>,
-    'multiple' | 'maxCount' | 'picker'
+    'multiple' | 'maxCount' | 'picker' | 'retainUnavailableValues'
   > => {
     const current = value && (value.control === 'select' || value.control === 'radio')
       ? value
@@ -866,6 +872,7 @@ export const ParamInputConfigEditor: React.FC<ParamInputConfigEditorProps> = ({
         ? { multiple: true as const, maxCount: current?.maxCount }
         : {}),
       ...(control === 'select' && picker === 'table' ? { picker: 'table' as const } : {}),
+      ...(current?.retainUnavailableValues ? { retainUnavailableValues: true as const } : {}),
     };
   };
 
@@ -995,9 +1002,8 @@ export const ParamInputConfigEditor: React.FC<ParamInputConfigEditorProps> = ({
       const name = row.name.trim();
       if (!name) return;
       if (row.mode === 'ref') {
-        draftParams[name] = {
-          ref: canonicalizeOptionsQueryRef(row.refName.trim(), optionsQueryContext),
-        };
+        const ref = canonicalizeOptionsQueryRef(row.refName.trim(), optionsQueryContext);
+        draftParams[name] = row.optional ? { ref, optional: true } : { ref };
         return;
       }
       const literal = rowLiteralPayload(row);

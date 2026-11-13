@@ -469,6 +469,9 @@ def _normalize_param_value(param_name, param_type, raw_value):
     if param_type == "conditionFilter":
         return _normalize_condition_filter(param_name, raw_value)
 
+    if param_type == "modelConditionFilter":
+        return _normalize_model_condition_filter(param_name, raw_value)
+
     if param_type == "order":
         if raw_value in (None, ""):
             return raw_value
@@ -502,6 +505,20 @@ def _normalize_condition_filter(param_name, raw_value):
             raise ValueError(oa_message("messages.condition_filter_format", "参数 {param_name} 条件过滤格式错误", param_name=param_name))
         normalized.append({"field": item.get("field"), "op": item.get("op"), "value": item.get("value")})
     return {"logic": logic, "items": normalized}
+
+
+def _normalize_model_condition_filter(param_name, raw_value):
+    if raw_value in (None, "", []):
+        return {"by_model": {}}
+    if not isinstance(raw_value, dict) or set(raw_value) != {"by_model"} or not isinstance(raw_value.get("by_model"), dict):
+        raise ValueError(oa_message("messages.condition_filter_format", "参数 {param_name} 条件过滤格式错误", param_name=param_name))
+    normalized = {}
+    for model_id, group in raw_value["by_model"].items():
+        key = str(model_id).strip()
+        if not key:
+            raise ValueError(oa_message("messages.condition_filter_format", "参数 {param_name} 条件过滤格式错误", param_name=param_name))
+        normalized[key] = _normalize_condition_filter(param_name, group)
+    return {"by_model": normalized}
 
 
 def _normalize_runtime_params(request_data):

@@ -6,6 +6,7 @@ import {
 import {
   collectOptionsQueryParamIssues,
   MAX_OPTIONS_QUERY_CHAIN_NODES,
+  normalizeOptionsQueryParamValue,
   normalizeQueryParamsForStorage,
   OPTIONS_QUERY_INVALID,
   readOptionsQueryUpstream,
@@ -127,6 +128,33 @@ describe('options query param refs', () => {
       params: { room_id: 'room-1', site: 'fixed' },
       missingRefs: [],
     });
+  });
+
+  it('lets an optional upstream stay empty without blocking the request', () => {
+    const query = {
+      classification_id: { ref: 'classification_id', optional: true as const },
+      include_model_bucket: true,
+    };
+    expect(resolveOptionsQueryParams(query, () => null)).toEqual({
+      blocked: false,
+      params: { include_model_bucket: true },
+      missingRefs: [],
+    });
+    expect(resolveOptionsQueryParams(query, () => [])).toEqual({
+      blocked: false,
+      params: { include_model_bucket: true },
+      missingRefs: [],
+    });
+    expect(resolveOptionsQueryParams(query, () => ['compute'])).toEqual({
+      blocked: false,
+      params: { classification_id: ['compute'], include_model_bucket: true },
+      missingRefs: [],
+    });
+    expect(normalizeOptionsQueryParamValue({ ref: 'classification_id', optional: true })).toEqual({
+      ok: true,
+      value: { ref: 'classification_id', optional: true },
+    });
+    expect(normalizeOptionsQueryParamValue({ ref: 'classification_id', extra: true }).ok).toBe(false);
   });
 
   it('normalizes YAML whole-token query params when reading inputConfig', () => {

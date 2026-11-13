@@ -2,6 +2,7 @@
 
 import React, { useEffect, useRef } from 'react';
 import { Radio, Select, Spin } from 'antd';
+import type { DefaultOptionType } from 'antd/es/select';
 import type { InputControlConfig, InputOption } from '@/app/ops-analysis/types/dataSource';
 import { useParamInputOptions } from '@/app/ops-analysis/hooks/useParamInputOptions';
 import {
@@ -24,6 +25,7 @@ interface ParamInputControlProps {
   allowClear?: boolean;
   style?: React.CSSProperties;
   onOptionsResolved?: (options: InputOption[]) => void;
+  onInvalidClassifications?: (ids: string[]) => void;
   onOptionsFailed?: () => void;
   optionsNotifyKey?: string;
   resolvedQueryParams?: Record<string, unknown>;
@@ -57,6 +59,7 @@ export const ParamInputControl: React.FC<ParamInputControlProps> = ({
   allowClear = true,
   style,
   onOptionsResolved,
+  onInvalidClassifications,
   onOptionsFailed,
   optionsNotifyKey = '',
   resolvedQueryParams,
@@ -72,10 +75,12 @@ export const ParamInputControl: React.FC<ParamInputControlProps> = ({
     optionsBlockReason,
   });
   const onOptionsResolvedRef = useRef(onOptionsResolved);
+  const onInvalidClassificationsRef = useRef(onInvalidClassifications);
   const onOptionsFailedRef = useRef(onOptionsFailed);
   const notifierRef = useRef(createParamInputOptionsNotifier());
   const notifyKeyRef = useRef(optionsNotifyKey);
   onOptionsResolvedRef.current = onOptionsResolved;
+  onInvalidClassificationsRef.current = onInvalidClassifications;
   onOptionsFailedRef.current = onOptionsFailed;
 
   const renderFallback = () => {
@@ -93,12 +98,20 @@ export const ParamInputControl: React.FC<ParamInputControlProps> = ({
       notifyKeyRef.current = optionsNotifyKey;
       notifierRef.current = createParamInputOptionsNotifier();
     }
+    const reportInvalid = () => {
+      if (state.status !== 'success' && state.status !== 'error') return;
+      onInvalidClassificationsRef.current?.(state.invalidClassificationIds ?? []);
+    };
     if (state.status === 'error' && state.errorMessage) {
       onOptionsFailedRef.current?.();
       return;
     }
-    if (!onOptionsResolvedRef.current) return;
+    if (!onOptionsResolvedRef.current) {
+      reportInvalid();
+      return;
+    }
     if (state.status === 'success' && state.resultKey) {
+      reportInvalid();
       notifierRef.current.notify(
         state.resultKey,
         state.options,
@@ -108,6 +121,7 @@ export const ParamInputControl: React.FC<ParamInputControlProps> = ({
     }
     // 数据源明确返回空列表时也要通知，否则导入来的 ID 会一直挂在控件上。
     if (state.status === 'error' && !state.errorMessage) {
+      reportInvalid();
       notifierRef.current.notify(
         `empty:${getParamInputConfigKey(inputConfig)}`,
         [],
@@ -180,6 +194,7 @@ export const ParamInputControl: React.FC<ParamInputControlProps> = ({
 
   if (inputConfig.control === 'select') {
     const isMultiple = Boolean(inputConfig.multiple);
+    const selectOptions: DefaultOptionType[] = groupedSelectOptions(options);
     if (inputConfig.picker === 'table') {
       return (
         <ParamInputTableSelect
@@ -210,7 +225,7 @@ export const ParamInputControl: React.FC<ParamInputControlProps> = ({
         maxTagCount={isMultiple ? 'responsive' : undefined}
         maxTagTextLength={isMultiple ? 16 : undefined}
         style={{ width: '100%', ...style }}
-        options={options}
+        options={selectOptions}
         onChange={(nextValue) => onChange?.(nextValue ?? null)}
       />
     );
@@ -230,4 +245,23 @@ export const ParamInputControl: React.FC<ParamInputControlProps> = ({
       onChange={(nextValue) => onChange?.(nextValue ?? null)}
     />
   );
+};
+
+const groupedSelectOptions = (options: InputOption[]): DefaultOptionType[] => {
+  if (!options.some((item) => item.group)) {
+    return options.map((item) => ({ label: item.label, value: item.value }));
+  }
+  const groups: Array<{ label: string; options: Array<{ label: string; value: string | number }> }> = [];
+  const index = new Map<string, number>();
+  options.forEach((item) => {
+    const label = item.group || '';
+    let at = index.get(label);
+    if (at === undefined) {
+      at = groups.length;
+      index.set(label, at);
+      groups.push({ label, options: [] });
+    }
+    groups[at].options.push({ label: item.label, value: item.value });
+  });
+  return groups;
 };

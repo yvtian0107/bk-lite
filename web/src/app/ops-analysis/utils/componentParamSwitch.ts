@@ -65,11 +65,19 @@ export const reconcileComponentSwitchValue = (
  * 标量与组件切换一致：不在选项里则清空，不落到 options[0]。
  * `options` 未传入表示还在加载，保留现值；空数组表示上游为空或已经没有候选项，清空失效值。
  */
+export const retainsUnavailableParamValues = (
+  param: Pick<ParamItem, 'inputConfig'> | undefined,
+): boolean => {
+  const config = param?.inputConfig;
+  return Boolean(config && 'retainUnavailableValues' in config && config.retainUnavailableValues);
+};
+
 export const reconcileComponentParamValue = (
   value: ParamItem['value'] | undefined,
   options?: InputOption[],
+  retainUnavailable = false,
 ): ParamItem['value'] | undefined => {
-  if (options == null) return value;
+  if (options == null || retainUnavailable) return value;
   if (Array.isArray(value)) {
     const optionKeys = new Set(
       options.map((option) => getTypedValueKey(option.value)),

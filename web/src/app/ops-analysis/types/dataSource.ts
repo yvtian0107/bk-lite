@@ -185,6 +185,8 @@ export interface OrderFieldOption {
 export interface InputOption {
   label: string;
   value: string | number;
+  /** 下拉分组标题。有值时按出现顺序分组。 */
+  group?: string;
   /** 分析方式选项适配的图表。只出现在内置数据源的 analysis_mode 上。 */
   charts?: string[];
   /** 分析方式选项的返回结构。 */
@@ -211,7 +213,7 @@ export type OptionsQueryParamValue =
   | number
   | boolean
   | null
-  | { ref: string };
+  | { ref: string; optional?: true };
 
 export interface DynamicOptionsSource {
   type: 'dynamic';
@@ -223,6 +225,8 @@ export interface DynamicOptionsSource {
   queryParams?: Record<string, OptionsQueryParamValue>;
   /** 上游为空时的提示文案 key。 */
   emptyUpstreamHintKey?: string;
+  /** 用这一列给选项分组，例如模型按分类分组。 */
+  groupField?: string;
 }
 
 export type InputControlConfig =
@@ -238,6 +242,8 @@ export type InputControlConfig =
     componentSwitch?: boolean;
     multiple?: boolean;
     maxCount?: number;
+    /** 选项里已经没有的已选值保留，由界面提示用户自己删除。 */
+    retainUnavailableValues?: boolean;
     /** select 专用：dropdown 为默认下拉；table 点击后弹表格批量勾选 */
     picker?: 'dropdown' | 'table';
   }
@@ -250,6 +256,14 @@ export type InputControlConfig =
     fields: OrderFieldOption[];
     modelParam?: string;
     includeModelAttrsInModes?: string[];
+  }
+  | {
+    control: 'modelConditionFilter';
+    modelParam: string;
+  }
+  | {
+    control: 'modelColumns';
+    modelParam: string;
   };
 
 export interface ParamItem {

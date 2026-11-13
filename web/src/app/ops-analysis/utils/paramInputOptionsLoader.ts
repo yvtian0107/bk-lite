@@ -16,9 +16,9 @@ import {
 export type ParamInputOptionsState =
   | { status: 'idle'; options: [] }
   | { status: 'loading'; options: [] }
-  | { status: 'success'; options: InputOption[] }
+  | { status: 'success'; options: InputOption[]; invalidClassificationIds?: string[] }
   | { status: 'blocked'; options: [] }
-  | { status: 'error'; options: []; errorMessage?: string };
+  | { status: 'error'; options: []; errorMessage?: string; invalidClassificationIds?: string[] };
 
 export interface ParamInputOptionsRequest {
   resolvedParams?: Record<string, unknown>;
@@ -99,8 +99,23 @@ export const buildOptionsLoadSignature = (
   return `${getParamInputConfigKey(config)}|${stableStringify(request?.resolvedParams ?? {})}`;
 };
 
-const resolved = (options: InputOption[]): ParamInputOptionsState =>
-  options.length ? { status: 'success', options } : { status: 'error', options: [] };
+const resolved = (options: InputOption[], invalidClassificationIds: string[] = []): ParamInputOptionsState => (
+  options.length
+    ? { status: 'success', options, ...(invalidClassificationIds.length ? { invalidClassificationIds } : {}) }
+    : { status: 'error', options: [], ...(invalidClassificationIds.length ? { invalidClassificationIds } : {}) }
+);
+
+const invalidClassificationIdsOf = (data: unknown): string[] => {
+  const record = asRecord(data);
+  const raw = record?.invalid_classification_ids;
+  if (!Array.isArray(raw)) return [];
+  const found: string[] = [];
+  raw.forEach((item) => {
+    const text = String(item ?? '').trim();
+    if (text && !found.includes(text)) found.push(text);
+  });
+  return found;
+};
 
 const OPTION_PAGE_CAP = 200;
 
@@ -215,6 +230,7 @@ export const createParamInputOptionsLoader = (
           return { status: 'error', options: [] };
         }
         const { data } = await api.getSourceDataByApiId(sourceId, resolvedParams, requestOptions);
+        const invalidClassificationIds = invalidClassificationIdsOf(data);
         const firstPage = readOptionPage(data);
         const items = [...firstPage.items];
         const shouldPage = firstPage.page !== undefined
@@ -244,11 +260,11 @@ export const createParamInputOptionsLoader = (
           }
         }
         const options = mapDynamicItems(
-          items, source.valueField, source.labelField,
+          items, source.valueField, source.labelField, source.groupField,
         );
         if (requestGeneration !== generation) return null;
         settled = true;
-        return resolved(options);
+        return resolved(options, invalidClassificationIds);
       } catch (error) {
         if (requestGeneration !== generation) return null;
         settled = true;

@@ -6,18 +6,24 @@ import json
 from typing import Any
 
 from apps.cmdb.display_field.constants import DISPLAY_VALUES_SEPARATOR
-from apps.cmdb.graph.validators import CQLValidator
-from apps.cmdb.services.generic_query_columns import public_instance, sensitive_hidden_keys
-from apps.cmdb.services.generic_query_graph import GenericQueryGraphError, aggregate_numeric, count_by_attr
+from apps.cmdb.services.generic_query_graph import (
+    GenericQueryGraphError,
+    aggregate_numeric,
+    count_instances,
+    group_instance_counts,
+    scan_instance_rows,
+)
 from apps.cmdb.services.generic_query_limits import DETAIL_PAGE_SIZE_MAX, NATS_MESSAGE_MAX_BYTES, SCAN_INSTANCE_MAX, STAT_GROUP_MAX
-from apps.cmdb.services.instance import InstanceManage
-from apps.core.exceptions.base_app_exception import BaseAppException
 from apps.core.utils.condition_group import ConditionGroupError, parse_condition_group
 
 MODEL_MODES = ("detail", "count", "distribution")
 INSTANCE_MODES = ("detail", "count", "distribution", "aggregate")
 ONE_HOP_MODES = ("detail", "count", "distribution")
 MODEL_PAGE_SIZE_DEFAULT = 10
+MODEL_SELECTION_MAX = 50
+INSTANCE_SELECTION_MAX = 20
+_MODEL_GROUP = "model"
+_PLATFORM_SORT_FIELDS = ("inst_name", "inst_uuid", "model_id", "model_name")
 _FILTER_TYPES = {
     ("string", "eq"): "str=",
     ("string", "ne"): "str<>",
@@ -61,21 +67,85 @@ def ensure_payload_limit(data: Any) -> None:
         raise GenericQueryError("结果超过 NATS 消息上限 1MB")
 
 
+def id_list(value) -> list[str]:
+    """单个字符串或字符串列表。不按逗号拆开，重复项只留第一次出现的位置。"""
+    if value in (None, ""):
+        return []
+    if isinstance(value, str):
+        text = value.strip()
+        return [text] if text else []
+    if isinstance(value, (list, tuple)):
+        found = []
+        for item in value:
+            if isinstance(item, (list, dict)) or item in (None, ""):
+                continue
+            text = str(item).strip()
+            if text and text not in found:
+                found.append(text)
+        return found
+    raise GenericQueryError("列表参数格式错误")
+
+
+def parse_model_filters(filters, model_ids: list[str]) -> dict:
+    """每个已选模型一块条件。没有公共条件，空块表示这个模型不过滤。"""
+    if filters in (None, "", []):
+        return {model_id: None for model_id in model_ids}
+    if not isinstance(filters, dict) or set(filters) != {"by_model"} or not isinstance(filters.get("by_model"), dict):
+        raise GenericQueryError("条件过滤格式错误")
+    raw = filters["by_model"]
+    unknown = [str(key) for key in raw if str(key) not in set(model_ids)]
+    if unknown:
+        raise GenericQueryError("条件过滤包含未选模型")
+    parsed = {}
+    for model_id in model_ids:
+        group = raw.get(model_id)
+        if group in (None, "", []):
+            parsed[model_id] = None
+            continue
+        if not isinstance(group, (list, dict)):
+            raise GenericQueryError("条件过滤格式错误")
+        parsed[model_id] = group
+    return parsed
+
+
+def _select_model_rows(rows: list[dict], classification_id, model_ids, *, limit: int) -> list[dict]:
+    """显式模型优先。分类只在没勾模型时扩大范围，勾了模型时只校验归属。"""
+    by_id = {row["model_id"]: row for row in rows if row.get("model_id")}
+    selected = id_list(model_ids)
+    class_ids = set(id_list(classification_id))
+    if len(selected) > limit:
+        raise GenericQueryError(f"模型数量不能超过 {limit} 个")
+    if selected:
+        missing = [item for item in selected if item not in by_id]
+        if missing:
+            raise GenericQueryError("指定模型不存在或无权访问", status="forbidden")
+        if class_ids:
+            outside = [item for item in selected if by_id[item]["classification_id"] not in class_ids]
+            if outside:
+                raise GenericQueryError("模型不属于所选分类")
+        return [by_id[item] for item in selected]
+    if class_ids:
+        return [row for row in rows if row["classification_id"] in class_ids]
+    return rows
+
+
 def query_models(
     *,
     models: list[dict],
     instance_counts: dict,
     analysis_mode: str,
-    classification_id: str | None = None,
+    classification_id: str | list | None = None,
     model_ids: list[str] | None = None,
     page=None,
     page_size=None,
 ) -> dict:
     """模型查询。分类和模型只缩小范围，零实例模型保留。
 
-    单值固定为范围内模型数量。分布先统计全部可见模型的实例数，
-    按实例数从高到低、模型标识升序稳定排序。分布不接受页码。
-    未传每页条数时返回全部；传入时只取排序后的前若干条。计数不接受非空分页。
+    选了模型时只统计这些模型，分类不再把同类的其他模型加进来。
+    只选分类时统计这些分类下的可见模型；都不选时统计全部可见模型。
+    显式勾选的模型最多 50 个。单值固定为范围内模型数量。分布按实例数从高到低、
+    模型标识升序稳定排序，不接受页码。未传每页条数时返回全部；传入时只取前若干条。
+    计数不接受非空分页。
     """
     mode = _mode(analysis_mode, MODEL_MODES)
     if mode == "distribution" and page not in (None, ""):
@@ -83,15 +153,7 @@ def query_models(
     if mode == "count" and (page not in (None, "") or page_size not in (None, "")):
         raise GenericQueryError("当前分析方式不支持分页")
     rows = [_model_row(item, instance_counts) for item in models]
-    if classification_id:
-        rows = [row for row in rows if row["classification_id"] == classification_id]
-    if model_ids:
-        selected = set(model_ids)
-        found = {row["model_id"] for row in rows}
-        missing = [item for item in model_ids if item not in found]
-        if missing:
-            raise GenericQueryError("指定模型不存在或无权访问", status="forbidden")
-        rows = [row for row in rows if row["model_id"] in selected]
+    rows = _select_model_rows(rows, classification_id, model_ids, limit=MODEL_SELECTION_MAX)
     scanned = sum(int(row["instance_count"]) for row in rows)
     if mode != "detail":
         _ensure_scan(scanned)
@@ -139,26 +201,19 @@ def query_models(
 
 def query_instances(
     *,
-    model_id: str,
+    models: list[dict],
     analysis_mode: str,
-    attr_types: dict[str, str],
     permission_map: dict,
-    filter_field: str | None = None,
-    filter_op: str | None = None,
-    filter_value=None,
-    filters=None,
     group_by: str | None = None,
     aggregate_field: str | None = None,
     aggregate_op: str | None = None,
     order: str | None = None,
+    columns: list | None = None,
     page=None,
     page_size=None,
-    group_title: str | None = None,
-    group_value_type: str | None = None,
-    group_labels: dict[str, str] | None = None,
 ) -> dict:
-    if not str(model_id or "").strip():
-        raise GenericQueryError("模型不能为空")
+    """多个模型的实例合在一次查询里。每个模型先套上自己的条件和权限，再取并集。"""
+    specs = _instance_models(models)
     mode = _mode(analysis_mode, INSTANCE_MODES)
     _reject_unused(
         mode,
@@ -167,112 +222,193 @@ def query_instances(
             (aggregate_field, "聚合属性", ("aggregate",)),
             (aggregate_op, "聚合方式", ("aggregate",)),
             (order, "排序", ("detail", "distribution")),
+            (columns, "展示列", ("detail",)),
         ],
     )
-    distribution_limit = _distribution_window(mode, page, page_size) if mode == "distribution" else None
-    if mode in {"count", "aggregate"}:
-        _parse_page(page, page_size, enabled=False)
-    base_params = [{"field": "model_id", "type": "str=", "value": str(model_id)}]
-    logic, condition_params = _attribute_filters(attr_types, filter_field, filter_op, filter_value, filters)
-    if mode == "detail":
-        page_no, size = _parse_page(page, page_size, enabled=True)
-        field, desc = _parse_order(order, set(attr_types) | {"inst_name", "inst_uuid"}, default="inst_name")
-        _validate_sort_field(field)
-        order_text = f"-{field}" if desc else field
-        items, count = InstanceManage.instance_list(
-            model_id=str(model_id),
-            params=[],
-            page=page_no,
-            page_size=size,
-            order=order_text,
-            permission_map=permission_map,
-            condition_params=condition_params,
-            condition_logic=logic,
-        )
-        rows = [_public_instance(item, sensitive_hidden_keys(attr_types)) for item in items or []]
-        return _page_payload(rows, page_no, size, count=int(count or 0))
-
-    if mode == "aggregate":
-        if not aggregate_field or not aggregate_op:
-            raise GenericQueryError("数值聚合必须指定聚合字段和聚合方式")
-        attr_type = _attr_kind(attr_types, aggregate_field)
-        if attr_type != "number":
-            raise GenericQueryError("聚合字段不是数值属性")
-        try:
-            aggregated = aggregate_numeric(
-                aggregate_field,
-                aggregate_op,
-                base_params,
-                permission_map,
-                condition_params=condition_params,
-                condition_logic=logic,
-            )
-        except GenericQueryGraphError as exc:
-            raise GenericQueryError(exc.message) from exc
-        _ensure_scan(int(aggregated.get("scanned") or 0))
-        aggregate_fields = [
-            _result_field("aggregate_value", "聚合值", "number", "measure"),
-            _result_field("aggregate_field", "聚合属性", "string"),
-        ]
-        if int(aggregated.get("scanned") or 0) == 0:
-            return _with_fields(
-                {
-                    "structure": "value",
-                    "status": "empty",
-                    "aggregate_value": None,
-                    "aggregate_field": aggregate_field,
-                    "unit": "",
-                    "aggregation": aggregate_op,
-                },
-                aggregate_fields,
-            )
-        return _value_payload(
-            aggregated.get("value"),
-            field="aggregate_value",
-            title="聚合值",
-            unit="",
-            aggregation=f"{aggregate_op}({aggregate_field})",
-            extra={"aggregate_field": aggregate_field},
-            fields=aggregate_fields,
-        )
-
-    group_field = "" if mode == "count" else _group_field(attr_types, group_by)
-    grouped_counts = count_by_attr(
-        "model_id" if mode == "count" else group_field,
-        base_params,
-        permission_map,
-        condition_params=condition_params,
-        condition_logic=logic,
-    )
-    scanned = sum(int(value or 0) for value in grouped_counts.values())
-    _ensure_scan(scanned)
+    if mode == "distribution":
+        return _instance_distribution(specs, permission_map, group_by, order, page, page_size)
     if mode == "count":
+        _parse_page(page, page_size, enabled=False)
+        total = _instance_total(specs, permission_map)
         return _value_payload(
-            scanned,
+            total,
             field="instance_count",
             title="实例数",
             unit="个",
             aggregation="实例计数",
         )
-    items = _distribution_items(group_field, grouped_counts, group_labels)
-    _ensure_groups(len(items))
-    field, desc = _parse_order(
-        order,
-        {group_field, "instance_count"},
-        default="instance_count",
-        default_descending=True,
-    )
-    items.sort(key=lambda item: (item.get(field) is None, item.get(field)), reverse=desc)
-    shown, window = _slice_distribution(items, distribution_limit)
-    distribution_fields = [
-        _result_field(
-            group_field,
-            group_title or group_field,
-            group_value_type or _declared_value_type(attr_types, group_field),
-            "dimension",
-        ),
-        _result_field("instance_count", "实例数", "number", "measure"),
-    ]
+    if mode == "aggregate":
+        _parse_page(page, page_size, enabled=False)
+        return _instance_aggregate(specs, permission_map, aggregate_field, aggregate_op)
+    return _instance_detail(specs, permission_map, columns, order, page, page_size)
+
+
+def _instance_models(models: list[dict] | None) -> list[dict]:
+    if not models:
+        raise GenericQueryError("请勾选模型")
+    specs = []
+    seen = set()
+    for item in models:
+        if not isinstance(item, dict):
+            raise GenericQueryError("模型参数格式错误")
+        model_id = str(item.get("model_id") or "").strip()
+        if not model_id or model_id in seen:
+            continue
+        seen.add(model_id)
+        specs.append(
+            {
+                "model_id": model_id,
+                "model_name": str(item.get("model_name") or model_id),
+                "attr_types": dict(item.get("attr_types") or {}),
+                "attrs": list(item.get("attrs") or []),
+                "filters": item.get("filters"),
+            }
+        )
+    if not specs:
+        raise GenericQueryError("请勾选模型")
+    if len(specs) > INSTANCE_SELECTION_MAX:
+        raise GenericQueryError(f"模型数量不能超过 {INSTANCE_SELECTION_MAX} 个")
+    return specs
+
+
+def _model_conditions(model: dict) -> tuple[str, list]:
+    return _attribute_filters(model["attr_types"], None, None, None, model.get("filters"))
+
+
+def _base_params(model_id: str) -> list[dict]:
+    return [{"field": "model_id", "type": "str=", "value": model_id}]
+
+
+def _instance_total(models: list[dict], permission_map: dict) -> int:
+    total = 0
+    for model in models:
+        logic, conditions = _model_conditions(model)
+        try:
+            total += count_instances(_base_params(model["model_id"]), permission_map, conditions, logic)
+        except GenericQueryGraphError as exc:
+            raise GenericQueryError(exc.message) from exc
+    _ensure_scan(total)
+    return total
+
+
+def _require_single_model_attribute(models: list[dict]) -> None:
+    if len(models) != 1:
+        raise GenericQueryError("按属性统计只支持单个模型")
+
+
+def _owned_attr(models: list[dict], key: str, purpose: str) -> tuple[dict, str]:
+    text = str(key or "").strip()
+    if "." not in text:
+        raise GenericQueryError(f"不支持跨模型{purpose}")
+    model_id, attr_id = text.split(".", 1)
+    model = next((item for item in models if item["model_id"] == model_id), None)
+    if model is None or not attr_id:
+        raise GenericQueryError(f"不支持跨模型{purpose}")
+    if str(model["attr_types"].get(attr_id) or "").lower() == "pwd":
+        raise GenericQueryError(f"属性不存在或无权使用: {text}")
+    _attr_kind(model["attr_types"], attr_id)
+    return model, attr_id
+
+
+def _unique_model_labels(models: list[dict]) -> dict[str, str]:
+    names = [model["model_name"] for model in models]
+    duplicated = {name for name in names if names.count(name) > 1}
+    labels = {}
+    for model in models:
+        name = model["model_name"]
+        labels[model["model_id"]] = f"{name}（{model['model_id']}）" if name in duplicated else name
+    return labels
+
+
+def _instance_distribution(models, permission_map, group_by, order, page, page_size) -> dict:
+    chosen = str(group_by or "").strip()
+    if not chosen:
+        raise GenericQueryError("分布必须选择分组字段")
+    limit = _distribution_window("distribution", page, page_size)
+    grouped_model, attr_id = (None, None)
+    if chosen != _MODEL_GROUP:
+        _require_single_model_attribute(models)
+        grouped_model, attr_id = _owned_attr(models, chosen, "属性分组")
+    if grouped_model is None:
+        counts = {}
+        for model in models:
+            logic, conditions = _model_conditions(model)
+            try:
+                counts[model["model_id"]] = count_instances(_base_params(model["model_id"]), permission_map, conditions, logic)
+            except GenericQueryGraphError as exc:
+                raise GenericQueryError(exc.message) from exc
+        _ensure_scan(sum(counts.values()))
+        labels = _unique_model_labels(models)
+        items = [
+            {
+                "model_name": labels[model["model_id"]],
+                "model_id": model["model_id"],
+                "instance_count": int(counts.get(model["model_id"]) or 0),
+            }
+            for model in models
+        ]
+        _ensure_groups(len(items))
+        field, descending = _parse_order(
+            order,
+            {"model_name", "model_id", "instance_count"},
+            default="instance_count",
+            default_descending=True,
+        )
+        _sort_distribution(items, field, descending)
+        shown, window = _slice_distribution(items, limit)
+        fields = [
+            _result_field("model_name", "模型名称", "string", "dimension"),
+            _result_field("model_id", "模型标识", "string", "identity"),
+            _result_field("instance_count", "实例数", "number", "measure"),
+        ]
+        aggregation = "按模型统计权限内实例数"
+    else:
+        logic, conditions = _model_conditions(grouped_model)
+        try:
+            grouped_counts = group_instance_counts(
+                attr_id,
+                _base_params(grouped_model["model_id"]),
+                permission_map,
+                conditions,
+                logic,
+            )
+        except GenericQueryGraphError as exc:
+            raise GenericQueryError(exc.message) from exc
+        _ensure_scan(sum(int(value or 0) for value in grouped_counts.values()))
+        field_key = f"{grouped_model['model_id']}.{attr_id}"
+        labels = _enum_labels(grouped_model["attrs"], attr_id)
+        items = []
+        for bucket in _distribution_items(field_key, grouped_counts, labels):
+            items.append(
+                {
+                    "model_id": grouped_model["model_id"],
+                    "model_name": grouped_model["model_name"],
+                    field_key: bucket.get(field_key),
+                    "instance_count": bucket["instance_count"],
+                }
+            )
+        _ensure_groups(len(items))
+        field, descending = _parse_order(
+            order,
+            {field_key, "instance_count", "model_name", "model_id"},
+            default="instance_count",
+            default_descending=True,
+        )
+        _sort_distribution(items, field, descending)
+        shown, window = _slice_distribution(items, limit)
+        title = _attr_title(grouped_model, attr_id, 1)
+        fields = [
+            _result_field("model_name", "模型名称", "string"),
+            _result_field("model_id", "模型标识", "string", "identity"),
+            _result_field(
+                field_key,
+                title,
+                _declared_value_type(grouped_model["attr_types"], attr_id),
+                "dimension",
+            ),
+            _result_field("instance_count", "实例数", "number", "measure"),
+        ]
+        aggregation = f"按 {grouped_model['model_name']} · {title} 计数"
     if not shown:
         return _with_fields(
             {
@@ -280,18 +416,270 @@ def query_instances(
                 "status": "empty",
                 "items": [],
                 "unit": "个",
-                "aggregation": f"按 {group_by} 计数",
+                "aggregation": aggregation,
                 **window,
             },
-            distribution_fields,
+            fields,
         )
-    return _category_payload(
-        shown,
-        unit="个",
-        aggregation=f"按 {group_by} 计数",
-        fields=distribution_fields,
-        extra=window,
-    )
+    return _category_payload(shown, unit="个", aggregation=aggregation, fields=fields, extra=window)
+
+
+def _instance_aggregate(models, permission_map, aggregate_field, aggregate_op) -> dict:
+    if not aggregate_field or not aggregate_op:
+        raise GenericQueryError("数值聚合必须指定聚合字段和聚合方式")
+    _require_single_model_attribute(models)
+    model, attr_id = _owned_attr(models, str(aggregate_field), "属性聚合")
+    if _attr_kind(model["attr_types"], attr_id) != "number":
+        raise GenericQueryError("聚合字段不是数值属性")
+    logic, conditions = _model_conditions(model)
+    try:
+        aggregated = aggregate_numeric(
+            attr_id,
+            aggregate_op,
+            _base_params(model["model_id"]),
+            permission_map,
+            condition_params=conditions,
+            condition_logic=logic,
+        )
+    except GenericQueryGraphError as exc:
+        raise GenericQueryError(exc.message) from exc
+    scanned = int(aggregated.get("scanned") or 0)
+    valued = int(aggregated.get("valued") or 0)
+    _ensure_scan(scanned)
+    field_key = f"{model['model_id']}.{attr_id}"
+    fields = [
+        _result_field("aggregate_value", "聚合值", "number", "measure"),
+        _result_field("aggregate_field", "聚合属性", "string"),
+        _result_field("scanned_count", "扫描实例数", "number"),
+        _result_field("valued_count", "有值个数", "number"),
+    ]
+    title = _attr_title(model, attr_id, len(models))
+    payload = {
+        "structure": "value",
+        "aggregate_field": field_key,
+        "aggregate_label": title,
+        "scanned_count": scanned,
+        "valued_count": valued,
+        "unit": "",
+        "aggregation": f"{aggregate_op}({title})",
+    }
+    if scanned == 0:
+        payload.update({"status": "empty", "aggregate_value": None})
+    elif valued == 0:
+        payload.update({"status": "missing", "aggregate_value": None})
+    else:
+        payload.update({"status": "ok", "aggregate_value": aggregated.get("value")})
+    return _with_fields(payload, fields)
+
+
+def _instance_detail(models, permission_map, columns, order, page, page_size) -> dict:
+    selected = _selected_columns(models, columns)
+    allowed = set(_PLATFORM_SORT_FIELDS)
+    allowed.update(column["key"] for column in _all_attr_columns(models))
+    field, descending = _parse_order(order, allowed, default="inst_name")
+    sort_attr = _column_by_key(models, field)
+    collected = []
+    room = SCAN_INSTANCE_MAX
+    for model in models:
+        logic, conditions = _model_conditions(model)
+        fields = ["inst_uuid", "inst_name", "model_id"]
+        for column in selected:
+            if column["model_id"] == model["model_id"]:
+                fields.append(column["attr_id"])
+                if column.get("display_key"):
+                    fields.append(column["display_attr"])
+        if sort_attr and sort_attr["model_id"] == model["model_id"]:
+            fields.append(sort_attr["attr_id"])
+        try:
+            batch = scan_instance_rows(
+                _base_params(model["model_id"]),
+                permission_map,
+                fields,
+                condition_params=conditions,
+                condition_logic=logic,
+                limit=room + 1,
+            )
+        except GenericQueryGraphError as exc:
+            raise GenericQueryError(exc.message) from exc
+        if len(batch) > room:
+            _ensure_scan(SCAN_INSTANCE_MAX + 1)
+        room -= len(batch)
+        for raw in batch:
+            collected.append(_detail_row(model, raw, selected))
+    _sort_detail_rows(collected, field, descending)
+    paged = _page_payload(collected, page, page_size)
+    paged["column_fields"] = _detail_column_fields(models, selected)
+    return _with_fields(paged, _detail_result_fields(models, selected))
+
+
+def _selected_columns(models: list[dict], columns) -> list[dict]:
+    chosen = []
+    for key in id_list(columns):
+        column = _column_by_key(models, key)
+        if column is None:
+            raise GenericQueryError(f"属性不存在或无权使用: {key}")
+        if column["key"] not in {item["key"] for item in chosen}:
+            chosen.append(column)
+    return chosen
+
+
+def _all_attr_columns(models: list[dict]) -> list[dict]:
+    columns = []
+    for model in models:
+        for attr in model["attrs"] or []:
+            column = _column_from_attr(model, attr, len(models))
+            if column:
+                columns.append(column)
+    return columns
+
+
+def _column_by_key(models: list[dict], key: str) -> dict | None:
+    if key in _PLATFORM_SORT_FIELDS or "." not in str(key):
+        return None
+    model_id, attr_id = str(key).split(".", 1)
+    model = next((item for item in models if item["model_id"] == model_id), None)
+    if model is None:
+        return None
+    attr = next((item for item in model["attrs"] or [] if str(item.get("attr_id") or "") == attr_id), None)
+    if attr is None and attr_id in model["attr_types"]:
+        attr = {"attr_id": attr_id, "attr_name": attr_id, "attr_type": model["attr_types"][attr_id]}
+    if not isinstance(attr, dict):
+        return None
+    return _column_from_attr(model, attr, len(models))
+
+
+def _column_from_attr(model: dict, attr: dict, model_count: int) -> dict | None:
+    from apps.cmdb.services.generic_query_columns import candidate_field as build_candidate_field
+
+    field = build_candidate_field(attr)
+    if field is None:
+        return None
+    attr_id = field["key"]
+    copied = dict(field)
+    copied["model_id"] = model["model_id"]
+    copied["attr_id"] = attr_id
+    copied["key"] = f"{model['model_id']}.{attr_id}"
+    copied["title"] = _attr_title(model, attr_id, model_count, fallback=field["title"])
+    copied["default_visible"] = True
+    if copied.get("display_key"):
+        copied["display_attr"] = copied["display_key"]
+        copied["display_key"] = f"{model['model_id']}.{copied['display_attr']}"
+    return copied
+
+
+def _attr_title(model: dict, attr_id: str, model_count: int, fallback: str | None = None) -> str:
+    attr = next((item for item in model["attrs"] or [] if str(item.get("attr_id") or "") == attr_id), None)
+    name = str((attr or {}).get("attr_name") or fallback or attr_id)
+    if model_count > 1 and not name.startswith(f"{model['model_name']} · "):
+        return f"{model['model_name']} · {name}"
+    return name
+
+
+def _enum_labels(attrs: list, attr_id: str) -> dict[str, str] | None:
+    attr = next((item for item in attrs or [] if str(item.get("attr_id") or "") == attr_id), None)
+    if not isinstance(attr, dict) or str(attr.get("attr_type") or "").lower() != "enum":
+        return None
+    from apps.cmdb.services.model import ModelManage
+
+    labels = {}
+    for option in ModelManage.resolve_runtime_enum_options(attr) or []:
+        if not isinstance(option, dict) or option.get("id") in (None, ""):
+            continue
+        labels[str(option.get("id"))] = str(option.get("name") or option.get("label") or option.get("id"))
+    return labels
+
+
+def _detail_row(model: dict, raw: dict, columns: list[dict]) -> dict:
+    row = {
+        "model_name": model["model_name"],
+        "model_id": model["model_id"],
+        "inst_name": None if not isinstance(raw, dict) or "inst_name" not in raw else raw.get("inst_name"),
+        "inst_uuid": None if not isinstance(raw, dict) or "inst_uuid" not in raw else raw.get("inst_uuid"),
+    }
+    if isinstance(raw, dict) and raw.get("model_id"):
+        row["model_id"] = str(raw.get("model_id"))
+    for column in columns:
+        if column["model_id"] != model["model_id"]:
+            row[column["key"]] = None
+            if column.get("display_key"):
+                row[column["display_key"]] = None
+            continue
+        present = isinstance(raw, dict) and column["attr_id"] in raw
+        row[column["key"]] = raw.get(column["attr_id"]) if present else None
+        if column.get("display_key"):
+            display_attr = column.get("display_attr")
+            row[column["display_key"]] = raw.get(display_attr) if isinstance(raw, dict) and display_attr in raw else None
+    row["_sort_model_id"] = model["model_id"]
+    return row
+
+
+def _sort_detail_rows(rows: list[dict], field: str, descending: bool) -> None:
+    def read(row):
+        if field == "model_id":
+            return row.get("_sort_model_id")
+        return row.get(field)
+
+    def tie(row):
+        return (str(row.get("_sort_model_id") or ""), str(row.get("inst_uuid") or ""))
+
+    present = [row for row in rows if read(row) is not None]
+    missing = [row for row in rows if read(row) is None]
+    present.sort(key=tie)
+    present.sort(key=read, reverse=descending)
+    missing.sort(key=tie)
+    rows[:] = present + missing
+    for row in rows:
+        row.pop("_sort_model_id", None)
+
+
+def _sort_distribution(items: list[dict], field: str, descending: bool) -> None:
+    def tie(item):
+        return (str(item.get("model_id") or ""), str(item.get(field) or ""))
+
+    present = [item for item in items if item.get(field) is not None]
+    missing = [item for item in items if item.get(field) is None]
+    present.sort(key=tie)
+    present.sort(key=lambda item: item.get(field), reverse=descending)
+    missing.sort(key=lambda item: str(item.get("model_id") or ""))
+    items[:] = present + missing
+
+
+def _detail_column_fields(models: list[dict], columns: list[dict]) -> dict:
+    from apps.cmdb.services.generic_query_columns import plain_field as build_plain_field
+
+    fields = [
+        build_plain_field("model_name", "模型名称", default_visible=True),
+        build_plain_field("model_id", "模型标识", default_visible=True),
+        build_plain_field("inst_name", "实例名称", default_visible=True),
+        build_plain_field("inst_uuid", "实例标识", default_visible=True),
+    ]
+    fields.extend(columns)
+    return {
+        "source": "model_attrs",
+        "model_key": "|".join(model["model_id"] for model in models),
+        "fields": fields,
+    }
+
+
+def _detail_result_fields(models: list[dict], columns: list[dict]) -> list[dict]:
+    fields = [
+        _result_field("model_name", "模型名称", "string"),
+        _result_field("model_id", "模型标识", "string", "identity"),
+        _result_field("inst_name", "实例名称", "string"),
+        _result_field("inst_uuid", "实例标识", "string", "identity"),
+    ]
+    for column in columns:
+        fields.append(_result_field(column["key"], column["title"], _column_value_type(column)))
+    return fields
+
+
+def _column_value_type(column: dict) -> str:
+    raw = str(column.get("attr_type") or "").lower()
+    if raw in _NUMBER_ATTR_TYPES:
+        return "number"
+    if raw in {"bool", "boolean"}:
+        return "boolean"
+    return "string"
 
 
 _ONE_HOP_RELATION_AGGREGATION = "起点内去重后的对应关系条数。同一起点关联多个终点时分别计数，同一个终点被多个起点关联时不合并"
@@ -567,21 +955,6 @@ def _declared_value_type(attr_types: dict[str, str], field: str) -> str:
     return "string"
 
 
-def _validate_sort_field(field: str) -> None:
-    try:
-        CQLValidator.validate_field(field)
-    except BaseAppException as exc:
-        raise GenericQueryError(f"不支持的排序字段: {field}") from exc
-
-
-def _group_field(attr_types: dict[str, str], group_by: str | None) -> str:
-    if not group_by:
-        raise GenericQueryError("属性分布必须指定分组字段")
-    _attr_kind(attr_types, group_by)
-    CQLValidator.validate_field(group_by)
-    return group_by
-
-
 def _attr_kind(attr_types: dict[str, str], field: str) -> str:
     if field not in attr_types:
         raise GenericQueryError(f"属性不存在或无权使用: {field}")
@@ -726,10 +1099,6 @@ def _category_payload(items: list[dict], *, unit: str, aggregation: str, fields:
     if extra:
         payload.update(extra)
     return _with_fields(payload, fields)
-
-
-def _public_instance(row: dict, hidden: set[str] | None = None) -> dict:
-    return public_instance(row, hidden)
 
 
 def load_instances_by_uuids(uuids: list[str]) -> list[dict]:

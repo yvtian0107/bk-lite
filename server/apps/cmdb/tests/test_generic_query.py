@@ -278,99 +278,125 @@ def test_model_count_rejects_paging():
         )
 
 
+def _instance_model(model_id="host", name="主机", attr_types=None, attrs=None, filters=None):
+    return {
+        "model_id": model_id,
+        "model_name": name,
+        "attr_types": attr_types or {"inst_name": "string"},
+        "attrs": attrs or [],
+        "filters": filters,
+    }
+
+
 def test_instance_count_distribution_and_missing_model(monkeypatch):
-    def fake_count(group_by, params, permission_map, **_kwargs):
+    def fake_count(params, permission_map, condition_params=None, condition_logic="AND"):
         assert permission_map == {"1": {}}
         assert params[0]["value"] == "host"
-        if group_by == "model_id":
-            return {"host": 4}
+        assert condition_logic == "AND"
+        assert condition_params[0]["value"] == "Linux"
+        return 4
+
+    def fake_group(group_by, params, permission_map, condition_params=None, condition_logic="AND"):
+        del params, permission_map, condition_params, condition_logic
         assert group_by == "os_type"
         return {"Linux": 3, "Windows": 1}
 
-    monkeypatch.setattr("apps.cmdb.services.generic_query.count_by_attr", fake_count)
-    attrs = {"inst_name": "string", "os_type": "string"}
+    monkeypatch.setattr("apps.cmdb.services.generic_query.count_instances", fake_count)
+    monkeypatch.setattr("apps.cmdb.services.generic_query.group_instance_counts", fake_group)
+    spec = _instance_model(
+        attr_types={"inst_name": "string", "os_type": "string"},
+        attrs=[{"attr_id": "os_type", "attr_name": "操作系统", "attr_type": "string"}],
+    )
 
     counted = query_instances(
-        model_id="host",
+        models=[{**spec, "filters": {"logic": "AND", "items": [{"field": "os_type", "op": "eq", "value": "Linux"}]}}],
         analysis_mode="count",
-        attr_types=attrs,
         permission_map={"1": {}},
-        filter_field="os_type",
-        filter_op="eq",
-        filter_value="Linux",
     )
     grouped = query_instances(
-        model_id="host",
+        models=[spec],
         analysis_mode="distribution",
-        attr_types=attrs,
         permission_map={"1": {}},
-        group_by="os_type",
+        group_by="host.os_type",
     )
 
     assert counted["instance_count"] == 4
     assert counted["status"] == "ok"
     assert counted["fields"][0]["key"] == "instance_count"
-    assert grouped["items"] == [
-        {"os_type": "Linux", "instance_count": 3},
-        {"os_type": "Windows", "instance_count": 1},
-    ]
-    assert grouped["fields"][0]["key"] == "os_type"
-    assert grouped["fields"][1]["role"] == "measure"
-    with pytest.raises(GenericQueryError, match="模型不能为空"):
-        query_instances(model_id="", analysis_mode="detail", attr_types=attrs, permission_map={"1": {}})
+    assert [item["host.os_type"] for item in grouped["items"]] == ["Linux", "Windows"]
+    assert grouped["items"][0]["model_name"] == "主机"
+    assert grouped["fields"][2]["role"] == "dimension"
+    assert grouped["fields"][3]["role"] == "measure"
+    with pytest.raises(GenericQueryError, match="请勾选模型"):
+        query_instances(models=[], analysis_mode="detail", permission_map={"1": {}})
 
 
 def test_instance_statistics_fail_over_scan_and_group_limits(monkeypatch):
     monkeypatch.setattr(
-        "apps.cmdb.services.generic_query.count_by_attr",
-        lambda group_by, params, permission_map, **_kwargs: {"host": SCAN_INSTANCE_MAX + 1},
+        "apps.cmdb.services.generic_query.count_instances",
+        lambda *args, **kwargs: SCAN_INSTANCE_MAX + 1,
     )
     with pytest.raises(GenericQueryError, match=str(SCAN_INSTANCE_MAX)):
         query_instances(
-            model_id="host",
+            models=[_instance_model()],
             analysis_mode="count",
-            attr_types={"inst_name": "string"},
             permission_map={"1": {}},
         )
 
     groups = {f"os-{index}": 1 for index in range(STAT_GROUP_MAX + 1)}
     monkeypatch.setattr(
-        "apps.cmdb.services.generic_query.count_by_attr",
-        lambda group_by, params, permission_map, **_kwargs: groups,
+        "apps.cmdb.services.generic_query.group_instance_counts",
+        lambda *args, **kwargs: groups,
     )
     with pytest.raises(GenericQueryError, match=str(STAT_GROUP_MAX)):
         query_instances(
-            model_id="host",
+            models=[
+                _instance_model(
+                    attr_types={"os_type": "string", "inst_name": "string"},
+                    attrs=[{"attr_id": "os_type", "attr_name": "操作系统", "attr_type": "string"}],
+                )
+            ],
             analysis_mode="distribution",
-            attr_types={"os_type": "string", "inst_name": "string"},
             permission_map={"1": {}},
-            group_by="os_type",
+            group_by="host.os_type",
         )
 
 
 def test_instance_modes_reject_params_they_do_not_use():
-    common = {"model_id": "host", "attr_types": {"inst_name": "string", "cpu": "number"}, "permission_map": {"1": {}}}
+    common = {
+        "models": [
+            _instance_model(
+                attr_types={"inst_name": "string", "cpu": "number"},
+                attrs=[{"attr_id": "cpu", "attr_name": "CPU", "attr_type": "number"}],
+            )
+        ],
+        "permission_map": {"1": {}},
+    }
     with pytest.raises(GenericQueryError, match="不支持分布属性、排序"):
-        query_instances(**common, analysis_mode="count", group_by="status", order="inst_name")
+        query_instances(**common, analysis_mode="count", group_by="host.cpu", order="inst_name")
     with pytest.raises(GenericQueryError, match="不支持聚合属性、聚合方式"):
-        query_instances(**common, analysis_mode="detail", aggregate_field="cpu", aggregate_op="sum")
+        query_instances(**common, analysis_mode="detail", aggregate_field="host.cpu", aggregate_op="sum", columns=["host.cpu"])
     with pytest.raises(GenericQueryError, match="不支持分布属性"):
-        query_instances(**common, analysis_mode="aggregate", group_by="status", aggregate_field="cpu", aggregate_op="sum")
+        query_instances(**common, analysis_mode="aggregate", group_by="host.cpu", aggregate_field="host.cpu", aggregate_op="sum")
 
 
 def test_distribution_return_limit_rejects_page(monkeypatch):
     monkeypatch.setattr(
-        "apps.cmdb.services.generic_query.count_by_attr",
-        lambda group_by, params, permission_map, **_kwargs: {"Linux": 3, "Windows": 1, "Other": 2},
+        "apps.cmdb.services.generic_query.group_instance_counts",
+        lambda *args, **kwargs: {"Linux": 3, "Windows": 1, "Other": 2},
     )
     common = {
-        "model_id": "host",
-        "attr_types": {"os_type": "string"},
+        "models": [
+            _instance_model(
+                attr_types={"os_type": "string"},
+                attrs=[{"attr_id": "os_type", "attr_name": "操作系统", "attr_type": "string"}],
+            )
+        ],
         "permission_map": {"1": {}},
-        "group_by": "os_type",
+        "group_by": "host.os_type",
     }
     limited = query_instances(**common, analysis_mode="distribution", page_size=2)
-    assert [item["os_type"] for item in limited["items"]] == ["Linux", "Other"]
+    assert [item["host.os_type"] for item in limited["items"]] == ["Linux", "Other"]
     assert limited["count"] == 3
     assert limited["page"] == 1
     assert limited["page_size"] == 2
@@ -378,9 +404,8 @@ def test_distribution_return_limit_rejects_page(monkeypatch):
         query_instances(**common, analysis_mode="distribution", page=2, page_size=1)
     with pytest.raises(GenericQueryError, match="不支持分页"):
         query_instances(
-            model_id="host",
+            models=[_instance_model(attr_types={"os_type": "string"})],
             analysis_mode="count",
-            attr_types={"os_type": "string"},
             permission_map={"1": {}},
             page_size=1,
         )
@@ -410,37 +435,56 @@ def test_distribution_return_limit_rejects_page(monkeypatch):
 
 
 def test_instance_aggregate_distinguishes_zero_from_empty(monkeypatch):
+    spec = _instance_model(
+        attr_types={"cpu": "number", "inst_name": "string"},
+        attrs=[{"attr_id": "cpu", "attr_name": "CPU", "attr_type": "number"}],
+    )
     monkeypatch.setattr(
         "apps.cmdb.services.generic_query.aggregate_numeric",
-        lambda field, aggregation, params, permission_map, **_kwargs: {"value": 0, "scanned": 2},
+        lambda field, aggregation, params, permission_map, **_kwargs: {"value": 0, "scanned": 2, "valued": 2},
     )
     zero = query_instances(
-        model_id="host",
+        models=[spec],
         analysis_mode="aggregate",
-        attr_types={"cpu": "number", "inst_name": "string"},
         permission_map={"1": {}},
-        aggregate_field="cpu",
+        aggregate_field="host.cpu",
         aggregate_op="sum",
     )
     monkeypatch.setattr(
         "apps.cmdb.services.generic_query.aggregate_numeric",
-        lambda field, aggregation, params, permission_map, **_kwargs: {"value": None, "scanned": 0},
+        lambda field, aggregation, params, permission_map, **_kwargs: {"value": None, "scanned": 0, "valued": 0},
     )
     empty = query_instances(
-        model_id="host",
+        models=[spec],
         analysis_mode="aggregate",
-        attr_types={"cpu": "number", "inst_name": "string"},
         permission_map={"1": {}},
-        aggregate_field="cpu",
+        aggregate_field="host.cpu",
+        aggregate_op="sum",
+    )
+    monkeypatch.setattr(
+        "apps.cmdb.services.generic_query.aggregate_numeric",
+        lambda field, aggregation, params, permission_map, **_kwargs: {"value": 0, "scanned": 2, "valued": 0},
+    )
+    missing = query_instances(
+        models=[spec],
+        analysis_mode="aggregate",
+        permission_map={"1": {}},
+        aggregate_field="host.cpu",
         aggregate_op="sum",
     )
 
     assert zero["status"] == "ok"
     assert zero["aggregate_value"] == 0
-    assert zero["aggregate_field"] == "cpu"
+    assert zero["aggregate_field"] == "host.cpu"
+    assert zero["valued_count"] == 2
     assert empty["status"] == "empty"
     assert empty["aggregate_value"] is None
+    assert empty["scanned_count"] == 0
     assert empty["fields"][0]["key"] == "aggregate_value"
+    assert missing["status"] == "missing"
+    assert missing["aggregate_value"] is None
+    assert missing["scanned_count"] == 2
+    assert missing["valued_count"] == 0
 
 
 def test_one_hop_counts_each_start_without_merging_a_shared_end():
@@ -638,30 +682,29 @@ def test_one_hop_uses_fixed_order():
 def test_instance_detail_validates_sort_field_before_instance_list(monkeypatch):
     called = {}
 
-    def fake_list(**kwargs):
-        called["order"] = kwargs["order"]
-        return [{"inst_name": "a"}], 1
+    def fake_scan(*args, **kwargs):
+        called["scanned"] = True
+        return [{"inst_name": "a", "inst_uuid": "u", "model_id": "host"}]
 
-    monkeypatch.setattr("apps.cmdb.services.generic_query.InstanceManage.instance_list", fake_list)
+    monkeypatch.setattr("apps.cmdb.services.generic_query.scan_instance_rows", fake_scan)
     with pytest.raises(GenericQueryError, match="不支持的排序字段"):
         query_instances(
-            model_id="host",
+            models=[_instance_model(attr_types={"inst_name": "string", "os-type": "string"})],
             analysis_mode="detail",
-            attr_types={"inst_name": "string", "os-type": "string"},
             permission_map={"1": {"inst_names": []}},
             order="os-type",
         )
     assert called == {}
 
     listed = query_instances(
-        model_id="host",
+        models=[_instance_model()],
         analysis_mode="detail",
-        attr_types={"inst_name": "string"},
         permission_map={"1": {"inst_names": []}},
         order="-inst_name",
     )
-    assert called["order"] == "-inst_name"
-    assert listed["items"] == [{"inst_name": "a"}]
+    assert called["scanned"] is True
+    assert listed["items"][0]["inst_name"] == "a"
+    assert listed["items"][0]["model_id"] == "host"
 
 
 def test_one_hop_filters_endpoints_in_graph_and_fails_closed(monkeypatch):
@@ -946,9 +989,15 @@ def test_model_options_list_only_the_selected_classification(monkeypatch):
     monkeypatch.setattr("apps.cmdb.nats.generic_query._visible_models", lambda user_info: _visible_cmdb_models())
     listed = list_cmdb_model_options(classification_id="compute", user_info={"user": "demo"})
     assert listed["result"] is True
-    assert [item["model_id"] for item in listed["data"]] == ["host"]
+    assert [item["model_id"] for item in listed["data"]["items"]] == ["host"]
+    assert listed["data"]["invalid_classification_ids"] == []
     hidden = list_cmdb_model_options(classification_id="secret", user_info={"user": "demo"})
-    assert hidden["data"] == []
+    assert hidden["result"] is True
+    assert hidden["data"]["items"] == []
+    assert hidden["data"]["invalid_classification_ids"] == ["secret"]
+    mixed = list_cmdb_model_options(classification_id=["compute", "secret"], user_info={"user": "demo"})
+    assert [item["model_id"] for item in mixed["data"]["items"]] == ["host"]
+    assert mixed["data"]["invalid_classification_ids"] == ["secret"]
 
 
 def test_instance_classification_does_not_replace_model_permission(monkeypatch):
@@ -1125,13 +1174,14 @@ def test_one_hop_direction_follows_the_side_where_the_start_sits(monkeypatch):
 def test_instance_detail_hides_password_and_describes_business_columns(monkeypatch):
     captured = {}
 
-    def fake_list(**kwargs):
-        captured.update(kwargs)
+    def fake_scan(*args, **kwargs):
+        captured["fields"] = kwargs.get("fields") or args[2]
+        captured["limit"] = kwargs.get("limit")
         return [
             {
-                "_id": 9,
                 "inst_name": "web-1",
                 "inst_uuid": "uuid-1",
+                "model_id": "host",
                 "cpu": 0,
                 "enabled": False,
                 "status": "1",
@@ -1142,12 +1192,18 @@ def test_instance_detail_hides_password_and_describes_business_columns(monkeypat
                 "password_display": "secret-display",
                 "owner": "user-1",
             }
-        ], 1
+        ]
 
-    monkeypatch.setattr("apps.cmdb.services.generic_query.InstanceManage.instance_list", fake_list)
-    payload = query_instances(
-        model_id="host",
-        analysis_mode="detail",
+    monkeypatch.setattr("apps.cmdb.services.generic_query.scan_instance_rows", fake_scan)
+    attrs = [
+        {"attr_id": "cpu", "attr_name": "CPU", "attr_type": "int"},
+        {"attr_id": "enabled", "attr_name": "是否启用", "attr_type": "bool"},
+        {"attr_id": "status", "attr_name": "运行状态", "attr_type": "enum"},
+        {"attr_id": "organization", "attr_name": "组织", "attr_type": "organization"},
+        {"attr_id": "password", "attr_name": "密码", "attr_type": "pwd"},
+        {"attr_id": "owner", "attr_name": "负责人", "attr_type": "user"},
+    ]
+    spec = _instance_model(
         attr_types={
             "inst_name": "str",
             "cpu": "int",
@@ -1157,20 +1213,34 @@ def test_instance_detail_hides_password_and_describes_business_columns(monkeypat
             "password": "pwd",
             "owner": "user",
         },
+        attrs=attrs,
+    )
+    with pytest.raises(GenericQueryError, match="无权使用"):
+        query_instances(
+            models=[spec],
+            analysis_mode="detail",
+            permission_map={"1": {"inst_names": []}},
+            columns=["host.password"],
+        )
+    payload = query_instances(
+        models=[spec],
+        analysis_mode="detail",
         permission_map={"1": {"inst_names": []}},
+        columns=["host.cpu", "host.enabled", "host.status", "host.organization", "host.owner"],
         page=1,
         page_size=20,
     )
     row = payload["items"][0]
-    assert row["cpu"] == 0
-    assert row["enabled"] is False
-    assert row["status"] == "1"
-    assert row["status_display"] == "运行中"
+    assert row["host.cpu"] == 0
+    assert row["host.enabled"] is False
+    assert row["host.status"] == "1"
+    assert row["host.status_display"] == "运行中"
     assert "password" not in row
-    assert "password_display" not in row
+    assert "host.password" not in row
     assert "_id" not in row
     assert "name" not in row
-    assert captured["page_size"] == 20
+    assert captured["limit"] == SCAN_INSTANCE_MAX + 1
+    assert "password" not in captured["fields"]
 
     fields = build_instance_column_fields(
         [
@@ -1199,14 +1269,10 @@ def test_instance_detail_hides_password_and_describes_business_columns(monkeypat
 
 
 def test_instance_detail_empty_page_stays_paged(monkeypatch):
-    monkeypatch.setattr(
-        "apps.cmdb.services.generic_query.InstanceManage.instance_list",
-        lambda **kwargs: ([], 0),
-    )
+    monkeypatch.setattr("apps.cmdb.services.generic_query.scan_instance_rows", lambda *args, **kwargs: [])
     payload = query_instances(
-        model_id="host",
+        models=[_instance_model(attr_types={"inst_name": "str", "status": "enum"})],
         analysis_mode="detail",
-        attr_types={"inst_name": "str", "status": "enum"},
         permission_map={"1": {"inst_names": []}},
     )
     assert payload["items"] == []
@@ -1300,39 +1366,41 @@ def test_instance_detail_handler_attaches_model_columns_and_strips_password(monk
         ],
     )
     monkeypatch.setattr(
-        "apps.cmdb.services.generic_query.InstanceManage.instance_list",
-        lambda **kwargs: (
-            [
-                {
-                    "_id": 3,
-                    "inst_name": "web-1",
-                    "status": "1",
-                    "status_display": "运行中",
-                    "password": "secret-value",
-                    "password_display": "secret-display",
-                    "cpu": 0,
-                }
-            ],
-            1,
-        ),
+        "apps.cmdb.services.generic_query.scan_instance_rows",
+        lambda *args, **kwargs: [
+            {
+                "inst_name": "web-1",
+                "inst_uuid": "uuid-1",
+                "model_id": "host",
+                "status": "1",
+                "status_display": "运行中",
+                "password": "secret-value",
+                "password_display": "secret-display",
+                "cpu": 0,
+            }
+        ],
     )
 
     loaded = query_cmdb_instances(
         model_id="host",
         classification_id="compute",
         analysis_mode="detail",
+        columns=["host.status"],
         user_info={"user": "demo"},
     )
     assert loaded["result"] is True
     row = loaded["data"]["items"][0]
-    assert row["cpu"] == 0
+    assert row["host.status"] == "1"
+    assert "cpu" not in row
     assert "password" not in row
     assert "password_display" not in row
+    assert "host.password" not in row
     assert "_id" not in row
     fields = {field["key"]: field for field in loaded["data"]["column_fields"]["fields"]}
     assert loaded["data"]["column_fields"]["model_key"] == "host"
-    assert fields["status"]["title"] == "运行状态"
+    assert fields["host.status"]["title"] == "运行状态"
     assert "password" not in fields
+    assert "host.password" not in fields
     assert loaded["data"]["page_size"] == 20
 
 
@@ -1667,71 +1735,82 @@ def test_http_resolution_reaches_handler_without_hidden_paging_or_cross_chart_pa
 def test_instance_distribution_keeps_false_zero_and_null_buckets(monkeypatch):
     buckets = {}
 
-    def grouped_counts(group_by, params, permission_map, **_kwargs):
+    def grouped_counts(group_by, params, permission_map, condition_params=None, condition_logic="AND"):
+        del group_by, params, permission_map, condition_params, condition_logic
         return buckets
 
-    monkeypatch.setattr("apps.cmdb.services.generic_query.count_by_attr", grouped_counts)
+    monkeypatch.setattr("apps.cmdb.services.generic_query.group_instance_counts", grouped_counts)
 
-    def grouped(values, value_type):
+    def grouped(values, attr_type):
         buckets.clear()
         buckets.update(values)
         return query_instances(
-            model_id="host",
+            models=[
+                _instance_model(
+                    attr_types={"enabled": attr_type, "inst_name": "string"},
+                    attrs=[{"attr_id": "enabled", "attr_name": "是否启用", "attr_type": attr_type}],
+                )
+            ],
             analysis_mode="distribution",
-            attr_types={"enabled": "bool", "inst_name": "string"},
             permission_map={"1": {}},
-            group_by="enabled",
-            group_title="是否启用",
-            group_value_type=value_type,
+            group_by="host.enabled",
         )
 
-    boolean = grouped({False: 2, None: 3, "": 4}, "boolean")
-    assert boolean["fields"][0] == {
-        "key": "enabled",
-        "title": "是否启用",
-        "value_type": "boolean",
-        "role": "dimension",
-    }
-    boolean_values = [item["enabled"] for item in boolean["items"]]
+    boolean = grouped({False: 2, None: 3, "": 4}, "bool")
+    dimension = next(field for field in boolean["fields"] if field.get("role") == "dimension")
+    assert dimension["key"] == "host.enabled"
+    assert dimension["title"] == "是否启用"
+    assert dimension["value_type"] == "boolean"
+    boolean_values = [item["host.enabled"] for item in boolean["items"]]
     assert any(value is False for value in boolean_values)
     assert None in boolean_values
     assert "" in boolean_values
     assert {item["instance_count"] for item in boolean["items"]} == {2, 3, 4}
 
-    numeric = grouped({0: 1}, "number")
-    assert numeric["items"] == [{"enabled": 0, "instance_count": 1}]
-    assert numeric["items"][0]["enabled"] is not False
+    numeric = grouped({0: 1}, "int")
+    assert numeric["items"][0]["host.enabled"] == 0
+    assert numeric["items"][0]["host.enabled"] is not False
 
     with pytest.raises(GenericQueryError, match="不支持的排序字段"):
         query_instances(
-            model_id="host",
+            models=[
+                _instance_model(
+                    attr_types={"enabled": "bool", "inst_name": "string"},
+                    attrs=[{"attr_id": "enabled", "attr_name": "是否启用", "attr_type": "bool"}],
+                )
+            ],
             analysis_mode="distribution",
-            attr_types={"enabled": "bool", "inst_name": "string"},
             permission_map={"1": {}},
-            group_by="enabled",
+            group_by="host.enabled",
             order="name",
         )
 
 
 def test_instance_distribution_names_enum_buckets(monkeypatch):
     monkeypatch.setattr(
-        "apps.cmdb.services.generic_query.count_by_attr",
+        "apps.cmdb.services.generic_query.group_instance_counts",
         lambda *args, **kwargs: {1: 3, "1": 2, "9": 1, '["1", "3"]': 4, None: 5},
+    )
+    monkeypatch.setattr(
+        "apps.cmdb.services.model.ModelManage.resolve_runtime_enum_options",
+        lambda attr: [{"id": "1", "name": "已上线"}, {"id": "2", "name": "测试中"}, {"id": "3", "name": "停运"}],
     )
 
     payload = query_instances(
-        model_id="host",
+        models=[
+            _instance_model(
+                attr_types={"status": "enum", "inst_name": "string"},
+                attrs=[{"attr_id": "status", "attr_name": "运行状态", "attr_type": "enum"}],
+            )
+        ],
         analysis_mode="distribution",
-        attr_types={"status": "enum", "inst_name": "string"},
         permission_map={"1": {}},
-        group_by="status",
-        group_title="运行状态",
-        group_labels={"1": "已上线", "2": "测试中", "3": "停运"},
+        group_by="host.status",
     )
 
-    by_status = {item["status"]: item["instance_count"] for item in payload["items"]}
+    by_status = {item["host.status"]: item["instance_count"] for item in payload["items"]}
     assert by_status == {"已上线": 5, "9": 1, "已上线, 停运": 4, None: 5}
-    assert all(not isinstance(item["status"], int) for item in payload["items"])
+    assert all(not isinstance(item["host.status"], int) for item in payload["items"])
 
 
 def test_instance_distribution_handler_returns_enum_names(monkeypatch):
@@ -1749,19 +1828,19 @@ def test_instance_distribution_handler_returns_enum_names(monkeypatch):
             }
         ],
     )
-    monkeypatch.setattr("apps.cmdb.services.generic_query.count_by_attr", lambda *args, **kwargs: {1: 8})
+    monkeypatch.setattr("apps.cmdb.services.generic_query.group_instance_counts", lambda *args, **kwargs: {1: 8})
 
     loaded = query_cmdb_instances(
         model_id="host",
         classification_id="compute",
         analysis_mode="distribution",
-        group_by="status",
+        group_by="host.status",
         user_info={"user": "demo"},
     )
 
     assert loaded["result"] is True
-    assert loaded["data"]["items"] == [{"status": "已上线", "instance_count": 8}]
-    assert loaded["data"]["fields"][0]["title"] == "运行状态"
+    assert loaded["data"]["items"] == [{"model_name": "主机", "model_id": "host", "host.status": "已上线", "instance_count": 8}]
+    assert loaded["data"]["fields"][2]["title"] == "运行状态"
 
 
 def test_group_declaration_keeps_attribute_title_and_type():
@@ -1795,11 +1874,13 @@ def test_attr_options_can_follow_the_other_end_of_an_association(monkeypatch):
 
     monkeypatch.setattr(
         "apps.cmdb.nats.generic_query.list_model_association_options",
-        lambda language, model_id: [
-            {"model_asst_id": "host_run_app", "src_model_id": "host", "dst_model_id": "app"},
-        ]
-        if str(model_id) == "host"
-        else [],
+        lambda language, model_id: (
+            [
+                {"model_asst_id": "host_run_app", "src_model_id": "host", "dst_model_id": "app"},
+            ]
+            if str(model_id) == "host"
+            else []
+        ),
     )
     monkeypatch.setattr(
         "apps.cmdb.nats.generic_query._visible_models",
@@ -1838,3 +1919,348 @@ def test_attr_options_can_follow_the_other_end_of_an_association(monkeypatch):
     empty = list_cmdb_attr_options(user_info={})
     assert empty["result"] is False
     assert "模型不能为空" in empty["message"]
+
+
+def test_model_scope_is_explicit_models_or_classification_union():
+    models = [
+        _model("host", "主机", "compute", "计算"),
+        _model("net", "网络", "compute", "计算"),
+        _model("room", "机房", "space", "空间"),
+    ]
+    counts = {"host": 2, "net": 0, "room": 4}
+    classified = query_models(
+        models=models,
+        instance_counts=counts,
+        analysis_mode="count",
+        classification_id=["compute", "space"],
+    )
+    explicit = query_models(
+        models=models,
+        instance_counts=counts,
+        analysis_mode="count",
+        classification_id=["compute"],
+        model_ids=["host"],
+    )
+    both = query_models(
+        models=models,
+        instance_counts=counts,
+        analysis_mode="detail",
+        classification_id=["compute", "space"],
+        model_ids=["host", "room"],
+    )
+    untouched = query_models(models=models, instance_counts=counts, analysis_mode="count")
+
+    assert classified["model_count"] == 3
+    assert explicit["model_count"] == 1
+    assert [item["model_id"] for item in both["items"]] == ["room", "host"]
+    assert untouched["model_count"] == 3
+    with pytest.raises(GenericQueryError, match="不属于"):
+        query_models(
+            models=models,
+            instance_counts=counts,
+            analysis_mode="count",
+            classification_id=["compute"],
+            model_ids=["room"],
+        )
+    with pytest.raises(GenericQueryError, match="无权访问"):
+        query_models(
+            models=models,
+            instance_counts=counts,
+            analysis_mode="count",
+            model_ids=["secret"],
+        )
+    many = [_model(f"m{index}", f"模型{index}", "compute", "计算") for index in range(51)]
+    assert query_models(models=many, instance_counts={}, analysis_mode="count", classification_id="compute")["model_count"] == 51
+    with pytest.raises(GenericQueryError, match="50"):
+        query_models(
+            models=many,
+            instance_counts={},
+            analysis_mode="count",
+            model_ids=[item["model_id"] for item in many],
+        )
+
+
+def test_id_list_keeps_a_single_string_and_rejects_a_shared_filter():
+    from apps.cmdb.services.generic_query import id_list, parse_model_filters
+
+    assert id_list("host,app") == ["host,app"]
+    assert id_list(["host", "host", "app"]) == ["host", "app"]
+    assert parse_model_filters(None, ["host"]) == {"host": None}
+    with pytest.raises(GenericQueryError, match="格式错误"):
+        parse_model_filters({"logic": "OR", "items": []}, ["host"])
+    with pytest.raises(GenericQueryError, match="未选模型"):
+        parse_model_filters({"by_model": {"room": {"logic": "AND", "items": []}}}, ["host"])
+
+
+def test_instance_union_uses_each_models_filter_and_fails_as_a_whole(monkeypatch):
+    from apps.cmdb.services.generic_query_graph import GenericQueryGraphError
+
+    seen = []
+
+    def fake_count(params, permission_map, condition_params=None, condition_logic="AND"):
+        del permission_map
+        model_id = params[0]["value"]
+        seen.append((model_id, condition_logic, condition_params))
+        if model_id == "app":
+            raise GenericQueryGraphError("查询超时")
+        return 2
+
+    monkeypatch.setattr("apps.cmdb.services.generic_query.count_instances", fake_count)
+    host = _instance_model(
+        attr_types={"inst_name": "string", "os_type": "string"},
+        filters={"logic": "OR", "items": [{"field": "os_type", "op": "eq", "value": "Linux"}]},
+    )
+    app = _instance_model("app", "应用")
+    with pytest.raises(GenericQueryError, match="查询超时"):
+        query_instances(models=[host, app], analysis_mode="count", permission_map={"1": {}})
+    assert seen[0][0] == "host"
+    assert seen[0][1] == "OR"
+    assert seen[1][0] == "app"
+
+    def fake_ok(params, permission_map, condition_params=None, condition_logic="AND"):
+        del permission_map, condition_logic
+        return 3 if condition_params else 1
+
+    monkeypatch.setattr("apps.cmdb.services.generic_query.count_instances", fake_ok)
+    counted = query_instances(models=[host, app], analysis_mode="count", permission_map={"1": {}})
+    assert counted["instance_count"] == 4
+    with pytest.raises(GenericQueryError, match="20"):
+        query_instances(
+            models=[_instance_model(f"m{index}", f"模型{index}") for index in range(21)],
+            analysis_mode="count",
+            permission_map={"1": {}},
+        )
+
+
+def test_instance_detail_sorts_across_models_and_keeps_missing_cells_null(monkeypatch):
+    def fake_scan(params, permission_map, fields, **kwargs):
+        del permission_map, fields, kwargs
+        model_id = params[0]["value"]
+        if model_id == "host":
+            return [
+                {"inst_name": "b", "inst_uuid": "h2", "model_id": "host", "os_type": "Linux"},
+                {"inst_name": None, "inst_uuid": "h1", "model_id": "host", "os_type": None},
+            ]
+        return [{"inst_name": "a", "inst_uuid": "a1", "model_id": "app"}]
+
+    monkeypatch.setattr("apps.cmdb.services.generic_query.scan_instance_rows", fake_scan)
+    host = _instance_model(
+        attr_types={"inst_name": "string", "os_type": "string"},
+        attrs=[{"attr_id": "os_type", "attr_name": "操作系统", "attr_type": "string"}],
+    )
+    app = _instance_model("app", "应用", attr_types={"inst_name": "string"})
+    page = query_instances(
+        models=[host, app],
+        analysis_mode="detail",
+        permission_map={"1": {}},
+        columns=["host.os_type"],
+        order="inst_name",
+        page=1,
+        page_size=2,
+    )
+    assert [item["inst_name"] for item in page["items"]] == ["a", "b"]
+    assert page["count"] == 3
+    assert page["items"][0]["host.os_type"] is None
+    assert page["items"][1]["host.os_type"] == "Linux"
+    assert page["column_fields"]["fields"][4]["title"] == "主机 · 操作系统"
+    trailing = query_instances(
+        models=[host, app],
+        analysis_mode="detail",
+        permission_map={"1": {}},
+        columns=["host.os_type"],
+        order="inst_name",
+        page=2,
+        page_size=2,
+    )
+    assert trailing["items"][0]["inst_name"] is None
+    assert trailing["items"][0]["inst_uuid"] == "h1"
+
+
+def test_instance_distribution_by_model_and_one_attribute(monkeypatch):
+    counts = {"host": 2, "app": 5}
+
+    def fake_count(params, permission_map, condition_params=None, condition_logic="AND"):
+        del permission_map, condition_params, condition_logic
+        return counts[params[0]["value"]]
+
+    monkeypatch.setattr("apps.cmdb.services.generic_query.count_instances", fake_count)
+    host = _instance_model("host", "主机")
+    same_name = _instance_model("app", "主机")
+    by_model = query_instances(
+        models=[host, same_name],
+        analysis_mode="distribution",
+        permission_map={"1": {}},
+        group_by="model",
+    )
+    assert [item["model_name"] for item in by_model["items"]] == ["主机（app）", "主机（host）"]
+    assert [item["instance_count"] for item in by_model["items"]] == [5, 2]
+
+    monkeypatch.setattr(
+        "apps.cmdb.services.generic_query.group_instance_counts",
+        lambda *args, **kwargs: {"Linux": 2},
+    )
+    typed = _instance_model(
+        attr_types={"os_type": "string", "inst_name": "string"},
+        attrs=[{"attr_id": "os_type", "attr_name": "操作系统", "attr_type": "string"}],
+    )
+    other = _instance_model("app", "应用", filters={"logic": "AND", "items": [{"field": "inst_name", "op": "eq", "value": "a"}]})
+    with pytest.raises(GenericQueryError, match="按属性统计只支持单个模型"):
+        query_instances(
+            models=[typed, other],
+            analysis_mode="distribution",
+            permission_map={"1": {}},
+            group_by="host.os_type",
+        )
+    with pytest.raises(GenericQueryError, match="分布必须选择分组字段"):
+        query_instances(
+            models=[typed],
+            analysis_mode="distribution",
+            permission_map={"1": {}},
+            group_by="",
+        )
+    with pytest.raises(GenericQueryError, match="跨模型"):
+        query_instances(
+            models=[typed],
+            analysis_mode="distribution",
+            permission_map={"1": {}},
+            group_by="os_type",
+        )
+    with pytest.raises(GenericQueryError, match="按属性统计只支持单个模型"):
+        query_instances(
+            models=[typed, _instance_model("app", "应用")],
+            analysis_mode="aggregate",
+            permission_map={"1": {}},
+            aggregate_field="host.os_type",
+            aggregate_op="sum",
+        )
+    grouped = query_instances(
+        models=[typed],
+        analysis_mode="distribution",
+        permission_map={"1": {}},
+        group_by="host.os_type",
+    )
+    assert grouped["items"][0]["host.os_type"] == "Linux"
+    assert grouped["items"][0]["model_id"] == "host"
+    assert "主机" in grouped["aggregation"]
+
+
+def test_instance_reads_keep_permission_outside_or_and_use_timeout(monkeypatch):
+    from apps.cmdb.graph.falkordb import FalkorDBClient
+    from apps.cmdb.graph.format_type import ParameterCollector
+    from apps.cmdb.services.generic_query_graph import (
+        QUERY_TIMEOUT_MS,
+        GenericQueryGraphError,
+        aggregate_numeric,
+        count_instances,
+        group_instance_counts,
+        scan_instance_rows,
+    )
+
+    queries = []
+
+    class Client:
+        ENABLE_PARAMETERIZATION = True
+        _param_collector = ParameterCollector()
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+        def format_search_params(self, *args, **kwargs):
+            return FalkorDBClient.format_search_params(self, *args, **kwargs)
+
+        def _execute_query(self, query, params=None, timeout=None):
+            queries.append((query, timeout))
+            name = "valued" if "AS valued" in query else "scanned"
+            header = [(1, "bucket"), (1, "count")] if "AS bucket" in query else [(1, name)]
+            row = ["Linux", 1] if "AS bucket" in query else [1]
+            return SimpleResult(header, [row])
+
+    class SimpleResult:
+        def __init__(self, header, result_set):
+            self.header = header
+            self.result_set = result_set
+
+    monkeypatch.setattr("apps.cmdb.services.generic_query_graph.GraphClient", Client)
+    counted = count_instances(
+        [{"field": "model_id", "type": "str=", "value": "host"}],
+        {1: {"inst_names": ["可见"]}},
+        [
+            {"field": "inst_name", "type": "str=", "value": "公开"},
+            {"field": "inst_name", "type": "str=", "value": "内部"},
+        ],
+        "OR",
+    )
+    assert counted == 1
+    permission = {1: {"inst_names": ["可见"]}}
+    base = [{"field": "model_id", "type": "str=", "value": "host"}]
+    group_instance_counts("os_type", base, permission)
+    scan_instance_rows(base, permission, ["inst_name"], limit=10)
+    aggregate_numeric("cpu", "sum", base, permission)
+    assert counted == 1
+    query, timeout = queries[0]
+    assert timeout == QUERY_TIMEOUT_MS
+    assert {item[1] for item in queries} == {QUERY_TIMEOUT_MS}
+    assert re.search(r"\(n\.inst_name = \$str\d+ OR n\.inst_name = \$str\d+\)", query)
+    assert "organization" in query
+    assert query.index("organization") > query.index(" OR n.inst_name")
+    with pytest.raises(GenericQueryGraphError, match="权限范围"):
+        count_instances(
+            [{"field": "model_id", "type": "str=", "value": "host"}],
+            {},
+            [{"field": "inst_name", "type": "str=", "value": "公开"}],
+            "OR",
+        )
+
+
+def test_model_options_union_and_attr_labels(monkeypatch):
+    from apps.cmdb.nats.generic_query import list_cmdb_attr_options, list_cmdb_model_options, query_cmdb_instances, query_cmdb_models
+
+    monkeypatch.setattr("apps.cmdb.nats.generic_query._visible_models", lambda user_info: _visible_cmdb_models())
+    monkeypatch.setattr("apps.cmdb.services.generic_query_graph.count_by_attr", lambda *args, **kwargs: {})
+    unknown = query_cmdb_models(classification_id=["compute", "missing"], analysis_mode="count", user_info={"user": "demo"})
+    assert unknown["result"] is False
+    assert unknown["data"]["status"] == "forbidden"
+    instance_unknown = query_cmdb_instances(
+        model_id="host",
+        classification_id=["compute", "missing"],
+        analysis_mode="count",
+        user_info={"user": "demo"},
+    )
+    assert instance_unknown["result"] is False
+    assert instance_unknown["data"]["status"] == "forbidden"
+
+    listed = list_cmdb_model_options(classification_id=["biz", "compute"], user_info={"user": "demo"})
+    assert [item["model_id"] for item in listed["data"]["items"]] == ["host", "app"]
+    assert listed["data"]["items"][0]["classification_name"] == "计算"
+    assert listed["data"]["invalid_classification_ids"] == []
+    everything = list_cmdb_model_options(classification_id=[], user_info={"user": "demo"})
+    assert [item["model_id"] for item in everything["data"]["items"]] == ["host", "app", "room"]
+
+    def fake_attrs(model_id, user_info):
+        del user_info
+        name = "CPU" if model_id == "host" else "端口"
+        attr_id = "cpu" if model_id == "host" else "port"
+        attr_type = "int" if model_id == "host" else "string"
+        return [{"attr_id": attr_id, "attr_name": name, "attr_type": attr_type}]
+
+    monkeypatch.setattr("apps.cmdb.nats.generic_query._load_model_attrs", fake_attrs)
+    single = list_cmdb_attr_options(model_id="host", user_info={"user": "demo"})
+    assert single["data"][0]["option_label"] == "CPU"
+    assert single["data"][0]["field_key"] == "host.cpu"
+    many = list_cmdb_attr_options(
+        model_id=["host", "app"],
+        include_model_bucket=True,
+        user_info={"user": "demo"},
+    )
+    assert many["data"][0]["field_key"] == "model"
+    assert [item["option_label"] for item in many["data"][1:]] == ["主机 · CPU", "应用 · 端口"]
+    numeric = list_cmdb_attr_options(
+        model_id=["host", "app"],
+        include_model_bucket=True,
+        value_type="number",
+        user_info={"user": "demo"},
+    )
+    assert [item["field_key"] for item in numeric["data"]] == ["host.cpu"]
