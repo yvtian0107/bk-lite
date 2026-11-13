@@ -408,3 +408,73 @@ def test_handler_rejects_unknown_query_object_and_keeps_extra_kwargs():
     result = handler(query_object="both", analysis_mode="detail", user_info={}, extra_param="ignored")
     assert result["result"] is False
     assert "告警或事件" in result["message"]
+
+
+def test_alert_level_must_be_a_known_choice():
+    with pytest.raises(GenericQueryError, match="级别不受支持"):
+        query_alert_center(
+            Alert.objects.all(),
+            query_object="alert",
+            analysis_mode="count",
+            level="unknown",
+            time_field="created_at",
+            time_range=_range(60),
+        )
+
+
+def test_handler_intersects_instance_grants_with_the_current_org(monkeypatch):
+    from apps.alerts.nats import generic_query as handler_module
+
+    inside = _alert("inside")
+    outside = Alert.objects.create(
+        alert_id="outside",
+        level="warning",
+        title="outside",
+        content="content",
+        fingerprint="outside",
+        team=[9],
+        source_name="webhook",
+    )
+    monkeypatch.setattr(handler_module, "_get_authorized_alert_queryset", lambda user_info: (Alert.objects.all(), None))
+    result = handler_module.query_alert_center(
+        query_object="alert",
+        analysis_mode="detail",
+        time_field="created_at",
+        time_range=[(datetime.now(timezone.utc) - timedelta(hours=1)).isoformat(), (datetime.now(timezone.utc) + timedelta(hours=1)).isoformat()],
+        page_size=20,
+        user_info={"team": 1, "include_children": False, "is_superuser": False, "group_tree": []},
+    )
+    assert result["result"] is True
+    assert [item["alert_id"] for item in result["data"]["items"]] == [inside.alert_id]
+    assert outside.alert_id not in [item["alert_id"] for item in result["data"]["items"]]
+
+
+def test_source_options_only_include_sources_on_visible_alerts(monkeypatch):
+    from apps.alerts.nats import generic_query as handler_module
+
+    used = _source()
+    AlertSource.objects.create(name="unused", source_id="src-unused", source_type=AlertsSourceTypes.WEBHOOK, is_active=True)
+    alert = _alert("with-source")
+    Event.objects.create(source=used, raw_data={}, title="event", level="warning", start_time=START, event_id="EVT-1")
+    alert.events.add(Event.objects.get(event_id="EVT-1"))
+    monkeypatch.setattr(handler_module, "_get_authorized_alert_queryset", lambda user_info: (Alert.objects.filter(pk=alert.pk), None))
+    result = handler_module.list_alert_source_options(user_info={"team": 1, "include_children": False, "is_superuser": False, "group_tree": []})
+    assert result["result"] is True
+    assert result["data"] == [{"source_id": used.source_id, "name": used.name}]
+
+
+def test_handler_translates_the_shared_permission_message():
+    from apps.alerts.nats import generic_query as handler_module
+
+    def denied(user_info):
+        return None, {"result": False, "message": "Insufficient permissions"}
+
+    handler_module._get_authorized_alert_queryset = denied
+    try:
+        result = handler_module.query_alert_center(query_object="alert", analysis_mode="count", user_info={"team": 1})
+    finally:
+        from apps.alerts.nats.nats import _get_authorized_alert_queryset
+
+        handler_module._get_authorized_alert_queryset = _get_authorized_alert_queryset
+    assert result["result"] is False
+    assert result["message"] == "权限不足"

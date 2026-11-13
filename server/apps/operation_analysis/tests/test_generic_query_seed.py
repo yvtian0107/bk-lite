@@ -280,6 +280,16 @@ def test_model_query_schema_matches_detail_rows_without_touching_other_status():
         if rest_api != "cmdb/query_cmdb_models":
             assert "result_filter" not in names
     alerts = sources["monitor/query_monitor_alerts"]
+    assert "页码" in alerts["desc"]
+    assert any(item["name"] == "page" for item in alerts["params"])
+    assert any(item["name"] == "page_size" for item in alerts["params"])
+    options = next(
+        item
+        for item in json.loads(SEED.read_text(encoding="utf-8"))
+        if isinstance(item, dict) and item.get("key") == "监控对象列表::monitor/monitor_objects"
+    )
+    assert options["rest_api"] == "monitor/list_monitor_object_options"
+    assert any(field["key"] == "display_name" for field in options["field_schema"])
     center = sources["alert/query_alert_center"]
     assert "status" in {field["key"] for field in alerts["field_schema"]}
     alert_names = {param["name"] for param in alerts["params"]}
@@ -425,3 +435,16 @@ def test_model_query_resolver_keeps_explicit_values_and_skips_hidden_defaults():
     assert "page" not in detail
     assert "page_size" not in detail
     assert kept == {"page": 2, "page_size": 15}
+    passed = _resolve_request_params(legacy, {"page": None, "page_size": ""})
+    assert passed["page"] is None
+    assert passed["page_size"] == ""
+    legacy_time = SimpleNamespace(
+        rest_api="legacy/query",
+        params=[
+            {"name": "time", "type": "timeRange", "value": 10080, "filterType": "params"},
+            {"name": "page", "type": "number", "value": 2, "filterType": "params"},
+        ],
+    )
+    cleared_time = _resolve_request_params(legacy_time, {"time": "", "page": None})
+    assert "time" not in cleared_time
+    assert cleared_time["page"] is None

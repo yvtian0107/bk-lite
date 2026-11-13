@@ -53,6 +53,7 @@ EXPECTED_MONITOR_NATS_HANDLER_NAMES = frozenset(
         "monitor_list_cmdb_bind_candidates",
         "monitor_instance_metrics",
         "list_metric_dimensions",
+        "list_monitor_object_options",
         "monitor_metrics",
         "monitor_object_instance_count",
         "license_monitor_instance_count",
@@ -123,7 +124,22 @@ class TestMonitorObjectsHandler:
         names = {o["name"] for o in out["data"]}
         assert {"NMObj1", "NMObj2"} <= names
 
-    def test_display_name_follows_language_then_stored_name(self, monkeypatch):
+    def test_display_name_stays_on_the_stored_value(self, monkeypatch):
+        MonitorObject.objects.create(name="Host", display_name="", level="base")
+        MonitorObject.objects.create(name="CustomObj", display_name="自定义对象", level="base")
+
+        class Loader:
+            def get(self, key, default=None):
+                raise AssertionError("old monitor_objects must not load language packs")
+
+        monkeypatch.setattr(nm, "LanguageLoader", Loader)
+        out = nm.monitor_objects(user_info={"locale": "zh-Hans"})
+        rows = {item["name"]: item for item in out["data"]}
+        assert rows["Host"]["display_name"] == ""
+        assert rows["Host"]["name"] == "Host"
+        assert rows["CustomObj"]["display_name"] == "自定义对象"
+
+    def test_options_display_name_follows_language_then_stored_name(self, monkeypatch):
         MonitorObject.objects.create(name="Host", display_name="", level="base")
         MonitorObject.objects.create(name="CustomObj", display_name="自定义对象", level="base")
         MonitorObject.objects.create(name="BareObj", display_name="", level="base")
@@ -138,7 +154,7 @@ class TestMonitorObjectsHandler:
                 return default
 
         monkeypatch.setattr(nm, "LanguageLoader", Loader)
-        out = nm.monitor_objects(user_info={"locale": "zh-Hans"})
+        out = nm.list_monitor_object_options(user_info={"locale": "zh-Hans"})
         rows = {item["name"]: item for item in out["data"]}
         assert rows["Host"]["display_name"] == "主机"
         assert rows["Host"]["name"] == "Host"
@@ -214,7 +230,7 @@ class TestLicenseMonitorInstanceCount:
 
 
 class TestListMetricDimensions:
-    def test_returns_declared_names(self):
+    def test_returns_declared_names_for_a_visible_caller(self, monkeypatch):
         obj = MonitorObject.objects.create(name="DimObj", level="base")
         plugin = MonitorPlugin.objects.create(name="DimPlugin")
         group = MetricGroup.objects.create(monitor_object=obj, monitor_plugin=plugin, name="g")
@@ -225,11 +241,43 @@ class TestListMetricDimensions:
             name="disk",
             dimensions=[{"name": "device", "description": "磁盘设备"}, {"name": "", "description": "空"}],
         )
-        found = nm.list_metric_dimensions(metric.id)
+
+        def scope(user_info):
+            if not user_info:
+                return None, None, None, None, None, {"result": False, "message": "缺少用户或组织信息"}
+            return SimpleNamespace(username="u", domain="d"), 1, False, frozenset({1}), True, None
+
+        monkeypatch.setattr(nm, "_get_nats_actor_scope", scope)
+        user_info = {"user": "u", "domain": "d", "team": 1, "include_children": False}
+        found = nm.list_metric_dimensions(metric.id, user_info=user_info)
         assert found["result"] is True
         assert found["data"] == [{"name": "device", "label": "磁盘设备", "value_type": "string"}]
-        missing = nm.list_metric_dimensions(999999)
+        missing = nm.list_metric_dimensions(999999, user_info=user_info)
         assert missing["result"] is False
+        denied = nm.list_metric_dimensions(metric.id)
+        assert denied["result"] is False
+
+    def test_ordinary_caller_without_object_visibility_gets_nothing(self, monkeypatch):
+        obj = MonitorObject.objects.create(name="HiddenObj", level="base")
+        plugin = MonitorPlugin.objects.create(name="HiddenPlugin")
+        group = MetricGroup.objects.create(monitor_object=obj, monitor_plugin=plugin, name="g")
+        metric = Metric.objects.create(
+            monitor_object=obj,
+            monitor_plugin=plugin,
+            metric_group=group,
+            name="cpu",
+            dimensions=[{"name": "mode"}],
+        )
+        monkeypatch.setattr(
+            nm,
+            "_get_nats_actor_scope",
+            lambda user_info: (SimpleNamespace(username="u", domain="d"), 1, False, frozenset({1}), False, None),
+        )
+        monkeypatch.setattr(nm, "_get_monitor_instance_permission", lambda *args, **kwargs: ({"instance": [], "team": []}, None))
+        monkeypatch.setattr(nm, "_get_nats_accessible_policy_queryset", lambda user_info: (MonitorPolicy.objects.none(), None))
+        denied = nm.list_metric_dimensions(metric.id, user_info={"user": "u", "domain": "d", "team": 1, "include_children": False})
+        assert denied["result"] is False
+        assert denied["data"] == []
 
 
 class TestMonitorMetricsHandler:

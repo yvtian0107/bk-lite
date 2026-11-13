@@ -23,6 +23,7 @@ from apps.monitor.services.generic_query_limits import (
     STAT_GROUP_MAX,
 )
 from apps.monitor.services.metrics import Metrics
+from apps.monitor.services.range_step import query_range_point_count
 from apps.monitor.utils.alert_name_variables import ASSET_IP_FACT, resolve_resource_ip
 from apps.monitor.utils.dimension import parse_instance_id
 
@@ -36,7 +37,6 @@ _AGGREGATION_LABELS = {
     "min": "最小",
     "count": "计数",
 }
-METRIC_MODES = ("series", "value")
 ALERT_MODES = ("detail", "count", "distribution")
 ALERT_LEVELS = {"warning", "error", "critical", "no_data"}
 ALERT_STATUSES = {"new", "closed", "recovered"}
@@ -139,7 +139,7 @@ def validate_metric_request(*, instance_ids, time_range, step) -> dict:
     if step_seconds < 1:
         raise GenericQueryError("步长最短 1 秒")
     start, end = _parse_range(time_range)
-    points = (end - start).total_seconds() / step_seconds
+    points = query_range_point_count((end - start).total_seconds(), int(step_seconds))
     if points > METRIC_POINTS_MAX:
         raise GenericQueryError(f"单条序列超过 {METRIC_POINTS_MAX} 个点（点数包含起止两端），请缩短时间范围或加大步长")
     return {
@@ -207,9 +207,11 @@ def _instance_label(instance_id: str, names: dict[str, str]) -> str:
 
 
 def _table_row(instance_id: str, value, moment: str, unit: str, aggregation: str) -> dict:
+    missing = value is None
     return {
         "instance_id": instance_id,
-        "value": "无数据" if value is None else value,
+        "value": None if missing else value,
+        "status": "missing" if missing else "ok",
         "time": moment,
         "unit": unit,
         "aggregation": _aggregation_label(aggregation),
@@ -383,16 +385,20 @@ def query_alerts(
     )
     if mode == "count":
         _reject_paging(page, page_size)
+    distribution_limit = None
     if mode == "distribution":
         if not _filled(group_by):
             raise GenericQueryError("分布必须选择分组")
         if group_by not in ALERT_GROUP_FIELDS:
             raise GenericQueryError("分组字段不受支持")
+        if page not in (None, ""):
+            raise GenericQueryError("当前分析方式不支持页码")
+        distribution_limit = _distribution_return_limit(page_size)
     queryset = _filter_alerts(queryset, level, status, alert_type, instance_ids, time_field, time_range)
     if mode == "count":
         return _value(queryset.count(), field="alert_count", title="告警数", unit="条", aggregation="监控告警计数")
     if mode == "distribution":
-        return _alert_distribution(queryset, group_by, order, page, page_size, locale)
+        return _alert_distribution(queryset, group_by, order, distribution_limit, locale)
     page_no, size = _parse_page(page, page_size)
     order_field = _order(order, ALERT_SORT_FIELDS, default="-start_event_time")
     total = queryset.count()
@@ -569,7 +575,7 @@ def _present_object(object_id, labels: dict[str, str]) -> tuple[str, str]:
     return identity, labels.get(identity) or identity
 
 
-def _alert_distribution(queryset, group_by: str, order, page, page_size, locale: str | None) -> dict:
+def _alert_distribution(queryset, group_by: str, order, limit: int | None, locale: str | None) -> dict:
     if group_by == "monitor_object_id":
         grouped = _annotate_monitor_object(queryset).values("_monitor_object_id").annotate(alert_count=Count("id"))
     elif group_by == "monitor_instance_id":
@@ -589,17 +595,16 @@ def _alert_distribution(queryset, group_by: str, order, page, page_size, locale:
     descending = order_text.startswith("-")
     sort_key = order_text[1:] if descending else order_text
     items.sort(key=lambda item: _distribution_sort_key(item, sort_key), reverse=descending)
-    page_no, size = _parse_page(page, page_size)
     total = len(items)
-    shown = items[(page_no - 1) * size : page_no * size]
+    shown = items if limit is None else items[:limit]
     return _with_fields(
         {
             "structure": "category",
             "status": "empty" if total == 0 else "ok",
             "items": shown,
             "count": total,
-            "page": page_no,
-            "page_size": size,
+            "page": 1,
+            "page_size": total if limit is None else limit,
             "unit": "条",
             "aggregation": f"按 {_ALERT_GROUP_TITLES[group_by]} 计数",
         },
@@ -777,6 +782,16 @@ def _reject_unused(mode: str, checks: list[tuple[Any, str, tuple[str, ...]]]) ->
     blocked = [label for value, label, allowed in checks if mode not in allowed and _filled(value)]
     if blocked:
         raise GenericQueryError("当前分析方式不支持" + "、".join(blocked))
+
+
+def _distribution_return_limit(page_size) -> int | None:
+    """分布只看返回条数。页码不读。空条数表示全部，显式条数仍受每页上限约束。"""
+    if page_size in (None, ""):
+        return None
+    size = _as_int(page_size, "page_size")
+    if size < 1 or size > DETAIL_PAGE_SIZE_MAX:
+        raise GenericQueryError(f"每页最多 {DETAIL_PAGE_SIZE_MAX} 条")
+    return size
 
 
 def _reject_paging(page, page_size) -> None:

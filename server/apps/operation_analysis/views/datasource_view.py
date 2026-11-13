@@ -555,6 +555,19 @@ def _unspecified_host_top_instance_ids(instance, param_name, default_value):
     return getattr(instance, "rest_api", None) == "monitor/get_host_resource_top" and param_name == "instance_ids" and default_value == []
 
 
+_GENERIC_QUERY_REST_APIS = frozenset(
+    {
+        "cmdb/query_cmdb_models",
+        "cmdb/query_cmdb_instances",
+        "cmdb/query_cmdb_one_hop",
+        "monitor/query_monitor_instances",
+        "monitor/query_monitor_metric",
+        "monitor/query_monitor_alerts",
+        "alert/query_alert_center",
+    }
+)
+
+
 def _resolve_request_params(instance, request_data):
     configured_params = instance.params if isinstance(instance.params, list) else []
     allowed_specs = {
@@ -588,12 +601,13 @@ def _resolve_request_params(instance, request_data):
             raw_value = default_value
         elif param_name in sanitized_request:
             raw_value = sanitized_request[param_name]
-            # 明确空值不传，也不回填种子默认值。否则清空的分页会被补回，计数一直失败。
-            if raw_value in (None, ""):
+            # 通用查询清空的分页不回填种子默认值，否则计数会一直带着页码失败。
+            # 其它数据源仍把请求里的空值原样交给归一化，缺省时才用种子默认值。
+            if getattr(instance, "rest_api", None) in _GENERIC_QUERY_REST_APIS and raw_value in (None, ""):
                 continue
             # timeRange 空值视为"无过滤"跳过,避免 _normalize_time_range("") 抛 ValueError
             # 导致整个请求 400(空字符串、null、空数组都被视为"未选时段")
-            if param_type == "timeRange" and raw_value in ([], {}):
+            if param_type == "timeRange" and raw_value in (None, "", [], {}):
                 continue
         elif default_value not in (None, "") and not _unspecified_host_top_instance_ids(
             instance,

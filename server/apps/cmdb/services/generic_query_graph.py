@@ -140,7 +140,7 @@ def _rank_starts(client, pattern: str, where_sql: str, params: dict, limit: int 
     count_rows = _run(client, count_query, params)
     group_count = int((count_rows[0].get("group_count") if count_rows else 0) or 0)
     bounded = _return_limit(limit)
-    if group_count == 0 or (bounded is None and group_count > STAT_GROUP_MAX):
+    if group_count == 0 or group_count > STAT_GROUP_MAX:
         return {"group_count": group_count, "groups": []}
     query = (
         f"MATCH {pattern} WHERE {where_sql} "
@@ -154,6 +154,8 @@ def _rank_starts(client, pattern: str, where_sql: str, params: dict, limit: int 
 
 
 def _page_pairs(client, pattern: str, where_sql: str, params: dict, skip: int, limit: int | None) -> dict:
+    # 总数和当前页仍各查一次。把全部对应关系收进内存再切片能少一次扫描，
+    # 但一跳没有条数上限，收全量会把内存顶满，所以计数保持单独查询。
     pair_count = _pair_count(client, pattern, where_sql, params)
     bounded = _return_limit(limit)
     if bounded is None:
@@ -259,6 +261,8 @@ def _where_clause(
         param_collector=collector,
         alias=alias,
     )
+    if not permission_map:
+        raise GenericQueryGraphError("缺少权限范围，已拒绝查询")
     permission = InstanceManage._build_format_permission_dict(permission_map or {}, "")
     permission_parts = []
     for organization_id, query_list in permission.items():
@@ -279,16 +283,15 @@ def _where_clause(
             permission_parts.append(f"({org_str} AND {extra_str})")
         elif org_str:
             permission_parts.append(org_str)
+    if not permission_parts:
+        raise GenericQueryGraphError("缺少权限范围，已拒绝查询")
     parts = []
     if base:
         parts.append(base)
     if group_sql:
         parts.append(group_sql)
-    if permission_parts:
-        joined = permission_parts[0] if len(permission_parts) == 1 else "(" + " OR ".join(permission_parts) + ")"
-        parts.append(joined)
-    if not parts:
-        raise GenericQueryGraphError("缺少权限范围，已拒绝全量扫描")
+    joined = permission_parts[0] if len(permission_parts) == 1 else "(" + " OR ".join(permission_parts) + ")"
+    parts.append(joined)
     return "WHERE " + " AND ".join(parts), collector.get_params()
 
 
