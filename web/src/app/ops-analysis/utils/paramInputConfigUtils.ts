@@ -141,6 +141,7 @@ export const mapDynamicItems = (
   items: Record<string, unknown>[],
   valueField: string,
   labelField: string,
+  groupField?: string,
 ): InputOption[] => {
   return items
     .filter((item): item is Record<string, unknown> => {
@@ -150,10 +151,15 @@ export const mapDynamicItems = (
       const value = item[valueField];
       if (value === undefined || value === null) return null;
       if (typeof value !== 'string' && typeof value !== 'number') return null;
-      return {
+      const option: InputOption = {
         value,
         label: optionLabel(item, labelField),
       };
+      if (groupField) {
+        const group = item[groupField];
+        option.group = group === undefined || group === null ? '' : String(group);
+      }
+      return option;
     })
     .filter((item): item is InputOption => item !== null);
 };

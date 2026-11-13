@@ -244,7 +244,7 @@ export const createParamInputOptionsLoader = (
           }
         }
         const options = mapDynamicItems(
-          items, source.valueField, source.labelField,
+          items, source.valueField, source.labelField, source.groupField,
         );
         if (requestGeneration !== generation) return null;
         settled = true;

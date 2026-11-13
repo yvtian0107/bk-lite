@@ -3,6 +3,10 @@ import dayjs, { type Dayjs } from 'dayjs';
 import type { DateRangeValue } from '@/app/ops-analysis/types/dateRange';
 import type { ConditionFilterValue, ParamItem } from '@/app/ops-analysis/types/dataSource';
 import { parseConditionGroup } from '@/app/ops-analysis/utils/conditionFilter';
+import {
+  parseModelConditionFilter,
+  type ModelConditionFilterValue,
+} from '@/app/ops-analysis/utils/modelConditionFilter';
 import { formatOpsRequestTime } from '@/app/ops-analysis/utils/dateTime';
 
 export type DataSourceFormParamValue =
@@ -14,6 +18,7 @@ export type DataSourceFormParamValue =
   | [number, number]
   | DateRangeValue
   | ConditionFilterValue
+  | ModelConditionFilterValue
   | null
   | undefined;
 
@@ -52,6 +57,9 @@ export const getDataSourceFormParamInitialValue = (
   const { type = 'string', value } = param;
   if (type === 'conditionFilter') {
     return parseConditionGroup(value);
+  }
+  if (type === 'modelConditionFilter') {
+    return parseModelConditionFilter(value);
   }
   if (param.filterType !== 'fixed' && value === null) {
     return null;
@@ -126,7 +134,7 @@ export const processDataSourceFormParamsForSubmit = (
       return;
     }
     if (
-      param.type === 'conditionFilter'
+      (param.type === 'conditionFilter' || param.type === 'modelConditionFilter')
       && value
       && typeof value === 'object'
       && !Array.isArray(value)
@@ -148,8 +156,8 @@ export const processDataSourceFormParamsForSubmit = (
 
   return sourceParams.map((param) => ({
     ...param,
-    value: Object.prototype.hasOwnProperty.call(processedParams, param.name)
+    value: (Object.prototype.hasOwnProperty.call(processedParams, param.name)
       ? processedParams[param.name]
-      : param.value,
+      : param.value) as ParamItem['value'],
   }));
 };

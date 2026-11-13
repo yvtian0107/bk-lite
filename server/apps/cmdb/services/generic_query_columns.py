@@ -56,7 +56,7 @@ def public_instance(row: dict, hidden: set[str] | None = None) -> dict:
 def build_instance_column_fields(attrs: list | None, *, model_key: str) -> dict:
     fields: list[dict] = []
     for attr in attrs or []:
-        field = _candidate_field(attr)
+        field = candidate_field(attr)
         if field:
             fields.append(field)
     keys = {field["key"] for field in fields}
@@ -66,9 +66,9 @@ def build_instance_column_fields(attrs: list | None, *, model_key: str) -> dict:
         name["default_visible"] = True
         fields.insert(0, name)
     else:
-        fields.insert(0, _plain_field("inst_name", "实例名称", default_visible=True))
+        fields.insert(0, plain_field("inst_name", "实例名称", default_visible=True))
     if "inst_uuid" not in {field["key"] for field in fields}:
-        fields.append(_plain_field("inst_uuid", "实例标识", default_visible=False))
+        fields.append(plain_field("inst_uuid", "实例标识", default_visible=False))
     for field in fields:
         if field["key"] == "inst_name":
             field["default_visible"] = True
@@ -89,9 +89,9 @@ def build_one_hop_column_fields(start_attrs: list | None, end_attrs: list | None
         if field["key"] not in _SIDE_SKIP
     ]
     fields = [
-        _plain_field("start_name", "起点名称", default_visible=True),
+        plain_field("start_name", "起点名称", default_visible=True),
         *start_business,
-        _plain_field("end_name", "终点名称", default_visible=True),
+        plain_field("end_name", "终点名称", default_visible=True),
         *end_business,
     ]
     present = {field["key"] for field in fields}
@@ -100,7 +100,7 @@ def build_one_hop_column_fields(start_attrs: list | None, end_attrs: list | None
             continue
         if key in {"start_name", "end_name"}:
             continue
-        fields.append(_plain_field(key, title, default_visible=visible))
+        fields.append(plain_field(key, title, default_visible=visible))
     return {"source": "model_attrs", "model_key": str(model_key), "fields": fields}
 
 
@@ -144,7 +144,7 @@ def _index_by_uuid(rows: list | None) -> dict[str, dict]:
     return indexed
 
 
-def _candidate_field(attr: dict) -> dict | None:
+def candidate_field(attr: dict) -> dict | None:
     if not isinstance(attr, dict):
         return None
     attr_id = str(attr.get("attr_id") or "").strip()
@@ -153,7 +153,7 @@ def _candidate_field(attr: dict) -> dict | None:
     attr_type = str(attr.get("attr_type") or "str")
     if attr_type.lower() in _SENSITIVE_ATTR_TYPES:
         return None
-    field = _plain_field(attr_id, str(attr.get("attr_name") or attr_id), default_visible=True, attr_type=attr_type)
+    field = plain_field(attr_id, str(attr.get("attr_name") or attr_id), default_visible=True, attr_type=attr_type)
     if attr.get("is_system_link") or attr_id in _SYSTEM_LINK_ATTR_IDS or attr_id in _NOT_DEFAULT_ATTR_IDS:
         field["default_visible"] = False
     lowered = attr_type.lower()
@@ -167,7 +167,7 @@ def _candidate_field(attr: dict) -> dict | None:
     return field
 
 
-def _plain_field(key: str, title: str, *, default_visible: bool, attr_type: str = "str") -> dict:
+def plain_field(key: str, title: str, *, default_visible: bool, attr_type: str = "str") -> dict:
     return {
         "key": key,
         "title": title,

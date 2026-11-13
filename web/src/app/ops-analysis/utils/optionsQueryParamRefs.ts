@@ -12,7 +12,13 @@ const WHOLE_TOKEN = /^\$([A-Za-z_][\w-]*)(?::(string|number|boolean|date|timeRan
 
 export interface OptionsQueryParamRef {
   ref: string;
+  /** 上游为空时省略该入参，也不拦住下游请求。 */
+  optional?: true;
 }
+
+const storedOptionsQueryRef = (value: OptionsQueryParamRef): OptionsQueryParamRef => (
+  value.optional === true ? { ref: value.ref, optional: true } : { ref: value.ref }
+);
 
 export type OptionsQueryValidationIssue =
   | { code: 'concat'; param: string; name?: string }
@@ -123,7 +129,7 @@ const rewriteQueryParamRecord = (
     if (!isOptionsQueryParamRef(raw)) return;
     const redirected = redirectRetiredSummaryRef(raw.ref, liveIds);
     if (redirected === raw.ref) return;
-    next[name] = { ref: redirected };
+    next[name] = storedOptionsQueryRef({ ref: redirected, optional: raw.optional });
     changed = true;
   });
   return changed ? next : queryParams;
@@ -188,7 +194,7 @@ export const rewriteBareQueryRefsToDefinitionIds = <T extends {
       if (!isOptionsQueryParamRef(raw)) return;
       const resolved = resolveBareFilterRef(raw.ref, definition.id, definitions, origins);
       if (resolved === raw.ref) return;
-      queryParams[name] = { ref: resolved };
+      queryParams[name] = storedOptionsQueryRef({ ref: resolved, optional: raw.optional });
       queryChanged = true;
     });
     if (!queryChanged) return definition;
@@ -221,7 +227,10 @@ export const stableStringify = (value: unknown): string => {
 export const isOptionsQueryParamRef = (value: unknown): value is OptionsQueryParamRef => {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
   const record = value as Record<string, unknown>;
-  return typeof record.ref === 'string' && record.ref.trim().length > 0 && Object.keys(record).length === 1;
+  if (typeof record.ref !== 'string' || record.ref.trim().length === 0) return false;
+  const keys = Object.keys(record);
+  if (keys.length === 1) return true;
+  return keys.length === 2 && keys.includes('optional') && record.optional === true;
 };
 
 export const parseWholeOptionsQueryToken = (value: string): OptionsQueryParamRef | null => {
@@ -257,7 +266,7 @@ export const normalizeOptionsQueryParamValue = (
   if (typeof value === 'number' || typeof value === 'boolean' || value === null) {
     return { ok: true, value: value as OptionsQueryParamValue };
   }
-  if (isOptionsQueryParamRef(value)) return { ok: true, value: { ref: value.ref } };
+  if (isOptionsQueryParamRef(value)) return { ok: true, value: storedOptionsQueryRef(value) };
   if (typeof value === 'string') {
     if (value.includes('$')) {
       const token = parseWholeOptionsQueryToken(value);
@@ -604,8 +613,11 @@ export const resolveOptionsQueryParams = (
       if (upstream === OPTIONS_QUERY_INVALID) {
         return { blocked: true, blockReason: 'invalid', params: {}, missingRefs: [] };
       }
-      if (isUpstreamValueEmpty(upstream)) missingRefs.push(normalized.value.ref);
-      else params[name] = upstream;
+      if (isUpstreamValueEmpty(upstream)) {
+        if (normalized.value.optional !== true) missingRefs.push(normalized.value.ref);
+      } else {
+        params[name] = upstream;
+      }
     } else {
       params[name] = normalized.value;
     }

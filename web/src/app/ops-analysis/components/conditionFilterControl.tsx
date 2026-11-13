@@ -201,6 +201,53 @@ const resolveSourceId = async (
   );
 };
 
+export interface ModelAttrCatalogRow {
+  modelId: string;
+  modelName: string;
+  attrId: string;
+  attrName: string;
+  fieldKey: string;
+  label: string;
+  valueType: ConditionFieldOption['valueType'];
+  options: Array<{ label: string; value: string }>;
+}
+
+export const loadModelAttrCatalog = async (
+  api: ReturnType<typeof useDataSourceApi>,
+  modelIds: string[],
+): Promise<ModelAttrCatalogRow[]> => {
+  if (!modelIds.length) return [];
+  const sourceId = await resolveSourceId(api, 'cmdb/list_cmdb_attr_options');
+  if (!sourceId) return [];
+  const { data } = await api.getSourceDataByApiId(sourceId, { model_id: modelIds });
+  const multiple = modelIds.length > 1;
+  return extractDataSourceItems(data).map((item) => {
+    const modelId = String(item.model_id || '');
+    const attrId = String(item.attr_id || '');
+    if (!modelId || !attrId || attrId === 'model') return null;
+    const modelName = String(item.model_name || modelId);
+    const attrName = String(item.attr_name || attrId);
+    const valueType = (item.value_type === 'number' || item.value_type === 'enum'
+      ? item.value_type
+      : 'string') as ConditionFieldOption['valueType'];
+    return {
+      modelId,
+      modelName,
+      attrId,
+      attrName,
+      fieldKey: String(item.field_key || `${modelId}.${attrId}`),
+      label: multiple ? `${modelName} · ${attrName}` : attrName,
+      valueType,
+      options: Array.isArray(item.options)
+        ? item.options.filter((option) => option && typeof option === 'object').map((option) => {
+          const record = option as { label?: unknown; value?: unknown };
+          return { label: String(record.label || record.value || ''), value: String(record.value || '') };
+        })
+        : [],
+    };
+  }).filter((item): item is ModelAttrCatalogRow => Boolean(item));
+};
+
 export const loadConditionModelFields = async (
   api: ReturnType<typeof useDataSourceApi>,
   modelId: string,

@@ -4,6 +4,7 @@ import {
   columnsFromModelFields,
   formatModelCell,
   modelCellDisplayText,
+  modelTableBindingKey,
   modelTableEmptyText,
   reconcileSavedModelColumns,
   resolveModelAttrColumns,
@@ -208,6 +209,13 @@ describe('model attribute columns', () => {
     const t = (key: string) => key;
     expect(modelTableEmptyText('cmdb/query_cmdb_instances', {}, t)).toBe('dashboard.selectModel');
     expect(modelTableEmptyText('cmdb/query_cmdb_instances', { model_id: 'host' }, t)).toBeNull();
+    expect(modelTableEmptyText('cmdb/query_cmdb_instances', { model_id: [] }, t)).toBe('dashboard.selectModel');
+    expect(modelTableBindingKey('cmdb/query_cmdb_instances', { model_id: ['room', 'host'] })).toBe(
+      'instance:host\0room',
+    );
+    expect(modelTableBindingKey('cmdb/query_cmdb_instances', { model_id: 'host,room' })).toBe(
+      'instance:host,room',
+    );
     expect(modelTableEmptyText('cmdb/query_cmdb_one_hop', { start_model_id: 'host' }, t)).toBe(
       'dashboard.selectModelRelationFirst',
     );

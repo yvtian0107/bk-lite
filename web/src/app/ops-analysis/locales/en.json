@@ -1184,6 +1184,7 @@
     "piePageShare": "Share of the current page, not the full result (page {page}, {pageSize} per page, {count} items)",
     "optionPageLimitExceeded": "Option page limit exceeded",
     "selectClassificationFirst": "Select a classification first",
+    "selectCurrentCandidates": "Select current candidates",
     "selectModelRelationFirst": "Select the start model and relation first",
     "conditionFilter": {
       "add": "Add condition",

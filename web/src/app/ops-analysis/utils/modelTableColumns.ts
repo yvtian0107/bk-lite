@@ -43,13 +43,21 @@ const isRecord = (value: unknown): value is Record<string, unknown> =>
 export const isModelAttrTableSource = (restApi?: string): boolean =>
   restApi === INSTANCE_QUERY_API || restApi === ONE_HOP_QUERY_API;
 
+const selectedModelIds = (value: unknown): string[] => {
+  if (Array.isArray(value)) {
+    return value.map((item) => String(item ?? '').trim()).filter(Boolean).sort();
+  }
+  const text = String(value ?? '').trim();
+  return text ? [text] : [];
+};
+
 export const modelTableBindingKey = (
   restApi: string | undefined,
   params: Record<string, unknown> | undefined,
 ): string => {
   if (restApi === INSTANCE_QUERY_API) {
-    const modelId = String(params?.model_id || '').trim();
-    return modelId ? `instance:${modelId}` : '';
+    const modelIds = selectedModelIds(params?.model_id);
+    return modelIds.length ? `instance:${modelIds.join('\0')}` : '';
   }
   if (restApi === ONE_HOP_QUERY_API) {
     const start = String(params?.start_model_id || '').trim();
@@ -226,7 +234,7 @@ export const modelTableEmptyText = (
   params: Record<string, unknown> | undefined,
   t: (key: string) => string,
 ): string | null => {
-  if (restApi === INSTANCE_QUERY_API && !String(params?.model_id || '').trim()) {
+  if (restApi === INSTANCE_QUERY_API && selectedModelIds(params?.model_id).length === 0) {
     return t('dashboard.selectModel');
   }
   if (

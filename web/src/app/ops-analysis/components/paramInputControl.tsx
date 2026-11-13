@@ -1,7 +1,8 @@
 'use client';
 
 import React, { useEffect, useRef } from 'react';
-import { Radio, Select, Spin } from 'antd';
+import { Button, Radio, Select, Spin } from 'antd';
+import type { DefaultOptionType } from 'antd/es/select';
 import type { InputControlConfig, InputOption } from '@/app/ops-analysis/types/dataSource';
 import { useParamInputOptions } from '@/app/ops-analysis/hooks/useParamInputOptions';
 import {
@@ -180,6 +181,25 @@ export const ParamInputControl: React.FC<ParamInputControlProps> = ({
 
   if (inputConfig.control === 'select') {
     const isMultiple = Boolean(inputConfig.multiple);
+    const selectOptions: DefaultOptionType[] = groupedSelectOptions(options);
+    const selectCurrent = () => {
+      onChange?.(options.map((item) => item.value));
+    };
+    const popupRender = inputConfig.selectAll && isMultiple
+      ? (menu: React.ReactNode) => (
+        <div>
+          <Button
+            type="link"
+            disabled={disabled || !options.length}
+            onMouseDown={(event) => event.preventDefault()}
+            onClick={selectCurrent}
+          >
+            {t('dashboard.selectCurrentCandidates')}
+          </Button>
+          {menu}
+        </div>
+      )
+      : undefined;
     if (inputConfig.picker === 'table') {
       return (
         <ParamInputTableSelect
@@ -210,7 +230,8 @@ export const ParamInputControl: React.FC<ParamInputControlProps> = ({
         maxTagCount={isMultiple ? 'responsive' : undefined}
         maxTagTextLength={isMultiple ? 16 : undefined}
         style={{ width: '100%', ...style }}
-        options={options}
+        options={selectOptions}
+        {...(popupRender ? { popupRender } : {})}
         onChange={(nextValue) => onChange?.(nextValue ?? null)}
       />
     );
@@ -230,4 +251,23 @@ export const ParamInputControl: React.FC<ParamInputControlProps> = ({
       onChange={(nextValue) => onChange?.(nextValue ?? null)}
     />
   );
+};
+
+const groupedSelectOptions = (options: InputOption[]): DefaultOptionType[] => {
+  if (!options.some((item) => item.group)) {
+    return options.map((item) => ({ label: item.label, value: item.value }));
+  }
+  const groups: Array<{ label: string; options: Array<{ label: string; value: string | number }> }> = [];
+  const index = new Map<string, number>();
+  options.forEach((item) => {
+    const label = item.group || '';
+    let at = index.get(label);
+    if (at === undefined) {
+      at = groups.length;
+      index.set(label, at);
+      groups.push({ label, options: [] });
+    }
+    groups[at].options.push({ label: item.label, value: item.value });
+  });
+  return groups;
 };

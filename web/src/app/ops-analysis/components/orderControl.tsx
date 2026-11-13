@@ -4,7 +4,11 @@ import React, { useEffect, useRef, useState } from 'react';
 import type { OrderFieldOption } from '@/app/ops-analysis/types/dataSource';
 import { useDataSourceApi } from '@/app/ops-analysis/api/dataSource';
 import OrderInput from '@/app/ops-analysis/components/orderInput';
-import { loadConditionModelFields } from '@/app/ops-analysis/components/conditionFilterControl';
+import {
+  loadConditionModelFields,
+  loadModelAttrCatalog,
+} from '@/app/ops-analysis/components/conditionFilterControl';
+import { selectedModelIds } from '@/app/ops-analysis/utils/modelConditionFilter';
 import { parseOrderValue } from '@/app/ops-analysis/utils/orderValue';
 
 interface OrderControlProps {
@@ -36,7 +40,10 @@ const OrderControl: React.FC<OrderControlProps> = ({
   apiRef.current = api;
   const [modelFields, setModelFields] = useState<OrderFieldOption[]>([]);
   const [attrsReady, setAttrsReady] = useState(false);
-  const modelId = modelParam ? String(formParams?.[modelParam] ?? '') : '';
+  const rawModel = modelParam ? formParams?.[modelParam] : undefined;
+  const listedModels = Array.isArray(rawModel);
+  const modelIds = selectedModelIds(rawModel);
+  const modelKey = modelIds.join('\0');
   const visible = fields.filter((field) => {
     if (field.modes?.length && analysisMode && !field.modes.includes(analysisMode)) return false;
     if (field.query_objects?.length && queryObject && !field.query_objects.includes(queryObject)) return false;
@@ -49,7 +56,7 @@ const OrderControl: React.FC<OrderControlProps> = ({
     const modes = modelAttrModesKey ? modelAttrModesKey.split('\0') : [];
     const shouldLoad = Boolean(
       modelParam
-      && modelId
+      && modelKey
       && (!modes.length || (analysisMode && modes.includes(analysisMode))),
     );
     if (!shouldLoad) {
@@ -60,21 +67,30 @@ const OrderControl: React.FC<OrderControlProps> = ({
     }
     setAttrsReady(false);
     let cancelled = false;
-    void loadConditionModelFields(apiRef.current, modelId).then((loaded) => {
-      if (!cancelled) {
-        setModelFields(loaded.map((field) => ({ value: field.value, label: field.label })));
-        setAttrsReady(true);
-      }
-    }).catch(() => {
+    const apply = (loaded: OrderFieldOption[]) => {
+      if (cancelled) return;
+      setModelFields(loaded);
+      setAttrsReady(true);
+    };
+    const fail = () => {
       if (!cancelled) {
         setModelFields((current) => (current.length ? [] : current));
         setAttrsReady(true);
       }
-    });
+    };
+    if (listedModels) {
+      void loadModelAttrCatalog(apiRef.current, modelKey.split('\0')).then((rows) => {
+        apply(rows.map((row) => ({ value: row.fieldKey, label: row.label })));
+      }).catch(fail);
+    } else {
+      void loadConditionModelFields(apiRef.current, modelKey).then((loaded) => {
+        apply(loaded.map((field) => ({ value: field.value, label: field.label })));
+      }).catch(fail);
+    }
     return () => {
       cancelled = true;
     };
-  }, [analysisMode, modelAttrModesKey, modelId, modelParam]);
+  }, [analysisMode, listedModels, modelAttrModesKey, modelKey, modelParam]);
 
   const modelFieldKey = modelFields.map((field) => field.value).join('\0');
   useEffect(() => {

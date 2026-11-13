@@ -16,6 +16,8 @@ export const narrowInputConfigForQueryObject = (
     || inputConfig.control === 'organization'
     || inputConfig.control === 'conditionFilter'
     || inputConfig.control === 'order'
+    || inputConfig.control === 'modelConditionFilter'
+    || inputConfig.control === 'modelColumns'
   ) {
     return inputConfig;
   }

@@ -32,6 +32,8 @@ import {
   resolveAnalysisModeValue,
 } from '@/app/ops-analysis/utils/analysisMode';
 import ConditionFilterControl from '@/app/ops-analysis/components/conditionFilterControl';
+import ModelColumnsControl from '@/app/ops-analysis/components/modelColumnsControl';
+import ModelConditionFilterControl from '@/app/ops-analysis/components/modelConditionFilterControl';
 import OrderControl from '@/app/ops-analysis/components/orderControl';
 import { narrowInputConfigForQueryObject } from '@/app/ops-analysis/utils/queryObjectOptions';
 import DateRangeSelector from './dateRangeSelector';
@@ -296,6 +298,26 @@ const DataSourceParamsConfig: React.FC<DataSourceParamsConfigProps> = ({
           );
       }
     })();
+
+    if (inputConfig?.control === 'modelConditionFilter') {
+      return (
+        <ModelConditionFilterControl
+          modelParam={inputConfig.modelParam}
+          formParams={formParams}
+          disabled={isDisabled}
+        />
+      );
+    }
+
+    if (inputConfig?.control === 'modelColumns') {
+      return (
+        <ModelColumnsControl
+          modelParam={inputConfig.modelParam}
+          formParams={formParams}
+          disabled={isDisabled}
+        />
+      );
+    }
 
     if (inputConfig?.control === 'conditionFilter') {
       const fieldQuery = inputConfig.fields.kind === 'dynamic'

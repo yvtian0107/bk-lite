@@ -8,13 +8,15 @@ from apps.cmdb.services.generic_query import (
     GenericQueryError,
     compile_attribute_conditions,
     ensure_payload_limit,
+    id_list,
     load_instances_by_uuids,
     one_hop_query_plan,
+    parse_model_filters,
     query_instances,
     query_models,
     query_one_hop_relations,
 )
-from apps.cmdb.services.generic_query_columns import build_instance_column_fields, build_one_hop_column_fields, project_one_hop_rows
+from apps.cmdb.services.generic_query_columns import build_one_hop_column_fields, project_one_hop_rows
 from apps.cmdb.services.generic_query_graph import GenericQueryGraphError, count_by_attr, query_one_hop
 from apps.cmdb.services.model import ModelManage
 from apps.core.logger import cmdb_logger as logger
@@ -56,6 +58,13 @@ def _reject_unsupported_filters(kwargs: dict) -> None:
     filters = kwargs.get("filters") if isinstance(kwargs, dict) else None
     if filters not in (None, "", []):
         raise GenericQueryError("当前查询不支持 filters")
+
+
+def _known_classifications(class_ids: list[str], names: dict) -> list[str]:
+    missing = [item for item in class_ids if item not in names]
+    if missing:
+        raise GenericQueryError("指定分类不存在或无权访问", status="forbidden")
+    return class_ids
 
 
 def _require_model_classification(models, model_id, classification_id) -> None:
@@ -101,16 +110,6 @@ def _attr_option(attr: dict) -> dict:
         "value_type": value_type,
         "options": options,
     }
-
-
-def _text_list(value) -> list[str]:
-    if value in (None, ""):
-        return []
-    if isinstance(value, str):
-        return [item.strip() for item in value.split(",") if item.strip()]
-    if isinstance(value, (list, tuple)):
-        return [str(item).strip() for item in value if str(item).strip()]
-    raise GenericQueryError("列表参数格式错误")
 
 
 def _visible_models(user_info):
@@ -164,25 +163,6 @@ def _group_declaration(attrs: list, group_by) -> tuple[str | None, str | None]:
     return title, value_type
 
 
-def _enum_group_labels(attrs: list, group_by) -> dict[str, str] | None:
-    """枚举分布用选项名称做分类。没有这份对照时，图里的分组键是选项 id。"""
-    key = str(group_by or "").strip()
-    if not key:
-        return None
-    attr = next((item for item in attrs or [] if str(item.get("attr_id") or "") == key), None)
-    if not isinstance(attr, dict) or str(attr.get("attr_type") or "").lower() != "enum":
-        return None
-    labels = {}
-    for option in ModelManage.resolve_runtime_enum_options(attr) or []:
-        if not isinstance(option, dict):
-            continue
-        option_id = option.get("id")
-        if option_id in (None, ""):
-            continue
-        labels[str(option_id)] = str(option.get("name") or option.get("label") or option_id)
-    return labels
-
-
 def _attr_types_from(attrs: list) -> dict[str, str]:
     types = {"inst_name": "string", "inst_uuid": "string"}
     for attr in attrs or []:
@@ -214,17 +194,17 @@ def query_cmdb_models(
     _reject_unsupported_filters(kwargs)
     del kwargs
     models, instance_permissions, names = _visible_models(user_info)
-    if classification_id and str(classification_id) not in names:
-        raise GenericQueryError("指定分类不存在或无权访问", status="forbidden")
-    selected = _text_list(model_ids)
-    if model_id not in (None, ""):
-        selected.append(str(model_id))
+    class_ids = _known_classifications(id_list(classification_id), names)
+    selected = id_list(model_ids)
+    for item in id_list(model_id):
+        if item not in selected:
+            selected.append(item)
     counts = count_by_attr("model_id", [], instance_permissions)
     data = query_models(
         models=models,
         instance_counts=counts,
         analysis_mode=analysis_mode or "detail",
-        classification_id=str(classification_id or ""),
+        classification_id=class_ids,
         model_ids=selected,
         page=page,
         page_size=page_size,
@@ -246,6 +226,7 @@ def query_cmdb_instances(
     aggregate_field=None,
     aggregate_op=None,
     order=None,
+    columns=None,
     page=None,
     page_size=None,
     user_info=None,
@@ -253,35 +234,48 @@ def query_cmdb_instances(
 ):
     _reject_unsupported_filters(kwargs)
     del kwargs
-    parsed_filters = _require_condition_group(filters)
-    _models, instance_permissions, _names = _visible_models(user_info)
-    visible_ids = {str(item.get("model_id")) for item in _models}
-    if str(model_id or "") not in visible_ids:
-        raise GenericQueryError("指定模型不存在或无权访问", status="forbidden")
-    _require_model_classification(_models, model_id, classification_id)
-    attrs = _load_model_attrs(str(model_id), user_info)
-    group_title, group_value_type = _group_declaration(attrs, group_by)
+    if any(value not in (None, "", []) for value in (filter_field, filter_op, filter_value)):
+        raise GenericQueryError("当前查询不支持单模型过滤字段")
+    models, instance_permissions, names = _visible_models(user_info)
+    class_ids = _known_classifications(id_list(classification_id), names)
+    selected = id_list(model_id)
+    if not selected:
+        raise GenericQueryError("请勾选模型")
+    by_id = {str(item.get("model_id")): item for item in models}
+    chosen = []
+    for item in selected:
+        row = by_id.get(item)
+        if row is None:
+            raise GenericQueryError("指定模型不存在或无权访问", status="forbidden")
+        if class_ids and str(row.get("classification_id") or "") not in set(class_ids):
+            raise GenericQueryError("模型不属于所选分类")
+        chosen.append(row)
+    filter_map = parse_model_filters(filters, [str(item.get("model_id")) for item in chosen])
+    specs = []
+    for row in chosen:
+        model_key = str(row.get("model_id"))
+        attrs = _load_model_attrs(model_key, user_info)
+        specs.append(
+            {
+                "model_id": model_key,
+                "model_name": row.get("model_name") or model_key,
+                "attr_types": _attr_types_from(attrs),
+                "attrs": attrs,
+                "filters": filter_map.get(model_key),
+            }
+        )
     data = query_instances(
-        model_id=str(model_id),
+        models=specs,
         analysis_mode=analysis_mode or "detail",
-        attr_types=_attr_types_from(attrs),
         permission_map=instance_permissions,
-        filter_field=filter_field,
-        filter_op=filter_op,
-        filter_value=filter_value,
-        filters=parsed_filters,
         group_by=group_by,
         aggregate_field=aggregate_field,
         aggregate_op=aggregate_op,
         order=order,
+        columns=columns,
         page=page,
         page_size=page_size,
-        group_title=group_title,
-        group_value_type=group_value_type,
-        group_labels=_enum_group_labels(attrs, group_by),
     )
-    if data.get("structure") == "table":
-        data["column_fields"] = build_instance_column_fields(attrs, model_key=str(model_id))
     return _ok(data)
 
 
@@ -407,14 +401,17 @@ def query_cmdb_one_hop(
 @_guard("list_cmdb_model_options")
 def list_cmdb_model_options(classification_id=None, user_info=None, **kwargs):
     del kwargs
-    models, _permissions, _names = _visible_models(user_info)
-    if classification_id:
-        models = [item for item in models if str(item.get("classification_id")) == str(classification_id)]
+    models, _permissions, names = _visible_models(user_info)
+    class_ids = _known_classifications(id_list(classification_id), names)
+    if class_ids:
+        allowed = set(class_ids)
+        models = [item for item in models if str(item.get("classification_id") or "") in allowed]
     data = [
         {
             "model_id": item.get("model_id"),
             "model_name": item.get("model_name") or item.get("model_id"),
             "classification_id": item.get("classification_id") or "",
+            "classification_name": item.get("classification_name") or names.get(str(item.get("classification_id") or ""), ""),
         }
         for item in models
         if item.get("model_id")
@@ -447,19 +444,60 @@ def _attr_list_model_id(model_id, start_model_id, model_asst_id, user_info):
 
 @nats_client.register
 @_guard("list_cmdb_attr_options")
-def list_cmdb_attr_options(model_id=None, start_model_id=None, model_asst_id=None, user_info=None, **kwargs):
+def list_cmdb_attr_options(
+    model_id=None,
+    start_model_id=None,
+    model_asst_id=None,
+    include_model_bucket=None,
+    value_type=None,
+    user_info=None,
+    **kwargs,
+):
     del kwargs
-    resolved = _attr_list_model_id(model_id, start_model_id, model_asst_id, user_info)
-    if resolved is None:
-        return {"result": True, "data": [], "message": ""}
-    if not resolved:
-        raise GenericQueryError("模型不能为空")
-    model_id = resolved
+    requested = id_list(model_id)
     models, _permissions, _names = _visible_models(user_info)
-    if str(model_id) not in {str(item.get("model_id")) for item in models}:
+    visible = {str(item.get("model_id")): item for item in models if item.get("model_id")}
+    if not requested:
+        resolved = _attr_list_model_id(None, start_model_id, model_asst_id, user_info)
+        if resolved is None:
+            return {"result": True, "data": [], "message": ""}
+        if not resolved:
+            raise GenericQueryError("模型不能为空")
+        requested = [resolved]
+    missing = [item for item in requested if item not in visible]
+    if missing:
         raise GenericQueryError("指定模型不存在或无权访问", status="forbidden")
-    language = _resolve_nats_cmdb_language(user_info)
-    attrs = ModelManage.search_model_attr(str(model_id), language=language) or []
-    data = [_attr_option(attr) for attr in attrs if attr.get("attr_id")]
+    wanted = str(value_type or "").strip().lower()
+    data = []
+    if include_model_bucket in (True, "true", "True", 1, "1") and wanted != "number":
+        data.append(
+            {
+                "model_id": "",
+                "model_name": "",
+                "attr_id": "model",
+                "attr_name": "按模型",
+                "field_key": "model",
+                "option_label": "按模型",
+                "attr_type": "string",
+                "value_type": "string",
+                "options": [],
+            }
+        )
+    multiple = len(requested) > 1
+    for model_key in requested:
+        row = visible[model_key]
+        model_name = row.get("model_name") or model_key
+        attrs = _load_model_attrs(model_key, user_info)
+        for attr in attrs:
+            if not attr.get("attr_id"):
+                continue
+            option = _attr_option(attr)
+            if wanted and option["value_type"] != wanted:
+                continue
+            option["model_id"] = model_key
+            option["model_name"] = model_name
+            option["field_key"] = f"{model_key}.{option['attr_id']}"
+            option["option_label"] = f"{model_name} · {option['attr_name']}" if multiple else option["attr_name"]
+            data.append(option)
     ensure_payload_limit(data)
     return {"result": True, "data": data, "message": ""}

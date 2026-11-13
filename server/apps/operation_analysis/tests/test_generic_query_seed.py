@@ -105,8 +105,16 @@ def test_generic_query_seed_uses_chart_driven_filters_and_order():
     sources = _sources()
     models = sources["cmdb/query_cmdb_models"]
     model = _param(models, "model_id")
-    assert model["inputConfig"]["optionsSource"]["queryParams"]["classification_id"] == {"ref": "classification_id"}
-    assert model["inputConfig"]["optionsSource"]["emptyUpstreamHintKey"] == "dashboard.selectClassificationFirst"
+    assert model["inputConfig"]["multiple"] is True
+    assert model["inputConfig"]["maxCount"] == 50
+    assert model["inputConfig"]["selectAll"] is True
+    assert model["inputConfig"]["optionsSource"]["groupField"] == "classification_name"
+    assert model["inputConfig"]["optionsSource"]["queryParams"]["classification_id"] == {
+        "ref": "classification_id",
+        "optional": True,
+    }
+    assert "emptyUpstreamHintKey" not in model["inputConfig"]["optionsSource"]
+    assert _param(models, "classification_id")["inputConfig"]["multiple"] is True
     for rest_api in (
         "cmdb/query_cmdb_models",
         "cmdb/query_cmdb_instances",
@@ -144,13 +152,13 @@ def test_generic_query_seed_uses_chart_driven_filters_and_order():
         "alert/query_alert_center",
     ):
         assert _param(sources[rest_api], "group_by")["value"] == ""
-    assert "每种取值" in group_by["desc"]
-    instance_fields = _param(sources["cmdb/query_cmdb_instances"], "filters")["inputConfig"]["fields"]
-    assert instance_fields["kind"] == "dynamic"
-    assert instance_fields["sourceRef"]["value"] == "cmdb/list_cmdb_attr_options"
-    assert instance_fields["valueField"] == "attr_id"
-    assert instance_fields["labelField"] == "attr_name"
-    assert instance_fields["queryParams"]["model_id"] == {"ref": "model_id"}
+    assert "某一个模型" in group_by["desc"]
+    assert group_by["inputConfig"]["optionsSource"]["valueField"] == "field_key"
+    assert group_by["inputConfig"]["optionsSource"]["queryParams"]["include_model_bucket"] is True
+    instance_filters = _param(sources["cmdb/query_cmdb_instances"], "filters")
+    assert instance_filters["type"] == "modelConditionFilter"
+    assert instance_filters["inputConfig"] == {"control": "modelConditionFilter", "modelParam": "model_id"}
+    assert instance_filters["value"] == {"by_model": {}}
     end_fields = _param(sources["cmdb/query_cmdb_one_hop"], "end_filters")["inputConfig"]["fields"]
     assert end_fields["kind"] == "dynamic"
     assert end_fields["queryParams"]["start_model_id"] == {"ref": "start_model_id"}
@@ -187,10 +195,7 @@ def test_instance_and_one_hop_classification_is_single_select_and_declared():
     from apps.operation_analysis.views.datasource_view import _resolve_request_params
 
     sources = _sources()
-    specs = (
-        ("cmdb/query_cmdb_instances", "model_id"),
-        ("cmdb/query_cmdb_one_hop", "start_model_id"),
-    )
+    specs = (("cmdb/query_cmdb_one_hop", "start_model_id"),)
     for rest_api, model_name in specs:
         source = sources[rest_api]
         classification = _param(source, "classification_id")
@@ -234,6 +239,52 @@ def test_instance_and_one_hop_classification_is_single_select_and_declared():
     assert kept["start_model_id"] == "host"
     assert "order" not in kept
     assert "direction" not in kept
+
+    instance = sources["cmdb/query_cmdb_instances"]
+    classification = _param(instance, "classification_id")
+    model = _param(instance, "model_id")
+    assert classification["inputConfig"]["multiple"] is True
+    assert "emptyUpstreamHintKey" not in classification["inputConfig"]["optionsSource"]
+    assert model["inputConfig"]["multiple"] is True
+    assert model["inputConfig"]["maxCount"] == 20
+    assert model["inputConfig"]["selectAll"] is True
+    assert model["inputConfig"]["optionsSource"]["groupField"] == "classification_name"
+    assert model["inputConfig"]["optionsSource"]["queryParams"]["classification_id"]["optional"] is True
+    names = {item["name"] for item in instance["params"]}
+    assert "filter_field" not in names
+    assert "filter_op" not in names
+    assert "filter_value" not in names
+    aggregate = _param(instance, "aggregate_field")["inputConfig"]["optionsSource"]
+    assert aggregate["valueField"] == "field_key"
+    assert aggregate["labelField"] == "option_label"
+    assert aggregate["queryParams"] == {"model_id": {"ref": "model_id"}, "value_type": "number"}
+    columns = _param(instance, "columns")
+    assert columns["type"] == "modelColumns"
+    assert columns["value"] is None
+    order = _param(instance, "order")["inputConfig"]
+    assert "includeModelAttrsInModes" not in order
+    assert all("modes" not in field for field in order["fields"])
+    resolved = _resolve_request_params(
+        SimpleNamespace(rest_api="cmdb/query_cmdb_instances", params=instance["params"]),
+        {
+            "analysis_mode": "detail",
+            "classification_id": ["compute"],
+            "model_id": ["host", "app"],
+            "page": None,
+            "page_size": "",
+            "filters": {"by_model": {"host": {"logic": "OR", "items": [{"field": "cpu", "op": "gt", "value": 1}]}}},
+        },
+    )
+    assert resolved["classification_id"] == ["compute"]
+    assert resolved["model_id"] == ["host", "app"]
+    assert resolved["filters"]["by_model"]["host"]["logic"] == "OR"
+    assert "page" not in resolved
+    assert "page_size" not in resolved
+    with pytest.raises(ValueError, match="条件过滤"):
+        _resolve_request_params(
+            SimpleNamespace(rest_api="cmdb/query_cmdb_instances", params=instance["params"]),
+            {"analysis_mode": "detail", "model_id": ["host"], "filters": {"logic": "OR", "items": []}},
+        )
 
 
 def test_model_query_schema_matches_detail_rows_without_touching_other_status():
@@ -337,7 +388,7 @@ def test_model_query_schema_matches_detail_rows_without_touching_other_status():
     def table_keys(source):
         return [field["key"] for field in source["field_schema"] if field.get("table") is not False]
 
-    assert table_keys(instance_query) == ["inst_name"]
+    assert table_keys(instance_query) == ["model_name", "model_id", "inst_name", "inst_uuid"]
     assert table_keys(one_hop) == ["start_name", "end_name"]
     assert one_hop["chart_type"] == ["table", "single", "topN"]
     distribution = next(

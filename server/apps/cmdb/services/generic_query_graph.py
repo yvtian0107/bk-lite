@@ -64,12 +64,95 @@ def aggregate_numeric(
             condition_params=condition_params,
             condition_logic=condition_logic,
         )
-        query = f"MATCH (n:{INSTANCE}) {where} " f"RETURN {agg}(n.{validated}) AS value, count(n) AS scanned"
+        query = f"MATCH (n:{INSTANCE}) {where} " f"RETURN {agg}(n.{validated}) AS value, count(n) AS scanned, count(n.{validated}) AS valued"
         rows = _run(client, query, query_params)
     if not rows:
-        return {"value": None, "scanned": 0}
+        return {"value": None, "scanned": 0, "valued": 0}
     row = rows[0]
-    return {"value": row.get("value"), "scanned": int(row.get("scanned") or 0)}
+    return {
+        "value": row.get("value"),
+        "scanned": int(row.get("scanned") or 0),
+        "valued": int(row.get("valued") or 0),
+    }
+
+
+def count_instances(
+    params: list,
+    permission_map: dict,
+    condition_params: list | None = None,
+    condition_logic: str = "AND",
+) -> int:
+    """统计一批实例。权限条件和用户条件分开，用户条件里的「或者」不能放宽权限。"""
+    with GraphClient() as client:
+        where, query_params = _where_clause(
+            client,
+            params,
+            permission_map,
+            alias="n",
+            condition_params=condition_params,
+            condition_logic=condition_logic,
+        )
+        rows = _run(client, f"MATCH (n:{INSTANCE}) {where} RETURN count(n) AS scanned", query_params)
+    if not rows:
+        return 0
+    return int(rows[0].get("scanned") or 0)
+
+
+def group_instance_counts(
+    group_by_attr: str,
+    params: list,
+    permission_map: dict,
+    condition_params: list | None = None,
+    condition_logic: str = "AND",
+) -> dict:
+    """按一个属性分组计数。分组键原样返回，空值保留为 None。"""
+    validated = CQLValidator.validate_field(group_by_attr)
+    with GraphClient() as client:
+        where, query_params = _where_clause(
+            client,
+            params,
+            permission_map,
+            alias="n",
+            condition_params=condition_params,
+            condition_logic=condition_logic,
+        )
+        query = f"MATCH (n:{INSTANCE}) {where} RETURN n.{validated} AS bucket, count(n) AS count"
+        rows = _run(client, query, query_params)
+    grouped = {}
+    for row in rows:
+        grouped[row.get("bucket")] = int(row.get("count") or 0)
+    return grouped
+
+
+def scan_instance_rows(
+    params: list,
+    permission_map: dict,
+    fields: list[str],
+    *,
+    condition_params: list | None = None,
+    condition_logic: str = "AND",
+    limit: int,
+) -> list[dict]:
+    """取出明细排序需要的属性。上限由调用方按整次查询计算。"""
+    if limit < 1:
+        raise GenericQueryGraphError("明细必须分页")
+    selected = []
+    for field in fields:
+        validated = CQLValidator.validate_field(field)
+        if validated not in selected:
+            selected.append(validated)
+    returning = ", ".join(f"n.{name} AS {name}" for name in selected)
+    with GraphClient() as client:
+        where, query_params = _where_clause(
+            client,
+            params,
+            permission_map,
+            alias="n",
+            condition_params=condition_params,
+            condition_logic=condition_logic,
+        )
+        query = f"MATCH (n:{INSTANCE}) {where} RETURN {returning} LIMIT {int(limit)}"
+        return _run(client, query, query_params)
 
 
 _DETAIL_ORDER = "ORDER BY start_name ASC, end_name ASC, start_uuid ASC, end_uuid ASC"
