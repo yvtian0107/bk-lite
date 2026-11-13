@@ -17,6 +17,7 @@ from apps.monitor.services.authorized_metric_query import (
     AuthorizedMetricQueryError,
     AuthorizedMetricQueryService,
     _instance_lookup_candidates,
+    _metric_instance_id_keys,
     empty_aggregation_needs_choice,
 )
 from apps.monitor.services.generic_query import (
@@ -246,6 +247,7 @@ def query_monitor_metric(
             if candidate in labels:
                 labels[str(raw_id)] = labels[candidate]
                 break
+    identity_keys = _metric_instance_id_keys(metric) if metric is not None else []
     data = build_metric_result(
         mode=mode,
         response=response,
@@ -253,6 +255,7 @@ def query_monitor_metric(
         aggregation=reported_aggregation,
         requested_ids=checked["instance_ids"],
         instance_names=labels,
+        identity_keys=identity_keys,
     )
     return _ok(data)
 

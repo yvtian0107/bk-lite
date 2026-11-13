@@ -13,6 +13,7 @@ from django.db.models.functions import Cast, Coalesce, NullIf
 from apps.core.utils.loader import LanguageLoader
 from apps.monitor.constants.language import LanguageConstants
 from apps.monitor.models.monitor_object import MonitorInstance
+from apps.monitor.services.authorized_metric_query import _instance_lookup_candidates
 from apps.monitor.services.generic_query_limits import (
     ALERT_RANGE_MAX_SECONDS,
     DETAIL_PAGE_SIZE_MAX,
@@ -216,6 +217,36 @@ def _table_row(instance_id: str, value, moment: str, unit: str, aggregation: str
     }
 
 
+def _identity_candidates(value: str) -> set[str]:
+    return set(_instance_lookup_candidates(value))
+
+
+def _series_identity_candidates(labels: dict, identity_keys: list[str]) -> set[str]:
+    """返回序列按实例标识键拼回存储身份。单维标签和元组主键算同一台。"""
+    keys = [str(key).strip() for key in identity_keys or [] if str(key).strip()]
+    if keys:
+        values = []
+        complete = True
+        for key in keys:
+            raw = labels.get(key)
+            if raw in (None, ""):
+                complete = False
+                break
+            values.append(str(raw))
+        if complete and values:
+            if len(values) == 1:
+                return _identity_candidates(values[0])
+            return _identity_candidates(str(tuple(values)))
+    instance_id = str(labels.get("instance_id") or labels.get("bk_inst_id") or "")
+    if not instance_id:
+        return set()
+    return _identity_candidates(instance_id)
+
+
+def _matched_requested_ids(series_candidates: set[str], requested_ids: list[str], requested_candidates: dict[str, set[str]]) -> list[str]:
+    return [requested for requested in requested_ids if series_candidates & requested_candidates[requested]]
+
+
 def _per_instance_rows(
     parsed,
     *,
@@ -223,14 +254,15 @@ def _per_instance_rows(
     unit: str,
     aggregation: str,
     requested_ids: list[str],
+    requested_candidates: dict[str, set[str]],
     instance_names: dict[str, str],
 ) -> list[dict]:
     rows = []
     seen = set()
     for series in parsed:
-        instance_id = series["instance_id"]
-        if instance_id:
-            seen.add(instance_id)
+        matched = _matched_requested_ids(series["candidates"], requested_ids, requested_candidates)
+        seen.update(matched)
+        label_id = matched[0] if matched else series["instance_id"]
         points = series["points"]
         numbers = [point["value"] for point in points if point["value"] is not None]
         if mode == "latest":
@@ -240,7 +272,7 @@ def _per_instance_rows(
         else:
             value = None if not numbers else _reduce(numbers, aggregation)
             moment = ""
-        rows.append(_table_row(_instance_label(instance_id, instance_names), value, moment, unit, aggregation))
+        rows.append(_table_row(_instance_label(label_id, instance_names), value, moment, unit, aggregation))
     for instance_id in requested_ids:
         if instance_id in seen:
             continue
@@ -272,6 +304,7 @@ def build_metric_result(
     aggregation: str,
     requested_ids: list[str],
     instance_names: dict[str, str] | None = None,
+    identity_keys: list[str] | None = None,
 ) -> dict:
     if not isinstance(response, dict) or response.get("status") != "success":
         message = ""
@@ -283,15 +316,14 @@ def build_metric_result(
         raise GenericQueryError(f"返回序列超过 {METRIC_SERIES_MAX} 条")
     series_payload = {}
     parsed = []
-    seen_ids = set()
+    requested_candidates = {item: _identity_candidates(str(item)) for item in requested_ids}
     for index, series in enumerate(result):
         values = series.get("values") or []
         if len(values) > METRIC_POINTS_MAX:
             raise GenericQueryError(f"单条序列超过 {METRIC_POINTS_MAX} 个点（点数包含起止两端），请缩短时间范围或加大步长")
         labels = series.get("metric") or {}
         instance_id = str(labels.get("instance_id") or labels.get("bk_inst_id") or "")
-        if instance_id:
-            seen_ids.add(instance_id)
+        candidates = _series_identity_candidates(labels, identity_keys or [])
         dimension = _dimension_text(labels)
         if instance_id and dimension:
             name = f"{instance_id} {dimension}"
@@ -313,8 +345,8 @@ def build_metric_result(
                 }
             )
         series_payload[name] = points
-        parsed.append({"instance_id": instance_id, "dimension": dimension, "points": points})
-    missing = [item for item in requested_ids if item not in seen_ids]
+        parsed.append({"instance_id": instance_id, "candidates": candidates, "points": points})
+    missing = [item for item in requested_ids if not any(requested_candidates[item] & series["candidates"] for series in parsed)]
     metric_fields = [
         _result_field("time", "时间", "datetime", "dimension"),
         _result_field("value", "值", "number", "measure"),
@@ -326,6 +358,7 @@ def build_metric_result(
             unit=unit,
             aggregation=aggregation,
             requested_ids=requested_ids,
+            requested_candidates=requested_candidates,
             instance_names=instance_names or {},
         )
         present = any(isinstance(row["value"], (int, float)) and not isinstance(row["value"], bool) for row in rows)

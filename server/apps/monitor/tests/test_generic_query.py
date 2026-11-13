@@ -376,6 +376,102 @@ def test_metric_table_uses_the_instance_name():
     assert by_name["blank-name"]["value"] == "无数据"
 
 
+def test_metric_result_matches_storage_key_to_returned_labels():
+    names = {"('web-01',)": "网站主机", "web-01": "网站主机", "plain-host": "裸主机"}
+    returned = {
+        "status": "success",
+        "data": {"result": [{"metric": {"instance_id": "web-01"}, "values": [[1700000000, "40"]]}]},
+    }
+    latest = build_metric_result(
+        mode="latest",
+        response=returned,
+        unit="percent",
+        aggregation="avg",
+        requested_ids=["('web-01',)"],
+        instance_names=names,
+    )
+    assert [item["instance_id"] for item in latest["items"]] == ["网站主机"]
+    assert latest["items"][0]["value"] == 40.0
+
+    window = build_metric_result(
+        mode="value",
+        response=returned,
+        unit="percent",
+        aggregation="avg",
+        requested_ids=["('web-01',)"],
+        instance_names=names,
+    )
+    assert [item["value"] for item in window["items"]] == [40.0]
+    assert [field["key"] for field in window["fields"]] == ["instance_id", "value", "unit", "aggregation"]
+
+    series = build_metric_result(
+        mode="series",
+        response=returned,
+        unit="percent",
+        aggregation="avg",
+        requested_ids=["('web-01',)"],
+        instance_names=names,
+    )
+    assert series["status"] == "ok"
+    assert series["series"]["web-01"][0]["value"] == 40.0
+    assert series["unbound_instance_ids"] == []
+
+    plain = build_metric_result(
+        mode="latest",
+        response={"status": "success", "data": {"result": [{"metric": {"instance_id": "plain-host"}, "values": [[1, "3"]]}]}},
+        unit="percent",
+        aggregation="avg",
+        requested_ids=["plain-host"],
+        instance_names=names,
+    )
+    assert [(item["instance_id"], item["value"]) for item in plain["items"]] == [("裸主机", 3.0)]
+
+    pod_names = {"('cluster-a', 'nginx-1')": "前端 Pod", "('cluster-a', 'nginx-2')": "后端 Pod"}
+    pods = build_metric_result(
+        mode="latest",
+        response={
+            "status": "success",
+            "data": {
+                "result": [
+                    {"metric": {"instance_id": "cluster-a", "pod": "nginx-1"}, "values": [[1, "12"]]},
+                    {"metric": {"instance_id": "cluster-a", "pod": "nginx-2"}, "values": [[1, "8"]]},
+                ]
+            },
+        },
+        unit="percent",
+        aggregation="avg",
+        requested_ids=["('cluster-a', 'nginx-1')", "('cluster-a', 'nginx-2')"],
+        instance_names=pod_names,
+        identity_keys=["instance_id", "pod"],
+    )
+    assert [(item["instance_id"], item["value"]) for item in pods["items"]] == [("前端 Pod", 12.0), ("后端 Pod", 8.0)]
+
+    pod_series = build_metric_result(
+        mode="series",
+        response={
+            "status": "success",
+            "data": {"result": [{"metric": {"instance_id": "cluster-a", "pod": "nginx-1"}, "values": [[1, "12"]]}]},
+        },
+        unit="percent",
+        aggregation="avg",
+        requested_ids=["('cluster-a', 'nginx-1')"],
+        instance_names=pod_names,
+        identity_keys=["instance_id", "pod"],
+    )
+    assert pod_series["series"]["cluster-a pod=nginx-1"][0]["value"] == 12.0
+    assert pod_series["unbound_instance_ids"] == []
+
+    absent = build_metric_result(
+        mode="latest",
+        response={"status": "success", "data": {"result": []}},
+        unit="percent",
+        aggregation="avg",
+        requested_ids=["('web-01',)"],
+        instance_names=names,
+    )
+    assert [(item["instance_id"], item["value"]) for item in absent["items"]] == [("网站主机", "无数据")]
+
+
 def test_empty_aggregation_rejects_open_dimensions_before_the_query(mocker):
     from types import SimpleNamespace
 
