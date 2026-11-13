@@ -291,13 +291,9 @@ def _instance_total(models: list[dict], permission_map: dict) -> int:
     return total
 
 
-def _reject_idle_filters(models: list[dict], active_id: str) -> None:
-    for model in models:
-        if model["model_id"] == active_id:
-            continue
-        _logic, conditions = _model_conditions(model)
-        if conditions:
-            raise GenericQueryError("其他模型不参与这次统计，不能带该模型的条件")
+def _require_single_model_attribute(models: list[dict]) -> None:
+    if len(models) != 1:
+        raise GenericQueryError("按属性统计只支持单个模型")
 
 
 def _owned_attr(models: list[dict], key: str, purpose: str) -> tuple[dict, str]:
@@ -325,11 +321,14 @@ def _unique_model_labels(models: list[dict]) -> dict[str, str]:
 
 
 def _instance_distribution(models, permission_map, group_by, order, page, page_size) -> dict:
+    chosen = str(group_by or "").strip()
+    if not chosen:
+        raise GenericQueryError("分布必须选择分组字段")
     limit = _distribution_window("distribution", page, page_size)
     grouped_model, attr_id = (None, None)
-    if str(group_by or "").strip() not in ("", _MODEL_GROUP):
-        grouped_model, attr_id = _owned_attr(models, str(group_by), "属性分组")
-        _reject_idle_filters(models, grouped_model["model_id"])
+    if chosen != _MODEL_GROUP:
+        _require_single_model_attribute(models)
+        grouped_model, attr_id = _owned_attr(models, chosen, "属性分组")
     if grouped_model is None:
         counts = {}
         for model in models:
@@ -397,7 +396,7 @@ def _instance_distribution(models, permission_map, group_by, order, page, page_s
         )
         _sort_distribution(items, field, descending)
         shown, window = _slice_distribution(items, limit)
-        title = _attr_title(grouped_model, attr_id, len(models))
+        title = _attr_title(grouped_model, attr_id, 1)
         fields = [
             _result_field("model_name", "模型名称", "string"),
             _result_field("model_id", "模型标识", "string", "identity"),
@@ -409,7 +408,7 @@ def _instance_distribution(models, permission_map, group_by, order, page, page_s
             ),
             _result_field("instance_count", "实例数", "number", "measure"),
         ]
-        aggregation = f"按 {grouped_model['model_name']} · {title if len(models) == 1 else _attr_title(grouped_model, attr_id, 1)} 计数"
+        aggregation = f"按 {grouped_model['model_name']} · {title} 计数"
     if not shown:
         return _with_fields(
             {
@@ -428,10 +427,10 @@ def _instance_distribution(models, permission_map, group_by, order, page, page_s
 def _instance_aggregate(models, permission_map, aggregate_field, aggregate_op) -> dict:
     if not aggregate_field or not aggregate_op:
         raise GenericQueryError("数值聚合必须指定聚合字段和聚合方式")
+    _require_single_model_attribute(models)
     model, attr_id = _owned_attr(models, str(aggregate_field), "属性聚合")
     if _attr_kind(model["attr_types"], attr_id) != "number":
         raise GenericQueryError("聚合字段不是数值属性")
-    _reject_idle_filters(models, model["model_id"])
     logic, conditions = _model_conditions(model)
     try:
         aggregated = aggregate_numeric(

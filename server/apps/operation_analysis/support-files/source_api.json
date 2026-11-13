@@ -3428,7 +3428,7 @@
   {
     "key": "CMDB 模型列表::cmdb/list_cmdb_model_options",
     "name": "CMDB 模型列表（选项）",
-    "desc": "当前可见的 CMDB 模型，供通用查询下拉使用，本身不直接出图",
+    "desc": "当前可见的 CMDB 模型，供通用查询下拉使用，本身不直接出图。请求里不存在或已失效的分类不会让这次选项查询失败，仍返回有效分类下的模型，并把失效分类标识放在 invalid_classification_ids。",
     "rest_api": "cmdb/list_cmdb_model_options",
     "tag": [
       "cmdb"
@@ -3722,7 +3722,8 @@
             "valueField": "classification_id",
             "labelField": "classification_name"
           },
-          "multiple": true
+          "multiple": true,
+          "retainUnavailableValues": true
         }
       },
       {
@@ -3750,8 +3751,7 @@
             "groupField": "classification_name"
           },
           "multiple": true,
-          "maxCount": 50,
-          "selectAll": true
+          "maxCount": 50
         }
       },
       {
@@ -3836,7 +3836,7 @@
   {
     "key": "CMDB 实例通用查询::cmdb/query_cmdb_instances",
     "name": "CMDB 实例通用查询",
-    "desc": "按一个或多个模型查询实例明细、数量、属性分布或数值聚合。至少勾选 1 个模型，最多 20 个。每个模型各自一块条件，结果取并集。明细列是模型名称、模型标识、实例名称、实例标识，再加上勾选的属性；某个模型没有的属性留空。所有模型合在一起排序和分页。计数不接受分页。分布默认按模型；也可以按某一个模型的一个属性，其它模型不参与。数值聚合只针对一个模型的一个数值属性，没有值时不补 0。",
+    "desc": "按一个或多个模型查询实例明细、数量、属性分布或数值聚合。至少勾选 1 个模型，最多 20 个。每个模型各自一块条件，结果取并集。明细列是模型名称、模型标识、实例名称、实例标识，再加上勾选的属性；某个模型没有的属性留空。所有模型合在一起排序和分页。计数不接受分页。分布必须选择分组：选「按模型」按模型统计；只选了一个模型时才可以按该模型的一个属性分布。多个模型按属性统计会失败。数值聚合同样只支持单个模型的一个数值属性，没有值时不补 0。",
     "rest_api": "cmdb/query_cmdb_instances",
     "tag": [
       "cmdb"
@@ -3924,7 +3924,8 @@
             "valueField": "classification_id",
             "labelField": "classification_name"
           },
-          "multiple": true
+          "multiple": true,
+          "retainUnavailableValues": true
         }
       },
       {
@@ -3952,8 +3953,7 @@
             "groupField": "classification_name"
           },
           "multiple": true,
-          "maxCount": 20,
-          "selectAll": true
+          "maxCount": 20
         },
         "required": true
       },
@@ -3962,7 +3962,7 @@
         "type": "string",
         "value": "",
         "alias_name": "分布属性",
-        "desc": "分布时按模型，或按某一个模型的一个属性拆开。属性值是模型标识.属性标识。不支持把同名属性当成同一列。",
+        "desc": "分布时必须选择。选「按模型」按模型统计；只选了一个模型时，也可以选该模型的一个属性，值是模型标识.属性标识。空着会失败。多个模型不能按属性统计。",
         "filterType": "params",
         "inputConfig": {
           "control": "select",
@@ -4295,7 +4295,8 @@
             },
             "valueField": "classification_id",
             "labelField": "classification_name"
-          }
+          },
+          "retainUnavailableValues": true
         }
       },
       {

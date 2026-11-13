@@ -124,7 +124,12 @@ const QueryForm = ({
         globalFilters={[]}
         onParamOptionsResolved={(param, options) => {
           const current = form.getFieldValue(['params', param.name]);
-          const next = reconcileComponentParamValue(current, options);
+          const retain = Boolean(
+            param.inputConfig
+            && 'retainUnavailableValues' in param.inputConfig
+            && param.inputConfig.retainUnavailableValues,
+          );
+          const next = reconcileComponentParamValue(current, options, retain);
           if (next !== current) form.setFieldValue(['params', param.name], next);
         }}
       />
@@ -627,7 +632,6 @@ describe('cmdb classification cascade', () => {
                 control: 'select',
                 multiple: true,
                 maxCount: 20,
-                selectAll: true,
                 optionsSource: {
                   type: 'dynamic',
                   sourceId: 2,
@@ -706,16 +710,20 @@ describe('cmdb classification cascade', () => {
     expect(api.getSourceDataByApiId).toHaveBeenCalledWith(2, { classification_id: ['compute'] }, undefined);
   });
 
-  it('selects only the models currently offered', async () => {
-    api.getSourceDataByApiId.mockImplementation(async (id: number) => {
+  it('keeps an expired classification and asks the user to remove it', async () => {
+    api.getSourceDataByApiId.mockImplementation(async (id: number, params?: Record<string, unknown>) => {
       if (id === 1) {
         return { data: [{ classification_id: 'compute', classification_name: '计算' }], warnings: [] };
       }
+      const requested = Array.isArray(params?.classification_id) ? params.classification_id : [];
+      const invalid = requested.filter((item) => item !== 'compute');
       return {
-        data: [
-          { model_id: 'host', model_name: '主机', classification_name: '计算' },
-          { model_id: 'room', model_name: '机房', classification_name: '空间' },
-        ],
+        data: {
+          items: requested.includes('compute') || requested.length === 0
+            ? [{ model_id: 'host', model_name: '主机', classification_name: '计算' }]
+            : [],
+          invalid_classification_ids: invalid,
+        },
         warnings: [],
       };
     });
@@ -730,6 +738,7 @@ describe('cmdb classification cascade', () => {
               inputConfig: {
                 control: 'select',
                 multiple: true,
+                retainUnavailableValues: true,
                 optionsSource: {
                   type: 'dynamic',
                   sourceId: 1,
@@ -748,7 +757,6 @@ describe('cmdb classification cascade', () => {
                 control: 'select',
                 multiple: true,
                 maxCount: 20,
-                selectAll: true,
                 optionsSource: {
                   type: 'dynamic',
                   sourceId: 2,
@@ -760,16 +768,62 @@ describe('cmdb classification cascade', () => {
             },
           ],
         } as DatasourceItem}
-        initialParams={{ classification_id: [], model_id: [] }}
+        initialParams={{ classification_id: ['compute', 'old'], model_id: ['host'] }}
       />,
     );
     await waitFor(() => {
-      expect(api.getSourceDataByApiId).toHaveBeenCalledWith(2, {}, undefined);
+      expect(api.getSourceDataByApiId).toHaveBeenCalledWith(
+        2,
+        { classification_id: ['compute', 'old'] },
+        undefined,
+      );
+      expect(readParams().classification_id).toEqual(['compute', 'old']);
+      expect(screen.getByText('dashboard.invalidClassifications：old')).toBeTruthy();
     });
-    openSelect(1);
-    fireEvent.click(await screen.findByText('dashboard.selectCurrentCandidates'));
+    expect(screen.queryByText('dashboard.selectCurrentCandidates')).toBeNull();
+  });
+
+  it('loads the one-hop model list when the saved classification has expired', async () => {
+    api.getSourceDataByApiId.mockImplementation(async (id: number) => {
+      if (id === 1) {
+        return { data: [{ classification_id: 'compute', classification_name: '计算' }], warnings: [] };
+      }
+      return {
+        data: { items: [], invalid_classification_ids: ['old'] },
+        warnings: [],
+      };
+    });
+    render(
+      <QueryForm
+        source={{
+          id: 26,
+          name: 'CMDB 一跳关联通用查询',
+          params: [
+            {
+              ...classification(),
+              inputConfig: {
+                control: 'select',
+                retainUnavailableValues: true,
+                optionsSource: {
+                  type: 'dynamic',
+                  sourceId: 1,
+                  valueField: 'classification_id',
+                  labelField: 'classification_name',
+                },
+              },
+            },
+            modelSelect('start_model_id', '起点模型'),
+          ],
+        } as DatasourceItem}
+        initialParams={{ classification_id: 'old', start_model_id: '' }}
+      />,
+    );
     await waitFor(() => {
-      expect(readParams().model_id).toEqual(['host', 'room']);
+      expect(api.getSourceDataByApiId).toHaveBeenCalledWith(2, { classification_id: 'old' }, undefined);
+      expect(readParams().classification_id).toBe('old');
+      expect(screen.getByText('dashboard.invalidClassifications：old')).toBeTruthy();
     });
+    expect(screen.queryByText('请先选择分类')).toBeNull();
+    expect(screen.getAllByRole('combobox')).toHaveLength(2);
   });
 });

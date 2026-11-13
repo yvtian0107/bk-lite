@@ -49,6 +49,7 @@ import {
   clearComponentParamSwitch,
   findComponentSwitchParams,
   reconcileComponentParamValue,
+  retainsUnavailableParamValues,
   supportsComponentSwitch,
 } from '@/app/ops-analysis/utils/componentParamSwitch';
 import {
@@ -1231,11 +1232,17 @@ const ViewConfig: React.FC<ViewConfigPropsWithManager> = ({
     setEditingInputConfigParam(override ?? param);
   };
 
+  const sourceParamsRef = useRef<ParamItem[]>([]);
   const reconcileParamWithOptions = useCallback(
     (paramName: string, options: InputOption[]) => {
       resolvedParamOptionsRef.current.set(paramName, options);
       const currentParams = form.getFieldValue('params') || {};
-      const nextValue = reconcileComponentParamValue(currentParams[paramName], options);
+      const param = sourceParamsRef.current.find((item) => item.name === paramName);
+      const nextValue = reconcileComponentParamValue(
+        currentParams[paramName],
+        options,
+        retainsUnavailableParamValues(param),
+      );
       if (nextValue !== currentParams[paramName]) {
         form.setFieldValue(['params', paramName], nextValue);
       }
@@ -1304,6 +1311,7 @@ const ViewConfig: React.FC<ViewConfigPropsWithManager> = ({
       }),
     };
   }, [canonicalSelectedDataSource, widgetParamOverrides]);
+  sourceParamsRef.current = effectiveDataSource?.params ?? [];
 
   const componentSwitchOwner = useMemo(() => {
     const owner = findComponentSwitchParams(effectiveDataSource?.params)[0];
@@ -1380,6 +1388,7 @@ const ViewConfig: React.FC<ViewConfigPropsWithManager> = ({
           reconciledFormParams[param.name] = reconcileComponentParamValue(
             reconciledFormParams[param.name],
             optionsForParam,
+            retainsUnavailableParamValues(param),
           );
         });
         if (

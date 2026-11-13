@@ -1184,7 +1184,7 @@
     "piePageShare": "当前页占比，不是全部结果（第 {page} 页，每页 {pageSize}，共 {count} 项）",
     "optionPageLimitExceeded": "选项超过分页上限，无法继续加载",
     "selectClassificationFirst": "请先选择分类",
-    "selectCurrentCandidates": "全选当前候选",
+    "invalidClassifications": "这些分类已失效，请删除",
     "selectModelRelationFirst": "请先选择起点模型和关系",
     "conditionFilter": {
       "add": "添加条件",

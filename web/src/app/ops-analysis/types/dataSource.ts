@@ -242,8 +242,8 @@ export type InputControlConfig =
     componentSwitch?: boolean;
     multiple?: boolean;
     maxCount?: number;
-    /** 多选时把当前候选项写入值，不表示以后新增的选项自动入选。 */
-    selectAll?: boolean;
+    /** 选项里已经没有的已选值保留，由界面提示用户自己删除。 */
+    retainUnavailableValues?: boolean;
     /** select 专用：dropdown 为默认下拉；table 点击后弹表格批量勾选 */
     picker?: 'dropdown' | 'table';
   }

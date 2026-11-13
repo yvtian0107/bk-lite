@@ -116,6 +116,20 @@ interface DataSourceParamsConfigProps {
   onParamOptionsResolved?: (param: ParamItem, options: InputOption[]) => void;
 }
 
+const classificationParamRef = (inputConfig?: InputControlConfig): string | undefined => {
+  if (!inputConfig || inputConfig.control !== 'select' || inputConfig.optionsSource.type !== 'dynamic') {
+    return undefined;
+  }
+  const value = inputConfig.optionsSource.queryParams?.classification_id;
+  if (!value || typeof value !== 'object' || !('ref' in value)) return undefined;
+  const ref = value.ref.trim();
+  return ref || undefined;
+};
+
+const sameIds = (left: string[] | undefined, right: string[]) => (
+  left?.length === right.length && (left ?? []).every((id, index) => id === right[index])
+);
+
 const formParamValue = (
   formParams: Record<string, unknown> | undefined,
   name: string,
@@ -189,6 +203,7 @@ const DataSourceParamsConfig: React.FC<DataSourceParamsConfigProps> = ({
 }) => {
   const { t } = useTranslation();
   const [mounted, setMounted] = useState(false);
+  const [invalidClassifications, setInvalidClassifications] = useState<Record<string, string[]>>({});
   const form = Form.useFormInstance();
   // useWatch 负责在未注册字段变化时重渲染；当次渲染读 store，避免订阅值晚一拍。
   const watchedParams = Form.useWatch(fieldPrefix, { form, preserve: true }) as Record<string, unknown> | undefined;
@@ -384,6 +399,15 @@ const DataSourceParamsConfig: React.FC<DataSourceParamsConfigProps> = ({
         onOptionsResolved={(resolvedOptions) =>
           onParamOptionsResolved?.(param, resolvedOptions)
         }
+        onInvalidClassifications={(() => {
+          const ref = classificationParamRef(inputConfig);
+          if (!ref) return undefined;
+          return (ids: string[]) => {
+            setInvalidClassifications((current) => (
+              sameIds(current[ref], ids) ? current : { ...current, [ref]: ids }
+            ));
+          };
+        })()}
       />
     );
   };
@@ -435,6 +459,14 @@ const DataSourceParamsConfig: React.FC<DataSourceParamsConfigProps> = ({
           };
         };
 
+        const invalidIds = (invalidClassifications[param.name] ?? []).filter((id) => {
+          const current = formParamValue(formParams, param.name, param.value);
+          const selected = Array.isArray(current)
+            ? current.map((item) => String(item))
+            : [String(current ?? '').trim()].filter(Boolean);
+          return selected.includes(id);
+        });
+
         return (
           <Form.Item
             key={`${selectedDataSource?.id || 'default'}-${param.name}`}
@@ -463,6 +495,11 @@ const DataSourceParamsConfig: React.FC<DataSourceParamsConfigProps> = ({
             preserve
             initialValue={!preserveValues && mounted ? initialValue : undefined}
             tooltip={param.desc || undefined}
+            extra={invalidIds.length ? (
+              <span className="text-xs text-(--color-warning)">
+                {t('dashboard.invalidClassifications')}：{invalidIds.join('、')}
+              </span>
+            ) : undefined}
             style={{ marginBottom: isVeryLongText ? 20 : 16 }}
             required={Boolean(param.required || param.integer)}
             rules={param.integer

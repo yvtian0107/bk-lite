@@ -402,11 +402,12 @@ def query_cmdb_one_hop(
 def list_cmdb_model_options(classification_id=None, user_info=None, **kwargs):
     del kwargs
     models, _permissions, names = _visible_models(user_info)
-    class_ids = _known_classifications(id_list(classification_id), names)
-    if class_ids:
-        allowed = set(class_ids)
+    requested = id_list(classification_id)
+    invalid = [item for item in requested if item not in names]
+    if requested:
+        allowed = {item for item in requested if item in names}
         models = [item for item in models if str(item.get("classification_id") or "") in allowed]
-    data = [
+    items = [
         {
             "model_id": item.get("model_id"),
             "model_name": item.get("model_name") or item.get("model_id"),
@@ -416,6 +417,7 @@ def list_cmdb_model_options(classification_id=None, user_info=None, **kwargs):
         for item in models
         if item.get("model_id")
     ]
+    data = {"items": items, "invalid_classification_ids": invalid}
     ensure_payload_limit(data)
     return {"result": True, "data": data, "message": ""}
 

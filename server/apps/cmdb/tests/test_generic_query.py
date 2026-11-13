@@ -989,10 +989,15 @@ def test_model_options_list_only_the_selected_classification(monkeypatch):
     monkeypatch.setattr("apps.cmdb.nats.generic_query._visible_models", lambda user_info: _visible_cmdb_models())
     listed = list_cmdb_model_options(classification_id="compute", user_info={"user": "demo"})
     assert listed["result"] is True
-    assert [item["model_id"] for item in listed["data"]] == ["host"]
+    assert [item["model_id"] for item in listed["data"]["items"]] == ["host"]
+    assert listed["data"]["invalid_classification_ids"] == []
     hidden = list_cmdb_model_options(classification_id="secret", user_info={"user": "demo"})
-    assert hidden["result"] is False
-    assert hidden["data"]["status"] == "forbidden"
+    assert hidden["result"] is True
+    assert hidden["data"]["items"] == []
+    assert hidden["data"]["invalid_classification_ids"] == ["secret"]
+    mixed = list_cmdb_model_options(classification_id=["compute", "secret"], user_info={"user": "demo"})
+    assert [item["model_id"] for item in mixed["data"]["items"]] == ["host"]
+    assert mixed["data"]["invalid_classification_ids"] == ["secret"]
 
 
 def test_instance_classification_does_not_replace_model_permission(monkeypatch):
@@ -2099,22 +2104,37 @@ def test_instance_distribution_by_model_and_one_attribute(monkeypatch):
         attrs=[{"attr_id": "os_type", "attr_name": "操作系统", "attr_type": "string"}],
     )
     other = _instance_model("app", "应用", filters={"logic": "AND", "items": [{"field": "inst_name", "op": "eq", "value": "a"}]})
-    with pytest.raises(GenericQueryError, match="其他模型不参与"):
+    with pytest.raises(GenericQueryError, match="按属性统计只支持单个模型"):
         query_instances(
             models=[typed, other],
             analysis_mode="distribution",
             permission_map={"1": {}},
             group_by="host.os_type",
         )
+    with pytest.raises(GenericQueryError, match="分布必须选择分组字段"):
+        query_instances(
+            models=[typed],
+            analysis_mode="distribution",
+            permission_map={"1": {}},
+            group_by="",
+        )
     with pytest.raises(GenericQueryError, match="跨模型"):
         query_instances(
-            models=[typed, _instance_model("app", "应用")],
+            models=[typed],
             analysis_mode="distribution",
             permission_map={"1": {}},
             group_by="os_type",
         )
+    with pytest.raises(GenericQueryError, match="按属性统计只支持单个模型"):
+        query_instances(
+            models=[typed, _instance_model("app", "应用")],
+            analysis_mode="aggregate",
+            permission_map={"1": {}},
+            aggregate_field="host.os_type",
+            aggregate_op="sum",
+        )
     grouped = query_instances(
-        models=[typed, _instance_model("app", "应用")],
+        models=[typed],
         analysis_mode="distribution",
         permission_map={"1": {}},
         group_by="host.os_type",
@@ -2196,19 +2216,28 @@ def test_instance_reads_keep_permission_outside_or_and_use_timeout(monkeypatch):
 
 
 def test_model_options_union_and_attr_labels(monkeypatch):
-    from apps.cmdb.nats.generic_query import list_cmdb_attr_options, list_cmdb_model_options, query_cmdb_models
+    from apps.cmdb.nats.generic_query import list_cmdb_attr_options, list_cmdb_model_options, query_cmdb_instances, query_cmdb_models
 
     monkeypatch.setattr("apps.cmdb.nats.generic_query._visible_models", lambda user_info: _visible_cmdb_models())
     monkeypatch.setattr("apps.cmdb.services.generic_query_graph.count_by_attr", lambda *args, **kwargs: {})
     unknown = query_cmdb_models(classification_id=["compute", "missing"], analysis_mode="count", user_info={"user": "demo"})
     assert unknown["result"] is False
     assert unknown["data"]["status"] == "forbidden"
+    instance_unknown = query_cmdb_instances(
+        model_id="host",
+        classification_id=["compute", "missing"],
+        analysis_mode="count",
+        user_info={"user": "demo"},
+    )
+    assert instance_unknown["result"] is False
+    assert instance_unknown["data"]["status"] == "forbidden"
 
     listed = list_cmdb_model_options(classification_id=["biz", "compute"], user_info={"user": "demo"})
-    assert [item["model_id"] for item in listed["data"]] == ["host", "app"]
-    assert listed["data"][0]["classification_name"] == "计算"
+    assert [item["model_id"] for item in listed["data"]["items"]] == ["host", "app"]
+    assert listed["data"]["items"][0]["classification_name"] == "计算"
+    assert listed["data"]["invalid_classification_ids"] == []
     everything = list_cmdb_model_options(classification_id=[], user_info={"user": "demo"})
-    assert [item["model_id"] for item in everything["data"]] == ["host", "app", "room"]
+    assert [item["model_id"] for item in everything["data"]["items"]] == ["host", "app", "room"]
 
     def fake_attrs(model_id, user_info):
         del user_info

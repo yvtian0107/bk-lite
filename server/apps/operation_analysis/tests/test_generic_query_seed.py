@@ -107,7 +107,8 @@ def test_generic_query_seed_uses_chart_driven_filters_and_order():
     model = _param(models, "model_id")
     assert model["inputConfig"]["multiple"] is True
     assert model["inputConfig"]["maxCount"] == 50
-    assert model["inputConfig"]["selectAll"] is True
+    assert "selectAll" not in model["inputConfig"]
+    assert _param(models, "classification_id")["inputConfig"]["retainUnavailableValues"] is True
     assert model["inputConfig"]["optionsSource"]["groupField"] == "classification_name"
     assert model["inputConfig"]["optionsSource"]["queryParams"]["classification_id"] == {
         "ref": "classification_id",
@@ -152,7 +153,9 @@ def test_generic_query_seed_uses_chart_driven_filters_and_order():
         "alert/query_alert_center",
     ):
         assert _param(sources[rest_api], "group_by")["value"] == ""
-    assert "某一个模型" in group_by["desc"]
+    assert group_by["value"] == ""
+    assert "必须选择" in group_by["desc"]
+    assert "多个模型不能按属性统计" in group_by["desc"]
     assert group_by["inputConfig"]["optionsSource"]["valueField"] == "field_key"
     assert group_by["inputConfig"]["optionsSource"]["queryParams"]["include_model_bucket"] is True
     instance_filters = _param(sources["cmdb/query_cmdb_instances"], "filters")
@@ -209,6 +212,7 @@ def test_instance_and_one_hop_classification_is_single_select_and_declared():
         assert model["inputConfig"].get("multiple") is not True
         assert model_options["queryParams"]["classification_id"] == {"ref": "classification_id"}
         assert model_options["emptyUpstreamHintKey"] == "dashboard.selectClassificationFirst"
+        assert classification["inputConfig"]["retainUnavailableValues"] is True
         visible = [item["name"] for item in source["params"] if not item.get("hidden")]
         assert visible.index("classification_id") < visible.index(model_name)
         instance = SimpleNamespace(rest_api=rest_api, params=source["params"])
@@ -247,7 +251,8 @@ def test_instance_and_one_hop_classification_is_single_select_and_declared():
     assert "emptyUpstreamHintKey" not in classification["inputConfig"]["optionsSource"]
     assert model["inputConfig"]["multiple"] is True
     assert model["inputConfig"]["maxCount"] == 20
-    assert model["inputConfig"]["selectAll"] is True
+    assert "selectAll" not in model["inputConfig"]
+    assert classification["inputConfig"]["retainUnavailableValues"] is True
     assert model["inputConfig"]["optionsSource"]["groupField"] == "classification_name"
     assert model["inputConfig"]["optionsSource"]["queryParams"]["classification_id"]["optional"] is True
     names = {item["name"] for item in instance["params"]}

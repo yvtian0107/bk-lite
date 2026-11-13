@@ -862,7 +862,7 @@ export const ParamInputConfigEditor: React.FC<ParamInputConfigEditorProps> = ({
 
   const buildOptionControlExtras = (): Pick<
     Extract<InputControlConfig, { control: 'select' | 'radio' }>,
-    'multiple' | 'maxCount' | 'picker'
+    'multiple' | 'maxCount' | 'picker' | 'retainUnavailableValues'
   > => {
     const current = value && (value.control === 'select' || value.control === 'radio')
       ? value
@@ -872,6 +872,7 @@ export const ParamInputConfigEditor: React.FC<ParamInputConfigEditorProps> = ({
         ? { multiple: true as const, maxCount: current?.maxCount }
         : {}),
       ...(control === 'select' && picker === 'table' ? { picker: 'table' as const } : {}),
+      ...(current?.retainUnavailableValues ? { retainUnavailableValues: true as const } : {}),
     };
   };
 
