@@ -141,6 +141,8 @@ def query_alert_center(
                 message = "权限不足"
             status_name = "forbidden" if message != "查询失败" else "failed"
             raise GenericQueryError(message, status=status_name)
+        if not (user_info or {}).get("is_superuser"):
+            queryset = queryset.filter(build_json_membership_query(queryset, "team", _scoped_team_ids(user_info or {})))
     elif target == "event":
         queryset = _event_queryset(user_info or {})
     else:
@@ -166,9 +168,17 @@ def query_alert_center(
 @_guard("list_alert_source_options")
 def list_alert_source_options(user_info=None, **kwargs):
     del kwargs
-    _alerts, error = _get_authorized_alert_queryset(user_info or {})
+    alerts, error = _get_authorized_alert_queryset(user_info or {})
     if error:
-        raise GenericQueryError(error.get("message") or "无权限", status="forbidden")
-    data = [{"source_id": item.source_id, "name": item.name} for item in AlertSource.objects.filter(is_active=True).order_by("name", "source_id")]
+        message = error.get("message") or "无权限"
+        if message == "Insufficient permissions":
+            message = "权限不足"
+        raise GenericQueryError(message, status="forbidden")
+    if not (user_info or {}).get("is_superuser"):
+        alerts = alerts.filter(build_json_membership_query(alerts, "team", _scoped_team_ids(user_info or {})))
+    # 告警来源没有组织字段。只返回当前可见告警实际用到的启用来源。
+    visible_ids = alerts.filter(events__source__is_active=True).values_list("events__source__source_id", flat=True).distinct()
+    sources = AlertSource.objects.filter(is_active=True, source_id__in=list(visible_ids)).order_by("name", "source_id")
+    data = [{"source_id": item.source_id, "name": item.name} for item in sources]
     ensure_payload_limit(data)
     return {"result": True, "data": data, "message": ""}

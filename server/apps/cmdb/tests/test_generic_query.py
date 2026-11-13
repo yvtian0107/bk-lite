@@ -465,6 +465,53 @@ def test_one_hop_counts_each_start_without_merging_a_shared_end():
     assert "不合并" in total["aggregation"]
 
 
+def test_one_hop_rank_stops_before_the_heavy_query_when_groups_exceed_the_cap():
+    from types import SimpleNamespace
+
+    from apps.cmdb.services.generic_query_graph import _rank_starts
+
+    queries = []
+
+    class Record:
+        def __init__(self, payload):
+            self.payload = payload
+
+        def data(self):
+            return self.payload
+
+    class Session:
+        def begin_transaction(self, timeout=None):
+            return self
+
+        def run(self, query, params):
+            queries.append(query)
+            return [Record({"group_count": STAT_GROUP_MAX + 1})]
+
+        def commit(self):
+            return None
+
+        def rollback(self):
+            return None
+
+    result = _rank_starts(SimpleNamespace(session=Session()), "(s)-[r]->(t)", "s.model_id = $model", {}, 1)
+    assert result == {"group_count": STAT_GROUP_MAX + 1, "groups": []}
+    assert len(queries) == 1
+    assert "relation_count" not in queries[0]
+
+
+def test_numeric_where_rejects_empty_permission_even_with_a_model_filter():
+    from apps.cmdb.services.generic_query_graph import GenericQueryGraphError, _where_clause
+
+    class Client:
+        def format_search_params(self, params, param_type, param_collector, alias):
+            if params and params[0].get("field") == "model_id":
+                return "n.model_id = $model", {}
+            return "", {}
+
+    with pytest.raises(GenericQueryGraphError, match="权限范围"):
+        _where_clause(Client(), [{"field": "model_id", "type": "str=", "value": "host"}], {}, "n")
+
+
 def test_one_hop_count_returns_a_large_total_and_full_ranking_stays_capped():
     total = query_one_hop_relations(analysis_mode="count", graph_result={"pair_count": 10000})
     assert total["relation_count"] == 10000
@@ -495,16 +542,15 @@ def test_one_hop_count_returns_a_large_total_and_full_ranking_stays_capped():
             analysis_mode="distribution",
             graph_result={"group_count": STAT_GROUP_MAX + 1, "groups": []},
         )
-    ranked = query_one_hop_relations(
-        analysis_mode="distribution",
-        graph_result={
-            "group_count": STAT_GROUP_MAX + 1,
-            "groups": [{"start_uuid": "a", "start_name": "A", "relation_count": 9}],
-        },
-        page_size=1,
-    )
-    assert ranked["items"][0]["relation_count"] == 9
-    assert ranked["count"] == STAT_GROUP_MAX + 1
+    with pytest.raises(GenericQueryError, match=str(STAT_GROUP_MAX)):
+        query_one_hop_relations(
+            analysis_mode="distribution",
+            graph_result={
+                "group_count": STAT_GROUP_MAX + 1,
+                "groups": [{"start_uuid": "a", "start_name": "A", "relation_count": 9}],
+            },
+            page_size=1,
+        )
 
 
 def test_specified_model_without_visibility_is_forbidden():

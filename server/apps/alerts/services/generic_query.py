@@ -14,6 +14,7 @@ from apps.alerts.models.models import Event
 from apps.alerts.services.generic_query_limits import DETAIL_PAGE_SIZE_MAX, NATS_MESSAGE_MAX_BYTES, RANGE_MAX_SECONDS, STAT_GROUP_MAX
 
 LEVEL_LABELS = dict(EventLevel.CHOICES)
+ALERT_LEVELS = set(LEVEL_LABELS)
 ALERT_STATUS_LABELS = dict(AlertStatus.CHOICES)
 EVENT_STATUS_LABELS = dict(EventStatus.CHOICES)
 
@@ -103,6 +104,8 @@ def query_alert_center(
         raise GenericQueryError("告警中心时间范围最长 90 天")
     queryset = queryset.filter(**{f"{time_field}__gte": start, f"{time_field}__lt": end})
     if level not in (None, ""):
+        if str(level) not in ALERT_LEVELS:
+            raise GenericQueryError("级别不受支持")
         queryset = queryset.filter(level=level)
     if status not in (None, ""):
         allowed_status = ALERT_STATUSES if target == "alert" else EVENT_STATUSES

@@ -2,7 +2,12 @@ from types import SimpleNamespace
 
 import pytest
 
-from apps.monitor.services.authorized_metric_query import _render_metric_query, empty_aggregation_needs_choice
+from apps.monitor.services.authorized_metric_query import (
+    GROUPING_INSTANCE,
+    _render_metric_query,
+    _select_authorized_instance,
+    empty_aggregation_needs_choice,
+)
 
 pytestmark = pytest.mark.unit
 
@@ -18,14 +23,29 @@ def _metric(**overrides):
     return SimpleNamespace(**values)
 
 
-def test_default_avg_aggregates_declared_dimensions_into_the_instance():
+def test_default_avg_aggregates_by_instance_and_declared_dimensions():
     query = _render_metric_query(_metric(), [['instance_id=~"host"']], None)
+    assert query == 'avg(cpu_usage{instance_id=~"host"}) by (instance_id, mode)'
+
+
+def test_explicit_instance_grouping_drops_declared_dimensions():
+    query = _render_metric_query(_metric(), [['instance_id=~"host"']], None, GROUPING_INSTANCE)
     assert query == 'avg(cpu_usage{instance_id=~"host"}) by (instance_id)'
 
 
 def test_default_avg_without_dimensions_groups_only_by_instance():
     query = _render_metric_query(_metric(dimensions=[]), [['instance_id=~"host"']], None)
     assert query == 'avg(cpu_usage{instance_id=~"host"}) by (instance_id)'
+
+
+def test_instance_alias_does_not_select_a_different_existing_instance():
+    stored = "('host-1',)"
+    logical = "host-1"
+    assert _select_authorized_instance(logical, {stored}, {stored}) == stored
+    assert _select_authorized_instance(stored, {logical}, {logical}) == logical
+    assert _select_authorized_instance(logical, {stored}, {stored, logical}) is None
+    assert _select_authorized_instance(stored, {logical}, {stored, logical}) is None
+    assert _select_authorized_instance(logical, {logical, stored}, {logical, stored}) == logical
 
 
 def test_sum_aggregation_still_groups_only_by_instance_keys():

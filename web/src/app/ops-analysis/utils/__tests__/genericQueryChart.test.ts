@@ -83,6 +83,19 @@ test('metric series keeps missing points null and treats all-missing as empty', 
   assert.deepEqual(ChartDataTransformer.transformToLineBarData(missing).categories, []);
 });
 
+test('role-bound tables keep a missing measure null', () => {
+  const chart = ChartDataTransformer.transformToLineBarData({
+    structure: 'table',
+    status: 'missing',
+    fields: [
+      { key: 'instance_name', role: 'dimension' },
+      { key: 'value', role: 'measure' },
+    ],
+    items: [{ instance_name: 'host', value: null, status: 'missing' }],
+  });
+  assert.deepEqual(chart.values, [null]);
+});
+
 test('legacy datasources still coerce null to zero and reject unmapped objects', () => {
   const legacy = ChartDataTransformer.transformToLineBarData({
     cpu: [

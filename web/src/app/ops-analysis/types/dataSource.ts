@@ -173,7 +173,6 @@ export interface ConditionFieldSource {
   modelParam?: string;
   startModelParam?: string;
   associationParam?: string;
-  directionParam?: string;
 }
 
 export interface OrderFieldOption {
