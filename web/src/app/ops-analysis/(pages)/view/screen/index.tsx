@@ -1515,6 +1515,7 @@ const Screen = forwardRef<ScreenRef, ScreenProps>(({
       }}
       onApplyInitial={queryState.setAppliedFilterValues}
       prefixContent={namespaceSelectorElement}
+      canEditCanvas={hasPermission(["EditChart"])}
     />
   ) : null;
   const dataConfigItem = pendingViewConfigItem || currentViewConfigItem;

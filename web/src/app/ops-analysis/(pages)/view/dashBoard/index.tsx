@@ -2176,6 +2176,7 @@ const Dashboard = forwardRef<DashboardRef, DashboardProps>(
         onApplyInitial={setAppliedFilterValues}
         prefixContent={namespaceSelectorElement}
         popupZIndex={isFullscreen ? 1200 : undefined}
+        canEditCanvas={hasPermission(['EditChart'])}
       />
     );
 

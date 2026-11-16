@@ -1023,7 +1023,8 @@ describe('param input query params', () => {
       control: 'conditionFilter',
       fields: {
         kind: 'dynamic',
-        sourceRef: { type: 'rest_api', value: 'cmdb/list_cmdb_attr_options' },
+        sourceId: 3,
+        sourceSnapshot: { name: '属性', restApi: 'cmdb/list_cmdb_attr_options' },
         valueField: 'attr_id',
         labelField: 'attr_name',
         queryParams: { model_id: { ref: 'model_id' } },

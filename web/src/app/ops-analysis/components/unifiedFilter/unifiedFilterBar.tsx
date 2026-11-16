@@ -61,6 +61,8 @@ interface UnifiedFilterBarProps {
   containerClassName?: string;
   appearance?: 'default' | 'embedded';
   popupZIndex?: number;
+  /** 当前用户能否编辑画布并重选选项来源。缺省时，非分享页视为可以。 */
+  canEditCanvas?: boolean;
 }
 
 const EMPTY_LABEL_STORE = createFilterOptionLabelStore();
@@ -87,6 +89,7 @@ const UnifiedFilterBar: React.FC<UnifiedFilterBarProps> = ({
   containerClassName,
   appearance = 'default',
   popupZIndex,
+  canEditCanvas,
 }) => {
   const { t } = useTranslation();
   const labelStore = useFilterOptionLabelStore();
@@ -405,6 +408,7 @@ const UnifiedFilterBar: React.FC<UnifiedFilterBarProps> = ({
                 ? String(labelSnapshot.revisions[definition.id] ?? 0)
                 : undefined
             }
+            canRepairOptionSource={canEditCanvas ?? !shareMode}
             onOptionsFailed={() => {
               if (isDynamicOptionFilter(definition)) {
                 labelStore?.publish(definition.id, {});

@@ -92,10 +92,11 @@ describe('paramInputOptionsLoader runtime errors', () => {
     assert.notEqual(second, first);
   });
 
-  it('resolves sourceRef from knownDataSources without listing the catalog', async () => {
-    const getDataSourceList = vi.fn(async () => {
-      throw new Error('catalog must not be called');
-    });
+  it('does not bind a bare path from a partial known list when another row shares it', async () => {
+    const getDataSourceList = vi.fn(async () => ([
+      { id: 42, name: '旧机房', rest_api: 'cmdb/get_room_list' },
+      { id: 43, name: '新机房', rest_api: 'cmdb/get_room_list' },
+    ]));
     const getSourceDataByApiId = vi.fn<GetSourceDataByApiId>(
       async () => asSourceData([{ inst_uuid: 'room-1', inst_name: '机房A' }]),
     );
@@ -120,12 +121,70 @@ describe('paramInputOptionsLoader runtime errors', () => {
         },
       }).promise,
       {
-        status: 'success',
-        options: [{ value: 'room-1', label: '机房A' }],
+        status: 'error',
+        options: [],
+        errorMessage: 'option-source-ambiguous',
       },
     );
+    assert.equal(getSourceDataByApiId.mock.calls.length, 0);
+  });
+
+  it('keeps a saved source id when a newer row has the same path', async () => {
+    const getDataSourceList = vi.fn(async () => {
+      throw new Error('catalog must not be called');
+    });
+    const getSourceDataByApiId = vi.fn<GetSourceDataByApiId>(
+      async () => asSourceData([{ id: 'host', name: '主机' }]),
+    );
+    const loader = createParamInputOptionsLoader({
+      getDataSourceList,
+      getSourceDataByApiId,
+    });
+
+    assert.equal(
+      (await loader.load({
+        control: 'select',
+        optionsSource: {
+          type: 'dynamic',
+          sourceId: 10,
+          sourceRef: { type: 'rest_api', value: 'cmdb/get_model_association_options' },
+          valueField: 'id',
+          labelField: 'name',
+        },
+      }).promise)?.status,
+      'success',
+    );
+    assert.equal(getSourceDataByApiId.mock.calls[0]?.[0], 10);
+  });
+
+  it('asks the full-table resolver before a visible catalog when the ref is only a path', async () => {
+    const resolveOptionSource = vi.fn(async () => ({ status: 'ambiguous' as const }));
+    const getDataSourceList = vi.fn(async () => ([
+      { id: 11, name: '新', rest_api: 'cmdb/get_model_association_options' },
+    ]));
+    const getSourceDataByApiId = vi.fn<GetSourceDataByApiId>(
+      async () => asSourceData([{ id: 'host', name: '主机' }]),
+    );
+    const loader = createParamInputOptionsLoader({
+      getDataSourceList,
+      getSourceDataByApiId,
+      resolveOptionSource,
+    });
+
+    assert.deepEqual(
+      await loader.load({
+        control: 'select',
+        optionsSource: {
+          type: 'dynamic',
+          sourceRef: { type: 'rest_api', value: 'cmdb/get_model_association_options' },
+          valueField: 'id',
+          labelField: 'name',
+        },
+      }).promise,
+      { status: 'error', options: [], errorMessage: 'option-source-ambiguous' },
+    );
     assert.equal(getDataSourceList.mock.calls.length, 0);
-    assert.equal(getSourceDataByApiId.mock.calls[0]?.[0], 42);
+    assert.equal(getSourceDataByApiId.mock.calls.length, 0);
   });
 
   it('resolves cmdb/get_room_list from the catalog and maps inst_uuid/inst_name', async () => {

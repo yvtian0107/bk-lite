@@ -30,6 +30,8 @@ interface ParamInputControlProps {
   optionsBlocked?: boolean;
   optionsBlockReason?: 'empty' | 'invalid';
   optionsQuerySignature?: string;
+  /** 当前用户能否打开组件编辑器修好选项来源。 */
+  canRepairOptionSource?: boolean;
 }
 
 const emptyUpstreamHint = (
@@ -63,6 +65,7 @@ export const ParamInputControl: React.FC<ParamInputControlProps> = ({
   optionsBlocked = false,
   optionsBlockReason,
   optionsQuerySignature = '',
+  canRepairOptionSource = false,
 }) => {
   const { t } = useTranslation();
   const state = useParamInputOptions(inputConfig, undefined, {
@@ -162,8 +165,32 @@ export const ParamInputControl: React.FC<ParamInputControlProps> = ({
     );
   }
 
+  const sourceIssue = state.status === 'error' ? state.errorMessage : undefined;
+  const sourceIssueKey = sourceIssue === 'option-source-ambiguous'
+    ? (canRepairOptionSource
+      ? 'paramInput.dynamic.optionSourceAmbiguous'
+      : 'paramInput.dynamic.optionSourceAmbiguousReadonly')
+    : sourceIssue === 'option-source-missing'
+      ? 'paramInput.dynamic.optionSourceMissing'
+      : sourceIssue === 'option-source-forbidden'
+        ? 'paramInput.dynamic.optionSourceForbidden'
+        : '';
   const options = state.status === 'success' ? state.options : [];
   const optionsLoading = state.status === 'loading';
+  const sourceLocked = Boolean(sourceIssueKey);
+
+  if (sourceLocked) {
+    return (
+      <div>
+        <Select
+          disabled
+          value={value}
+          style={{ width: '100%', ...style }}
+        />
+        <div className="mt-1 text-xs text-[var(--color-text-2)]">{t(sourceIssueKey)}</div>
+      </div>
+    );
+  }
 
   if (inputConfig.control === 'radio') {
     return (
