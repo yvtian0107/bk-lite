@@ -54,6 +54,7 @@ vi.mock('@/utils/i18n', () => {
         'paramInput.dynamic.optionSourceLegacyAmbiguous': '旧配置仅记录来源信息，找到多个候选，请选择实际使用的数据源。',
         'paramInput.dynamic.optionSourceMissing': '选项来源已失效，请重新选择。',
         'paramInput.dynamic.optionSourceForbidden': '当前账号无权使用该选项来源。',
+        'paramInput.dynamic.optionSourceUnavailable': '暂时无法确认选项来源，不会改用列表中的其他数据源。',
         'common.confirm': '确认',
         'common.cancel': '取消',
         'dashboard.componentSwitch': '组件内切换',
@@ -116,7 +117,11 @@ describe('param input query params', () => {
     getDataSourceList.mockReset();
     getSourceDataByApiId.mockReset();
     resolveOptionSource.mockReset();
-    resolveOptionSource.mockResolvedValue(undefined);
+    resolveOptionSource.mockImplementation(async (body?: { sourceId?: number }) => (
+      typeof body?.sourceId === 'number'
+        ? { status: 'resolved', id: body.sourceId }
+        : undefined
+    ));
   });
 
   it('shows aliases, keeps saved values, and leaves the query table unbordered', async () => {
@@ -982,6 +987,7 @@ describe('param input query params', () => {
   it('edits a condition filter field source like a string select', async () => {
     const user = userEvent.setup();
     const onConfirm = vi.fn();
+    resolveOptionSource.mockResolvedValue({ status: 'resolved', id: 3 });
     getDataSourceList.mockResolvedValue([
       {
         id: 3,
@@ -1139,5 +1145,91 @@ describe('param input query params', () => {
       builtinKey: undefined,
       sourceRef: 'cmdb/get_room_list',
     });
+  });
+
+  it('does not preselect a locally unique legacy path when resolve fails', async () => {
+    getDataSourceList.mockResolvedValue([
+      { ...deviceSource, id: 9, rest_api: 'cmdb/get_room_list' },
+    ]);
+    resolveOptionSource.mockRejectedValue(new Error('network down'));
+    render(
+      <ParamInputConfigEditor
+        open
+        onCancel={vi.fn()}
+        onConfirm={vi.fn()}
+        value={{
+          control: 'select',
+          optionsSource: {
+            type: 'dynamic',
+            sourceRef: { type: 'rest_api', value: 'cmdb/get_room_list' },
+            valueField: 'id',
+            labelField: 'name',
+          },
+        }}
+      />,
+    );
+
+    const dialog = await screen.findByRole('dialog');
+    expect(await within(dialog).findByText('暂时无法确认选项来源，不会改用列表中的其他数据源。')).not.toBeNull();
+    const sourceItem = within(dialog).getByText('数据源').closest('.ant-form-item') as HTMLElement;
+    expect(within(sourceItem).queryByTitle('设备列表')).toBeNull();
+  });
+
+  it('keeps a numeric source id when resolve fails and does not guess another row', async () => {
+    getDataSourceList.mockResolvedValue([
+      deviceSource,
+      { ...deviceSource, id: 10, name: '另一条', rest_api: 'cmdb/devices' },
+    ]);
+    resolveOptionSource.mockRejectedValue(new Error('network down'));
+    render(
+      <ParamInputConfigEditor
+        open
+        onCancel={vi.fn()}
+        onConfirm={vi.fn()}
+        value={{
+          control: 'select',
+          optionsSource: {
+            type: 'dynamic',
+            sourceId: 9,
+            sourceRef: { type: 'rest_api', value: 'cmdb/devices' },
+            valueField: 'id',
+            labelField: 'name',
+          },
+        }}
+      />,
+    );
+
+    const dialog = await screen.findByRole('dialog');
+    expect(await within(dialog).findByText('暂时无法确认选项来源，不会改用列表中的其他数据源。')).not.toBeNull();
+    expect(await within(dialog).findByTitle('设备列表（cmdb/devices）')).toBeTruthy();
+    expect(within(dialog).queryByTitle('另一条（cmdb/devices）')).toBeNull();
+  });
+
+  it('shows missing instead of the local catalog when the resolver says the source is gone', async () => {
+    getDataSourceList.mockResolvedValue([
+      { ...deviceSource, id: 9, rest_api: 'cmdb/get_room_list' },
+    ]);
+    resolveOptionSource.mockResolvedValue({ status: 'missing' });
+    render(
+      <ParamInputConfigEditor
+        open
+        onCancel={vi.fn()}
+        onConfirm={vi.fn()}
+        value={{
+          control: 'select',
+          optionsSource: {
+            type: 'dynamic',
+            sourceRef: { type: 'rest_api', value: 'cmdb/get_room_list' },
+            valueField: 'id',
+            labelField: 'name',
+          },
+        }}
+      />,
+    );
+
+    const dialog = await screen.findByRole('dialog');
+    expect(await within(dialog).findByText('选项来源已失效，请重新选择。')).not.toBeNull();
+    const sourceItem = within(dialog).getByText('数据源').closest('.ant-form-item') as HTMLElement;
+    expect(within(sourceItem).queryByTitle('设备列表')).toBeNull();
   });
 });

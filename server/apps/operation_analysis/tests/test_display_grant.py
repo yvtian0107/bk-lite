@@ -160,6 +160,55 @@ def test_display_session_reads_declared_data_and_rejects_other_sources(settings,
 
 
 @pytest.mark.django_db
+def test_display_resolves_declared_option_source_without_login(settings):
+    settings.DASHBOARD_SHARE_SIGNING_KEY = SIGNING_KEY
+    declared = DataSourceAPIModel.objects.create(
+        name=f"display-declared-{uuid.uuid4()}",
+        rest_api=f"demo/display-{uuid.uuid4()}",
+        groups=[1],
+        created_by="alice",
+        updated_by="alice",
+    )
+    foreign = DataSourceAPIModel.objects.create(
+        name=f"display-foreign-{uuid.uuid4()}",
+        rest_api=f"demo/display-foreign-{uuid.uuid4()}",
+        groups=[9],
+        created_by="alice",
+        updated_by="alice",
+    )
+    screen = _screen(view_sets=[{"valueConfig": {"dataSource": declared.id}}])
+    admin = _admin(APIClient(), _sharer())
+    created = _create(admin, screen, 1)
+    token = _token(created.data["url"])
+    television = APIClient()
+    activated = television.post(
+        "/api/v1/operation_analysis/api/screen_display/activate/",
+        {"token": token},
+        format="json",
+    )
+    assert activated.status_code == 200
+
+    allowed = television.post(
+        "/api/v1/operation_analysis/api/screen_display/current/resolve_option_source/",
+        {"sourceId": declared.id},
+        format="json",
+    )
+    assert allowed.status_code == 200
+    assert allowed.data["status"] == "resolved"
+    assert allowed.data["id"] == declared.id
+
+    denied = television.post(
+        "/api/v1/operation_analysis/api/screen_display/current/resolve_option_source/",
+        {"sourceRef": {"type": "rest_api", "value": foreign.rest_api}},
+        format="json",
+    )
+    assert denied.status_code == 200
+    assert denied.data == {"status": "forbidden"}
+    assert "id" not in denied.data
+    assert foreign.name not in str(denied.data)
+
+
+@pytest.mark.django_db
 def test_display_data_sources_include_rest_api_for_filter_lookup(settings):
     settings.DASHBOARD_SHARE_SIGNING_KEY = SIGNING_KEY
     datasource = DataSourceAPIModel.objects.create(

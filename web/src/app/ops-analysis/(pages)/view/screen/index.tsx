@@ -1789,6 +1789,7 @@ const Screen = forwardRef<ScreenRef, ScreenProps>(({
           valueConfig: item.valueConfig,
         }))}
         dataSources={dataSources}
+        canRepairOptionSource={hasPermission(["EditChart"])}
       />
       {selectedScreen?.data_id != null && (
         <DashboardSubscriptionModal

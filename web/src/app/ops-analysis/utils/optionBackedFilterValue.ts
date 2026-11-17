@@ -52,9 +52,9 @@ export const areFilterValuesEqual = (
 export type OptionBackedFilterReconcileMode = 'live' | 'reset';
 
 /**
- * 用选项列表校正筛选值。
+ * 用已经成功拿到的选项列表校正筛选值。
  * 还没写入时才套用默认值；用户清空（null）不会被异步默认值盖回去。
- * 选项对不上或列表失败时保留原值，避免查询丢掉条件后范围变大。
+ * 对得上的留下，一个都对不上就清空。加载中和失败不会调用这里，原值保持不变。
  * 没有变化时返回 undefined。reset 把 null 当成“回到默认值”。
  */
 export const reconcileOptionBackedFilterValue = (
@@ -68,10 +68,6 @@ export const reconcileOptionBackedFilterValue = (
     ? (definition.defaultValue ?? null)
     : current;
   const retained = retainFilterValueInOptions(source, options);
-  if (retained == null && source != null) {
-    if (areFilterValuesEqual(source, current ?? null)) return undefined;
-    return source;
-  }
   if (areFilterValuesEqual(retained, current ?? null)) return undefined;
   return retained;
 };

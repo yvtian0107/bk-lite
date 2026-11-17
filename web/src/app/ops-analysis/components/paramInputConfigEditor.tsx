@@ -391,7 +391,7 @@ export const ParamInputConfigEditor: React.FC<ParamInputConfigEditorProps> = ({
   const [dataSourceList, setDataSourceList] = useState<DatasourceItem[]>([]);
   const [dsLoading, setDsLoading] = useState(false);
   const [dynamicSourceId, setDynamicSourceId] = useState<number | undefined>();
-  const [legacyIssue, setLegacyIssue] = useState<'ambiguous' | 'missing' | 'forbidden' | null>(null);
+  const [legacyIssue, setLegacyIssue] = useState<'ambiguous' | 'missing' | 'forbidden' | 'unavailable' | null>(null);
   const [dynamicValueField, setDynamicValueField] = useState<string | undefined>();
   const [dynamicLabelField, setDynamicLabelField] = useState<string | undefined>();
   const [dynamicPreview, setDynamicPreview] = useState<Record<string, unknown>[]>([]);
@@ -665,6 +665,10 @@ export const ParamInputConfigEditor: React.FC<ParamInputConfigEditorProps> = ({
         setLegacyIssue(null);
         return;
       }
+      if (classified.status === 'unavailable') {
+        setLegacyIssue('unavailable');
+        return;
+      }
       setLegacyIssue(
         classified.status === 'missing'
           ? 'missing'
@@ -689,9 +693,9 @@ export const ParamInputConfigEditor: React.FC<ParamInputConfigEditorProps> = ({
           apply({ status: result.status });
           return;
         }
-        apply(classifyOptionSource(source, dataSourceList));
+        apply({ status: 'unavailable' });
       }).catch(() => {
-        apply(classifyOptionSource(source, dataSourceList));
+        apply({ status: 'unavailable' });
       });
       return () => {
         cancelled = true;
@@ -714,6 +718,10 @@ export const ParamInputConfigEditor: React.FC<ParamInputConfigEditorProps> = ({
         form.setFieldValue('dynamicSourceId', classified.id);
         return;
       }
+      if (classified.status === 'unavailable') {
+        setLegacyIssue('unavailable');
+        return;
+      }
       setLegacyIssue(
         classified.status === 'missing'
           ? 'missing'
@@ -732,9 +740,9 @@ export const ParamInputConfigEditor: React.FC<ParamInputConfigEditorProps> = ({
           apply({ status: result.status });
           return;
         }
-        apply(classifyOptionSource({ sourceRef: externalSourceRef }, dataSourceList));
+        apply({ status: 'unavailable' });
       }).catch(() => {
-        apply(classifyOptionSource({ sourceRef: externalSourceRef }, dataSourceList));
+        apply({ status: 'unavailable' });
       });
       return () => {
         cancelled = true;
@@ -782,11 +790,17 @@ export const ParamInputConfigEditor: React.FC<ParamInputConfigEditorProps> = ({
         }
         return;
       }
-      if (result?.status !== 'forbidden' && result?.status !== 'missing' && result?.status !== 'ambiguous') return;
+      if (result?.status !== 'forbidden' && result?.status !== 'missing' && result?.status !== 'ambiguous') {
+        setLegacyIssue('unavailable');
+        return;
+      }
       setDynamicSourceId(undefined);
       form.setFieldValue('dynamicSourceId', undefined);
       setLegacyIssue(result.status === 'missing' ? 'missing' : result.status === 'forbidden' ? 'forbidden' : 'ambiguous');
-    }).catch(() => undefined);
+    }).catch(() => {
+      if (cancelled) return;
+      setLegacyIssue('unavailable');
+    });
     return () => {
       cancelled = true;
     };
@@ -1569,7 +1583,9 @@ export const ParamInputConfigEditor: React.FC<ParamInputConfigEditorProps> = ({
                         ? t('paramInput.dynamic.optionSourceMissing')
                         : legacyIssue === 'forbidden'
                           ? t('paramInput.dynamic.optionSourceForbidden')
-                          : undefined}
+                          : legacyIssue === 'unavailable'
+                            ? t('paramInput.dynamic.optionSourceUnavailable')
+                            : undefined}
                     rules={[
                       {
                         required: true,

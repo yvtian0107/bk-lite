@@ -103,6 +103,22 @@ export const useScreenDisplayApi = () => {
     [get],
   );
 
+  const resolveDisplayOptionSource = useCallback(
+    (body: { sourceId?: number; builtinKey?: string; sourceRef?: string }) =>
+      post(
+        '/operation_analysis/api/screen_display/current/resolve_option_source/',
+        {
+          sourceId: body.sourceId,
+          builtinKey: body.builtinKey,
+          sourceRef: body.sourceRef
+            ? { type: 'rest_api', value: body.sourceRef }
+            : undefined,
+        },
+        { suppressErrorNotification: true },
+      ) as Promise<{ status?: string; id?: number }>,
+    [post],
+  );
+
   return {
     getGrant,
     createGrant,
@@ -112,5 +128,6 @@ export const useScreenDisplayApi = () => {
     getDisplayCanvas,
     queryDisplayDataSource,
     getDisplayDataSources,
+    resolveDisplayOptionSource,
   };
 };

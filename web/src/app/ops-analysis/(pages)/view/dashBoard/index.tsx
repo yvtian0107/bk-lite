@@ -2334,6 +2334,7 @@ const Dashboard = forwardRef<DashboardRef, DashboardProps>(
           definitions={definitions}
           layoutItems={widgetLayoutItems}
           dataSources={dataSourceManager.dataSources}
+          canRepairOptionSource={hasPermission(['EditChart'])}
         />
         {selectedDashboard?.data_id && (
           <DashboardSubscriptionModal

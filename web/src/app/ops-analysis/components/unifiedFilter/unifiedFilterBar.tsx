@@ -145,7 +145,22 @@ const UnifiedFilterBar: React.FC<UnifiedFilterBarProps> = ({
   }
 
   useEffect(() => {
-    setLocalValues(values);
+    // 子控件的同步选项（静态列表）会先校正草稿，随后这次同步才跑。
+    // 已经成功拿到的候选要重新套上，避免把校正结果盖回已存的无效值。
+    setLocalValues(() => {
+      const next = { ...values };
+      optionsByFilterRef.current.forEach((options, filterId) => {
+        const definition = definitionsRef.current.find((item) => item.id === filterId);
+        if (!definition) return;
+        const corrected = reconcileOptionBackedFilterValue(
+          definition,
+          values[filterId],
+          options,
+        );
+        if (corrected !== undefined) next[filterId] = corrected;
+      });
+      return next;
+    });
   }, [values]);
 
   useLayoutEffect(() => {

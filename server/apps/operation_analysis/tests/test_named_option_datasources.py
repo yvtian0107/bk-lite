@@ -77,7 +77,45 @@ def test_collect_named_option_ids_keeps_unique_rest_api_and_existing_source_id()
     assert collect_named_option_datasource_ids({17}) == {9, 42}
 
 
-def test_collect_named_option_ids_skips_ambiguous_rest_api_unless_unique_builtin():
+def test_export_closure_fails_when_a_filter_path_matches_more_than_one_source():
+    from apps.operation_analysis.constants.import_export import ObjectType, ScopeType
+    from apps.operation_analysis.models.models import Dashboard
+    from apps.operation_analysis.schemas.import_export_schema import ImportExportValidationError
+    from apps.operation_analysis.services.import_export.export_service import ExportService
+
+    DataSourceAPIModel.objects.create(id=42, name="机房列表 A", rest_api="cmdb/get_room_list")
+    DataSourceAPIModel.objects.create(id=43, name="机房列表 B", rest_api="cmdb/get_room_list", is_build_in=True)
+    dashboard = Dashboard.objects.create(
+        name="歧义导出",
+        groups=[1],
+        created_by="s",
+        filters=[
+            {
+                "key": "room",
+                "inputConfig": {
+                    "control": "select",
+                    "optionsSource": {
+                        "type": "dynamic",
+                        "sourceRef": {"type": "rest_api", "value": "cmdb/get_room_list"},
+                    },
+                },
+            }
+        ],
+        view_sets=[],
+    )
+
+    with pytest.raises(ImportExportValidationError) as raised:
+        ExportService.collect_export_dependencies(
+            ScopeType.CANVAS.value,
+            ObjectType.DASHBOARD.value,
+            [dashboard.id],
+        )
+
+    assert raised.value.code == "OA_EXPORT_OPTION_SOURCE_AMBIGUOUS"
+    assert "cmdb/get_room_list" not in raised.value.message
+
+
+def test_collect_named_option_ids_does_not_guess_one_builtin_among_same_address():
     DataSourceAPIModel.objects.create(
         id=17,
         name="主数据源",
@@ -97,7 +135,7 @@ def test_collect_named_option_ids_skips_ambiguous_rest_api_unless_unique_builtin
     assert collect_named_option_datasource_ids({17}) == set()
 
     DataSourceAPIModel.objects.filter(id=43).update(is_build_in=True)
-    assert collect_named_option_datasource_ids({17}) == {43}
+    assert collect_named_option_datasource_ids({17}) == set()
 
 
 def test_collect_named_option_ids_follows_builtin_key_when_rest_api_collides():

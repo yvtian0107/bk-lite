@@ -7,6 +7,7 @@ from rest_framework.viewsets import ViewSet
 
 from apps.core.utils.team_utils import get_current_team
 from apps.operation_analysis.common.audit_log import log_ops_analysis_import_results
+from apps.operation_analysis.schemas.import_export_schema import ImportExportValidationError
 from apps.operation_analysis.serializers.import_export_serializers import (
     ExportRequestSerializer,
     ImportPrecheckRequestSerializer,
@@ -33,6 +34,12 @@ class ImportExportViewSet(ViewSet):
         organization_id = getattr(request, "organization_id", 0)
         current_team = self._get_current_team(request)
 
+        try:
+            return self._export_authorized(request, scope, object_type, object_ids, organization_id, current_team)
+        except ImportExportValidationError as exc:
+            return Response({"result": False, "message": exc.message, "code": exc.code}, status=status.HTTP_400_BAD_REQUEST)
+
+    def _export_authorized(self, request, scope, object_type, object_ids, organization_id, current_team):
         with transaction.atomic():
             filtered_ids = ImportExportAuthorizationService.filter_export_object_ids(
                 request,

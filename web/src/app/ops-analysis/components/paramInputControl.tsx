@@ -166,15 +166,15 @@ export const ParamInputControl: React.FC<ParamInputControlProps> = ({
   }
 
   const sourceIssue = state.status === 'error' ? state.errorMessage : undefined;
-  const sourceIssueKey = sourceIssue === 'option-source-ambiguous'
-    ? (canRepairOptionSource
+  const sourceIssueKeys: Record<string, string> = {
+    'option-source-ambiguous': canRepairOptionSource
       ? 'paramInput.dynamic.optionSourceAmbiguous'
-      : 'paramInput.dynamic.optionSourceAmbiguousReadonly')
-    : sourceIssue === 'option-source-missing'
-      ? 'paramInput.dynamic.optionSourceMissing'
-      : sourceIssue === 'option-source-forbidden'
-        ? 'paramInput.dynamic.optionSourceForbidden'
-        : '';
+      : 'paramInput.dynamic.optionSourceAmbiguousReadonly',
+    'option-source-missing': 'paramInput.dynamic.optionSourceMissing',
+    'option-source-forbidden': 'paramInput.dynamic.optionSourceForbidden',
+    'option-source-unavailable': 'paramInput.dynamic.optionSourceUnavailable',
+  };
+  const sourceIssueKey = sourceIssue ? (sourceIssueKeys[sourceIssue] ?? '') : '';
   const options = state.status === 'success' ? state.options : [];
   const optionsLoading = state.status === 'loading';
   const sourceLocked = Boolean(sourceIssueKey);

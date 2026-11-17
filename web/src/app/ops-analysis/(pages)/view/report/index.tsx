@@ -776,6 +776,7 @@ const Report = forwardRef<ReportRef, ReportProps>(({
       onSearch={handleFilterSearch}
       onReset={handleFilterSearch}
       onApplyInitial={setAppliedFilterValues}
+      canEditCanvas={hasPermission(['EditChart'])}
       popupZIndex={isFullscreen ? 1200 : undefined}
     />
   ) : null;
@@ -968,6 +969,7 @@ const Report = forwardRef<ReportRef, ReportProps>(({
           definitions={draftViewSets.filters}
           layoutItems={filterLayoutItems}
           dataSources={dataSourceManager.dataSources}
+          canRepairOptionSource={hasPermission(['EditChart'])}
         />
         {selectedReport?.data_id != null && (
           <DashboardSubscriptionModal

@@ -45,6 +45,7 @@ from apps.operation_analysis.schemas.import_export_schema import (
     YAMLDocument,
 )
 from apps.operation_analysis.services.import_export.datasource_package_identity import (
+    HandleIndex,
     business_config_equal,
     find_identity_row,
     rewrite_datasource_bindings,
@@ -53,6 +54,17 @@ from apps.operation_analysis.services.import_export.datasource_package_identity 
 from apps.operation_analysis.services.import_export.view_sets import rewrite_canvas_view_sets_refs_for_storage
 from apps.operation_analysis.services.string_param_multiple_migrate import migrate_filters_payload, migrate_param_items
 from apps.operation_analysis.services.user_messages import oa_message
+
+_LOG_TOKEN_LIMIT = 80
+
+
+def _log_token(value: object, limit: int = _LOG_TOKEN_LIMIT) -> str:
+    """日志只留短标签。去掉换行和控制符，避免上传名称把一条日志拆开。"""
+    text = "".join(ch if ch.isprintable() and ch not in "\r\n\t" else " " for ch in str(value or ""))
+    text = " ".join(text.split())
+    if len(text) <= limit:
+        return text
+    return text[:limit]
 
 
 class ImportService:
@@ -125,6 +137,7 @@ class ImportService:
         self.current_team = current_team
         self.is_superuser = is_superuser
         self.builtin_seed = builtin_seed
+        self._handle_index = HandleIndex()
 
         # 导入过程中的映射表：YAML key -> DB ID
         self.namespace_key_to_id: dict[str, int] = {}
@@ -422,8 +435,12 @@ class ImportService:
             code=code,
         )
 
+    def _namespace_nats(self) -> dict[str, str]:
+        return {item.name: item.namespace or "" for item in self.doc.namespaces}
+
     def _can_access_datasource(self, row: DataSourceAPIModel) -> bool:
-        if self.is_superuser or self.current_team is None:
+        # 与解析、预检同一套组织判断。超级用户当前组织看不到的行，不能当成有权复用。
+        if self.current_team is None:
             return True
         return can_access_datasource_in_org(row, self.current_team)
 
@@ -603,6 +620,18 @@ class ImportService:
             )
             return datasource.id
 
+        if existing.portable_key and not existing.is_build_in and not existing.build_in_key:
+            self._fail_datasource(
+                ds_item,
+                oa_message(
+                    "messages.import_builtin_user_identity_protected",
+                    "该行已有用户身份，不能认领为内置源",
+                ),
+                ImportExportErrorCode.IMPORT_CONFLICT_UNRESOLVED,
+            )
+            return None
+        existing.is_build_in = True
+        existing.build_in_key = stable_key
         missing_secrets = self._apply_datasource_fields(existing, ds_item)
         if missing_secrets:
             self._fail_datasource(
@@ -615,9 +644,6 @@ class ImportService:
                 ImportExportErrorCode.IMPORT_SECRET_REQUIRED,
             )
             return None
-        existing.is_build_in = True
-        existing.build_in_key = stable_key
-        existing.portable_key = None
         existing.save()
         self._remember_new_datasource(
             ds_item,
@@ -691,7 +717,12 @@ class ImportService:
                     ImportExportErrorCode.IMPORT_PERMISSION_DENIED,
                 )
                 return None
-            same_config = business_config_equal(ds_item, existing)
+            same_config = business_config_equal(
+                ds_item,
+                existing,
+                handle_index=self._handle_index.cover(ds_item, existing),
+                namespace_nats=self._namespace_nats(),
+            )
             if same_config or action in {ConflictAction.REUSE_TARGET.value, ConflictAction.SKIP.value}:
                 if action == ConflictAction.OVERWRITE.value and not same_config:
                     self._fail_datasource(
@@ -785,10 +816,10 @@ class ImportService:
             name_conflict = model.objects.filter(name=canvas_item.name).exclude(pk=stable_existing_id).exists()
             if name_conflict:
                 logger.warning(
-                    "[CanvasImport] 内置%s稳定键 %s 的目标名称 %s 已被占用，保留原名称",
+                    "[CanvasImport] builtin canvas name is taken; object_type=%s key=%s name=%s",
                     object_type.value,
-                    canvas_item.key,
-                    canvas_item.name,
+                    _log_token(canvas_item.key),
+                    _log_token(canvas_item.name),
                 )
             else:
                 canvas_data["name"] = canvas_item.name

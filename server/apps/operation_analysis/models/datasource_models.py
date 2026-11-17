@@ -4,8 +4,8 @@
 # @Author: windyzhao
 import uuid
 
-from django.db import models
-from django.db.models import JSONField
+from django.db import models, transaction
+from django.db.models import JSONField, Q
 
 from apps.core.models.group_info import Groups
 from apps.core.models.maintainer_info import MaintainerInfo
@@ -203,7 +203,31 @@ class DataSourceAPIModel(MaintainerInfo, TimeInfo, Groups):
             models.UniqueConstraint(fields=["name", "rest_api"], name="unique_name_rest_api"),
         ]
 
+    @classmethod
+    def ensure_portable_key(cls, pk: int) -> str:
+        """只补空身份。已有钥匙原样返回，不写名称、参数或其他字段。"""
+        with transaction.atomic():
+            row = cls.objects.select_for_update().filter(pk=pk, is_build_in=False).first()
+            if row is None:
+                raise cls.DoesNotExist(f"datasource {pk} has no user identity")
+            if row.portable_key:
+                return row.portable_key
+            candidate = str(uuid.uuid4())
+            updated = (
+                cls.objects.filter(pk=pk, is_build_in=False)
+                .filter(
+                    Q(portable_key__isnull=True) | Q(portable_key=""),
+                )
+                .update(portable_key=candidate)
+            )
+            if updated:
+                return candidate
+            return cls.objects.values_list("portable_key", flat=True).get(pk=pk)
+
     def save(self, *args, **kwargs):
         if not self.is_build_in and not self.portable_key:
-            self.portable_key = str(uuid.uuid4())
+            if self.pk and not self._state.adding:
+                self.portable_key = type(self).ensure_portable_key(self.pk)
+            else:
+                self.portable_key = str(uuid.uuid4())
         super().save(*args, **kwargs)

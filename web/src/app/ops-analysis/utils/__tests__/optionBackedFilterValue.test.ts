@@ -54,12 +54,21 @@ describe('跨组织导入的动态选项默认值', () => {
     ).toBeUndefined();
     expect(
       reconcileOptionBackedFilterValue(hostFilter(['host-a']), ['host-a'], []),
-    ).toBeUndefined();
+    ).toBeNull();
     expect(
       reconcileOptionBackedFilterValue(hostFilter(['host-a']), ['user-kept'], HOSTS),
-    ).toBeUndefined();
+    ).toBeNull();
+    expect(
+      reconcileOptionBackedFilterValue(hostFilter(['host-a', 'host-b']), ['host-a', 'host-b'], HOSTS),
+    ).toEqual(['host-b']);
     expect(
       reconcileOptionBackedFilterValue(hostFilter(0), 0, []),
+    ).toBeNull();
+    expect(
+      reconcileOptionBackedFilterValue(hostFilter(0), 0, [{ label: '零', value: 0 }]),
+    ).toBeUndefined();
+    expect(
+      reconcileOptionBackedFilterValue(hostFilter(false), false, []),
     ).toBeUndefined();
   });
 

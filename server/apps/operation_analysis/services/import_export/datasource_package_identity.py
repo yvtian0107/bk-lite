@@ -11,6 +11,8 @@ from __future__ import annotations
 import json
 from typing import Any
 
+from django.db.models import Q
+
 from apps.operation_analysis.constants.import_export import is_sensitive_field_name
 from apps.operation_analysis.models.datasource_models import DataSourceAPIModel
 from apps.operation_analysis.services.string_param_multiple_migrate import migrate_param_items
@@ -217,40 +219,164 @@ def expand_datasource_closure(datasource_ids: set[int], *, lock: bool = False) -
         for row in queryset:
             pending |= collect_numeric_source_ids(row.params)
             refs |= collect_source_ref_values(row.params)
+        from apps.operation_analysis.services.named_option_datasources import raise_if_option_refs_ambiguous
+
+        raise_if_option_refs_ambiguous(refs)
         pending |= unique_builtin_ids_for_refs(refs)
         pending -= seen
     return seen
 
 
-def business_config_equal(item, row: DataSourceAPIModel) -> bool:
-    """比较业务配置。忽略主键、时间、名称、身份和组织名单。嵌套引用换成稳定句柄。"""
-    id_to_handle, alias_to_handle = _stable_handle_index()
-    left = _canonical_config(_payload_from_item(item), alias_to_handle, id_to_handle=None)
-    right = _canonical_config(_payload_from_row(row), alias_to_handle, id_to_handle=id_to_handle)
+def business_config_equal(item, row: DataSourceAPIModel, *, handle_index=None, namespace_nats: dict[str, str] | None = None) -> bool:
+    """比较会影响取数的配置。
+
+    忽略主键、时间、名称、身份、组织名单和标签。
+    is_active 没有产品依赖，不参与比较。
+    嵌套数字主键只在它指向本次引用到的行时换成稳定句柄，不扫描整张表。
+    命名空间比的是名称；包里带了 NATS 前缀时连前缀一起比，不比本地环境 id。
+    """
+    left_payload = _payload_from_item(item)
+    right_payload = _payload_from_row(row)
+    if handle_index is None:
+        handle_index = HandleIndex().cover(item, row)
+    id_to_handle, alias_to_handle = handle_index
+    left = _canonical_config(left_payload, alias_to_handle, id_to_handle=None)
+    right = _canonical_config(right_payload, alias_to_handle, id_to_handle=id_to_handle)
+    row_namespaces = [(item.name, item.namespace or "") for item in row.namespaces.all()]
+    left["namespace_bindings"] = _namespace_signature(
+        getattr(item, "namespace_keys", None) or [],
+        package_nats=namespace_nats,
+        local_nats=namespace_nats,
+    )
+    right["namespace_bindings"] = _namespace_signature(
+        [name for name, _namespace in row_namespaces],
+        package_nats=namespace_nats,
+        local_nats={name: namespace or "" for name, namespace in row_namespaces},
+    )
     return _stable_json(left) == _stable_json(right)
 
 
-def _stable_handle_index() -> tuple[dict[int, str], dict[str, str]]:
+class HandleIndex:
+    """按引用到的主键和句柄分批取身份，避免每个源都扫整张表。"""
+
+    def __init__(self):
+        self.ids: dict[int, str] = {}
+        self.aliases: dict[str, str] = {}
+        self.seen_ids: set[int] = set()
+        self.seen_aliases: set[str] = set()
+
+    def cover(self, item, row: DataSourceAPIModel) -> tuple[dict[int, str], dict[str, str]]:
+        ids, aliases = collect_handle_tokens(_payload_from_item(item), _payload_from_row(row))
+        if isinstance(row.pk, int):
+            ids.add(row.pk)
+        fresh_ids = ids - self.seen_ids
+        fresh_aliases = aliases - self.seen_aliases
+        if fresh_ids or fresh_aliases:
+            extra_ids, extra_aliases = load_handle_index(fresh_ids, fresh_aliases)
+            self.ids.update(extra_ids)
+            self.aliases.update(extra_aliases)
+            self.seen_ids |= fresh_ids
+            self.seen_aliases |= fresh_aliases
+        return self.ids, self.aliases
+
+
+def collect_handle_tokens(*payloads: Any) -> tuple[set[int], set[str]]:
+    ids: set[int] = set()
+    aliases: set[str] = set()
+    for payload in payloads:
+        _collect_handle_tokens(payload, ids, aliases)
+    return ids, aliases
+
+
+def _collect_handle_tokens(value: Any, ids: set[int], aliases: set[str]) -> None:
+    if isinstance(value, list):
+        for item in value:
+            _collect_handle_tokens(item, ids, aliases)
+        return
+    if not isinstance(value, dict):
+        return
+    for key in ("sourceId", "dataSource"):
+        source_id = value.get(key)
+        if isinstance(source_id, int) and not isinstance(source_id, bool):
+            ids.add(source_id)
+    source_ref = value.get("sourceRef")
+    if isinstance(source_ref, dict) and isinstance(source_ref.get("value"), str) and source_ref.get("value"):
+        aliases.add(source_ref["value"])
+    builtin = value.get("builtinKey")
+    if isinstance(builtin, str) and builtin:
+        aliases.add(builtin)
+    value_config = value.get("valueConfig")
+    if isinstance(value_config, dict):
+        data_source = value_config.get("dataSource")
+        if isinstance(data_source, int) and not isinstance(data_source, bool):
+            ids.add(data_source)
+    for child in value.values():
+        _collect_handle_tokens(child, ids, aliases)
+
+
+def load_handle_index(ids: set[int], aliases: set[str]) -> tuple[dict[int, str], dict[str, str]]:
     id_to_handle: dict[int, str] = {}
     alias_to_handle: dict[str, str] = {}
-    for row_id, is_build_in, build_in_key, portable_key in DataSourceAPIModel.objects.values_list(
+    alias_keys = _alias_keys(aliases)
+    if not ids and not alias_keys:
+        return id_to_handle, alias_to_handle
+    filters = Q()
+    if ids:
+        filters |= Q(pk__in=ids)
+    if alias_keys:
+        filters |= Q(build_in_key__in=alias_keys) | Q(portable_key__in=alias_keys)
+    for row_id, is_build_in, build_in_key, portable_key in DataSourceAPIModel.objects.filter(filters).values_list(
         "id",
         "is_build_in",
         "build_in_key",
         "portable_key",
     ):
-        handle = None
+        handle = _handle_for(is_build_in, build_in_key, portable_key)
+        if not handle:
+            continue
+        id_to_handle[row_id] = handle
         if is_build_in and build_in_key:
-            handle = f"{BUILTIN_HANDLE_PREFIX}{build_in_key}"
             alias_to_handle[build_in_key] = handle
-            alias_to_handle[handle] = handle
         elif portable_key:
-            handle = f"{PORTABLE_HANDLE_PREFIX}{portable_key}"
             alias_to_handle[portable_key] = handle
-            alias_to_handle[handle] = handle
-        if handle:
-            id_to_handle[row_id] = handle
+        alias_to_handle[handle] = handle
     return id_to_handle, alias_to_handle
+
+
+def _alias_keys(aliases: set[str]) -> set[str]:
+    keys: set[str] = set()
+    for alias in aliases:
+        if not isinstance(alias, str) or not alias:
+            continue
+        if alias.startswith(BUILTIN_HANDLE_PREFIX):
+            keys.add(alias[len(BUILTIN_HANDLE_PREFIX) :])
+        elif alias.startswith(PORTABLE_HANDLE_PREFIX):
+            keys.add(alias[len(PORTABLE_HANDLE_PREFIX) :])
+        else:
+            keys.add(alias)
+    return {item for item in keys if item}
+
+
+def _handle_for(is_build_in, build_in_key, portable_key) -> str | None:
+    if is_build_in and build_in_key:
+        return f"{BUILTIN_HANDLE_PREFIX}{build_in_key}"
+    if portable_key:
+        return f"{PORTABLE_HANDLE_PREFIX}{portable_key}"
+    return None
+
+
+def _namespace_signature(names, *, package_nats: dict[str, str] | None, local_nats: dict[str, str] | None) -> tuple:
+    ordered = sorted({str(name) for name in names if name})
+    if package_nats is None:
+        return tuple(ordered)
+    signature = []
+    for name in ordered:
+        if name in package_nats:
+            source = local_nats if local_nats is not None else package_nats
+            signature.append((name, source.get(name, "")))
+        else:
+            signature.append(name)
+    return tuple(signature)
 
 
 def _payload_from_item(item) -> dict:

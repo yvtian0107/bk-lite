@@ -1,15 +1,19 @@
 """跨环境数据源身份：句柄、两种冲突选择、旧包和事务。"""
 
+import logging
 import threading
 from concurrent.futures import ThreadPoolExecutor
 
 import pytest
-from django.db import close_old_connections, transaction
+from django.db import close_old_connections, connection, transaction
+from django.test.utils import CaptureQueriesContext
 
-from apps.operation_analysis.constants.import_export import YAML_SCHEMA_VERSION, ConflictAction, ConflictReason
-from apps.operation_analysis.models.datasource_models import DataSourceAPIModel
-from apps.operation_analysis.models.models import Dashboard
+from apps.operation_analysis.constants.import_export import YAML_SCHEMA_VERSION, ConflictAction, ConflictReason, ObjectType
+from apps.operation_analysis.models.datasource_models import DataSourceAPIModel, DataSourceTag, NameSpace
+from apps.operation_analysis.models.models import Dashboard, Directory
 from apps.operation_analysis.schemas.import_export_schema import YAMLDocument
+from apps.operation_analysis.services.import_export.datasource_package_identity import business_config_equal
+from apps.operation_analysis.services.import_export.export_service import ExportService
 from apps.operation_analysis.services.import_export.import_service import ImportService
 from apps.operation_analysis.services.import_export.precheck_service import PrecheckService
 
@@ -334,6 +338,250 @@ def test_hidden_identity_conflict_does_not_leak_the_target():
     dumped = str(conflicts[0])
     assert hidden.name not in dumped
     assert str(hidden.id) not in dumped
+
+
+@pytest.mark.django_db
+def test_superuser_import_as_new_does_not_reuse_a_hidden_row():
+    hidden = _window(name="隐藏窗口", groups=[9], desc="hidden-desc")
+    doc = _doc(datasources=[_identity_section(days=7, name="导入名")])
+    result = _service(
+        doc,
+        {f"portable::{WINDOW_KEY}": ConflictAction.IMPORT_AS_NEW.value},
+        current_team=1,
+        is_superuser=True,
+    ).execute()
+    assert result["success"] is True
+    hidden.refresh_from_db()
+    assert hidden.desc == "hidden-desc"
+    assert hidden.groups == [9]
+    assert hidden.portable_key == WINDOW_KEY
+    created = DataSourceAPIModel.objects.exclude(pk=hidden.id).get()
+    assert created.portable_key != WINDOW_KEY
+    assert created.name == "导入名"
+    ids = [item.get("new_id") for item in result["results"]]
+    assert hidden.id not in ids
+    assert created.id in ids
+    assert hidden.name not in str(result)
+
+
+@pytest.mark.django_db
+def test_same_org_same_config_still_reuses_the_row():
+    target = _window(groups=[1])
+    doc = _doc(datasources=[_identity_section(days=7)])
+    result = _service(doc, current_team=1, is_superuser=False).execute()
+    assert result["success"] is True
+    assert DataSourceAPIModel.objects.count() == 1
+    assert result["results"][0]["new_id"] == target.id
+
+
+@pytest.mark.django_db
+def test_namespace_prefix_changes_config_but_tags_and_active_flag_do_not():
+    row = _window(groups=[1], is_active=False)
+    tag = DataSourceTag.objects.create(tag_id="tag-1", name="环境标签")
+    row.tag.add(tag)
+    same = NameSpace.objects.create(name="alerts", namespace="bk.alerts", account="a", domain="d", password="p")
+    row.namespaces.add(same)
+    matching = _identity_section(days=7)
+    matching["namespace_keys"] = ["alerts"]
+    doc = _doc(
+        namespaces=[{"key": "alerts", "name": "alerts", "domain": "d", "namespace": "bk.alerts", "account": "a", "password": ""}],
+        datasources=[matching],
+    )
+    datasource_conflicts = [
+        item for item in PrecheckService.identify_conflicts(doc, current_team=1) if item["object_type"] == ObjectType.DATASOURCE.value
+    ]
+    assert datasource_conflicts == []
+
+    other = _identity_section(days=7)
+    other["namespace_keys"] = ["alerts"]
+    drifted = _doc(
+        namespaces=[{"key": "alerts", "name": "alerts", "domain": "d", "namespace": "bk.alerts.other", "account": "a", "password": ""}],
+        datasources=[other],
+    )
+    conflicts = [item for item in PrecheckService.identify_conflicts(drifted, current_team=1) if item["object_type"] == ObjectType.DATASOURCE.value]
+    assert conflicts[0]["reason"] == ConflictReason.IDENTITY_CONFIG_CONFLICT
+    assert "id" not in conflicts[0]
+
+
+@pytest.mark.django_db
+def test_config_compare_only_reads_referenced_identities():
+    nested = _window(name="嵌套", rest_api="demo/nested", portable_key="nested-key")
+    target = _window()
+    target.params = [{"name": "option", "inputConfig": {"optionsSource": {"sourceId": nested.id, "type": "dynamic"}}}]
+    target.save(update_fields=["params"])
+    for index in range(30):
+        _window(name=f"无关{index}", rest_api=f"demo/other-{index}", portable_key=f"other-{index}")
+    item = _identity_section(days=7)
+    item["params"] = [
+        {"name": "option", "inputConfig": {"optionsSource": {"sourceRef": {"type": "rest_api", "value": "portable::nested-key"}, "type": "dynamic"}}}
+    ]
+    compared = _doc(datasources=[item]).datasources[0]
+    with CaptureQueriesContext(connection) as captured:
+        assert business_config_equal(compared, target) is True
+    identity_sql = [query["sql"] for query in captured.captured_queries if "operation_analysis_data_source_api" in query["sql"]]
+    assert identity_sql
+    assert all("WHERE" in sql for sql in identity_sql)
+
+
+@pytest.mark.django_db
+def test_export_portable_key_does_not_rewrite_other_columns():
+    row = _window(desc="live")
+    DataSourceAPIModel.objects.filter(pk=row.pk).update(portable_key=None, desc="newer")
+    loaded = DataSourceAPIModel.objects.get(pk=row.pk)
+    loaded.desc = "stale"
+    key = ExportService.generate_business_key(loaded, ObjectType.DATASOURCE)
+    row.refresh_from_db()
+    assert row.desc == "newer"
+    assert row.portable_key
+    assert key == f"portable::{row.portable_key}"
+
+
+@pytest.mark.django_db
+def test_stale_save_keeps_the_portable_key_already_stored():
+    row = _window()
+    stored = row.portable_key
+    stale = DataSourceAPIModel.objects.get(pk=row.pk)
+    stale.portable_key = None
+    stale.desc = "edited"
+    stale.save()
+    row.refresh_from_db()
+    assert row.portable_key == stored
+    assert row.desc == "edited"
+
+
+@pytest.mark.django_db(transaction=True)
+def test_concurrent_first_portable_key_is_one_value():
+    if connection.vendor != "postgresql":
+        pytest.skip("首次身份并发只在 PostgreSQL 上验证")
+    row = _window()
+    DataSourceAPIModel.objects.filter(pk=row.pk).update(portable_key=None)
+
+    def work(_index):
+        close_old_connections()
+        return DataSourceAPIModel.ensure_portable_key(row.pk)
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        keys = list(pool.map(work, range(2)))
+    close_old_connections()
+    assert keys[0] == keys[1]
+    assert DataSourceAPIModel.objects.get(pk=row.pk).portable_key == keys[0]
+
+
+@pytest.mark.django_db
+def test_builtin_seed_does_not_claim_a_row_that_already_has_a_portable_key():
+    user = DataSourceAPIModel.objects.create(
+        name="包内名称",
+        rest_api="demo/builtin",
+        desc="用户的",
+        created_by="s",
+        updated_by="s",
+        groups=[1],
+    )
+    DataSourceAPIModel.objects.filter(pk=user.pk).update(portable_key="user-key")
+    doc = _doc(
+        datasources=[
+            {
+                "key": "稳定::demo/builtin",
+                "name": "包内名称",
+                "rest_api": "demo/builtin",
+                "desc": "种子新描述",
+                "identity": {"kind": "builtin", "build_in_key": "稳定::demo/builtin"},
+            }
+        ]
+    )
+    result = _service(doc, builtin_seed=True).execute()
+    assert result["success"] is False
+    user.refresh_from_db()
+    assert user.portable_key == "user-key"
+    assert user.is_build_in is False
+    assert user.build_in_key in (None, "")
+    assert user.desc == "用户的"
+
+
+@pytest.mark.django_db
+def test_builtin_seed_still_claims_a_same_name_row_without_a_portable_key():
+    user = DataSourceAPIModel.objects.create(
+        name="包内名称",
+        rest_api="demo/builtin",
+        desc="旧描述",
+        created_by="s",
+        updated_by="s",
+        groups=[1],
+    )
+    DataSourceAPIModel.objects.filter(pk=user.pk).update(portable_key=None)
+    doc = _doc(
+        datasources=[
+            {
+                "key": "稳定::demo/builtin",
+                "name": "包内名称",
+                "rest_api": "demo/builtin",
+                "desc": "种子新描述",
+                "identity": {"kind": "builtin", "build_in_key": "稳定::demo/builtin"},
+            }
+        ]
+    )
+    result = _service(doc, builtin_seed=True).execute()
+    assert result["success"] is True
+    user.refresh_from_db()
+    assert user.is_build_in is True
+    assert user.build_in_key == "稳定::demo/builtin"
+    assert user.portable_key in (None, "")
+    assert user.desc == "种子新描述"
+
+
+@pytest.mark.django_db
+def test_builtin_canvas_name_conflict_log_drops_controls_and_truncates(caplog):
+    directory = Directory.objects.create(name=f"log-dir-{WINDOW_KEY}", groups=[1], created_by="s")
+    kept = Dashboard.objects.create(
+        name="原名称",
+        directory=directory,
+        groups=[1],
+        created_by="s",
+        domain="d",
+        view_sets=[],
+    )
+    leaked = ("S" * 80) + "TOKEN-LEAK"
+    uploaded = f"入侵\n{leaked}\x00"
+    Dashboard.objects.create(
+        name=uploaded,
+        directory=directory,
+        groups=[1],
+        created_by="s",
+        domain="d",
+        view_sets=[],
+    )
+    doc = _doc(
+        dashboards=[
+            {
+                "key": "dashboard::稳定画布",
+                "name": uploaded,
+                "desc": "",
+                "other": {},
+                "view_sets": [],
+            }
+        ]
+    )
+    with caplog.at_level(logging.WARNING, logger="operation_analysis"):
+        result = _service(
+            doc,
+            existing_canvas_ids={("dashboard", "dashboard::稳定画布"): kept.id},
+        ).execute()
+    assert result["success"] is True
+    kept.refresh_from_db()
+    assert kept.name == "原名称"
+    record = next(
+        item
+        for item in caplog.records
+        if item.name == "operation_analysis" and str(item.msg).startswith("[CanvasImport] builtin canvas name is taken")
+    )
+    assert record.msg == "[CanvasImport] builtin canvas name is taken; object_type=%s key=%s name=%s"
+    assert record.args[0] == "dashboard"
+    assert "TOKEN-LEAK" not in record.args
+    rendered = record.getMessage()
+    assert "TOKEN-LEAK" not in rendered
+    assert "\n" not in rendered
+    assert "\x00" not in rendered
+    assert "入侵" in rendered
 
 
 @pytest.mark.django_db

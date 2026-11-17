@@ -244,8 +244,8 @@ export const createParamInputOptionsLoader = (
               resolverUnavailable = true;
             } else {
               settled = true;
-              const errorMessage = getRequestErrorMessage(error, '');
-              return { status: 'error', options: [], ...(errorMessage ? { errorMessage } : {}) };
+              const errorMessage = getRequestErrorMessage(error, '') || 'option-source-unavailable';
+              return { status: 'error', options: [], errorMessage };
             }
           }
         }
@@ -334,11 +334,11 @@ export const createParamInputOptionsLoader = (
               : 'option-source-missing',
           };
         }
-        const errorMessage = getRequestErrorMessage(error, fallbackErrorMessage);
+        const errorMessage = getRequestErrorMessage(error, fallbackErrorMessage) || 'option-source-unavailable';
         return {
           status: 'error',
           options: [],
-          ...(errorMessage ? { errorMessage } : {}),
+          errorMessage,
         };
       }
     })();

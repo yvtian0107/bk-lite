@@ -647,6 +647,7 @@ const Topology = forwardRef<TopologyRef, TopologyProps>(
           onSearch={handleFilterSearch}
           onReset={handleFilterSearch}
           onApplyInitial={setAppliedFilterValues}
+          canEditCanvas={hasPermission(['EditChart'])}
           prefixContent={namespaceSelectorElement}
           popupZIndex={isFullscreen ? 1200 : undefined}
         />
@@ -768,6 +769,7 @@ const Topology = forwardRef<TopologyRef, TopologyProps>(
           onCancel={() => setFilterConfigModalVisible(false)}
           layoutItems={convertNodesToLayoutItems(state.graphInstance)}
           dataSources={dataSourceManager.dataSources}
+          canRepairOptionSource={hasPermission(['EditChart'])}
         />
       </div>
     );

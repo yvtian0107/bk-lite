@@ -504,11 +504,16 @@ class PrecheckService:
             for datasource in DataSourceAPIModel.objects.filter(name__in={name for name, _ in datasource_keys})
             if (datasource.name, datasource.rest_api) in datasource_keys
         }
-        from apps.operation_analysis.common.datasource_visibility import can_access_datasource_in_org
-        from apps.operation_analysis.services.import_export.datasource_package_identity import business_config_equal, find_identity_row
+        from django.db.models import prefetch_related_objects
 
-        for ds in doc.datasources:
-            identity_row = find_identity_row(ds)
+        from apps.operation_analysis.common.datasource_visibility import can_access_datasource_in_org
+        from apps.operation_analysis.services.import_export.datasource_package_identity import HandleIndex, business_config_equal, find_identity_row
+
+        handle_index = HandleIndex()
+        namespace_nats = {item.name: item.namespace or "" for item in doc.namespaces}
+        resolved_rows = [(ds, find_identity_row(ds)) for ds in doc.datasources]
+        prefetch_related_objects([row for _, row in resolved_rows if row is not None], "namespaces")
+        for ds, identity_row in resolved_rows:
             if identity_row is not None:
                 accessible = current_team is None or can_access_datasource_in_org(identity_row, current_team)
                 if not accessible:
@@ -521,7 +526,12 @@ class PrecheckService:
                         }
                     )
                     continue
-                if not business_config_equal(ds, identity_row):
+                if not business_config_equal(
+                    ds,
+                    identity_row,
+                    handle_index=handle_index.cover(ds, identity_row),
+                    namespace_nats=namespace_nats,
+                ):
                     conflicts.append(
                         {
                             "object_key": ds.key,

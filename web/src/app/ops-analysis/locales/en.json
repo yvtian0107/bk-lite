@@ -2140,6 +2140,7 @@
       "optionSourceLegacyAmbiguous": "The saved source is not specific enough and matches more than one data source. Choose the one to use.",
       "optionSourceMissing": "This option source is no longer valid. Choose it again.",
       "optionSourceForbidden": "You do not have access to this option source.",
+      "optionSourceUnavailable": "The option source cannot be confirmed right now. No other data source from the list will be used.",
       "testFailed": "Option source unavailable",
       "incomplete": "Select a data source, value field, and label field",
       "queryParams": "Option query parameters",

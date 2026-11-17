@@ -421,6 +421,38 @@ describe('paramInputOptionsLoader runtime errors', () => {
     assert.equal(getDataSourceList.mock.calls.length, 0);
   });
 
+  it('does not turn a resolve network error into an empty option list or another row', async () => {
+    const resolveOptionSource = vi.fn(async () => {
+      throw new Error('network down');
+    });
+    const getDataSourceList = vi.fn(async () => ([
+      { id: 8, name: '同地址', rest_api: 'demo/accept_options' },
+    ]));
+    const getSourceDataByApiId = vi.fn<GetSourceDataByApiId>();
+    const loader = createParamInputOptionsLoader({
+      getDataSourceList,
+      getSourceDataByApiId,
+      resolveOptionSource,
+    });
+
+    const result = await loader.load({
+      control: 'select',
+      optionsSource: {
+        type: 'dynamic',
+        sourceRef: { type: 'rest_api', value: 'demo/accept_options' },
+        valueField: 'id',
+        labelField: 'name',
+      },
+    }).promise;
+    assert.equal(result?.status, 'error');
+    assert.equal(
+      result && 'errorMessage' in result ? Boolean(result.errorMessage) : false,
+      true,
+    );
+    assert.equal(getDataSourceList.mock.calls.length, 0);
+    assert.equal(getSourceDataByApiId.mock.calls.length, 0);
+  });
+
   it('maps a 404 after resolve to missing and does not restore by address', async () => {
     const resolveOptionSource = vi.fn(async () => ({ status: 'resolved' as const, id: 999999 }));
     const getDataSourceList = vi.fn(async () => ([

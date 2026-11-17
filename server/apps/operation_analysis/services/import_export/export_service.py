@@ -30,7 +30,11 @@ from apps.operation_analysis.services.import_export.view_sets import (
     normalize_canvas_view_sets_for_yaml,
     rewrite_canvas_view_sets_refs_for_yaml,
 )
-from apps.operation_analysis.services.named_option_datasources import collect_named_option_datasource_ids_from_filters
+from apps.operation_analysis.services.named_option_datasources import (
+    _filter_option_refs,
+    collect_named_option_datasource_ids_from_filters,
+    raise_if_option_refs_ambiguous,
+)
 from apps.operation_analysis.services.network_status_topology_overlay import overlay_datasource_ids_for_view_sets
 from apps.operation_analysis.services.string_param_multiple_migrate import migrate_filters_payload, migrate_param_items
 
@@ -79,8 +83,8 @@ class ExportService:
                 return f"builtin::{obj.build_in_key}"
             portable_key = getattr(obj, "portable_key", None)
             if not portable_key:
-                obj.save()
-                portable_key = obj.portable_key
+                portable_key = obj.ensure_portable_key(obj.pk)
+                obj.portable_key = portable_key
             return f"portable::{portable_key}"
         else:
             return f"{object_type.value}{BUSINESS_KEY_SEPARATOR}{obj.name}"
@@ -254,6 +258,10 @@ class ExportService:
         datasource_ids |= collect_numeric_source_ids(normalized)
         datasource_ids |= collect_numeric_source_ids(filters)
         builtin_refs = collect_source_ref_values(normalized) | collect_source_ref_values(filters)
+        filter_refs = _filter_option_refs(filters)
+        if isinstance(normalized, dict):
+            filter_refs |= _filter_option_refs(normalized.get("filters"))
+        raise_if_option_refs_ambiguous(builtin_refs | filter_refs)
         datasource_ids |= unique_builtin_ids_for_refs(builtin_refs)
 
         return datasource_ids, namespace_ids

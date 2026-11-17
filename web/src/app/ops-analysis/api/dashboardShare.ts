@@ -74,6 +74,25 @@ export const useCanvasShareApi = () => {
     [get],
   );
 
+  const resolveSharedOptionSource = useCallback(
+    (
+      sessionId: string,
+      body: { sourceId?: number; builtinKey?: string; sourceRef?: string },
+    ) =>
+      post(
+        `/operation_analysis/api/dashboard_share/session/${sessionId}/resolve_option_source/`,
+        {
+          sourceId: body.sourceId,
+          builtinKey: body.builtinKey,
+          sourceRef: body.sourceRef
+            ? { type: 'rest_api', value: body.sourceRef }
+            : undefined,
+        },
+        { suppressErrorNotification: true },
+      ) as Promise<{ status?: string; id?: number }>,
+    [post],
+  );
+
   const getSharedNetworkTopologyMetricValues = useCallback(
     (
       sessionId: string,
@@ -115,6 +134,7 @@ export const useCanvasShareApi = () => {
     getSharedCanvas,
     querySharedDataSource,
     getSharedDataSources,
+    resolveSharedOptionSource,
     getSharedNetworkTopologyMetricValues,
     getSharedNetworkTopologyLinkRuntime,
   };

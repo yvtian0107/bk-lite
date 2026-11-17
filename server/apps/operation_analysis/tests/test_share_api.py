@@ -511,6 +511,71 @@ def test_share_query_rejects_datasource_not_declared_by_dashboard(settings, dash
 
 
 @pytest.mark.django_db
+def test_share_resolves_declared_option_source_as_the_canvas_org(settings, dashboard, sharer, visitor, monkeypatch):
+    settings.DASHBOARD_SHARE_SIGNING_KEY = "test-key"
+    monkeypatch.setattr("apps.operation_analysis.services.share_service.can_view_canvas", lambda **_: True)
+    declared = DataSourceAPIModel.objects.create(
+        name=f"declared-{uuid.uuid4()}",
+        rest_api=f"demo/declared-{uuid.uuid4()}",
+        groups=[1],
+        created_by="alice",
+        updated_by="alice",
+    )
+    foreign = DataSourceAPIModel.objects.create(
+        name=f"foreign-{uuid.uuid4()}",
+        rest_api=f"demo/foreign-{uuid.uuid4()}",
+        groups=[1],
+        created_by="alice",
+        updated_by="alice",
+    )
+    dashboard.view_sets = [{"valueConfig": {"dataSource": declared.id}}]
+    dashboard.save(update_fields=["view_sets"])
+    sharer_client = APIClient()
+    sharer_client.force_authenticate(sharer)
+    sharer_client.cookies["current_team"] = "1"
+    created = sharer_client.post(
+        f"/api/v1/operation_analysis/api/dashboard/{dashboard.id}/share/",
+        {},
+        format="json",
+    )
+    token = created.data["url"].rsplit("/", 1)[-1]
+    visitor_client = APIClient()
+    visitor_client.force_authenticate(visitor)
+    visitor_client.cookies["current_team"] = "99"
+    exchanged = visitor_client.post(
+        "/api/v1/operation_analysis/api/dashboard_share/exchange/",
+        {"token": token},
+        format="json",
+    )
+    session_id = exchanged.data["session_id"]
+
+    allowed = visitor_client.post(
+        f"/api/v1/operation_analysis/api/dashboard_share/session/{session_id}/resolve_option_source/",
+        {"sourceId": declared.id},
+        format="json",
+    )
+    assert allowed.status_code == 200
+    assert allowed.data["status"] == "resolved"
+    assert allowed.data["id"] == declared.id
+
+    denied = visitor_client.post(
+        f"/api/v1/operation_analysis/api/dashboard_share/session/{session_id}/resolve_option_source/",
+        {"sourceId": foreign.id},
+        format="json",
+    )
+    assert denied.status_code == 200
+    assert denied.data == {"status": "forbidden"}
+    assert foreign.name not in str(denied.data)
+
+    login_resolve = visitor_client.post(
+        "/api/v1/operation_analysis/api/data_source/resolve_option_source/",
+        {"sourceId": declared.id},
+        format="json",
+    )
+    assert login_resolve.status_code == 403
+
+
+@pytest.mark.django_db
 def test_share_datasource_metadata_is_scoped_and_secret_free(settings, dashboard, sharer, visitor, monkeypatch):
     settings.DASHBOARD_SHARE_SIGNING_KEY = "test-key"
     monkeypatch.setattr("apps.operation_analysis.services.share_service.can_view_canvas", lambda **_: True)
