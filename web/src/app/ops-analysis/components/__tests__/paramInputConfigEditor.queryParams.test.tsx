@@ -6,15 +6,17 @@ import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 
 import { ParamInputConfigEditor } from '@/app/ops-analysis/components/paramInputConfigEditor';
 
-const { getDataSourceList, getSourceDataByApiId } = vi.hoisted(() => ({
+const { getDataSourceList, getSourceDataByApiId, resolveOptionSource } = vi.hoisted(() => ({
   getDataSourceList: vi.fn(),
   getSourceDataByApiId: vi.fn(),
+  resolveOptionSource: vi.fn(async () => undefined),
 }));
 
 vi.mock('@/app/ops-analysis/api/dataSource', () => ({
   useDataSourceApi: () => ({
     getDataSourceList,
     getSourceDataByApiId,
+    resolveOptionSource,
   }),
 }));
 
@@ -49,6 +51,9 @@ vi.mock('@/utils/i18n', () => {
         'paramInput.dynamic.queryParamValue': '填写固定值',
         'paramInput.dynamic.preview': '预览',
         'paramInput.dynamic.testFailed': '选项源不可用',
+        'paramInput.dynamic.optionSourceLegacyAmbiguous': '旧配置仅记录来源信息，找到多个候选，请选择实际使用的数据源。',
+        'paramInput.dynamic.optionSourceMissing': '选项来源已失效，请重新选择。',
+        'paramInput.dynamic.optionSourceForbidden': '当前账号无权使用该选项来源。',
         'common.confirm': '确认',
         'common.cancel': '取消',
         'dashboard.componentSwitch': '组件内切换',
@@ -110,6 +115,8 @@ describe('param input query params', () => {
     cleanup();
     getDataSourceList.mockReset();
     getSourceDataByApiId.mockReset();
+    resolveOptionSource.mockReset();
+    resolveOptionSource.mockResolvedValue(undefined);
   });
 
   it('shows aliases, keeps saved values, and leaves the query table unbordered', async () => {
@@ -1071,5 +1078,64 @@ describe('param input query params', () => {
     expect(within(statusCard as HTMLElement).getAllByRole('button', {
       name: 'paramInput.conditionFields.deleteOption',
     })).toHaveLength(2);
+  });
+
+  it('clears a saved source id when the resolver says the account cannot use it', async () => {
+    getDataSourceList.mockResolvedValue([deviceSource]);
+    resolveOptionSource.mockResolvedValue({ status: 'forbidden' });
+    render(
+      <ParamInputConfigEditor
+        open
+        onCancel={vi.fn()}
+        onConfirm={vi.fn()}
+        value={{
+          control: 'select',
+          optionsSource: {
+            type: 'dynamic',
+            sourceId: 9,
+            valueField: 'id',
+            labelField: 'name',
+          },
+        }}
+      />,
+    );
+
+    const dialog = await screen.findByRole('dialog');
+    expect(await within(dialog).findByText('当前账号无权使用该选项来源。')).not.toBeNull();
+    const sourceItem = within(dialog).getByText('数据源').closest('.ant-form-item') as HTMLElement;
+    expect(within(sourceItem).queryByTitle('设备列表')).toBeNull();
+    expect(resolveOptionSource).toHaveBeenCalledWith(expect.objectContaining({ sourceId: 9 }));
+  });
+
+  it('does not preselect a locally unique legacy path when the resolver says it is ambiguous', async () => {
+    getDataSourceList.mockResolvedValue([
+      { ...deviceSource, id: 9, rest_api: 'cmdb/get_room_list' },
+    ]);
+    resolveOptionSource.mockResolvedValue({ status: 'ambiguous' });
+    render(
+      <ParamInputConfigEditor
+        open
+        onCancel={vi.fn()}
+        onConfirm={vi.fn()}
+        value={{
+          control: 'select',
+          optionsSource: {
+            type: 'dynamic',
+            sourceRef: { type: 'rest_api', value: 'cmdb/get_room_list' },
+            valueField: 'id',
+            labelField: 'name',
+          },
+        }}
+      />,
+    );
+
+    const dialog = await screen.findByRole('dialog');
+    expect(await within(dialog).findByText('旧配置仅记录来源信息，找到多个候选，请选择实际使用的数据源。')).not.toBeNull();
+    const sourceItem = within(dialog).getByText('数据源').closest('.ant-form-item') as HTMLElement;
+    expect(within(sourceItem).queryByTitle('设备列表')).toBeNull();
+    expect(resolveOptionSource).toHaveBeenCalledWith({
+      builtinKey: undefined,
+      sourceRef: 'cmdb/get_room_list',
+    });
   });
 });

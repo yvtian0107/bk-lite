@@ -100,6 +100,41 @@ def test_collect_named_option_ids_skips_ambiguous_rest_api_unless_unique_builtin
     assert collect_named_option_datasource_ids({17}) == {43}
 
 
+def test_collect_named_option_ids_follows_builtin_key_when_rest_api_collides():
+    DataSourceAPIModel.objects.create(
+        id=17,
+        name="主数据源",
+        rest_api="cmdb/get_room3d_layout",
+        params=[
+            {
+                "name": "server_room_id",
+                "inputConfig": {
+                    "control": "select",
+                    "optionsSource": {
+                        "type": "dynamic",
+                        "sourceRef": {"type": "rest_api", "value": "CMDB 机房列表::cmdb/get_room_list"},
+                    },
+                },
+            }
+        ],
+    )
+    DataSourceAPIModel.objects.create(
+        id=42,
+        name="按模型的同路径",
+        rest_api="cmdb/get_room_list",
+        is_build_in=True,
+        build_in_key="另一条机房列表::cmdb/get_room_list",
+    )
+    DataSourceAPIModel.objects.create(
+        id=43,
+        name="机房列表",
+        rest_api="cmdb/get_room_list",
+        is_build_in=True,
+        build_in_key="CMDB 机房列表::cmdb/get_room_list",
+    )
+    assert collect_named_option_datasource_ids({17}) == {43}
+
+
 def test_expand_widget_manifest_appends_named_option_identity():
     DataSourceAPIModel.objects.create(
         id=17,

@@ -451,6 +451,8 @@ class OpenImportExportViewSet(OpenAPIViewSet):
             created_by=username,
             updated_by=username,
             groups=groups,
+            current_team=current_team,
+            is_superuser=bool(getattr(request.user, "is_superuser", False)),
         )
 
         result = import_service.execute()

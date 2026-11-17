@@ -89,7 +89,7 @@ _ROOM3D_ROOM_LIST_FILTER = [
             "control": "select",
             "optionsSource": {
                 "type": "dynamic",
-                "sourceRef": {"type": "rest_api", "value": "cmdb/get_room_list"},
+                "sourceRef": {"type": "rest_api", "value": "CMDB 机房列表::cmdb/get_room_list"},
                 "valueField": "inst_uuid",
                 "labelField": "inst_name",
             },
@@ -106,7 +106,7 @@ _APPLICATION_TOPOLOGY_SYSTEM_FILTER = [
             "control": "select",
             "optionsSource": {
                 "type": "dynamic",
-                "sourceRef": {"type": "rest_api", "value": "cmdb/list_application_systems"},
+                "sourceRef": {"type": "rest_api", "value": "应用系统::cmdb/list_application_systems"},
                 "valueField": "inst_uuid",
                 "labelField": "inst_name",
             },

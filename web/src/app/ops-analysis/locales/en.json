@@ -2041,12 +2041,15 @@
     },
     "conflictReasonLabel": {
       "name_conflict": "Name conflict",
-      "no_permission_conflict": "Cross-org conflict"
+      "no_permission_conflict": "Cross-org conflict",
+      "identity_config_conflict": "Same data source, different configuration"
     },
     "conflictAction": "Action",
     "actionSkip": "Skip",
     "actionOverwrite": "Overwrite",
     "actionRename": "Rename",
+    "actionReuseTarget": "Reuse target configuration",
+    "actionImportAsNew": "Import as a new data source",
     "totalObjects": "Total objects: ",
     "resolveConflicts": "Please resolve the following conflicts:",
     "precheckPass": "Precheck passed, no conflicts found. Ready to import.",

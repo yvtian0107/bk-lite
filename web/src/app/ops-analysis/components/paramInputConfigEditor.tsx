@@ -376,7 +376,7 @@ export const ParamInputConfigEditor: React.FC<ParamInputConfigEditorProps> = ({
   optionsQueryContext,
 }) => {
   const { t } = useTranslation();
-  const { getDataSourceList, getSourceDataByApiId } = useDataSourceApi();
+  const { getDataSourceList, getSourceDataByApiId, resolveOptionSource } = useDataSourceApi();
   const [form] = Form.useForm();
   const [control, setControl] = useState<InputControlConfig['control']>('input');
   const [picker, setPicker] = useState<'dropdown' | 'table'>('dropdown');
@@ -391,7 +391,7 @@ export const ParamInputConfigEditor: React.FC<ParamInputConfigEditorProps> = ({
   const [dataSourceList, setDataSourceList] = useState<DatasourceItem[]>([]);
   const [dsLoading, setDsLoading] = useState(false);
   const [dynamicSourceId, setDynamicSourceId] = useState<number | undefined>();
-  const [legacyIssue, setLegacyIssue] = useState<'ambiguous' | 'missing' | null>(null);
+  const [legacyIssue, setLegacyIssue] = useState<'ambiguous' | 'missing' | 'forbidden' | null>(null);
   const [dynamicValueField, setDynamicValueField] = useState<string | undefined>();
   const [dynamicLabelField, setDynamicLabelField] = useState<string | undefined>();
   const [dynamicPreview, setDynamicPreview] = useState<Record<string, unknown>[]>([]);
@@ -656,39 +656,132 @@ export const ParamInputConfigEditor: React.FC<ParamInputConfigEditorProps> = ({
       return;
     }
 
-    const classified = classifyOptionSource(value.optionsSource, dataSourceList);
-    if (classified.status === 'resolved') {
-      setDynamicSourceId(classified.id);
-      form.setFieldValue('dynamicSourceId', classified.id);
-      setLegacyIssue(null);
-      return;
+    let cancelled = false;
+    const apply = (classified: { status: string; id?: number }) => {
+      if (cancelled) return;
+      if (classified.status === 'resolved' && typeof classified.id === 'number') {
+        setDynamicSourceId(classified.id);
+        form.setFieldValue('dynamicSourceId', classified.id);
+        setLegacyIssue(null);
+        return;
+      }
+      setLegacyIssue(
+        classified.status === 'missing'
+          ? 'missing'
+          : classified.status === 'forbidden'
+            ? 'forbidden'
+            : 'ambiguous',
+      );
+    };
+    const source = value.optionsSource;
+    if (resolveOptionSource && typeof source.sourceId !== 'number') {
+      resolveOptionSource({
+        builtinKey: source.builtinKey,
+        sourceRef: source.sourceRef.value,
+      }).then((result) => {
+        if (result?.status === 'resolved' && typeof result.id === 'number') {
+          apply({ status: 'resolved', id: result.id });
+          return;
+        }
+        if (result?.status === 'ambiguous' || result?.status === 'missing' || result?.status === 'forbidden') {
+          apply({ status: result.status });
+          return;
+        }
+        apply(classifyOptionSource(source, dataSourceList));
+      }).catch(() => {
+        apply(classifyOptionSource(source, dataSourceList));
+      });
+      return () => {
+        cancelled = true;
+      };
     }
-    setLegacyIssue(classified.status === 'ambiguous' ? 'ambiguous' : 'missing');
-  }, [control, dataSourceList, dynamicSourceId, form, open, sourceType, value]);
+    apply(classifyOptionSource(source, dataSourceList));
+    return undefined;
+  }, [control, dataSourceList, dynamicSourceId, form, open, resolveOptionSource, sourceType, value]);
 
   useEffect(() => {
     if (!open || sourceType !== 'dynamic' || dynamicSourceId || !externalSourceRef || dataSourceList.length === 0) {
       return;
     }
-    const classified = classifyOptionSource(
-      { sourceRef: externalSourceRef },
-      dataSourceList,
-    );
-    if (classified.status === 'resolved') {
-      setDynamicSourceId(classified.id);
-      setLegacyIssue(null);
-      form.setFieldValue('dynamicSourceId', classified.id);
-      return;
+    let cancelled = false;
+    const apply = (classified: { status: string; id?: number }) => {
+      if (cancelled) return;
+      if (classified.status === 'resolved' && typeof classified.id === 'number') {
+        setDynamicSourceId(classified.id);
+        setLegacyIssue(null);
+        form.setFieldValue('dynamicSourceId', classified.id);
+        return;
+      }
+      setLegacyIssue(
+        classified.status === 'missing'
+          ? 'missing'
+          : classified.status === 'forbidden'
+            ? 'forbidden'
+            : 'ambiguous',
+      );
+    };
+    if (resolveOptionSource) {
+      resolveOptionSource({ sourceRef: externalSourceRef.value }).then((result) => {
+        if (result?.status === 'resolved' && typeof result.id === 'number') {
+          apply({ status: 'resolved', id: result.id });
+          return;
+        }
+        if (result?.status === 'ambiguous' || result?.status === 'missing' || result?.status === 'forbidden') {
+          apply({ status: result.status });
+          return;
+        }
+        apply(classifyOptionSource({ sourceRef: externalSourceRef }, dataSourceList));
+      }).catch(() => {
+        apply(classifyOptionSource({ sourceRef: externalSourceRef }, dataSourceList));
+      });
+      return () => {
+        cancelled = true;
+      };
     }
-    setLegacyIssue(classified.status === 'ambiguous' ? 'ambiguous' : 'missing');
+    apply(classifyOptionSource({ sourceRef: externalSourceRef }, dataSourceList));
+    return undefined;
   }, [
     dataSourceList,
     dynamicSourceId,
     externalSourceRef,
     form,
     open,
+    resolveOptionSource,
     sourceType,
   ]);
+
+  useEffect(() => {
+    if (
+      !open
+      || !resolveOptionSource
+      || !value
+      || value.control === 'input'
+      || value.control === 'organization'
+      || value.control === 'conditionFilter'
+      || value.optionsSource.type !== 'dynamic'
+    ) {
+      return;
+    }
+    const optionsSource = value.optionsSource;
+    const sourceId = optionsSource.sourceId;
+    if (typeof sourceId !== 'number') return;
+    let cancelled = false;
+    resolveOptionSource({
+      sourceId,
+      builtinKey: optionsSource.builtinKey,
+      sourceRef: optionsSource.sourceRef?.value,
+    }).then((result) => {
+      if (cancelled) return;
+      if (result?.status === 'resolved' && result.id === sourceId) return;
+      if (result?.status !== 'forbidden' && result?.status !== 'missing' && result?.status !== 'ambiguous') return;
+      setDynamicSourceId(undefined);
+      form.setFieldValue('dynamicSourceId', undefined);
+      setLegacyIssue(result.status === 'missing' ? 'missing' : result.status === 'forbidden' ? 'forbidden' : 'ambiguous');
+    }).catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
+  }, [form, open, resolveOptionSource, value]);
 
   const fetchDynamicPreview = useCallback((sourceId: number, params: Record<string, unknown> = {}) => {
     const requestId = ++previewRequestIdRef.current;
@@ -1465,7 +1558,9 @@ export const ParamInputConfigEditor: React.FC<ParamInputConfigEditorProps> = ({
                       ? t('paramInput.dynamic.optionSourceLegacyAmbiguous')
                       : legacyIssue === 'missing'
                         ? t('paramInput.dynamic.optionSourceMissing')
-                        : undefined}
+                        : legacyIssue === 'forbidden'
+                          ? t('paramInput.dynamic.optionSourceForbidden')
+                          : undefined}
                     rules={[
                       {
                         required: true,

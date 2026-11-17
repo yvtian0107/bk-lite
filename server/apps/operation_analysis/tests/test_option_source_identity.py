@@ -11,6 +11,7 @@ ASSOCIATION_API = "cmdb/get_model_association_options"
 HOST_KEY = f"模型关联列表::{ASSOCIATION_API}"
 BY_MODEL_NAME = "模型关联列表（按所选模型）"
 BY_MODEL_REF = f"{BY_MODEL_NAME}::{ASSOCIATION_API}"
+BY_MODEL_KEY = f"模型关联列表（按模型）::{ASSOCIATION_API}"
 
 
 def _row(**kwargs):
@@ -33,7 +34,7 @@ def test_latest_one_hop_seed_keeps_multiselect_relation():
     names = [item["name"] for item in one_hop["params"]]
     assert relation["value"] == []
     assert relation["inputConfig"]["multiple"] is True
-    assert relation["inputConfig"]["optionsSource"]["sourceRef"]["value"] == BY_MODEL_REF
+    assert relation["inputConfig"]["optionsSource"]["sourceRef"]["value"] == BY_MODEL_KEY
     assert "filters" not in names
     assert "end_filters" not in names
 

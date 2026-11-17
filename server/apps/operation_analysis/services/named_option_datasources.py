@@ -46,12 +46,17 @@ def collect_named_option_datasource_ids_by_primary(primary_ids: Iterable[int]) -
     for ds_id, candidates in source_ids_by_primary.items():
         result[ds_id].update(candidates & existing_source_ids)
 
-    resolved_rest_apis = _resolve_unique_rest_api_ids({item for values in rest_apis_by_primary.values() for item in values})
+    option_refs = {item for values in rest_apis_by_primary.values() for item in values}
+    resolved_rest_apis = _resolve_unique_rest_api_ids(option_refs)
+    resolved_builtin_keys = _resolve_unique_builtin_key_ids(option_refs)
     for ds_id, apis in rest_apis_by_primary.items():
         for rest_api in apis:
             resolved = resolved_rest_apis.get(rest_api)
             if resolved is not None:
                 result[ds_id].add(resolved)
+            builtin_id = resolved_builtin_keys.get(rest_api)
+            if builtin_id is not None:
+                result[ds_id].add(builtin_id)
     return result
 
 
@@ -150,7 +155,21 @@ def _resolve_option_datasource_ids(source_ids: set[int], rest_apis: set[str]) ->
     if source_ids:
         resolved.update(DataSourceAPIModel.objects.filter(id__in=source_ids).values_list("id", flat=True))
     resolved.update(_resolve_unique_rest_api_ids(rest_apis).values())
+    resolved.update(_resolve_unique_builtin_key_ids(rest_apis).values())
     return resolved
+
+
+def _resolve_unique_builtin_key_ids(refs: set[str]) -> dict[str, int]:
+    """sourceRef 等于不可变 build_in_key 且全表只有一条时才认。同键多条不猜测。"""
+    if not refs:
+        return {}
+    grouped: dict[str, list[int]] = defaultdict(list)
+    for key, row_id in DataSourceAPIModel.objects.filter(build_in_key__in=refs, is_build_in=True).values_list(
+        "build_in_key",
+        "id",
+    ):
+        grouped[key].append(row_id)
+    return {key: row_ids[0] for key, row_ids in grouped.items() if len(row_ids) == 1}
 
 
 def _resolve_unique_rest_api_ids(rest_apis: set[str]) -> dict[str, int]:

@@ -2041,12 +2041,15 @@
     },
     "conflictReasonLabel": {
       "name_conflict": "名称冲突",
-      "no_permission_conflict": "跨组织冲突"
+      "no_permission_conflict": "跨组织冲突",
+      "identity_config_conflict": "同一数据源配置不同"
     },
     "conflictAction": "处理方式",
     "actionSkip": "跳过",
     "actionOverwrite": "覆盖",
     "actionRename": "重命名",
+    "actionReuseTarget": "复用目标配置",
+    "actionImportAsNew": "作为新数据源导入",
     "totalObjects": "总对象数:",
     "resolveConflicts": "请解决以下冲突：",
     "precheckPass": "预检通过，未发现冲突，可以导入。",
