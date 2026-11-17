@@ -222,6 +222,7 @@ const ViewConfig: React.FC<ViewConfigPropsWithManager> = ({
   onDirtyChange,
   previewSingleStyle,
   previewHost = null,
+  canRepairOptionSource = false,
 }) => {
   const { t } = useTranslation();
   const canvasRawDataRegistry = useWidgetCsvExportRegistry();
@@ -1743,6 +1744,7 @@ const ViewConfig: React.FC<ViewConfigPropsWithManager> = ({
             globalFilterValues={unifiedFilterValues}
             onFilterBindingsChange={setFilterBindings}
             onEditInputConfig={handleEditInputConfig}
+            canRepairOptionSource={canRepairOptionSource}
             onParamOptionsResolved={(param, options) =>
               reconcileParamWithOptions(param.name, options)
             }

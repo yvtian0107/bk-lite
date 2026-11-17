@@ -674,7 +674,9 @@ export const ParamInputConfigEditor: React.FC<ParamInputConfigEditorProps> = ({
       );
     };
     const source = value.optionsSource;
-    if (resolveOptionSource && typeof source.sourceId !== 'number') {
+    // 数字 sourceId 只由解析结果决定。本地目录把任意数字都当成已解析，会把缺失/无权提示清掉。
+    if (typeof source.sourceId === 'number') return undefined;
+    if (resolveOptionSource) {
       resolveOptionSource({
         builtinKey: source.builtinKey,
         sourceRef: source.sourceRef.value,
@@ -772,7 +774,14 @@ export const ParamInputConfigEditor: React.FC<ParamInputConfigEditorProps> = ({
       sourceRef: optionsSource.sourceRef?.value,
     }).then((result) => {
       if (cancelled) return;
-      if (result?.status === 'resolved' && result.id === sourceId) return;
+      if (result?.status === 'resolved' && typeof result.id === 'number') {
+        if (result.id !== sourceId) {
+          setDynamicSourceId(result.id);
+          form.setFieldValue('dynamicSourceId', result.id);
+          setLegacyIssue(null);
+        }
+        return;
+      }
       if (result?.status !== 'forbidden' && result?.status !== 'missing' && result?.status !== 'ambiguous') return;
       setDynamicSourceId(undefined);
       form.setFieldValue('dynamicSourceId', undefined);

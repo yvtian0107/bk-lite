@@ -27,8 +27,9 @@ def _result(status, source_id=None):
 
 
 def _accessible(row, current_team, *, is_superuser):
-    if is_superuser:
-        return True
+    # 与 get_source_data 同一套组织判断。超级用户不能把别的组织解析成可用，
+    # 否则解析成功后取数仍是 403，前端只会弹全局提示。
+    del is_superuser
     return can_access_datasource_in_org(row, current_team)
 
 

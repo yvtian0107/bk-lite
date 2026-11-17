@@ -952,6 +952,7 @@ const Report = forwardRef<ReportRef, ReportProps>(({
           dataSourceManager={dataSourceManager}
           filterDefinitions={draftViewSets.filters}
           unifiedFilterValues={filterValues}
+          canRepairOptionSource={hasPermission(['EditChart'])}
           onConfirm={confirmComponentConfig}
           onClose={() => {
             setConfigOpen(false);

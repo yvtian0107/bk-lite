@@ -246,14 +246,9 @@ const UnifiedFilterBar: React.FC<UnifiedFilterBarProps> = ({
     );
     enabledDefinitions.forEach((definition) => {
       const options = optionsByFilterRef.current.get(definition.id);
-      if (!options) {
-        if (isDynamicOptionFilter(definition)) {
-          resetValues[definition.id] = null;
-        }
-        return;
-      }
-      const retained = reconcileOptionBackedFilterValue(definition, null, options);
-      resetValues[definition.id] = retained === undefined ? null : retained;
+      if (!options) return;
+      const retained = reconcileOptionBackedFilterValue(definition, null, options, 'reset');
+      if (retained !== undefined) resetValues[definition.id] = retained;
     });
     publishValues(resetValues, 'reset');
   };

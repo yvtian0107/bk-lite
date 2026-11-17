@@ -334,4 +334,122 @@ describe('paramInputOptionsLoader runtime errors', () => {
     await loader.load(dynamicConfig).promise;
     assert.equal(getSourceDataByApiId.mock.calls.length, 1);
   });
+
+  it('resolves a numeric source id through the same missing, forbidden, and resolved states', async () => {
+    const resolveOptionSource = vi.fn()
+      .mockResolvedValueOnce({ status: 'missing' })
+      .mockResolvedValueOnce({ status: 'forbidden' })
+      .mockResolvedValueOnce({ status: 'resolved', id: 10 });
+    const getDataSourceList = vi.fn(async () => {
+      throw new Error('catalog must not be called');
+    });
+    const getSourceDataByApiId = vi.fn<GetSourceDataByApiId>(
+      async () => asSourceData([{ id: 1, name: '七天' }]),
+    );
+    const loader = createParamInputOptionsLoader({
+      getDataSourceList,
+      getSourceDataByApiId,
+      resolveOptionSource,
+    });
+    const config: InputControlConfig = {
+      control: 'select',
+      optionsSource: {
+        type: 'dynamic',
+        sourceId: 10,
+        builtinKey: 'builtin::days',
+        sourceRef: { type: 'rest_api', value: 'demo/accept_options' },
+        valueField: 'id',
+        labelField: 'name',
+      },
+    };
+
+    assert.deepEqual(await loader.load(config).promise, {
+      status: 'error',
+      options: [],
+      errorMessage: 'option-source-missing',
+    });
+    loader.reset();
+    assert.deepEqual(await loader.load(config).promise, {
+      status: 'error',
+      options: [],
+      errorMessage: 'option-source-forbidden',
+    });
+    loader.reset();
+    assert.equal((await loader.load(config).promise)?.status, 'success');
+    assert.equal(getSourceDataByApiId.mock.calls.length, 1);
+    assert.equal(getSourceDataByApiId.mock.calls[0]?.[0], 10);
+    assert.deepEqual(getSourceDataByApiId.mock.calls[0]?.[2], {
+      suppressErrorNotification: true,
+    });
+    assert.deepEqual(resolveOptionSource.mock.calls[0]?.[0], {
+      sourceId: 10,
+      builtinKey: 'builtin::days',
+      sourceRef: 'demo/accept_options',
+    });
+    assert.equal(getDataSourceList.mock.calls.length, 0);
+  });
+
+  it('maps a 403 after resolve to forbidden and does not query another same-address row', async () => {
+    const resolveOptionSource = vi.fn(async () => ({ status: 'resolved' as const, id: 150 }));
+    const getDataSourceList = vi.fn(async () => ([
+      { id: 151, rest_api: 'demo/accept_forbidden' },
+    ]));
+    const getSourceDataByApiId = vi.fn<GetSourceDataByApiId>(async () => {
+      throw new HandledRequestError('无权访问当前数据源', { status: 403 });
+    });
+    const loader = createParamInputOptionsLoader({
+      getDataSourceList,
+      getSourceDataByApiId,
+      resolveOptionSource,
+    });
+
+    assert.deepEqual(await loader.load({
+      control: 'select',
+      optionsSource: {
+        type: 'dynamic',
+        sourceId: 150,
+        sourceRef: { type: 'rest_api', value: 'demo/accept_forbidden' },
+        valueField: 'id',
+        labelField: 'name',
+      },
+    }).promise, {
+      status: 'error',
+      options: [],
+      errorMessage: 'option-source-forbidden',
+    });
+    assert.deepEqual(getSourceDataByApiId.mock.calls.map((call) => call[0]), [150]);
+    assert.equal(getDataSourceList.mock.calls.length, 0);
+  });
+
+  it('maps a 404 after resolve to missing and does not restore by address', async () => {
+    const resolveOptionSource = vi.fn(async () => ({ status: 'resolved' as const, id: 999999 }));
+    const getDataSourceList = vi.fn(async () => ([
+      { id: 151, name: '同地址', rest_api: 'demo/accept_missing' },
+    ]));
+    const getSourceDataByApiId = vi.fn<GetSourceDataByApiId>(async () => {
+      throw new HandledRequestError('数据源不存在或已删除', { status: 404 });
+    });
+    const loader = createParamInputOptionsLoader({
+      getDataSourceList,
+      getSourceDataByApiId,
+      resolveOptionSource,
+    });
+
+    assert.deepEqual(await loader.load({
+      control: 'select',
+      optionsSource: {
+        type: 'dynamic',
+        sourceId: 999999,
+        sourceRef: { type: 'rest_api', value: 'demo/accept_missing' },
+        valueField: 'id',
+        labelField: 'name',
+      },
+    }).promise, {
+      status: 'error',
+      options: [],
+      errorMessage: 'option-source-missing',
+    });
+    assert.deepEqual(getSourceDataByApiId.mock.calls.map((call) => call[0]), [999999]);
+    assert.equal(getDataSourceList.mock.calls.length, 0);
+  });
 });

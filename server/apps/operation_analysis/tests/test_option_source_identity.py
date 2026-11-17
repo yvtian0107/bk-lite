@@ -73,6 +73,44 @@ def test_forbidden_id_does_not_fall_back_to_another_row():
 
 
 @pytest.mark.django_db
+def test_superuser_still_forbidden_when_org_cannot_query():
+    """解析成功必须能取数。超级用户看不见别的组织时，不能先解析成 resolved。"""
+    hidden = _row(name="别的组织", rest_api=ASSOCIATION_API, groups=[9])
+    visible = _row(name="当前组织", rest_api=ASSOCIATION_API, groups=[1])
+    assert resolve_option_source(
+        source_id=hidden.id,
+        current_team=1,
+        is_superuser=True,
+    ) == {"status": FORBIDDEN}
+    assert resolve_option_source(source_id=visible.id, current_team=1, is_superuser=True)["id"] == visible.id
+
+
+@pytest.mark.django_db
+def test_existing_invisible_id_does_not_restore_another_builtin():
+    hidden = _row(
+        name="别的组织内置",
+        rest_api=ASSOCIATION_API,
+        groups=[9],
+        is_build_in=True,
+        build_in_key=HOST_KEY,
+    )
+    other = _row(
+        name="当前组织另一把钥匙",
+        rest_api="cmdb/other",
+        groups=[],
+        is_build_in=True,
+        build_in_key="other::key",
+    )
+    assert resolve_option_source(
+        source_id=hidden.id,
+        builtin_key="other::key",
+        current_team=1,
+        is_superuser=True,
+    ) == {"status": FORBIDDEN}
+    assert other.id != hidden.id
+
+
+@pytest.mark.django_db
 def test_builtin_recreate_restores_by_key_only():
     original = _row(
         name="模型关联列表（选项）",

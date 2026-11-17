@@ -34,6 +34,8 @@ interface ConditionFilterControlProps {
   resolvedFieldQuery?: ResolvedOptionsQuery;
   fieldQuerySignature?: string;
   disabled?: boolean;
+  /** 当前用户能否打开组件编辑器修好选项来源。文案不授予保存权限。 */
+  canRepairOptionSource?: boolean;
 }
 
 const ConditionFilterControl: React.FC<ConditionFilterControlProps> = ({
@@ -44,6 +46,7 @@ const ConditionFilterControl: React.FC<ConditionFilterControlProps> = ({
   resolvedFieldQuery,
   fieldQuerySignature,
   disabled = false,
+  canRepairOptionSource = false,
 }) => {
   const { t } = useTranslation();
   const api = useDataSourceApi();
@@ -57,7 +60,9 @@ const ConditionFilterControl: React.FC<ConditionFilterControlProps> = ({
     ? [
       'dynamic',
       fieldQuerySignature || stableStringify(dynamicResolution),
-      source.sourceRef?.value || source.sourceId || '',
+      String(source.sourceId ?? ''),
+      source.builtinKey || '',
+      source.sourceRef?.value || '',
       source.valueField || '',
       source.labelField || '',
     ].join('\0')
@@ -99,14 +104,22 @@ const ConditionFilterControl: React.FC<ConditionFilterControlProps> = ({
           return;
         }
         const sourceId = resolved.id;
-        const { data } = await apiRef.current.getSourceDataByApiId(sourceId, resolution.params);
+        const { data } = await apiRef.current.getSourceDataByApiId(sourceId, resolution.params, {
+          suppressErrorNotification: true,
+        });
         if (cancelled) return;
         const loaded = extractDataSourceItems(data)
           .map((item) => conditionFieldFromSourceRow(item, valueField, labelField))
           .filter((item): item is ConditionFieldOption => Boolean(item));
         setLoadedFields({ scope, fields: loaded });
-      }       catch {
-        if (!cancelled) setLoadedFields({ scope, fields: [], unresolved: 'missing' });
+      } catch (error) {
+        if (cancelled) return;
+        const status = readHttpStatus(error);
+        setLoadedFields({
+          scope,
+          fields: [],
+          unresolved: status === 403 ? 'forbidden' : 'missing',
+        });
       }
     })();
     return () => {
@@ -124,7 +137,9 @@ const ConditionFilterControl: React.FC<ConditionFilterControlProps> = ({
 
   const unresolved = loadedFields.scope === fieldScope ? loadedFields.unresolved : undefined;
   const hintKey = unresolved === 'ambiguous'
-    ? 'paramInput.dynamic.optionSourceLegacyAmbiguous'
+    ? (canRepairOptionSource
+      ? 'paramInput.dynamic.optionSourceAmbiguous'
+      : 'paramInput.dynamic.optionSourceAmbiguousReadonly')
     : unresolved === 'forbidden'
       ? 'paramInput.dynamic.optionSourceForbidden'
       : unresolved === 'missing'
@@ -146,15 +161,25 @@ const ConditionFilterControl: React.FC<ConditionFilterControlProps> = ({
   );
 };
 
+const readHttpStatus = (error: unknown): number | undefined => {
+  if (!error || typeof error !== 'object') return undefined;
+  if ('status' in error && typeof (error as { status?: unknown }).status === 'number') {
+    return (error as { status: number }).status;
+  }
+  const response = (error as { response?: { status?: unknown } }).response;
+  if (response && typeof response.status === 'number') return response.status;
+  return undefined;
+};
+
 const resolveConditionSource = async (
   api: ReturnType<typeof useDataSourceApi> & {
     resolveOptionSource?: (body: { sourceId?: number; builtinKey?: string; sourceRef?: string }) => Promise<{ status?: string; id?: number }>;
   },
   source: ConditionFieldSource,
 ): Promise<{ status: 'resolved'; id: number } | { status: 'ambiguous' | 'missing' | 'forbidden' }> => {
-  if (typeof source.sourceId === 'number') return { status: 'resolved', id: source.sourceId };
   if (api.resolveOptionSource) {
     const identity = await api.resolveOptionSource({
+      sourceId: typeof source.sourceId === 'number' ? source.sourceId : undefined,
       builtinKey: source.builtinKey,
       sourceRef: source.sourceRef?.value,
     });
@@ -164,6 +189,7 @@ const resolveConditionSource = async (
     if (identity.status === 'ambiguous' || identity.status === 'forbidden') return { status: identity.status };
     return { status: 'missing' };
   }
+  if (typeof source.sourceId === 'number') return { status: 'resolved', id: source.sourceId };
   const response = await api.getDataSourceList({ page_size: -1 });
   const items = extractDataSourceItems(response).filter(
     (item): item is { id: number; name?: string; rest_api?: string; build_in_key?: string | null } =>

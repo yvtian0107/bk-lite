@@ -49,19 +49,29 @@ export const areFilterValuesEqual = (
   return (left ?? null) === (right ?? null);
 };
 
+export type OptionBackedFilterReconcileMode = 'live' | 'reset';
+
 /**
- * 用选项列表校正筛选值。当前值为空时，回退到定义上的默认值再校正。
- * 没有变化时返回 undefined。
+ * 用选项列表校正筛选值。
+ * 还没写入时才套用默认值；用户清空（null）不会被异步默认值盖回去。
+ * 选项对不上或列表失败时保留原值，避免查询丢掉条件后范围变大。
+ * 没有变化时返回 undefined。reset 把 null 当成“回到默认值”。
  */
 export const reconcileOptionBackedFilterValue = (
   definition: Pick<UnifiedFilterDefinition, 'defaultValue'>,
   current: FilterValue | null | undefined,
   options: Array<Pick<InputOption, 'value'>>,
+  mode: OptionBackedFilterReconcileMode = 'live',
 ): FilterValue | undefined => {
+  if (mode === 'live' && current === null) return undefined;
   const source = current === undefined || current === null
     ? (definition.defaultValue ?? null)
     : current;
   const retained = retainFilterValueInOptions(source, options);
+  if (retained == null && source != null) {
+    if (areFilterValuesEqual(source, current ?? null)) return undefined;
+    return source;
+  }
   if (areFilterValuesEqual(retained, current ?? null)) return undefined;
   return retained;
 };
@@ -81,20 +91,4 @@ export const retainOpeningFilterValues = (
     next[definition.id] = values[definition.id];
   });
   return next;
-};
-
-/** 打开画布时先不套用动态选项默认值，等当前用户的选项列表回来再校正。 */
-export const deferDynamicOptionFilterValues = (
-  definitions: UnifiedFilterDefinition[],
-  values: Record<string, FilterValue>,
-): Record<string, FilterValue> => {
-  let changed = false;
-  const next = { ...values };
-  definitions.forEach((definition) => {
-    if (!isDynamicOptionFilter(definition)) return;
-    if (next[definition.id] == null) return;
-    next[definition.id] = null;
-    changed = true;
-  });
-  return changed ? next : values;
 };

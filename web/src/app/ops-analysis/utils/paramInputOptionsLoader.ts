@@ -38,6 +38,24 @@ export interface ParamInputOptionsLoaderOptions {
   knownDataSources?: Array<{ id: number; name?: string; rest_api?: string }>;
 }
 
+const readHttpStatus = (error: unknown): number | undefined => {
+  if (!error || typeof error !== 'object') return undefined;
+  if ('status' in error && typeof (error as { status?: unknown }).status === 'number') {
+    return (error as { status: number }).status;
+  }
+  const response = (error as { response?: { status?: unknown } }).response;
+  if (response && typeof response.status === 'number') return response.status;
+  return undefined;
+};
+
+const identityErrorMessage = (status: string | undefined): string => (
+  status === 'ambiguous'
+    ? 'option-source-ambiguous'
+    : status === 'forbidden'
+      ? 'option-source-forbidden'
+      : 'option-source-missing'
+);
+
 interface OptionsApi {
   getDataSourceList: (params?: unknown) => Promise<unknown>;
   getSourceDataByApiId: (
@@ -201,23 +219,25 @@ export const createParamInputOptionsLoader = (
         const knownItems = loaderOptions?.knownDataSources ?? [];
         let sourceId = typeof source.sourceId === 'number' ? source.sourceId : undefined;
         let resolverUnavailable = !api.resolveOptionSource;
-        if (sourceId === undefined && api.resolveOptionSource) {
+        let resolvedThroughIdentity = false;
+        if (api.resolveOptionSource) {
           try {
             const identity = await api.resolveOptionSource({
+              sourceId,
               builtinKey: source.builtinKey,
               sourceRef: source.sourceRef?.value,
             });
             if (requestGeneration !== generation) return null;
             if (identity.status !== 'resolved' || typeof identity.id !== 'number') {
               settled = true;
-              const errorMessage = identity.status === 'ambiguous'
-                ? 'option-source-ambiguous'
-                : identity.status === 'forbidden'
-                  ? 'option-source-forbidden'
-                  : 'option-source-missing';
-              return { status: 'error', options: [], errorMessage };
+              return {
+                status: 'error',
+                options: [],
+                errorMessage: identityErrorMessage(identity.status),
+              };
             }
             sourceId = identity.id;
+            resolvedThroughIdentity = true;
           } catch (error) {
             if (requestGeneration !== generation) return null;
             if (error instanceof Error && error.message === 'option-source-resolver-unavailable') {
@@ -262,7 +282,11 @@ export const createParamInputOptionsLoader = (
           settled = true;
           return { status: 'error', options: [], errorMessage: 'option-source-missing' };
         }
-        const { data } = await api.getSourceDataByApiId(sourceId, resolvedParams, requestOptions);
+        // 解析过的来源由控件自己显示缺失/无权，不再弹一条全局提示。
+        const dataRequestOptions: SourceDataRequestOptions | undefined = resolvedThroughIdentity
+          ? { ...requestOptions, suppressErrorNotification: true }
+          : requestOptions;
+        const { data } = await api.getSourceDataByApiId(sourceId, resolvedParams, dataRequestOptions);
         const firstPage = readOptionPage(data);
         const items = [...firstPage.items];
         const shouldPage = firstPage.page !== undefined
@@ -279,7 +303,7 @@ export const createParamInputOptionsLoader = (
             const next = await api.getSourceDataByApiId(
               sourceId,
               { ...resolvedParams, page: nextPage, page_size: firstPage.pageSize },
-              requestOptions,
+              dataRequestOptions,
             );
             if (requestGeneration !== generation) return null;
             const nextItems = readOptionPage(next.data).items;
@@ -300,6 +324,16 @@ export const createParamInputOptionsLoader = (
       } catch (error) {
         if (requestGeneration !== generation) return null;
         settled = true;
+        const httpStatus = readHttpStatus(error);
+        if (httpStatus === 403 || httpStatus === 404) {
+          return {
+            status: 'error',
+            options: [],
+            errorMessage: httpStatus === 403
+              ? 'option-source-forbidden'
+              : 'option-source-missing',
+          };
+        }
         const errorMessage = getRequestErrorMessage(error, fallbackErrorMessage);
         return {
           status: 'error',

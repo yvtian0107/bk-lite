@@ -86,6 +86,7 @@ interface WidgetDatasourceChartTypeFieldsProps {
   onOpenDataSourceSelector: () => void;
   onEditInputConfig: (param: ParamItem) => void;
   onParamOptionsResolved: (param: ParamItem, options: InputOption[]) => void;
+  canRepairOptionSource?: boolean;
   children?: React.ReactNode;
 }
 
@@ -178,7 +179,8 @@ export const WidgetQueryFields: React.FC<
     't' | 'selectedDataSource' | 'effectiveDataSource' | 'hasQueryParams' |
     'shouldShowUnifiedFilterSection' | 'hasUnifiedFilterBindings' |
     'previewFilterDefinitions' | 'filterBindings' | 'globalFilters' | 'globalFilterValues' |
-    'onFilterBindingsChange' | 'onEditInputConfig' | 'onParamOptionsResolved' | 'children'>
+    'onFilterBindingsChange' | 'onEditInputConfig' | 'onParamOptionsResolved' |
+    'canRepairOptionSource' | 'children'>
 > = ({
   t,
   selectedDataSource,
@@ -193,6 +195,7 @@ export const WidgetQueryFields: React.FC<
   onFilterBindingsChange,
   onEditInputConfig,
   onParamOptionsResolved,
+  canRepairOptionSource = false,
   children,
 }) => (
   <section>
@@ -208,6 +211,7 @@ export const WidgetQueryFields: React.FC<
           filterBindings={filterBindings}
           globalFilterValues={globalFilterValues}
           onEditInputConfig={onEditInputConfig}
+          canRepairOptionSource={canRepairOptionSource}
           onParamOptionsResolved={(param, options) =>
             onParamOptionsResolved(param, options)
           }

@@ -332,6 +332,8 @@ export interface ViewConfigProps {
   previewSingleStyle?: SingleValueStyleConfig;
   /** 面板模式把预览传送到这个节点。抽屉模式忽略。 */
   previewHost?: HTMLElement | null;
+  /** 有 EditChart 时组件参数显示修复文案。不授予保存权限。 */
+  canRepairOptionSource?: boolean;
 }
 
 export interface ComponentSelectorConfigItem extends DatasourceItem {

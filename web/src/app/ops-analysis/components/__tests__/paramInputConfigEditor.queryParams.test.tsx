@@ -1102,8 +1102,10 @@ describe('param input query params', () => {
 
     const dialog = await screen.findByRole('dialog');
     expect(await within(dialog).findByText('当前账号无权使用该选项来源。')).not.toBeNull();
+    await waitFor(() => expect(getDataSourceList).toHaveBeenCalled());
     const sourceItem = within(dialog).getByText('数据源').closest('.ant-form-item') as HTMLElement;
     expect(within(sourceItem).queryByTitle('设备列表')).toBeNull();
+    expect(within(dialog).getByText('当前账号无权使用该选项来源。')).toBeTruthy();
     expect(resolveOptionSource).toHaveBeenCalledWith(expect.objectContaining({ sourceId: 9 }));
   });
 

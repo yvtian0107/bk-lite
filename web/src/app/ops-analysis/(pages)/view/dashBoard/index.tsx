@@ -2325,6 +2325,7 @@ const Dashboard = forwardRef<DashboardRef, DashboardProps>(
           dataSourceManager={dataSourceManager}
           filterDefinitions={definitions}
           unifiedFilterValues={filterValues}
+          canRepairOptionSource={hasPermission(['EditChart'])}
         />
         <UnifiedFilterConfigModal
           open={filterConfigModalVisible}
