@@ -181,6 +181,14 @@ def test_prepare_then_exchange_with_nonce_cookie(settings, dashboard, sharer, vi
     state = prepared.data["state"]
 
     browser.force_authenticate(visitor)
+    mismatched = browser.post(
+        "/api/v1/operation_analysis/api/dashboard_share/exchange/",
+        {"state": state},
+        format="json",
+        HTTP_COOKIE="bk_dashboard_share_prep=wrong-nonce",
+    )
+    assert mismatched.status_code == 404
+
     exchanged = browser.post(
         "/api/v1/operation_analysis/api/dashboard_share/exchange/",
         {"state": state},
@@ -191,6 +199,14 @@ def test_prepare_then_exchange_with_nonce_cookie(settings, dashboard, sharer, vi
     assert exchanged.data["session_id"]
     assert "group_tree" not in exchanged.data
     assert "space_id" not in exchanged.data
+
+    replay = browser.post(
+        "/api/v1/operation_analysis/api/dashboard_share/exchange/",
+        {"state": state},
+        format="json",
+        HTTP_COOKIE=f"bk_dashboard_share_prep={nonce}",
+    )
+    assert replay.status_code == 404
 
 
 @pytest.mark.django_db
@@ -762,4 +778,5 @@ def test_share_query_uses_sharer_runtime_authorization_context(settings, dashboa
     )
 
     assert response.status_code == 200
-    assert response.data == [{"region": "east", "count": 1}]
+    # 查询契约自 902bf359 起是 {data, warnings}。断言写成于 b0fd03ab，当时视图还直接返回列表。
+    assert response.data == {"data": [{"region": "east", "count": 1}], "warnings": []}

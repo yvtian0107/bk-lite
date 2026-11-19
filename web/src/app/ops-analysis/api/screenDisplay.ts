@@ -1,5 +1,6 @@
 import { useCallback } from 'react';
 import useApiClient from '@/utils/request';
+import { shareSingleFlight } from '@/app/ops-analysis/api/dashboardShare';
 
 export type ScreenDisplayGrantState = 'absent' | 'active' | 'paused' | 'expired';
 
@@ -32,14 +33,16 @@ const unwrapProxyPayload = async (response: Response) => {
   return payload;
 };
 
-export async function activateScreenDisplay(token: string) {
-  const response = await fetch('/api/proxy/operation_analysis/api/screen_display/activate/', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ token }),
-    credentials: 'include',
+export function activateScreenDisplay(token: string) {
+  return shareSingleFlight(`display:${token}`, async () => {
+    const response = await fetch('/api/proxy/operation_analysis/api/screen_display/activate/', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ token }),
+      credentials: 'include',
+    });
+    return unwrapProxyPayload(response);
   });
-  return unwrapProxyPayload(response);
 }
 
 export const useScreenDisplayApi = () => {
