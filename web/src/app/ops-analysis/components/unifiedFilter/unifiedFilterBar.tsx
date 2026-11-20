@@ -10,6 +10,7 @@ import GroupTreeSelect from '@/components/group-tree-select';
 import { convertGroupTreeToTreeSelectData } from '@/utils/index';
 import { normalizeUnifiedFilterInputMode } from '@/app/ops-analysis/utils/widgetDataTransform';
 import { ParamInputControl } from '@/app/ops-analysis/components/paramInputControl';
+import ConditionFilterControl from '@/app/ops-analysis/components/conditionFilterControl';
 import { useFilterOptionLabelStore } from '@/app/ops-analysis/context/filterTemplate';
 import { createFilterOptionLabelStore } from '@/app/ops-analysis/context/filterOptionLabelStore';
 import { mapOptionLabels } from '@/app/ops-analysis/utils/filterTemplate';
@@ -20,7 +21,12 @@ import type {
   FilterValue,
   TimeRangeValue,
 } from '@/app/ops-analysis/types/dashBoard';
-import type { InputControlConfig, InputOption } from '@/app/ops-analysis/types/dataSource';
+import type {
+  ConditionFieldSource,
+  ConditionFilterValue,
+  InputControlConfig,
+  InputOption,
+} from '@/app/ops-analysis/types/dataSource';
 import {
   areFilterValuesEqual,
   isDynamicOptionFilter,
@@ -43,6 +49,20 @@ import {
   useShareOrganizationSeed,
 } from '@/app/ops-analysis/context/shareOrganization';
 import { getUnifiedFilterTimeSelectorDefaultValue } from '@/app/ops-analysis/utils/filterValue';
+
+function CanvasConditionFieldFilter({ source }: { source: ConditionFieldSource }) {
+  const [value, setValue] = useState<ConditionFilterValue | undefined>(undefined);
+  return (
+    <div className="min-w-80">
+      <ConditionFilterControl
+        source={source}
+        value={value}
+        onChange={setValue}
+        canRepairOptionSource={false}
+      />
+    </div>
+  );
+}
 import {
   buildResetFilterValues,
   fillMissingOrganizationFilterValues,
@@ -367,6 +387,9 @@ const UnifiedFilterBar: React.FC<UnifiedFilterBarProps> = ({
         }
 
         const inputConfig = getFilterInputConfig(definition);
+        if (inputConfig?.control === 'conditionFilter') {
+          return <CanvasConditionFieldFilter source={inputConfig.fields} />;
+        }
         const isMultiple = isMultipleSelectInputConfig(inputConfig);
         const queryResolution = resolveOptionsQueryParams(
           dynamicQueryParamsOf(inputConfig),

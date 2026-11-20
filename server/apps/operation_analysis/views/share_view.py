@@ -23,6 +23,7 @@ from apps.operation_analysis.serializers.share_serializers import (
 from apps.operation_analysis.services.named_option_datasources import (
     collect_named_option_datasource_ids,
     collect_named_option_datasource_ids_from_filters,
+    collect_named_option_datasource_ids_from_tree,
 )
 from apps.operation_analysis.services.network_status_topology_overlay import (
     collect_network_status_topology_overlay_datasource_ids,
@@ -150,6 +151,7 @@ def _canvas_data_source_ids(resource):
         found.update(collect_network_status_topology_overlay_datasource_ids())
     found.update(collect_named_option_datasource_ids(found))
     found.update(collect_named_option_datasource_ids_from_filters(_resource_filter_definitions(resource)))
+    found.update(collect_named_option_datasource_ids_from_tree(view_sets))
     if _view_sets_has_scene_widget(view_sets, "room3D"):
         found.update(collect_named_option_datasource_ids_from_filters(_ROOM3D_ROOM_LIST_FILTER))
     if _view_sets_has_scene_widget(view_sets, "applicationTopology"):

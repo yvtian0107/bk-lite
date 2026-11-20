@@ -290,3 +290,181 @@ def test_expand_widget_manifest_appends_filter_option_identity():
         "widget_type": "unifiedFilter",
         "datasource_id": 42,
     }
+
+
+def _condition_fields(**fields):
+    return {
+        "name": "filters",
+        "type": "conditionFilter",
+        "inputConfig": {
+            "control": "conditionFilter",
+            "fields": {"kind": "dynamic", "valueField": "name", "labelField": "label", **fields},
+        },
+    }
+
+
+def test_condition_field_source_id_is_collected_beside_chart_and_option_sources():
+    DataSourceAPIModel.objects.create(id=17, name="主图表", rest_api="demo/chart", params=[_condition_fields(sourceId=9)])
+    DataSourceAPIModel.objects.create(id=9, name="条件字段", rest_api="demo/fields")
+    DataSourceAPIModel.objects.create(id=8, name="普通选项", rest_api="demo/options")
+    DataSourceAPIModel.objects.create(
+        id=18,
+        name="带普通选项的主源",
+        rest_api="demo/chart-options",
+        params=[
+            {
+                "name": "site",
+                "inputConfig": {
+                    "control": "select",
+                    "optionsSource": {"type": "dynamic", "sourceId": 8, "valueField": "id", "labelField": "name"},
+                },
+            }
+        ],
+    )
+
+    assert collect_named_option_datasource_ids({17, 18}) == {8, 9}
+    assert 99 not in collect_named_option_datasource_ids({17})
+
+
+def test_condition_field_source_ref_follows_unique_rest_api_or_builtin_key_and_does_not_guess():
+    DataSourceAPIModel.objects.create(
+        id=17,
+        name="主图表",
+        rest_api="demo/chart",
+        params=[_condition_fields(sourceRef={"type": "rest_api", "value": "monitor/list_metric_dimensions"})],
+    )
+    DataSourceAPIModel.objects.create(
+        id=21,
+        name="监控指标维度",
+        rest_api="monitor/list_metric_dimensions",
+        is_build_in=True,
+        build_in_key="监控指标维度::monitor/list_metric_dimensions",
+    )
+    assert collect_named_option_datasource_ids({17}) == {21}
+
+    DataSourceAPIModel.objects.create(id=22, name="同地址另一条", rest_api="monitor/list_metric_dimensions")
+    assert collect_named_option_datasource_ids({17}) == set()
+
+    DataSourceAPIModel.objects.filter(id=17).update(
+        params=[
+            _condition_fields(
+                sourceRef={"type": "rest_api", "value": "监控指标维度::monitor/list_metric_dimensions"},
+            )
+        ],
+    )
+    assert collect_named_option_datasource_ids({17}) == {21}
+
+    DataSourceAPIModel.objects.filter(id=17).update(
+        params=[_condition_fields(builtinKey="监控指标维度::monitor/list_metric_dimensions")],
+    )
+    assert collect_named_option_datasource_ids({17}) == {21}
+
+
+def test_canvas_filter_and_widget_condition_sources_are_declared_dependencies():
+    from apps.operation_analysis.services.named_option_datasources import collect_named_option_datasource_ids_from_filters
+    from apps.operation_analysis.views.share_view import _canvas_data_source_ids
+
+    DataSourceAPIModel.objects.create(id=17, name="主图表", rest_api="demo/chart", params=[])
+    DataSourceAPIModel.objects.create(id=9, name="全局条件字段", rest_api="demo/global-fields")
+    DataSourceAPIModel.objects.create(id=31, name="组件条件字段", rest_api="demo/widget-fields")
+    filters = [
+        {
+            "id": "row_filter__conditionFilter",
+            "key": "row_filter",
+            "name": "条件",
+            "type": "conditionFilter",
+            "order": 1,
+            "enabled": True,
+            "inputConfig": _condition_fields(
+                sourceId=9,
+                queryParams={"metric_id": {"ref": "metric_id"}},
+            )["inputConfig"],
+        },
+        {
+            "id": "static_fields__conditionFilter",
+            "key": "static_fields",
+            "name": "静态",
+            "type": "conditionFilter",
+            "order": 2,
+            "enabled": False,
+            "inputConfig": {
+                "control": "conditionFilter",
+                "fields": {"kind": "static", "items": [], "sourceId": 99},
+            },
+        },
+        {
+            "id": "list_fields__conditionFilter",
+            "key": "list_fields",
+            "name": "错误数组",
+            "type": "conditionFilter",
+            "order": 3,
+            "enabled": True,
+            "inputConfig": {
+                "control": "conditionFilter",
+                "fields": [{"kind": "dynamic", "sourceId": 77}],
+            },
+        },
+    ]
+    DataSourceAPIModel.objects.create(id=77, name="不该因数组形状放行", rest_api="demo/not-a-field-list")
+    DataSourceAPIModel.objects.create(id=99, name="不该因静态放行", rest_api="demo/static-not-allowed")
+    assert collect_named_option_datasource_ids_from_filters(filters) == {9}
+
+    class _Canvas:
+        view_sets = [
+            {
+                "children": [
+                    {
+                        "valueConfig": {
+                            "dataSource": 17,
+                            "dataSourceParams": [
+                                _condition_fields(
+                                    sourceId=31,
+                                    queryParams={"dim_id": {"ref": "dim"}},
+                                )
+                            ],
+                        }
+                    }
+                ]
+            }
+        ]
+
+    _Canvas.filters = filters
+    found = _canvas_data_source_ids(_Canvas())
+    assert {17, 9, 31} <= found
+    assert 77 not in found
+    assert 99 not in found
+
+
+def test_declared_query_keys_follow_the_resolved_condition_or_option_source():
+    from apps.operation_analysis.services.named_option_datasources import declared_option_query_keys
+
+    DataSourceAPIModel.objects.create(id=9, name="条件字段", rest_api="demo/fields")
+    DataSourceAPIModel.objects.create(id=8, name="普通选项", rest_api="demo/options")
+    DataSourceAPIModel.objects.create(id=21, name="监控指标维度", rest_api="monitor/list_metric_dimensions")
+    DataSourceAPIModel.objects.create(id=22, name="同地址另一条", rest_api="monitor/list_metric_dimensions")
+    items = [
+        _condition_fields(sourceId=9, queryParams={"metric_id": {"ref": "metric_id"}}),
+        {
+            "name": "site",
+            "inputConfig": {
+                "control": "select",
+                "optionsSource": {
+                    "type": "dynamic",
+                    "sourceId": 8,
+                    "valueField": "id",
+                    "labelField": "name",
+                    "queryParams": {"site_id": {"ref": "site"}},
+                },
+            },
+        },
+        _condition_fields(
+            sourceRef={"type": "rest_api", "value": "monitor/list_metric_dimensions"},
+            queryParams={"metric_id": {"ref": "metric_id"}},
+        ),
+    ]
+
+    keys = declared_option_query_keys(items)
+    assert keys[9] == {"metric_id"}
+    assert keys[8] == {"site_id"}
+    assert 21 not in keys
+    assert 22 not in keys

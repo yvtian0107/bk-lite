@@ -122,6 +122,45 @@ def expand_widget_manifest_with_named_option_datasources(
     return expanded
 
 
+def iter_input_config_carriers(value) -> list[dict]:
+    """画出布上带 inputConfig 的参数或筛选项，含组件参数和嵌套布局。"""
+    found: list[dict] = []
+
+    def visit(node):
+        if isinstance(node, dict):
+            if isinstance(node.get("inputConfig"), dict):
+                found.append(node)
+            for child in node.values():
+                visit(child)
+        elif isinstance(node, list):
+            for child in node:
+                visit(child)
+
+    visit(value)
+    return found
+
+
+def collect_named_option_datasource_ids_from_tree(value) -> set[int]:
+    """从布局树里的组件参数收集能点名的动态选项源和条件字段源。"""
+    return collect_named_option_datasource_ids_from_filters(iter_input_config_carriers(value))
+
+
+def declared_option_query_keys(items) -> dict[int, set[str]]:
+    """已解析的动态选项源或条件字段源，对应画布在 queryParams 里声明的参数名。
+
+    解析不到、或同一引用有多条时，不把参数名挂到任何数据源上。
+    """
+    grouped: dict[int, set[str]] = defaultdict(set)
+    for source in _iter_dynamic_options_sources(items if isinstance(items, list) else []):
+        names = _query_param_names(source)
+        if not names:
+            continue
+        source_ids, refs = _collect_option_refs([source])
+        for resolved_id in _resolve_option_datasource_ids(source_ids, refs):
+            grouped[resolved_id].update(names)
+    return grouped
+
+
 def _iter_dynamic_options_sources(items: Iterable) -> list[dict]:
     sources: list[dict] = []
     for item in items:
@@ -133,7 +172,19 @@ def _iter_dynamic_options_sources(items: Iterable) -> list[dict]:
         options_source = input_config.get("optionsSource")
         if isinstance(options_source, dict) and options_source.get("type") == "dynamic":
             sources.append(options_source)
+        if input_config.get("control") != "conditionFilter":
+            continue
+        fields = input_config.get("fields")
+        if isinstance(fields, dict) and fields.get("kind") == "dynamic":
+            sources.append(fields)
     return sources
+
+
+def _query_param_names(source: dict) -> set[str]:
+    raw = source.get("queryParams")
+    if not isinstance(raw, dict):
+        return set()
+    return {key.strip() for key in raw if isinstance(key, str) and key.strip()}
 
 
 def _collect_option_refs(options_sources: Iterable[dict]) -> tuple[set[int], set[str]]:
@@ -153,6 +204,9 @@ def _collect_option_refs(options_sources: Iterable[dict]) -> tuple[set[int], set
             value = source_ref.get("value")
             if isinstance(value, str) and value:
                 rest_apis.add(value)
+        builtin_key = options_source.get("builtinKey")
+        if isinstance(builtin_key, str) and builtin_key.strip():
+            rest_apis.add(builtin_key.strip())
     return source_ids, rest_apis
 
 
