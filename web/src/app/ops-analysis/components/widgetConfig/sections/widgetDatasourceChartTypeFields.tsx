@@ -24,6 +24,7 @@ import type {
   UnifiedFilterDefinition,
 } from '@/app/ops-analysis/types/dashBoard';
 import type { DatasourceItem, InputOption, ParamItem } from '@/app/ops-analysis/types/dataSource';
+import type { DataVariable } from '@/app/ops-analysis/utils/dataVariable';
 import DataSourceParamsConfig from '@/app/ops-analysis/components/paramsConfig';
 import { FilterBindingPanel } from '@/app/ops-analysis/components/unifiedFilter';
 import { ConfigSectionTitle } from '../configTitles';
@@ -87,6 +88,7 @@ interface WidgetDatasourceChartTypeFieldsProps {
   onEditInputConfig: (param: ParamItem) => void;
   onParamOptionsResolved: (param: ParamItem, options: InputOption[]) => void;
   canRepairOptionSource?: boolean;
+  dataVariables?: DataVariable[];
   children?: React.ReactNode;
 }
 
@@ -180,7 +182,7 @@ export const WidgetQueryFields: React.FC<
     'shouldShowUnifiedFilterSection' | 'hasUnifiedFilterBindings' |
     'previewFilterDefinitions' | 'filterBindings' | 'globalFilters' | 'globalFilterValues' |
     'onFilterBindingsChange' | 'onEditInputConfig' | 'onParamOptionsResolved' |
-    'canRepairOptionSource' | 'children'>
+    'canRepairOptionSource' | 'dataVariables' | 'children'>
 > = ({
   t,
   selectedDataSource,
@@ -196,6 +198,7 @@ export const WidgetQueryFields: React.FC<
   onEditInputConfig,
   onParamOptionsResolved,
   canRepairOptionSource = false,
+  dataVariables,
   children,
 }) => (
   <section>
@@ -210,6 +213,7 @@ export const WidgetQueryFields: React.FC<
           globalFilters={globalFilters}
           filterBindings={filterBindings}
           globalFilterValues={globalFilterValues}
+          dataVariables={dataVariables}
           onEditInputConfig={onEditInputConfig}
           canRepairOptionSource={canRepairOptionSource}
           onParamOptionsResolved={(param, options) =>
@@ -229,7 +233,6 @@ export const WidgetQueryFields: React.FC<
                   {t('dashboard.unifiedFilterBindingTip')}
                 </span>
               }
-              overlayInnerStyle={{ maxWidth: 340, width: 340 }}
               styles={{ body: { maxWidth: 340, width: 340 } }}
             >
               <QuestionCircleOutlined className="cursor-help text-(--color-text-3)" />

@@ -510,7 +510,7 @@ class PrecheckService:
         from apps.operation_analysis.services.import_export.datasource_package_identity import HandleIndex, business_config_equal, find_identity_row
 
         handle_index = HandleIndex()
-        namespace_nats = {item.name: item.namespace or "" for item in doc.namespaces}
+        namespace_nats = {item.name: getattr(item, "namespace", None) or "" for item in doc.namespaces}
         resolved_rows = [(ds, find_identity_row(ds)) for ds in doc.datasources]
         prefetch_related_objects([row for _, row in resolved_rows if row is not None], "namespaces")
         for ds, identity_row in resolved_rows:

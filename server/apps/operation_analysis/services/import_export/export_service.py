@@ -26,9 +26,11 @@ from apps.operation_analysis.models.datasource_models import DataSourceAPIModel,
 from apps.operation_analysis.models.models import Architecture, Dashboard, NetworkTopology, Report, Screen, Topology
 from apps.operation_analysis.schemas.import_export_schema import normalize_date_range_param_values
 from apps.operation_analysis.services.import_export.view_sets import (
+    data_variable_datasource_ids,
     normalize_canvas_view_sets_for_storage,
     normalize_canvas_view_sets_for_yaml,
     rewrite_canvas_view_sets_refs_for_yaml,
+    rewrite_data_variables,
 )
 from apps.operation_analysis.services.named_option_datasources import (
     _filter_option_refs,
@@ -239,6 +241,7 @@ class ExportService:
                 ds_id = value_config.get("dataSource")
                 if isinstance(ds_id, int):
                     datasource_ids.add(ds_id)
+            datasource_ids.update(data_variable_datasource_ids(value.get("dataVariables")))
 
             for nested in value.values():
                 collect_datasource_ids(nested)
@@ -300,7 +303,11 @@ class ExportService:
         }
 
         if hasattr(canvas, "other"):
-            base_data["other"] = canvas.other or {}
+            other = canvas.other or {}
+            if isinstance(other, dict) and isinstance(other.get("dataVariables"), list):
+                other = dict(other)
+                other["dataVariables"] = rewrite_data_variables(other.get("dataVariables"), ds_key_map)
+            base_data["other"] = other
 
         # Dashboard有额外的filters字段
         if object_type == ObjectType.DASHBOARD and hasattr(canvas, "filters"):
@@ -339,6 +346,9 @@ class ExportService:
             ds_ids, ns_ids = cls.extract_canvas_dependencies(view_sets, ot, filters=filters)
             collected_datasource_ids.update(ds_ids)
             collected_namespace_ids.update(ns_ids)
+            other = getattr(canvas, "other", None)
+            if isinstance(other, dict):
+                collected_datasource_ids.update(data_variable_datasource_ids(other.get("dataVariables")))
 
         return collected_datasource_ids, collected_namespace_ids
 

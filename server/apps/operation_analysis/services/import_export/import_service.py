@@ -51,7 +51,10 @@ from apps.operation_analysis.services.import_export.datasource_package_identity 
     rewrite_datasource_bindings,
     unresolved_package_handles,
 )
-from apps.operation_analysis.services.import_export.view_sets import rewrite_canvas_view_sets_refs_for_storage
+from apps.operation_analysis.services.import_export.view_sets import (
+    rewrite_canvas_view_sets_refs_for_storage,
+    rewrite_data_variables,
+)
 from apps.operation_analysis.services.string_param_multiple_migrate import migrate_filters_payload, migrate_param_items
 from apps.operation_analysis.services.user_messages import oa_message
 
@@ -832,7 +835,14 @@ class ImportService:
             if token and token != SENSITIVE_PLACEHOLDER:
                 canvas_data["token"] = token
         else:
-            canvas_data["other"] = canvas_item.other
+            other = canvas_item.other
+            if isinstance(other, dict) and isinstance(other.get("dataVariables"), list):
+                other = dict(other)
+                other["dataVariables"] = rewrite_data_variables(
+                    other.get("dataVariables"),
+                    self.datasource_key_to_id,
+                )
+            canvas_data["other"] = other
 
         # Dashboard有额外的filters字段
         if object_type == ObjectType.DASHBOARD and hasattr(canvas_item, "filters"):

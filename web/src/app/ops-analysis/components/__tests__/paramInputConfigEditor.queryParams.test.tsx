@@ -361,7 +361,7 @@ describe('param input query params', () => {
     });
   });
 
-  it('turns component switch off when a query parameter uses a reference', async () => {
+  it('keeps component switch on when a query parameter uses a reference', async () => {
     const user = userEvent.setup();
     const onConfirm = vi.fn();
     getDataSourceList.mockResolvedValue([deviceSource]);
@@ -391,14 +391,14 @@ describe('param input query params', () => {
     const label = within(dialog).getByText('组件内切换');
     const item = label.closest('.ant-form-item');
     const toggle = within(item as HTMLElement).getByRole('switch');
-    expect((toggle as HTMLButtonElement).disabled).toBe(true);
-    expect(toggle.getAttribute('aria-checked')).toBe('false');
+    expect((toggle as HTMLButtonElement).disabled).toBe(false);
+    expect(toggle.getAttribute('aria-checked')).toBe('true');
     expect(within(dialog).queryByText('局部选项依赖本卡其它局部值和已应用的全局筛选')).toBeNull();
 
     await user.click(within(dialog).getByRole('button', { name: /确\s*认/ }));
     await waitFor(() => expect(onConfirm).toHaveBeenCalled());
     const saved = onConfirm.mock.calls[0]?.[0];
-    expect(saved.componentSwitch).toBeUndefined();
+    expect(saved.componentSwitch).toBe(true);
     expect(saved.optionsSource.queryParams.room_id).toEqual({ ref: 'site_id__string' });
   });
 
@@ -535,7 +535,7 @@ describe('param input query params', () => {
     expect(onConfirm).not.toHaveBeenCalled();
     expect(within(dialog).queryByText(/查询入参依赖超过/)).toBeNull();
     expect(within(dialog).queryByText(/__string/)).toBeNull();
-    expect(within(dialog).getByText('全局筛选 · 实例')).not.toBeNull();
+    expect(within(dialog).getAllByText('全局筛选 · 实例').length).toBeGreaterThan(0);
     errorSpy.mockRestore();
   });
 
@@ -1231,5 +1231,76 @@ describe('param input query params', () => {
     expect(await within(dialog).findByText('选项来源已失效，请重新选择。')).not.toBeNull();
     const sourceItem = within(dialog).getByText('数据源').closest('.ant-form-item') as HTMLElement;
     expect(within(sourceItem).queryByTitle('设备列表')).toBeNull();
+  });
+
+  it('groups controls, options, and interaction, and keeps drag handles on static rows', async () => {
+    const user = userEvent.setup();
+    const onConfirm = vi.fn();
+    render(
+      <ParamInputConfigEditor
+        open
+        componentSwitchEnabled
+        onCancel={vi.fn()}
+        onConfirm={onConfirm}
+        value={{
+          control: 'select',
+          multiple: true,
+          componentSwitch: true,
+          picker: 'dropdown',
+          optionsSource: {
+            type: 'static',
+            staticItems: [
+              { label: 'CPU使用率', value: 'cpu' },
+              { label: '内存使用率', value: 'memory' },
+            ],
+          },
+        }}
+      />,
+    );
+
+    const dialog = await screen.findByRole('dialog');
+    const text = dialog.textContent || '';
+    const controlAt = text.indexOf('paramInput.sections.control');
+    const interactionAt = text.indexOf('paramInput.sections.interaction');
+    const multipleAt = text.indexOf('paramInput.multiple');
+    const switchAt = text.indexOf('组件内切换');
+    const optionsSectionAt = text.indexOf('paramInput.sections.options');
+    const sourceAt = text.indexOf('paramInput.sourceType');
+    const optionsAt = text.indexOf('paramInput.static.options');
+    expect(controlAt).toBeGreaterThan(-1);
+    expect(interactionAt).toBeGreaterThan(controlAt);
+    expect(multipleAt).toBeGreaterThan(interactionAt);
+    expect(switchAt).toBeGreaterThan(multipleAt);
+    expect(optionsSectionAt).toBeGreaterThan(switchAt);
+    expect(sourceAt).toBeGreaterThan(optionsSectionAt);
+    expect(optionsAt).toBeGreaterThan(sourceAt);
+    expect(text.includes('paramInput.multipleHint')).toBe(false);
+    expect(text.includes('dashboard.componentSwitchHint')).toBe(false);
+    expect(within(dialog).getByRole('columnheader', { name: 'paramInput.static.identifier' })).toBeTruthy();
+    expect(within(dialog).getByRole('columnheader', { name: 'paramInput.static.displayName' })).toBeTruthy();
+    expect(within(dialog).getAllByRole('button', { name: 'paramInput.static.drag' })).toHaveLength(2);
+    expect(within(dialog).getByDisplayValue('cpu')).toBeTruthy();
+    expect(within(dialog).getByDisplayValue('memory')).toBeTruthy();
+
+    await user.click(within(dialog).getByRole('button', { name: 'paramInput.static.add' }));
+    const removeButtons = within(dialog).getAllByRole('button', { name: 'paramInput.static.remove' });
+    expect(removeButtons).toHaveLength(3);
+    await user.click(removeButtons[2]);
+    expect(within(dialog).getAllByRole('button', { name: 'paramInput.static.drag' })).toHaveLength(2);
+
+    await user.click(within(dialog).getByRole('button', { name: /确\s*认/ }));
+    await waitFor(() => expect(onConfirm).toHaveBeenCalled());
+    expect(onConfirm.mock.calls[0]?.[0]).toMatchObject({
+      control: 'select',
+      multiple: true,
+      componentSwitch: true,
+      optionsSource: {
+        type: 'static',
+        staticItems: [
+          { label: 'CPU使用率', value: 'cpu' },
+          { label: '内存使用率', value: 'memory' },
+        ],
+      },
+    });
   });
 });
