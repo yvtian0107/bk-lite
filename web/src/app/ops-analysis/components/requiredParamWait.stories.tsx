@@ -1,0 +1,100 @@
+import type { Meta, StoryObj } from '@storybook/nextjs';
+import React from 'react';
+import { IntlProvider } from 'react-intl';
+import { Button } from 'antd';
+import ParamTable from '@/app/ops-analysis/(pages)/settings/dataSource/paramTable';
+import WidgetState from '@/app/ops-analysis/components/widget-state';
+import { useThemeMode } from '@/theme';
+import zhOps from '@/app/ops-analysis/locales/zh.json';
+import type { ParamItem } from '@/app/ops-analysis/types/dataSource';
+
+type LocaleJson = Record<string, unknown>;
+
+const flatten = (obj: LocaleJson, prefix = '', out: Record<string, string> = {}) => {
+  Object.keys(obj).forEach((key) => {
+    const value = obj[key];
+    const next = prefix ? `${prefix}.${key}` : key;
+    if (value && typeof value === 'object' && !Array.isArray(value)) {
+      flatten(value as LocaleJson, next, out);
+      return;
+    }
+    out[next] = String(value);
+  });
+  return out;
+};
+
+const messages = flatten(zhOps as LocaleJson);
+
+const roomParam: ParamItem = {
+  id: 'room',
+  name: 'server_room_id',
+  alias_name: '机房',
+  type: 'string',
+  filterType: 'filter',
+  value: '',
+  required: true,
+};
+
+const objectParam: ParamItem = {
+  id: 'object',
+  name: 'monitor_object_id',
+  alias_name: '监控对象',
+  type: 'string',
+  filterType: 'params',
+  value: '',
+  required: false,
+};
+
+const Fixture = () => {
+  const { mode, setMode } = useThemeMode();
+  const [params, setParams] = React.useState<ParamItem[]>([roomParam, objectParam]);
+  return (
+    <IntlProvider locale="zh" messages={messages}>
+      <div
+        className="min-h-screen p-6"
+        style={{ background: 'var(--color-bg)', color: 'var(--color-text-1)' }}
+      >
+        <div className="mb-4 flex items-center gap-3">
+          <div className="text-sm">隔离夹具。不是 screen_11 业务验收。</div>
+          <Button onClick={() => setMode('light')}>浅色</Button>
+          <Button onClick={() => setMode('dark')}>暗色</Button>
+          <div className="text-sm">{mode}</div>
+        </div>
+        <div className="grid gap-4" style={{ gridTemplateColumns: '420px 1fr' }}>
+          <section
+            className="rounded border p-3"
+            style={{ borderColor: 'var(--color-border)', background: 'var(--color-bg-container)' }}
+          >
+            <div className="mb-2 text-sm font-medium">数据源参数配置</div>
+            <ParamTable params={params} onChange={setParams} />
+          </section>
+          <section className="grid gap-3">
+            <div
+              className="h-40 rounded border"
+              style={{ borderColor: 'var(--color-border)', background: 'var(--color-bg-container)' }}
+            >
+              <WidgetState description="请选择机房" />
+            </div>
+            <div
+              className="h-40 rounded border"
+              style={{ borderColor: 'var(--color-border)', background: 'var(--color-bg-container)' }}
+            >
+              <WidgetState description="请补充：机房、监控对象" />
+            </div>
+          </section>
+        </div>
+      </div>
+    </IntlProvider>
+  );
+};
+
+const meta = {
+  title: 'OpsAnalysis/RequiredParamWaitFixture',
+  component: Fixture,
+} satisfies Meta<typeof Fixture>;
+
+export default meta;
+
+type Story = StoryObj<typeof meta>;
+
+export const LightAndDark: Story = {};

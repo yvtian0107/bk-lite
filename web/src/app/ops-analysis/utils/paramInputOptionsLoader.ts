@@ -12,6 +12,8 @@ import {
   canonicalQueryParams,
   stableStringify,
 } from '@/app/ops-analysis/utils/optionsQueryParamRefs';
+import { listMissingRequiredParams } from '@/app/ops-analysis/utils/requiredParamGate';
+import type { ParamItem } from '@/app/ops-analysis/types/dataSource';
 
 export type ParamInputOptionsState =
   | { status: 'idle'; options: [] }
@@ -35,7 +37,12 @@ export interface ParamInputOptionsLoad {
 export interface ParamInputOptionsLoaderOptions {
   suppressErrorNotification?: boolean;
   fallbackErrorMessage?: string;
-  knownDataSources?: Array<{ id: number; name?: string; rest_api?: string }>;
+  knownDataSources?: Array<{
+    id: number;
+    name?: string;
+    rest_api?: string;
+    params?: ParamItem[] | null;
+  }>;
 }
 
 const readHttpStatus = (error: unknown): number | undefined => {
@@ -58,6 +65,7 @@ const identityErrorMessage = (status: string | undefined): string => (
 
 interface OptionsApi {
   getDataSourceList: (params?: unknown) => Promise<unknown>;
+  getDataSourceDetails?: (ids: number[]) => Promise<unknown>;
   getSourceDataByApiId: (
     id: number,
     params?: unknown,
@@ -71,6 +79,27 @@ interface OptionsApi {
 }
 
 const typedOption = (option: InputOption) => [option.label, typeof option.value, option.value];
+
+interface CatalogRow {
+  id?: number;
+  name?: string;
+  rest_api?: string;
+  build_in_key?: string | null;
+  params?: ParamItem[] | null;
+}
+
+const readCatalogParams = (
+  items: CatalogRow[],
+  sourceId: number,
+): ParamItem[] | undefined => {
+  const row = items.find((item) => item.id === sourceId);
+  return row && Array.isArray(row.params) ? row.params : undefined;
+};
+
+const readListedItems = (response: unknown): CatalogRow[] => {
+  if (Array.isArray(response)) return response as CatalogRow[];
+  return extractDataSourceItems(response) as CatalogRow[];
+};
 
 export const buildParamInputOptionsResultKey = (
   configKey: string,
@@ -217,6 +246,7 @@ export const createParamInputOptionsLoader = (
       const fallbackErrorMessage = loaderOptions?.fallbackErrorMessage ?? '';
       try {
         const knownItems = loaderOptions?.knownDataSources ?? [];
+        let listedItems: CatalogRow[] = [];
         let sourceId = typeof source.sourceId === 'number' ? source.sourceId : undefined;
         let resolverUnavailable = !api.resolveOptionSource;
         let resolvedThroughIdentity = false;
@@ -257,9 +287,8 @@ export const createParamInputOptionsLoader = (
         }
         if (resolverUnavailable && sourceId === undefined && source.sourceRef) {
           const response = await api.getDataSourceList({ page_size: -1 });
-          const sourceItems = Array.isArray(response)
-            ? response
-            : extractDataSourceItems(response);
+          const sourceItems = readListedItems(response);
+          listedItems = sourceItems;
           if (requestGeneration !== generation) return null;
           const classified = classifyOptionSource(
             source,
@@ -281,6 +310,27 @@ export const createParamInputOptionsLoader = (
           if (requestGeneration !== generation) return null;
           settled = true;
           return { status: 'error', options: [], errorMessage: 'option-source-missing' };
+        }
+        let catalog = readCatalogParams(knownItems, sourceId) ?? readCatalogParams(listedItems, sourceId);
+        if (!catalog && api.getDataSourceDetails) {
+          try {
+            const details = await api.getDataSourceDetails([sourceId]);
+            if (requestGeneration !== generation) return null;
+            catalog = readCatalogParams(readListedItems(details), sourceId);
+          } catch (error) {
+            if (requestGeneration !== generation) return null;
+            settled = true;
+            const errorMessage = getRequestErrorMessage(error, '') || 'option-source-unavailable';
+            return { status: 'error', options: [], errorMessage };
+          }
+          if (!catalog) {
+            settled = true;
+            return { status: 'error', options: [], errorMessage: 'option-source-unavailable' };
+          }
+        }
+        if (listMissingRequiredParams(catalog ?? [], resolvedParams).length > 0) {
+          settled = true;
+          return { status: 'blocked', options: [] };
         }
         // 解析过的来源由控件自己显示缺失/无权，不再弹一条全局提示。
         const dataRequestOptions: SourceDataRequestOptions | undefined = resolvedThroughIdentity

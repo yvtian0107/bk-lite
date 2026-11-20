@@ -48,6 +48,7 @@ export const useParamInputOptions = (
     loaderRef.current = createParamInputOptionsLoader(
       {
         getDataSourceList: (...args) => apiRef.current.getDataSourceList(...args),
+        getDataSourceDetails: (ids) => apiRef.current.getDataSourceDetails(ids),
         getSourceDataByApiId: (...args) =>
           runtimeRef.current.getSourceDataByApiId?.(...args)
           ?? apiRef.current.getSourceDataByApiId(...args),
@@ -75,7 +76,11 @@ export const useParamInputOptions = (
     blockReason: optionsBlockReason,
   });
   const knownSourcesKey = (loaderOptions?.knownDataSources ?? [])
-    .map((item) => `${item.id}:${item.rest_api ?? ''}`)
+    .map((item) => `${item.id}:${item.rest_api ?? ''}:${
+      Array.isArray(item.params)
+        ? item.params.filter((param) => param.required === true).map((param) => param.name).join(',')
+        : ''
+    }`)
     .sort()
     .join(',');
   const getSynchronousState = (): ParamInputOptionsState => {
