@@ -153,6 +153,14 @@ const ParamTable = React.forwardRef<ParamTableRef, ParamTableProps>(
       clearValidation,
     }));
 
+    const handleRequiredChange = (checked: boolean, id: string) => {
+      onChange(
+        params.map((item) =>
+          item.id === id ? { ...item, required: checked } : item,
+        ),
+      );
+    };
+
     const handleAliasChange = (val: string, id: string) => {
       onChange(
         params.map((item) =>
@@ -328,6 +336,20 @@ const ParamTable = React.forwardRef<ParamTableRef, ParamTableProps>(
             onChange={(e) => handleAliasChange(e.target.value, record.id!)}
             onBlur={(e) => handleAliasBlur(e.target.value, record.id!)}
             status={emptyAliases.includes(record.id!) ? "error" : undefined}
+          />
+        ),
+      },
+      {
+        title: t("dataSource.requiredFlag"),
+        dataIndex: "required",
+        key: "required",
+        width: 90,
+        render: (_: unknown, record: ParamItem) => (
+          <Switch
+            disabled={readOnly}
+            checked={record.required === true}
+            aria-label={t("dataSource.requiredFlag")}
+            onChange={(checked: boolean) => handleRequiredChange(checked, record.id!)}
           />
         ),
       },

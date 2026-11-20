@@ -15,6 +15,7 @@ import {
 } from '@/app/ops-analysis/utils/widgetDataTransform';
 import { getDateRangeTimezone } from '@/app/ops-analysis/utils/dateRange';
 import { collectVariableIds } from '@/app/ops-analysis/utils/dataVariable';
+import { listMissingRequiredParams } from '@/app/ops-analysis/utils/requiredParamGate';
 import {
   DisplayColumnRow,
   buildDisplayColumnsFromSchema,
@@ -278,6 +279,7 @@ export function useTableConfig({
       }, {});
       // 探列走的是原始表单值，还没换成取值列。带着编号发出去会报参数格式错误。
       if (collectVariableIds(userParams).length > 0) return null;
+      if (!Array.isArray(targetDataSource.params)) return null;
 
       Object.assign(
         payload,
@@ -297,6 +299,10 @@ export function useTableConfig({
           t,
         }),
       );
+
+      if (listMissingRequiredParams(targetDataSource.params, payload).length > 0) {
+        return null;
+      }
 
       if (
         builtinNamespaceId !== undefined &&

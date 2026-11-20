@@ -1821,6 +1821,7 @@
         "value": "",
         "alias_name": "机房",
         "filterType": "filter",
+        "required": true,
         "inputConfig": {
           "control": "select",
           "optionsSource": {
@@ -1870,6 +1871,7 @@
         "value": "",
         "alias_name": "机房",
         "filterType": "filter",
+        "required": true,
         "inputConfig": {
           "control": "select",
           "optionsSource": {
@@ -1998,6 +2000,7 @@
         "value": "",
         "alias_name": "机房",
         "filterType": "filter",
+        "required": true,
         "inputConfig": {
           "control": "select",
           "optionsSource": {
