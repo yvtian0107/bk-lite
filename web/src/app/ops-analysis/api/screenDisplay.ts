@@ -1,6 +1,10 @@
 import { useCallback } from 'react';
 import useApiClient from '@/utils/request';
 import { shareSingleFlight } from '@/app/ops-analysis/api/dashboardShare';
+import {
+  sourceDataRequestConfig,
+  type SourceDataRequestOptions,
+} from '@/app/ops-analysis/api/dataSource';
 
 export type ScreenDisplayGrantState = 'absent' | 'active' | 'paused' | 'expired';
 
@@ -92,11 +96,14 @@ export const useScreenDisplayApi = () => {
   );
 
   const queryDisplayDataSource = useCallback(
-    (dataSourceId: number, params?: unknown) =>
+    (dataSourceId: number, params?: unknown, options?: SourceDataRequestOptions) =>
       post(
         `/operation_analysis/api/screen_display/current/query/${dataSourceId}/`,
         params,
-        { suppressErrorNotification: true },
+        sourceDataRequestConfig({
+          suppressErrorNotification: true,
+          signal: options?.signal,
+        }),
       ),
     [post],
   );

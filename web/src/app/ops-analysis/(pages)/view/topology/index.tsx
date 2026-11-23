@@ -179,6 +179,8 @@ const Topology = forwardRef<TopologyRef, TopologyProps>(
       clearOperationHistory,
       refreshAllSingleValueNodes,
       refreshAllChartNodes,
+      abortInflightChartRequests,
+      abortInflightSingleValueRequests,
       loadChartNodeData,
       updateSingleNodeData,
     } = useGraphOperations(
@@ -546,6 +548,10 @@ const Topology = forwardRef<TopologyRef, TopologyProps>(
       loadCanvasNamespaces,
       refreshAllSingleValueNodes,
       refreshAllChartNodes,
+      abortInflightDataRequests: () => {
+        abortInflightChartRequests();
+        abortInflightSingleValueRequests();
+      },
       refreshTopologyNodes,
       scheduleTopologyInitialization,
       startInitialization,

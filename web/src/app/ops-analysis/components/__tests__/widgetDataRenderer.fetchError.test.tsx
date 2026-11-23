@@ -26,6 +26,7 @@ const testState = vi.hoisted(() => {
     loaderOptions: undefined as
       | { suppressErrorNotification?: boolean; fallbackErrorMessage?: string }
       | undefined,
+    getSourceDataByApiId: vi.fn(),
   };
 });
 
@@ -60,7 +61,7 @@ vi.mock('@/app/ops-analysis/api/dataSource', async () => {
   return {
     ...actual,
     useDataSourceApi: () => ({
-      getSourceDataByApiId: vi.fn(),
+      getSourceDataByApiId: testState.getSourceDataByApiId,
       getDataSourceList: vi.fn(),
     }),
   };
@@ -105,6 +106,8 @@ vi.mock('@/app/ops-analysis/components/widgetRegistry', () => ({
 }));
 
 import WidgetWrapper from '../widgetDataRenderer';
+import { DashboardRuntimeSchedulerProvider } from '@/app/ops-analysis/context/dashboardRuntimeScheduler';
+import { createTransportCancelError } from '@/utils/requestCancellation';
 
 const pieDatasource: DatasourceItem = {
   id: 42,
@@ -152,6 +155,7 @@ afterEach(() => {
   cleanup();
   testState.messageError.mockClear();
   testState.fetchCompareData.mockReset();
+  testState.getSourceDataByApiId.mockReset();
   testState.optionState = {
     status: 'idle',
     options: [],
@@ -1167,5 +1171,121 @@ describe('WidgetWrapper component switch options runtime', () => {
     expect(screen.queryByText(businessError)).toBeNull();
     expect(testState.fetchCompareData).toHaveBeenCalled();
     expect(testState.messageError).not.toHaveBeenCalled();
+  });
+
+  it('aborts an in-flight request when the canvas id changes and does not start another', async () => {
+    const signals: AbortSignal[] = [];
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {});
+    testState.getSourceDataByApiId.mockImplementation(
+      (_id: number, _params: unknown, options?: { signal?: AbortSignal }) => new Promise((_resolve, reject) => {
+        const signal = options?.signal;
+        if (!signal) return;
+        signals.push(signal);
+        if (signal.aborted) {
+          reject(createTransportCancelError());
+          return;
+        }
+        signal.addEventListener('abort', () => reject(createTransportCancelError()), { once: true });
+      }),
+    );
+    testState.fetchCompareData.mockImplementation(async (input: {
+      dataSourceId: number;
+      getSourceDataByApiId: (id: number, params?: unknown) => Promise<{ data: unknown }>;
+    }) => {
+      const current = await input.getSourceDataByApiId(input.dataSourceId, {});
+      return { currentData: current.data, baselineData: null };
+    });
+
+    const { rerender } = render(
+      <WidgetWrapper
+        dashboardId="dashboard-1"
+        widgetId="widget-1"
+        chartType="pie"
+        config={{ dataSource: pieDatasource.id }}
+        dataSource={pieDatasource}
+      />,
+    );
+
+    await waitFor(() => expect(signals).toHaveLength(1));
+    rerender(
+      <WidgetWrapper
+        dashboardId="dashboard-2"
+        widgetId="widget-1"
+        chartType="pie"
+        config={{ dataSource: pieDatasource.id }}
+        dataSource={pieDatasource}
+      />,
+    );
+
+    await waitFor(() => expect(signals[0]?.aborted).toBe(true));
+    expect(testState.fetchCompareData).toHaveBeenCalledTimes(1);
+    expect(screen.queryByText('网络异常')).toBeNull();
+    expect(screen.queryByText('dashboard.dataFetchFailed')).toBeNull();
+    expect(consoleError).not.toHaveBeenCalled();
+    consoleError.mockRestore();
+  });
+
+  it('keeps a shared in-flight request when another widget on the new canvas joins it', async () => {
+    const signals: AbortSignal[] = [];
+    let resolveShared: ((value: { data: Array<{ name: string; value: number }> }) => void) | undefined;
+    testState.getSourceDataByApiId.mockImplementation(
+      (_id: number, _params: unknown, options?: { signal?: AbortSignal }) => new Promise((resolve) => {
+        if (options?.signal) signals.push(options.signal);
+        resolveShared = resolve;
+      }),
+    );
+    testState.fetchCompareData.mockImplementation(async (input: {
+      dataSourceId: number;
+      getSourceDataByApiId: (id: number, params?: unknown) => Promise<{ data: unknown }>;
+    }) => {
+      const current = await input.getSourceDataByApiId(input.dataSourceId, {});
+      return { currentData: current.data, baselineData: null };
+    });
+
+    const { rerender } = render(
+      <DashboardRuntimeSchedulerProvider>
+        <WidgetWrapper
+          dashboardId="dashboard-1"
+          widgetId="widget-shared"
+          chartType="pie"
+          config={{ dataSource: pieDatasource.id }}
+          dataSource={pieDatasource}
+        />
+        <WidgetWrapper
+          dashboardId="dashboard-1"
+          widgetId="widget-other"
+          chartType="pie"
+          config={{ dataSource: pieDatasource.id }}
+          dataSource={pieDatasource}
+        />
+      </DashboardRuntimeSchedulerProvider>,
+    );
+
+    await waitFor(() => expect(testState.getSourceDataByApiId).toHaveBeenCalledTimes(1));
+    rerender(
+      <DashboardRuntimeSchedulerProvider>
+        <WidgetWrapper
+          dashboardId="dashboard-2"
+          widgetId="widget-shared"
+          chartType="pie"
+          config={{ dataSource: pieDatasource.id }}
+          dataSource={pieDatasource}
+        />
+        <WidgetWrapper
+          dashboardId="dashboard-1"
+          widgetId="widget-other"
+          chartType="pie"
+          config={{ dataSource: pieDatasource.id }}
+          dataSource={pieDatasource}
+        />
+      </DashboardRuntimeSchedulerProvider>,
+    );
+
+    await Promise.resolve();
+    expect(signals[0]?.aborted).toBe(false);
+    resolveShared?.({ data: [{ name: 'shared', value: 1 }] });
+    await waitFor(() => {
+      expect(screen.getAllByTestId('chart-renderer').some((node) => node.textContent?.includes('shared'))).toBe(true);
+    });
   });
 });

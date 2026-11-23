@@ -18,7 +18,18 @@ import {
 
 export interface SourceDataRequestOptions {
   suppressErrorNotification?: boolean;
+  signal?: AbortSignal;
 }
+
+export const sourceDataRequestConfig = (options?: SourceDataRequestOptions) => {
+  if (!options?.suppressErrorNotification && !options?.signal) return undefined;
+  return {
+    ...(options.suppressErrorNotification
+      ? { suppressErrorNotification: true as const }
+      : {}),
+    ...(options.signal ? { signal: options.signal } : {}),
+  };
+};
 
 export const withRuntimeSourceDataErrorSuppression = (
   getSourceDataByApiId: (
@@ -26,8 +37,8 @@ export const withRuntimeSourceDataErrorSuppression = (
     params?: unknown,
     options?: SourceDataRequestOptions,
   ) => Promise<SourceDataResult>,
-) => (id: number, params?: unknown) =>
-  getSourceDataByApiId(id, params, { suppressErrorNotification: true });
+) => (id: number, params?: unknown, signal?: AbortSignal) =>
+  getSourceDataByApiId(id, params, { suppressErrorNotification: true, signal });
 
 export const useDataSourceApi = () => {
   const { get, post, put, del, patch } = useApiClient();
@@ -145,9 +156,7 @@ export const useDataSourceApi = () => {
     params?: unknown,
     options?: SourceDataRequestOptions,
   ): Promise<SourceDataResult> => {
-    const requestConfig = options?.suppressErrorNotification
-      ? { suppressErrorNotification: true as const }
-      : undefined;
+    const requestConfig = sourceDataRequestConfig(options);
     const raw = sharedAccess
       ? await sharedAccess.queryDataSource(id, params, options)
       : await post(

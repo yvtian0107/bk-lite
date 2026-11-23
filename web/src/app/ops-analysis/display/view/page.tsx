@@ -57,8 +57,11 @@ export default function ScreenDisplayViewPage() {
     [canvas],
   );
   const queryDataSource = useCallback(
-    (dataSourceId: number, requestParams?: unknown) =>
-      api.queryDisplayDataSource(dataSourceId, requestParams),
+    (
+      dataSourceId: number,
+      requestParams?: unknown,
+      options?: { suppressErrorNotification?: boolean; signal?: AbortSignal },
+    ) => api.queryDisplayDataSource(dataSourceId, requestParams, options),
     [api.queryDisplayDataSource],
   );
   const resolveOptionSource = useCallback(

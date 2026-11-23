@@ -1,5 +1,9 @@
 import { useCallback } from 'react';
 import useApiClient from '@/utils/request';
+import {
+  sourceDataRequestConfig,
+  type SourceDataRequestOptions,
+} from '@/app/ops-analysis/api/dataSource';
 import { CANVAS_TYPE_REGISTRY } from '@/app/ops-analysis/constants/canvasTypes';
 import type {
   CanvasShareLinkDto,
@@ -88,14 +92,12 @@ export const useCanvasShareApi = () => {
       sessionId: string,
       dataSourceId: number,
       params?: unknown,
-      options?: { suppressErrorNotification?: boolean },
+      options?: SourceDataRequestOptions,
     ) =>
       post(
         `/operation_analysis/api/dashboard_share/session/${sessionId}/query/${dataSourceId}/`,
         params,
-        options?.suppressErrorNotification
-          ? { suppressErrorNotification: true }
-          : undefined,
+        sourceDataRequestConfig(options),
       ),
     [post],
   );
