@@ -82,8 +82,8 @@ export const useCanvasShareApi = () => {
   );
 
   const getSharedCanvas = useCallback(
-    (sessionId: string): Promise<SharedCanvasDto> =>
-      get(`/operation_analysis/api/dashboard_share/session/${sessionId}/`),
+    (sessionId: string, signal?: AbortSignal): Promise<SharedCanvasDto> =>
+      get(`/operation_analysis/api/dashboard_share/session/${sessionId}/`, signal ? { signal } : undefined),
     [get],
   );
 
@@ -103,8 +103,11 @@ export const useCanvasShareApi = () => {
   );
 
   const getSharedDataSources = useCallback(
-    (sessionId: string) =>
-      get(`/operation_analysis/api/dashboard_share/session/${sessionId}/data_sources/`),
+    (sessionId: string, signal?: AbortSignal) =>
+      get(
+        `/operation_analysis/api/dashboard_share/session/${sessionId}/data_sources/`,
+        signal ? { signal } : undefined,
+      ),
     [get],
   );
 
@@ -112,6 +115,7 @@ export const useCanvasShareApi = () => {
     (
       sessionId: string,
       body: { sourceId?: number; builtinKey?: string; sourceRef?: string },
+      signal?: AbortSignal,
     ) =>
       post(
         `/operation_analysis/api/dashboard_share/session/${sessionId}/resolve_option_source/`,
@@ -122,7 +126,7 @@ export const useCanvasShareApi = () => {
             ? { type: 'rest_api', value: body.sourceRef }
             : undefined,
         },
-        { suppressErrorNotification: true },
+        { suppressErrorNotification: true, ...(signal ? { signal } : {}) },
       ) as Promise<{ status?: string; id?: number }>,
     [post],
   );
@@ -139,10 +143,12 @@ export const useCanvasShareApi = () => {
         display_mode?: 'aggregate' | 'dimension';
         aggregate_type?: 'sum' | 'max' | 'min' | 'mean' | 'last';
       }>,
+      signal?: AbortSignal,
     ) =>
       post(
         `/operation_analysis/api/dashboard_share/session/${sessionId}/network_topology/metric_values/`,
         { items },
+        signal ? { signal } : undefined,
       ),
     [post],
   );
@@ -154,10 +160,12 @@ export const useCanvasShareApi = () => {
         link: unknown;
         nodes?: unknown;
       },
+      signal?: AbortSignal,
     ) =>
       post(
         `/operation_analysis/api/dashboard_share/session/${sessionId}/network_topology/link_runtime/`,
         payload,
+        signal ? { signal } : undefined,
       ),
     [post],
   );

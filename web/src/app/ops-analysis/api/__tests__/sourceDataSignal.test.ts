@@ -56,4 +56,40 @@ describe('shared and display source queries forward AbortSignal', () => {
       },
     );
   });
+
+  it('forwards the signal on share and display option identity and topology runtime reads', () => {
+    testState.post.mockClear();
+    testState.get.mockClear();
+    const share = renderHook(() => useCanvasShareApi());
+    const display = renderHook(() => useScreenDisplayApi());
+    const controller = new AbortController();
+    void share.result.current.getSharedCanvas('session-1', controller.signal);
+    void share.result.current.resolveSharedOptionSource('session-1', { sourceId: 3 }, controller.signal);
+    void share.result.current.getSharedNetworkTopologyMetricValues('session-1', [], controller.signal);
+    void display.result.current.getDisplayCanvas(controller.signal);
+    void display.result.current.resolveDisplayOptionSource({ sourceId: 3 }, controller.signal);
+    expect(testState.get).toHaveBeenCalledWith(
+      '/operation_analysis/api/dashboard_share/session/session-1/',
+      { signal: controller.signal },
+    );
+    expect(testState.get).toHaveBeenCalledWith(
+      '/operation_analysis/api/screen_display/current/',
+      { signal: controller.signal },
+    );
+    expect(testState.post).toHaveBeenCalledWith(
+      '/operation_analysis/api/dashboard_share/session/session-1/resolve_option_source/',
+      expect.any(Object),
+      { suppressErrorNotification: true, signal: controller.signal },
+    );
+    expect(testState.post).toHaveBeenCalledWith(
+      '/operation_analysis/api/dashboard_share/session/session-1/network_topology/metric_values/',
+      { items: [] },
+      { signal: controller.signal },
+    );
+    expect(testState.post).toHaveBeenCalledWith(
+      '/operation_analysis/api/screen_display/current/resolve_option_source/',
+      expect.any(Object),
+      { suppressErrorNotification: true, signal: controller.signal },
+    );
+  });
 });
