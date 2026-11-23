@@ -167,7 +167,7 @@ interface DashboardProps {
   selectedDashboard?: DirItem | null;
   shareMode?: boolean;
   shareSessionId?: string;
-  getDashboardDetailOverride?: (id: string | number) => Promise<any>;
+  getDashboardDetailOverride?: (id: string | number, signal?: AbortSignal) => Promise<any>;
   renderMode?: boolean;
   /** 订阅渲染身份的授权 App 名。renderMode 下替代 get_client。 */
   renderAuthorizedAppNames?: readonly string[] | null;
@@ -798,6 +798,7 @@ const Dashboard = forwardRef<DashboardRef, DashboardProps>(
     useEffect(() => {
       const requestId = dashboardLoadSeqRef.current + 1;
       dashboardLoadSeqRef.current = requestId;
+      const detailController = new AbortController();
       const isCurrentLoad = () => dashboardLoadSeqRef.current === requestId;
 
       const loadDashboardData = async () => {
@@ -829,7 +830,10 @@ const Dashboard = forwardRef<DashboardRef, DashboardProps>(
             if (!seeded) {
               setLoading(true);
             }
-            const dashboardData = seeded ?? await getDashboardDetailRef.current(dashboard.data_id);
+            const dashboardData = seeded ?? await getDashboardDetailRef.current(
+              dashboard.data_id,
+              detailController.signal,
+            );
             if (!isCurrentLoad()) {
               return;
             }
@@ -852,6 +856,7 @@ const Dashboard = forwardRef<DashboardRef, DashboardProps>(
           setLoading(true);
           const dashboardData = await getDashboardDetailRef.current(
             dashboard.data_id,
+            detailController.signal,
           );
           if (!isCurrentLoad()) {
             return;
@@ -908,6 +913,7 @@ const Dashboard = forwardRef<DashboardRef, DashboardProps>(
         if (dashboardLoadSeqRef.current === requestId) {
           dashboardLoadSeqRef.current += 1;
         }
+        detailController.abort();
       };
     }, [
       commitDashboardPlaybackDocument,

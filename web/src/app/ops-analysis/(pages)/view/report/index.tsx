@@ -170,6 +170,7 @@ const Report = forwardRef<ReportRef, ReportProps>(({
   const [addingComponent, setAddingComponent] = useState(false);
   const [subscriptionModalVisible, setSubscriptionModalVisible] = useState(false);
   const loadGuardRef = useRef(createReportLoadGuard());
+  const detailAbortRef = useRef<AbortController | null>(null);
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 6 } }));
   const themeName = renderMode ? 'light' : resolveOpsChartThemeName();
   const chartTheme = getOpsChartTheme(themeName);
@@ -269,6 +270,9 @@ const Report = forwardRef<ReportRef, ReportProps>(({
   }, [playbackDetail, playbackMode, selectedReport?.data_id, shareOrganizationSeed, t]);
 
   const loadReport = useCallback(async () => {
+    detailAbortRef.current?.abort();
+    const detailController = new AbortController();
+    detailAbortRef.current = detailController;
     const requestId = beginReportLoad(loadGuardRef.current);
     const reportId = selectedReport?.data_id;
     if (!reportId) {
@@ -307,7 +311,7 @@ const Report = forwardRef<ReportRef, ReportProps>(({
 
     setLoading(true);
     try {
-      const detail = await getReportDetailRef.current(reportId);
+      const detail = await getReportDetailRef.current(reportId, detailController.signal);
       if (!isCurrentReportLoad(loadGuardRef.current, requestId)) return;
       const normalized = normalizeReportViewSets(detail.view_sets, t);
       setSavedViewSets(normalized);
@@ -380,6 +384,7 @@ const Report = forwardRef<ReportRef, ReportProps>(({
     emittedRenderSignalRef.current = false;
     void loadReport();
     return () => {
+      detailAbortRef.current?.abort();
       invalidateReportLoads(loadGuardRef.current);
     };
   }, [loadReport]);

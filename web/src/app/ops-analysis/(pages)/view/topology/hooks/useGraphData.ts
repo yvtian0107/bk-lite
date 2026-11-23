@@ -518,7 +518,10 @@ export const useGraphData = (
       });
   }, [graphInstance, startLoadingAnimation]);
 
-  const handleLoadTopology = useCallback(async (topologyId: string | number): Promise<{
+  const handleLoadTopology = useCallback(async (
+    topologyId: string | number,
+    signal?: AbortSignal,
+  ): Promise<{
     filters: UnifiedFilterDefinition[];
     refreshInterval: number;
   }> => {
@@ -537,7 +540,10 @@ export const useGraphData = (
       setLoading(true);
     }
     try {
-      const topologyData = seeded ?? await getTopologyDetail(topologyId);
+      const topologyData = seeded ?? await getTopologyDetail(topologyId, signal);
+      if (signal?.aborted) {
+        return { filters: [], refreshInterval: 0 };
+      }
       const viewSets = topologyData.view_sets || {};
 
       loadTopologyData(viewSets);
@@ -552,13 +558,18 @@ export const useGraphData = (
         refreshInterval: normalizeCanvasRefreshInterval(topologyData.refresh_interval),
       };
     } catch (error) {
+      if (signal?.aborted || isTransportCanceled(error)) {
+        return { filters: [], refreshInterval: 0 };
+      }
       console.error('加载拓扑图失败:', error);
       return {
         filters: [],
         refreshInterval: 0,
       };
     } finally {
-      setLoading(false);
+      if (!signal?.aborted) {
+        setLoading(false);
+      }
     }
   }, [graphInstance, getTopologyDetail, loadTopologyData, playbackDetail]);
 

@@ -31,7 +31,7 @@ interface UseTopologyLifecycleParams {
   clearOperationHistory: () => void;
   clearRefreshTimer: () => void;
   finishInitialization: () => void;
-  handleLoadTopology: (dataId: number | string) => Promise<{
+  handleLoadTopology: (dataId: number | string, signal?: AbortSignal) => Promise<{
     filters?: UnifiedFilterDefinition[];
     refreshInterval?: number;
   }>;
@@ -139,6 +139,7 @@ export const useTopologyLifecycle = ({
   ]);
 
   useEffect(() => {
+    const detailController = new AbortController();
     if (seenTopologyIdRef.current !== selectedTopology?.data_id) {
       seenTopologyIdRef.current = selectedTopology?.data_id;
       abortInflightDataRequestsRef.current();
@@ -157,8 +158,9 @@ export const useTopologyLifecycle = ({
 
     if (selectedTopology?.data_id && state.graphInstance) {
       handleLoadTopologyRef
-        .current(selectedTopology.data_id)
+        .current(selectedTopology.data_id, detailController.signal)
         .then(async ({ filters: loadedFilters, refreshInterval }) => {
+          if (detailController.signal.aborted) return;
           onLoadedRefreshInterval?.(refreshInterval ?? 0);
           const canvasDataSources = await syncTopologyCanvasResources();
           const autoBuiltFilters = buildFiltersFromNodes(
@@ -210,6 +212,7 @@ export const useTopologyLifecycle = ({
     }
 
     return () => {
+      detailController.abort();
       clearRefreshTimer();
     };
   }, [
