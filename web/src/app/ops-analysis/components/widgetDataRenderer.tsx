@@ -500,6 +500,7 @@ const WidgetWrapper: React.FC<WidgetWrapperProps> = ({
     componentSwitchOptionsLoaderOptions,
     {
       enabled: runtimeActive,
+      reloadKey: String(dashboardId ?? ""),
       getSourceDataByApiId: scheduledOptionsSourceData,
       resolvedQueryParams: componentSwitchQuery.params,
       optionsBlocked: componentSwitchQuery.blocked,
@@ -1162,7 +1163,21 @@ const WidgetWrapper: React.FC<WidgetWrapperProps> = ({
       const controllers = Array.from(localAbortControllersRef.current);
       localAbortControllersRef.current.clear();
       queueMicrotask(() => {
-        if (lifecycleRef.current !== lifecycle) return;
+        // StrictMode 会先卸载再挂上同一实例。这次取数不会重发，controller 必须放回，
+        // 真正卸载才能 abort。调度器上的消费者同样放回，重放期间不 release。
+        if (lifecycleRef.current !== lifecycle) {
+          consumerIds.forEach((consumerId) => {
+            if (!ownedConsumerIdsRef.current.includes(consumerId)) {
+              ownedConsumerIdsRef.current.push(consumerId);
+            }
+          });
+          controllers.forEach((controller) => {
+            if (!controller.signal.aborted) {
+              localAbortControllersRef.current.add(controller);
+            }
+          });
+          return;
+        }
         const scheduler = runtimeSchedulerRef.current;
         consumerIds.forEach((consumerId) => scheduler?.releaseConsumer(consumerId));
         scheduler?.cancelQueuedForOwner(widgetId);

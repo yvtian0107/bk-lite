@@ -1664,4 +1664,61 @@ describe('WidgetWrapper component switch options runtime', () => {
       releaseConsumer.mockRestore();
     }
   });
+
+  it('aborts the screen request after StrictMode when the outer canvas key changes', async () => {
+    const signals: AbortSignal[] = [];
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {});
+    testState.getSourceDataByApiId.mockImplementation(
+      (_id: number, _params: unknown, options?: { signal?: AbortSignal }) => new Promise((_resolve, reject) => {
+        const signal = options?.signal;
+        if (!signal) return;
+        signals.push(signal);
+        if (signal.aborted) {
+          reject(createTransportCancelError());
+          return;
+        }
+        signal.addEventListener('abort', () => reject(createTransportCancelError()), { once: true });
+      }),
+    );
+    testState.fetchCompareData.mockImplementation(async (input: {
+      dataSourceId: number;
+      getSourceDataByApiId: (id: number, params?: unknown) => Promise<{ data: unknown }>;
+    }) => {
+      const current = await input.getSourceDataByApiId(input.dataSourceId, {});
+      return { currentData: current.data, baselineData: null };
+    });
+
+    const Screen = ({ id }: { id: string }) => (
+      <div key={id}>
+        <WidgetWrapper
+          dashboardId={id}
+          widgetId="widget-1"
+          chartType="pie"
+          config={{ dataSource: pieDatasource.id }}
+          dataSource={pieDatasource}
+        />
+      </div>
+    );
+
+    const { rerender } = render(
+      <React.StrictMode>
+        <Screen id="screen-a" />
+      </React.StrictMode>,
+    );
+    await waitFor(() => expect(signals.some((signal) => !signal.aborted)).toBe(true));
+    const previous = signals.filter((signal) => !signal.aborted);
+
+    rerender(
+      <React.StrictMode>
+        <Screen id="screen-b" />
+      </React.StrictMode>,
+    );
+
+    await waitFor(() => expect(previous.every((signal) => signal.aborted)).toBe(true));
+    await waitFor(() => expect(signals.some((signal) => !signal.aborted)).toBe(true));
+    expect(screen.queryByText('网络异常')).toBeNull();
+    expect(screen.queryByText('dashboard.dataFetchFailed')).toBeNull();
+    expect(consoleError).not.toHaveBeenCalled();
+    consoleError.mockRestore();
+  });
 });
