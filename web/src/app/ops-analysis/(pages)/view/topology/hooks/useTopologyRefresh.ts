@@ -36,6 +36,7 @@ interface PostMutationPayload {
   appliedValues: Record<string, FilterValue>;
   dataSources: DatasourceItem[];
   namespaceId: number | undefined;
+  dataSourceLookupStatus: DataSourceLookupStatus;
 }
 
 interface UseTopologyRefreshControllerParams {
@@ -82,6 +83,7 @@ interface UseTopologyRefreshControllerParams {
   dataSourceLookupStatus: DataSourceLookupStatus;
   updateDefinitions: (definitions: UnifiedFilterDefinition[]) => void;
   organizationId?: string | number | null;
+  readCanvasDataSourceLookupStatus: () => DataSourceLookupStatus;
 }
 
 export const useTopologyRefresh = ({
@@ -106,6 +108,7 @@ export const useTopologyRefresh = ({
   updateDefinitions,
   organizationId,
   dataSourceLookupStatus,
+  readCanvasDataSourceLookupStatus,
 }: UseTopologyRefreshControllerParams) => {
   const refreshTopologyNodes = useCallback(
     (
@@ -326,6 +329,7 @@ export const useTopologyRefresh = ({
             appliedValues: nextAppliedValues,
             dataSources: canvasDataSources,
             namespaceId: resolveTopologyNamespaceId(canvasDataSources),
+            dataSourceLookupStatus: readCanvasDataSourceLookupStatus(),
           });
         });
       }, 100);
@@ -340,6 +344,7 @@ export const useTopologyRefresh = ({
       setAppliedFilterValues,
       setDefinitions,
       setFilterValues,
+      readCanvasDataSourceLookupStatus,
       setNodeChangeKey,
       syncTopologyCanvasResources,
     ],

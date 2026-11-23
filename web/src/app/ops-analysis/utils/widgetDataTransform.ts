@@ -563,6 +563,8 @@ export const fetchWidgetData = async ({
   }
 
   try {
+    const catalog = resolveCatalogParams(dataSource);
+    const phase = catalogPhase ?? (catalog.status === 'absent' ? 'pending' : undefined);
     const plan = planWidgetRequest({
       config,
       dataSource,
@@ -572,7 +574,7 @@ export const fetchWidgetData = async ({
       filterDefinitions,
       chartType: chartType || config?.chartType,
       t,
-      catalogPhase,
+      catalogPhase: phase,
     });
     if (plan.status !== 'ready') {
       if (throwError) throw new WidgetRequestBlocked(plan);

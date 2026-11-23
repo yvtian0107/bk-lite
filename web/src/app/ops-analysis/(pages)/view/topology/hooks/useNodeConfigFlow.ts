@@ -5,6 +5,7 @@ import {
   preserveUnfollowedFilterBindings,
 } from '@/app/ops-analysis/utils/widgetDataTransform';
 import type { DatasourceItem } from '@/app/ops-analysis/types/dataSource';
+import type { DataSourceLookupStatus } from '@/app/ops-analysis/utils/widgetRequestVersion';
 import type {
   FilterValue,
   UnifiedFilterDefinition,
@@ -28,6 +29,7 @@ interface PostMutationPayload {
   appliedValues: Record<string, FilterValue>;
   dataSources: DatasourceItem[];
   namespaceId: number | undefined;
+  dataSourceLookupStatus: DataSourceLookupStatus;
 }
 
 interface UseTopologyNodeConfigControllerParams {
@@ -58,12 +60,14 @@ interface UseTopologyNodeConfigControllerParams {
     definitions?: UnifiedFilterDefinition[],
     namespaceId?: number,
   ) => Promise<void>;
+  dataSourceLookupStatus: DataSourceLookupStatus;
   handleViewConfigConfirm: (
     values: ViewConfigFormValues,
     filterValues?: Record<string, FilterValue>,
     definitions?: UnifiedFilterDefinition[],
     dataSources?: DatasourceItem[],
     namespaceId?: number,
+    options?: { dataSourceLookupStatus?: DataSourceLookupStatus },
   ) => void | Promise<void>;
   loadChartNodeData: (
     nodeId: string,
@@ -72,6 +76,8 @@ interface UseTopologyNodeConfigControllerParams {
     definitions?: UnifiedFilterDefinition[],
     dataSource?: DatasourceItem,
     namespaceId?: number,
+    tableQuery?: unknown,
+    options?: { dataSourceLookupStatus?: DataSourceLookupStatus },
   ) => void;
   scheduleTopologyPostMutation: (
     callback?: (payload: PostMutationPayload) => void,
@@ -94,6 +100,7 @@ export const useNodeConfigFlow = ({
   addNewNode,
   handleAddChartNode,
   handleNodeUpdate,
+  dataSourceLookupStatus,
   handleViewConfigConfirm,
   loadChartNodeData,
   scheduleTopologyPostMutation,
@@ -174,6 +181,7 @@ export const useNodeConfigFlow = ({
             appliedValues: nextAppliedValues,
             dataSources: canvasDataSources,
             namespaceId: nextNamespaceId,
+            dataSourceLookupStatus: nextLookupStatus,
           }) => {
             if (result?.nodeId && result?.valueConfig?.dataSource) {
               const dataSource = canvasDataSources.find(
@@ -215,6 +223,8 @@ export const useNodeConfigFlow = ({
                 newDefinitions,
                 dataSource,
                 nextNamespaceId,
+                undefined,
+                { dataSourceLookupStatus: nextLookupStatus },
               );
             }
           },
@@ -226,6 +236,7 @@ export const useNodeConfigFlow = ({
           definitions,
           dataSources,
           appliedNamespaceId,
+          { dataSourceLookupStatus },
         );
         scheduleTopologyPostMutation();
       }
@@ -236,6 +247,7 @@ export const useNodeConfigFlow = ({
       dataSources,
       definitions,
       handleAddChartNode,
+      dataSourceLookupStatus,
       handleViewConfigConfirm,
       loadChartNodeData,
       scheduleTopologyPostMutation,

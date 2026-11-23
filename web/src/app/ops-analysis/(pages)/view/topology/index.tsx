@@ -192,6 +192,8 @@ const Topology = forwardRef<TopologyRef, TopologyProps>(
       handleNodeRemovedCallback,
       isFullscreen,
       setSingleValueFetchErrorTooltip,
+      dataSourceManager.dataSources,
+      canvasDataSourceLookupStatus,
     );
 
     const playbackDetail = usePlaybackInitialDetail();
@@ -320,6 +322,7 @@ const Topology = forwardRef<TopologyRef, TopologyProps>(
       updateDefinitions,
       organizationId: shareOrganizationSeed,
       dataSourceLookupStatus: canvasDataSourceLookupStatus,
+      readCanvasDataSourceLookupStatus,
     });
 
     const canPersistRefreshInterval = canPersistCanvasRefreshInterval({
@@ -434,6 +437,7 @@ const Topology = forwardRef<TopologyRef, TopologyProps>(
       addNewNode,
       handleAddChartNode,
       handleNodeUpdate,
+      dataSourceLookupStatus: canvasDataSourceLookupStatus,
       handleViewConfigConfirm,
       loadChartNodeData,
       scheduleTopologyPostMutation,

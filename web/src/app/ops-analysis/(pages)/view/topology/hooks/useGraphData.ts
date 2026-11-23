@@ -337,7 +337,7 @@ export const useGraphData = (
       }
       const requestExtraParams = Object.keys(extraParams).length > 0 ? extraParams : undefined;
       const lookup = options?.dataSourceLookupStatus;
-      if (!dataSource && lookup) {
+      if (!dataSource) {
         if (!isCurrent()) return;
         const currentNodeData = node.getData();
         if (lookup === 'error' || lookup === 'success') {

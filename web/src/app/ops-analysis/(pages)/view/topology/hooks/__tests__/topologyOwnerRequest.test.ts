@@ -89,6 +89,8 @@ const chartValueConfig: ValueConfig = {
   chartType: 'pie',
 };
 
+const readyCatalog = { id: 7, params: [] };
+
 const singleValueNode: TopologyNodeData = {
   id: 'sv-1',
   type: 'single-value',
@@ -137,12 +139,12 @@ describe('topology chart node owner requests', () => {
       useGraphData(graph as never, vi.fn()),
     );
 
-    void result.current.loadChartNodeData('chart-1', chartValueConfig);
+    void result.current.loadChartNodeData('chart-1', chartValueConfig, undefined, undefined, readyCatalog);
     await Promise.resolve();
     expect(testState.fetchWidgetData).toHaveBeenCalledTimes(1);
 
     await act(async () => {
-      await result.current.loadChartNodeData('chart-1', chartValueConfig, undefined, undefined, undefined, undefined, undefined, {
+      await result.current.loadChartNodeData('chart-1', chartValueConfig, undefined, undefined, readyCatalog, undefined, undefined, {
         silent: true,
       });
     });
@@ -171,11 +173,11 @@ describe('topology chart node owner requests', () => {
       useGraphData(graph as never, vi.fn()),
     );
 
-    void result.current.loadChartNodeData('chart-1', chartValueConfig);
+    void result.current.loadChartNodeData('chart-1', chartValueConfig, undefined, undefined, readyCatalog);
     await Promise.resolve();
 
     await act(async () => {
-      await result.current.loadChartNodeData('chart-1', chartValueConfig, undefined, undefined, undefined, undefined, undefined, {
+      await result.current.loadChartNodeData('chart-1', chartValueConfig, undefined, undefined, readyCatalog, undefined, undefined, {
         silent: true,
       });
     });
@@ -217,14 +219,14 @@ describe('topology chart node owner requests', () => {
       chartValueConfig,
       undefined,
       undefined,
-      undefined,
+      readyCatalog,
       undefined,
       undefined,
       { silent: true },
     );
     await Promise.resolve();
 
-    void result.current.loadChartNodeData('chart-1', chartValueConfig);
+    void result.current.loadChartNodeData('chart-1', chartValueConfig, undefined, undefined, readyCatalog);
     await Promise.resolve();
     expect(testState.fetchWidgetData).toHaveBeenCalledTimes(2);
 
@@ -269,13 +271,13 @@ describe('topology chart node owner requests', () => {
       chartValueConfig,
       undefined,
       undefined,
-      undefined,
+      readyCatalog,
       undefined,
       undefined,
       { silent: true },
     );
     await Promise.resolve();
-    void result.current.loadChartNodeData('chart-1', chartValueConfig);
+    void result.current.loadChartNodeData('chart-1', chartValueConfig, undefined, undefined, readyCatalog);
     await Promise.resolve();
     expect(testState.fetchWidgetData).toHaveBeenCalledTimes(2);
 
@@ -291,7 +293,7 @@ describe('topology chart node owner requests', () => {
         chartValueConfig,
         undefined,
         undefined,
-        undefined,
+        readyCatalog,
         undefined,
         undefined,
         { silent: true },
@@ -329,9 +331,9 @@ describe('topology chart node owner requests', () => {
       useGraphData(graph as never, vi.fn()),
     );
 
-    void result.current.loadChartNodeData('chart-1', chartValueConfig);
+    void result.current.loadChartNodeData('chart-1', chartValueConfig, undefined, undefined, readyCatalog);
     await Promise.resolve();
-    void result.current.loadChartNodeData('chart-1', chartValueConfig);
+    void result.current.loadChartNodeData('chart-1', chartValueConfig, undefined, undefined, readyCatalog);
     await Promise.resolve();
     expect(testState.fetchWidgetData).toHaveBeenCalledTimes(2);
 
@@ -347,7 +349,7 @@ describe('topology chart node owner requests', () => {
         chartValueConfig,
         undefined,
         undefined,
-        undefined,
+        readyCatalog,
         undefined,
         undefined,
         { silent: true },

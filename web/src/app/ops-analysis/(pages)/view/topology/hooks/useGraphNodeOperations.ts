@@ -42,6 +42,7 @@ import {
   showSingleValueFetchError,
   SINGLE_VALUE_ERROR_PLACEHOLDER,
 } from '../utils/singleValueNodeError';
+import type { DataSourceLookupStatus } from '@/app/ops-analysis/utils/widgetRequestVersion';
 import { useGraphData } from './useGraphData';
 import type { useTopologyState } from './useTopologyState';
 
@@ -107,12 +108,16 @@ interface UseGraphNodeOperationsParams {
   graphInstance: X6Graph | null;
   state: ReturnType<typeof useTopologyState>;
   handleSave: () => void;
+  dataSources?: DatasourceItem[];
+  dataSourceLookupStatus?: DataSourceLookupStatus;
 }
 
 export const useGraphNodeOperations = ({
   graphInstance,
   state,
   handleSave,
+  dataSources: canvasDataSources,
+  dataSourceLookupStatus,
 }: UseGraphNodeOperationsParams) => {
   const { t } = useTranslation();
   const { getSourceDataByApiId } = useDataSourceApi();
@@ -545,6 +550,7 @@ export const useGraphNodeOperations = ({
       filterDefinitions?: UnifiedFilterDefinition[],
       dataSources?: DatasourceItem[],
       namespaceId?: number,
+      options?: { dataSourceLookupStatus?: DataSourceLookupStatus },
     ) => {
       if (state.editingNodeData && graphInstance) {
         const node = graphInstance.getCellById(state.editingNodeData.id);
@@ -570,13 +576,18 @@ export const useGraphNodeOperations = ({
               filterDefinitions,
               dataSource,
               namespaceId,
+              undefined,
+              {
+                dataSourceLookupStatus:
+                  options?.dataSourceLookupStatus ?? dataSourceLookupStatus,
+              },
             );
           }
         }
       }
       state.setViewConfigVisible(false);
     },
-    [graphInstance, state, dataOperations],
+    [dataSourceLookupStatus, graphInstance, state, dataOperations],
   );
 
   const handleAddChartNode = useCallback(
@@ -596,11 +607,23 @@ export const useGraphNodeOperations = ({
       };
       const nodeId = addNewNode(nodeConfig);
       if (!skipInitialFetch && nodeConfig.valueConfig?.dataSource && nodeId) {
-        dataOperations.loadChartNodeData(nodeId, nodeConfig.valueConfig);
+        const dataSource = canvasDataSources?.find(
+          (source) => source.id === nodeConfig.valueConfig?.dataSource,
+        );
+        dataOperations.loadChartNodeData(
+          nodeId,
+          nodeConfig.valueConfig,
+          undefined,
+          undefined,
+          dataSource,
+          undefined,
+          undefined,
+          { dataSourceLookupStatus },
+        );
       }
       return { nodeId, valueConfig: nodeConfig.valueConfig };
     },
-    [graphInstance, addNewNode, dataOperations],
+    [canvasDataSources, dataSourceLookupStatus, graphInstance, state, addNewNode, dataOperations],
   );
 
   const handleNodeEditClose = useCallback(() => {

@@ -1,7 +1,26 @@
 import type { Meta, StoryObj } from '@storybook/nextjs';
 import React from 'react';
 import type { Node } from '@antv/x6';
+import zhOps from '@/app/ops-analysis/locales/zh.json';
 import ChartNode from './chartNode';
+import { setLocaleData } from '../utils/localeStore';
+
+type LocaleJson = Record<string, unknown>;
+
+const flatten = (obj: LocaleJson, prefix = '', out: Record<string, string> = {}) => {
+  Object.keys(obj).forEach((key) => {
+    const value = obj[key];
+    const next = prefix ? `${prefix}.${key}` : key;
+    if (value && typeof value === 'object' && !Array.isArray(value)) {
+      flatten(value as LocaleJson, next, out);
+      return;
+    }
+    out[next] = String(value);
+  });
+  return out;
+};
+
+setLocaleData('zh', flatten(zhOps as LocaleJson));
 
 const stubNode = (data: Record<string, unknown>): Node => {
   const node = {
