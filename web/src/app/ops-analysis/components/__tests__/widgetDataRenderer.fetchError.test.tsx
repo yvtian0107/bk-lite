@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 
 import React from 'react';
-import { cleanup, render, screen, waitFor } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { HandledRequestError } from '@/utils/request';
 import type { DatasourceItem, ParamItem } from '@/app/ops-analysis/types/dataSource';
@@ -1171,6 +1171,215 @@ describe('WidgetWrapper component switch options runtime', () => {
     expect(screen.queryByText(businessError)).toBeNull();
     expect(testState.fetchCompareData).toHaveBeenCalled();
     expect(testState.messageError).not.toHaveBeenCalled();
+  });
+
+  it('does not query when recovered options drop the saved value', async () => {
+    const businessError = '未找到可用命名空间';
+    testState.optionState = {
+      status: 'error',
+      options: [],
+      errorMessage: businessError,
+    };
+    testState.fetchCompareData.mockResolvedValue({
+      currentData: [{ name: 'A', value: 1 }],
+      baselineData: null,
+    });
+
+    const { rerender } = render(
+      <WidgetWrapper
+        dashboardId="dashboard-1"
+        widgetId="widget-1"
+        chartType="topN"
+        config={{ dataSource: topNDatasource.id, dataSourceParams: [switchParam] }}
+        dataSource={topNDatasource}
+        reloadVersion="0:0"
+      />,
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText(businessError)).toBeTruthy();
+    });
+    expect(testState.fetchCompareData).not.toHaveBeenCalled();
+    expect(testState.messageError).not.toHaveBeenCalled();
+
+    testState.optionState = {
+      status: 'success',
+      options: [{ value: 'room-2', label: 'Room 2' }],
+      resultKey: 'other',
+    };
+    rerender(
+      <WidgetWrapper
+        dashboardId="dashboard-1"
+        widgetId="widget-1"
+        chartType="topN"
+        config={{ dataSource: topNDatasource.id, dataSourceParams: [switchParam] }}
+        dataSource={topNDatasource}
+        reloadVersion="1:0"
+      />,
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText('dashboard.noData')).toBeTruthy();
+    });
+    expect(testState.fetchCompareData).not.toHaveBeenCalled();
+    expect(screen.queryByTestId('chart-renderer')).toBeNull();
+    expect(testState.messageError).not.toHaveBeenCalled();
+  });
+
+  it('does not refill a selection the user cleared after options fail and recover', async () => {
+    const multipleParam: ParamItem = {
+      ...switchParam,
+      inputConfig: { ...switchParam.inputConfig, multiple: true },
+    };
+    const datasource: DatasourceItem = { ...topNDatasource, params: [multipleParam] };
+    testState.optionState = {
+      status: 'success',
+      options: [{ value: 'room-1', label: 'Room 1' }],
+      resultKey: 'ok',
+    };
+    testState.fetchCompareData.mockResolvedValue({
+      currentData: [{ name: 'A', value: 1 }],
+      baselineData: null,
+    });
+
+    const { rerender } = render(
+      <WidgetWrapper
+        dashboardId="dashboard-1"
+        widgetId="widget-1"
+        chartType="topN"
+        config={{ dataSource: datasource.id, dataSourceParams: [multipleParam] }}
+        dataSource={datasource}
+        reloadVersion="0:0"
+      />,
+    );
+
+    await waitFor(() => {
+      expect(screen.getByTestId('chart-renderer')).toBeTruthy();
+    });
+    fireEvent.keyDown(screen.getByRole('combobox'), { key: 'Backspace', code: 'Backspace' });
+    await waitFor(() => {
+      expect(screen.getByText('dashboard.noData')).toBeTruthy();
+    });
+    const callsAfterClear = testState.fetchCompareData.mock.calls.length;
+
+    testState.optionState = {
+      status: 'error',
+      options: [],
+      errorMessage: '未找到可用命名空间',
+    };
+    rerender(
+      <WidgetWrapper
+        dashboardId="dashboard-1"
+        widgetId="widget-1"
+        chartType="topN"
+        config={{ dataSource: datasource.id, dataSourceParams: [multipleParam] }}
+        dataSource={datasource}
+        reloadVersion="1:0"
+      />,
+    );
+    await waitFor(() => {
+      expect(screen.getByText('未找到可用命名空间')).toBeTruthy();
+    });
+    expect(testState.fetchCompareData.mock.calls.length).toBe(callsAfterClear);
+    expect(testState.messageError).not.toHaveBeenCalled();
+
+    testState.optionState = {
+      status: 'success',
+      options: [{ value: 'room-1', label: 'Room 1' }],
+      resultKey: 'again',
+    };
+    rerender(
+      <WidgetWrapper
+        dashboardId="dashboard-1"
+        widgetId="widget-1"
+        chartType="topN"
+        config={{ dataSource: datasource.id, dataSourceParams: [multipleParam] }}
+        dataSource={datasource}
+        reloadVersion="2:0"
+      />,
+    );
+    await waitFor(() => {
+      expect(screen.getByText('dashboard.noData')).toBeTruthy();
+    });
+    expect(testState.fetchCompareData.mock.calls.length).toBe(callsAfterClear);
+    expect(screen.queryByTestId('chart-renderer')).toBeNull();
+  });
+
+  it('does not select the first option when the saved switch value is empty', async () => {
+    const unsetParam: ParamItem = { ...switchParam, value: undefined };
+    const datasource: DatasourceItem = { ...topNDatasource, params: [unsetParam] };
+    testState.optionState = {
+      status: 'success',
+      options: [{ value: 'room-1', label: 'Room 1' }],
+      resultKey: 'ok',
+    };
+    testState.fetchCompareData.mockResolvedValue({
+      currentData: [{ name: 'A', value: 1 }],
+      baselineData: null,
+    });
+
+    render(
+      <WidgetWrapper
+        dashboardId="dashboard-1"
+        widgetId="widget-1"
+        chartType="topN"
+        config={{ dataSource: datasource.id, dataSourceParams: [unsetParam] }}
+        dataSource={datasource}
+      />,
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText('dashboard.noData')).toBeTruthy();
+    });
+    expect(testState.fetchCompareData).not.toHaveBeenCalled();
+  });
+
+  it('stops querying when recovered options are empty', async () => {
+    testState.optionState = {
+      status: 'success',
+      options: [{ value: 'room-1', label: 'Room 1' }],
+      resultKey: 'ok',
+    };
+    testState.fetchCompareData.mockResolvedValue({
+      currentData: [{ name: 'A', value: 1 }],
+      baselineData: null,
+    });
+
+    const { rerender } = render(
+      <WidgetWrapper
+        dashboardId="dashboard-1"
+        widgetId="widget-1"
+        chartType="topN"
+        config={{ dataSource: topNDatasource.id, dataSourceParams: [switchParam] }}
+        dataSource={topNDatasource}
+        reloadVersion="0:0"
+      />,
+    );
+    await waitFor(() => {
+      expect(screen.getByTestId('chart-renderer')).toBeTruthy();
+    });
+    const callsBeforeEmpty = testState.fetchCompareData.mock.calls.length;
+
+    testState.optionState = {
+      status: 'success',
+      options: [],
+      resultKey: 'empty',
+    };
+    rerender(
+      <WidgetWrapper
+        dashboardId="dashboard-1"
+        widgetId="widget-1"
+        chartType="topN"
+        config={{ dataSource: topNDatasource.id, dataSourceParams: [switchParam] }}
+        dataSource={topNDatasource}
+        reloadVersion="1:0"
+      />,
+    );
+    await waitFor(() => {
+      expect(screen.getByText('dashboard.noData')).toBeTruthy();
+    });
+    expect(testState.fetchCompareData.mock.calls.length).toBe(callsBeforeEmpty);
+    expect(screen.queryByTestId('chart-renderer')).toBeNull();
   });
 
   it('aborts an in-flight request when the canvas id changes and does not start another', async () => {

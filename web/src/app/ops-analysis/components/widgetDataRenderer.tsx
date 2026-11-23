@@ -519,13 +519,11 @@ const WidgetWrapper: React.FC<WidgetWrapperProps> = ({
       if (previous.scopeKey !== runtimeParamScopeKey) {
         return {
           scopeKey: runtimeParamScopeKey,
-          value: optionState.status === "error" ? undefined : savedComponentSwitchValue,
+          value: savedComponentSwitchValue,
         };
       }
       if (optionState.status === "error") {
-        return previous.value === undefined
-          ? previous
-          : { ...previous, value: undefined };
+        return previous;
       }
       const reconciled = optionState.status === "blocked"
         ? null
