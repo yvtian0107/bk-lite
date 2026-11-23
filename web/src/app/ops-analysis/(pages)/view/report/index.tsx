@@ -34,6 +34,7 @@ import {
   normalizeReportViewSets,
   removeReportSection,
   reorderReportSection,
+  nextReportViewSetsAfterLookup,
   syncReportFiltersFromSections,
   updateReportSection,
 } from '@/app/ops-analysis/utils/reportBuilder';
@@ -170,6 +171,8 @@ const Report = forwardRef<ReportRef, ReportProps>(({
   const [addingComponent, setAddingComponent] = useState(false);
   const [subscriptionModalVisible, setSubscriptionModalVisible] = useState(false);
   const loadGuardRef = useRef(createReportLoadGuard());
+  const selectedReportIdRef = useRef(selectedReport?.data_id);
+  selectedReportIdRef.current = selectedReport?.data_id;
   const detailAbortRef = useRef<AbortController | null>(null);
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 6 } }));
   const themeName = renderMode ? 'light' : resolveOpsChartThemeName();
@@ -549,9 +552,16 @@ const Report = forwardRef<ReportRef, ReportProps>(({
     setDraftViewSets(synced);
     setFilterValues((previous) => syncFilterValuesWithDefinitions(synced.filters, previous));
 
+    const requestCanvasId = selectedReport?.data_id;
     void loadCanvasDataSources(nextIds).then((loadedDataSources) => {
       setDraftViewSets((previous) => {
-        const next = syncReportFiltersFromSections(previous, loadedDataSources);
+        const next = nextReportViewSetsAfterLookup(
+          previous,
+          loadedDataSources,
+          requestCanvasId,
+          selectedReportIdRef.current,
+        );
+        if (next === previous) return previous;
         setFilterValues((current) => syncFilterValuesWithDefinitions(next.filters, current));
         return next;
       });
@@ -576,9 +586,16 @@ const Report = forwardRef<ReportRef, ReportProps>(({
     setDraftViewSets(synced);
     setFilterValues((previous) => syncFilterValuesWithDefinitions(synced.filters, previous));
 
+    const requestCanvasId = selectedReport?.data_id;
     void loadCanvasDataSources(nextIds).then((loadedDataSources) => {
       setDraftViewSets((previous) => {
-        const next = syncReportFiltersFromSections(previous, loadedDataSources);
+        const next = nextReportViewSetsAfterLookup(
+          previous,
+          loadedDataSources,
+          requestCanvasId,
+          selectedReportIdRef.current,
+        );
+        if (next === previous) return previous;
         setFilterValues((current) => syncFilterValuesWithDefinitions(next.filters, current));
         return next;
       });

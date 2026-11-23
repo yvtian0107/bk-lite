@@ -58,7 +58,7 @@ interface UseTopologyLifecycleParams {
   ) => void;
   scheduleTopologyInitialization: (callback: () => void) => void;
   startInitialization: () => void;
-  syncTopologyCanvasResources: () => Promise<DatasourceItem[]>;
+  syncTopologyCanvasResources: () => Promise<DatasourceItem[] | null>;
   toggleEditMode: () => void;
 }
 
@@ -163,6 +163,7 @@ export const useTopologyLifecycle = ({
           if (detailController.signal.aborted) return;
           onLoadedRefreshInterval?.(refreshInterval ?? 0);
           const canvasDataSources = await syncTopologyCanvasResources();
+          if (detailController.signal.aborted || canvasDataSources == null) return;
           const autoBuiltFilters = buildFiltersFromNodes(
             state.graphInstance,
             canvasDataSources,

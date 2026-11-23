@@ -479,7 +479,8 @@ const Topology = forwardRef<TopologyRef, TopologyProps>(
         setDefinitions(loadedDefinitions);
         setFilterValues(nextValues);
         setAppliedFilterValues(nextValues);
-        void syncTopologyCanvasResources().then(() => {
+        void syncTopologyCanvasResources().then((canvasDataSources) => {
+          if (canvasDataSources == null) return;
           refreshTopologyNodes(
             'reload',
             nextValues,

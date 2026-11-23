@@ -1213,6 +1213,7 @@ const Dashboard = forwardRef<DashboardRef, DashboardProps>(
           message.warning(t('paramInput.dynamic.proposalQueryIgnored'));
         }
         void syncDashboardCanvasResources(syncedLayout).then((canvasDataSources) => {
+          if (canvasDataSources == null) return;
           const latest = applyProposalRef.current;
           if (!latest.isEditMode || latest.shareMode || latest.appliedNamespaceId !== undefined) return;
           const nextNamespaceId = resolveLayoutNamespaceId(syncedLayout, canvasDataSources);
@@ -1500,6 +1501,7 @@ const Dashboard = forwardRef<DashboardRef, DashboardProps>(
       setLayout(syncedLayout);
       void syncDashboardCanvasResources(syncedLayout).then(
         (canvasDataSources) => {
+          if (canvasDataSources == null) return;
           const nextNamespaceId = resolveLayoutNamespaceId(
             syncedLayout,
             canvasDataSources,
@@ -2039,7 +2041,8 @@ const Dashboard = forwardRef<DashboardRef, DashboardProps>(
 
         recordUndoRef.current();
         setLayout(syncedLayout);
-        void syncDashboardCanvasResources(syncedLayout).then(() => {
+        void syncDashboardCanvasResources(syncedLayout).then((canvasDataSources) => {
+          if (canvasDataSources == null) return;
           syncFilterStateAfterLayoutChange(
             nextDefinitions,
             nextFilterValues,
