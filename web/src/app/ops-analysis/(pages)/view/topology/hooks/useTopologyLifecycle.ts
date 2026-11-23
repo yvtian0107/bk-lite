@@ -163,7 +163,11 @@ export const useTopologyLifecycle = ({
           if (detailController.signal.aborted) return;
           onLoadedRefreshInterval?.(refreshInterval ?? 0);
           const canvasDataSources = await syncTopologyCanvasResources();
-          if (detailController.signal.aborted || canvasDataSources == null) return;
+          if (detailController.signal.aborted) return;
+          if (canvasDataSources == null) {
+            finishInitialization();
+            return;
+          }
           const autoBuiltFilters = buildFiltersFromNodes(
             state.graphInstance,
             canvasDataSources,
