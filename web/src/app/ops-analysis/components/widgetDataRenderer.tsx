@@ -239,6 +239,13 @@ export interface WidgetWrapperProps {
   suppliedRawDataVersion?: number;
 }
 
+function forgetOwnedConsumer(ids: string[], consumerId: string) {
+  const index = ids.indexOf(consumerId);
+  if (index >= 0) {
+    ids.splice(index, 1);
+  }
+}
+
 const WidgetWrapper: React.FC<WidgetWrapperProps> = ({
   dashboardId,
   chartType,
@@ -383,6 +390,8 @@ const WidgetWrapper: React.FC<WidgetWrapperProps> = ({
         physicalKey,
         priority: { ...runtimePriority, cause: 1 },
         start: (signal) => start(signal),
+      }).finally(() => {
+        forgetOwnedConsumer(ownedConsumerIdsRef.current, consumerId);
       });
     },
     [runtimePriority, runtimeScheduler, widgetId],
@@ -1031,6 +1040,8 @@ const WidgetWrapper: React.FC<WidgetWrapperProps> = ({
         physicalKey: `${requestKey}:source:${id}:${JSON.stringify(params ?? {})}`,
         priority: { ...runtimePriority, cause: causePriority },
         start: (signal) => getRuntimeSourceDataByApiId(id, params, signal),
+      }).finally(() => {
+        forgetOwnedConsumer(ownedConsumerIdsRef.current, consumerId);
       });
     };
 
