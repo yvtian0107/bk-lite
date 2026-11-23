@@ -121,7 +121,7 @@ const chart = ({
     config={{
       dataSource: source.id,
       chartType: 'pie',
-      dataSourceParams: source.params,
+      dataSourceParams: Array.isArray(source.params) ? source.params : [],
       filterBindings: { 'server_room_id__string': true },
     }}
     dataSource={source}
@@ -232,5 +232,25 @@ describe('widget required parameter wait', () => {
       expect(fetchCompareData).toHaveBeenCalledTimes(1);
     });
     expect(screen.queryByText('请选择机房')).toBeNull();
+  });
+
+  it('requests a resolved catalog whose params are null', async () => {
+    fetchCompareData.mockResolvedValue({ currentData: [{ name: '空目录', value: 0 }], baselineData: null });
+    const source = { ...datasource([]), params: null } as unknown as DatasourceItem;
+    render(chart({ source, values: {} }));
+
+    await waitFor(() => {
+      expect(fetchCompareData).toHaveBeenCalledTimes(1);
+    });
+    expect(screen.queryByText('请选择机房')).toBeNull();
+    expect(await screen.findByTestId('chart-renderer')).toBeTruthy();
+  });
+
+  it('shows a terminal error for an illegal catalog and does not request', async () => {
+    const source = { ...datasource([]), params: { bad: true } } as unknown as DatasourceItem;
+    render(chart({ source, values: {} }));
+
+    expect(await screen.findByText('dashboard.dataSourceParamsInvalid')).toBeTruthy();
+    expect(fetchCompareData).not.toHaveBeenCalled();
   });
 });

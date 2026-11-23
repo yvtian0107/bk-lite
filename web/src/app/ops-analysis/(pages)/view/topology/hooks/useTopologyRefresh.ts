@@ -9,6 +9,7 @@ import type {
 } from '@/app/ops-analysis/types/dashBoard';
 import type { TopologyNodeData } from '@/app/ops-analysis/types/topology';
 import { collectTopologyNamespaceIds } from '@/app/ops-analysis/utils/canvasResources';
+import type { DataSourceLookupStatus } from '@/app/ops-analysis/utils/widgetRequestVersion';
 import {
   buildFiltersFromNodes,
   syncFilterValuesWithDefinitions,
@@ -76,8 +77,9 @@ interface UseTopologyRefreshControllerParams {
       nodeData: TopologyNodeData,
       dataSource?: DatasourceItem,
     ) => boolean,
-    options?: { silent?: boolean },
+    options?: { silent?: boolean; dataSourceLookupStatus?: DataSourceLookupStatus },
   ) => void;
+  dataSourceLookupStatus: DataSourceLookupStatus;
   updateDefinitions: (definitions: UnifiedFilterDefinition[]) => void;
   organizationId?: string | number | null;
 }
@@ -103,6 +105,7 @@ export const useTopologyRefresh = ({
   refreshAllChartNodes,
   updateDefinitions,
   organizationId,
+  dataSourceLookupStatus,
 }: UseTopologyRefreshControllerParams) => {
   const refreshTopologyNodes = useCallback(
     (
@@ -161,7 +164,10 @@ export const useTopologyRefresh = ({
         dataSources,
         nextNamespaceId,
         shouldRefreshNode,
-        silent ? { silent: true } : undefined,
+        {
+          ...(silent ? { silent: true } : {}),
+          dataSourceLookupStatus,
+        },
       );
     },
     [
@@ -169,6 +175,7 @@ export const useTopologyRefresh = ({
       appliedNamespaceId,
       dataSources,
       definitions,
+      dataSourceLookupStatus,
       refreshAllChartNodes,
       refreshAllSingleValueNodes,
     ],

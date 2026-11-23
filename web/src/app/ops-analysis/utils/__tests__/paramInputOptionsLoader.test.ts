@@ -573,4 +573,72 @@ describe('paramInputOptionsLoader runtime errors', () => {
     assert.equal(result?.status, 'error');
     assert.equal(getSourceDataByApiId.mock.calls.length, 0);
   });
+
+  it('treats a known null catalog as parameterless and does not load details again', async () => {
+    const getSourceDataByApiId = vi.fn<GetSourceDataByApiId>(
+      async () => asSourceData([{ inst_uuid: 'room-1', inst_name: '一号机房' }]),
+    );
+    const getDataSourceDetails = vi.fn(async () => {
+      throw new Error('details must not be called for a resolved null catalog');
+    });
+    const loader = createParamInputOptionsLoader(
+      {
+        getDataSourceList: async () => [],
+        getSourceDataByApiId,
+        getDataSourceDetails,
+        resolveOptionSource: async () => ({ status: 'resolved', id: 116 }),
+      },
+      () => ({
+        knownDataSources: [{ id: 116, rest_api: 'cmdb/get_room_list', params: null }],
+      }),
+    );
+
+    assert.deepEqual(await loader.load({
+      control: 'select',
+      optionsSource: {
+        type: 'dynamic',
+        sourceId: 116,
+        sourceRef: { type: 'rest_api', value: 'cmdb/get_room_list' },
+        valueField: 'inst_uuid',
+        labelField: 'inst_name',
+      },
+    }, { resolvedParams: {} }).promise, {
+      status: 'success',
+      options: [{ value: 'room-1', label: '一号机房' }],
+    });
+    assert.equal(getSourceDataByApiId.mock.calls.length, 1);
+    assert.equal(getDataSourceDetails.mock.calls.length, 0);
+  });
+
+  it('ends an illegal catalog without requesting option data or another detail', async () => {
+    const getSourceDataByApiId = vi.fn<GetSourceDataByApiId>();
+    const getDataSourceDetails = vi.fn(async () => []);
+    const loader = createParamInputOptionsLoader(
+      {
+        getDataSourceList: async () => [],
+        getSourceDataByApiId,
+        getDataSourceDetails,
+        resolveOptionSource: async () => ({ status: 'resolved', id: 116 }),
+      },
+      () => ({
+        knownDataSources: [{ id: 116, params: { bad: true } as never }],
+      }),
+    );
+
+    assert.deepEqual(await loader.load({
+      control: 'select',
+      optionsSource: {
+        type: 'dynamic',
+        sourceId: 116,
+        valueField: 'inst_uuid',
+        labelField: 'inst_name',
+      },
+    }).promise, {
+      status: 'error',
+      options: [],
+      errorMessage: 'option-source-unavailable',
+    });
+    assert.equal(getSourceDataByApiId.mock.calls.length, 0);
+    assert.equal(getDataSourceDetails.mock.calls.length, 0);
+  });
 });

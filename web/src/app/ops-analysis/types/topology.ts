@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react';
 import { DirItem } from './index';
-import type { ParamItem } from './dataSource';
+import type { DatasourceItem, ParamItem } from './dataSource';
 import type {
   ValueConfig,
   FilterValue,
@@ -117,8 +117,13 @@ export interface TopologyNodeData {
   isLoading?: boolean;
   hasError?: boolean;
   errorMessage?: string;
+  waitMessage?: string;
+  chartRequestState?: 'pending' | 'waiting' | 'error' | 'empty' | 'ready';
   fetchError?: boolean;
   rawData?: TopologyRawData;
+  csvRequestParams?: unknown;
+  tableQueryParams?: Record<string, unknown>;
+  dataSource?: DatasourceItem;
   isPlaceholder?: boolean;
   isNewNode?: boolean; 
   // 值配置 - 包含数据源相关配置

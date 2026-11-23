@@ -122,7 +122,11 @@ const Topology = forwardRef<TopologyRef, TopologyProps>(
     const intl = useIntl();
     const state = useTopologyState();
     const dataSourceManager = useDataSourceManager();
-    const { loadCanvasNamespaces } = useOpsAnalysis();
+    const {
+      loadCanvasNamespaces,
+      canvasDataSourceLookupStatus,
+      readCanvasDataSourceLookupStatus,
+    } = useOpsAnalysis();
     const shareOrganizationSeed = useShareOrganizationSeed();
 
     const {
@@ -315,6 +319,7 @@ const Topology = forwardRef<TopologyRef, TopologyProps>(
       refreshAllChartNodes,
       updateDefinitions,
       organizationId: shareOrganizationSeed,
+      dataSourceLookupStatus: canvasDataSourceLookupStatus,
     });
 
     const canPersistRefreshInterval = canPersistCanvasRefreshInterval({
@@ -546,6 +551,7 @@ const Topology = forwardRef<TopologyRef, TopologyProps>(
       loadCanvasNamespaces,
       refreshAllSingleValueNodes,
       refreshAllChartNodes,
+      readCanvasDataSourceLookupStatus,
       refreshTopologyNodes,
       scheduleTopologyInitialization,
       startInitialization,

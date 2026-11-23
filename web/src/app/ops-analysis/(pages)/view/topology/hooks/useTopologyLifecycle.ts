@@ -13,6 +13,7 @@ import {
   syncFilterValuesWithDefinitions,
 } from '../utils/namespaceUtils';
 import { syncAndFillOrganizationFilterValues } from '@/app/ops-analysis/utils/unifiedFilterState';
+import type { DataSourceLookupStatus } from '@/app/ops-analysis/utils/widgetRequestVersion';
 import type { useTopologyState } from './useTopologyState';
 
 interface UseTopologyLifecycleParams {
@@ -48,7 +49,10 @@ interface UseTopologyLifecycleParams {
     definitions?: UnifiedFilterDefinition[],
     dataSources?: DatasourceItem[],
     namespaceId?: number,
+    shouldRefreshNode?: unknown,
+    options?: { dataSourceLookupStatus?: DataSourceLookupStatus },
   ) => void;
+  readCanvasDataSourceLookupStatus: () => DataSourceLookupStatus;
   refreshTopologyNodes: (
     scope: 'reload',
     values?: Record<string, FilterValue>,
@@ -66,7 +70,6 @@ export const useTopologyLifecycle = ({
   state,
   definitions,
   appliedFilterValues,
-  appliedNamespaceId,
   setAppliedFilterValues,
   setAppliedNamespaceId,
   setDefinitions,
@@ -79,7 +82,7 @@ export const useTopologyLifecycle = ({
   loadCanvasNamespaces,
   refreshAllSingleValueNodes,
   refreshAllChartNodes,
-  refreshTopologyNodes,
+  readCanvasDataSourceLookupStatus,
   scheduleTopologyInitialization,
   startInitialization,
   syncTopologyCanvasResources,
@@ -189,6 +192,8 @@ export const useTopologyLifecycle = ({
               autoBuiltFilters,
               canvasDataSources,
               initialNamespaceId,
+              undefined,
+              { dataSourceLookupStatus: readCanvasDataSourceLookupStatus() },
             );
             finishInitialization();
           });

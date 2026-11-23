@@ -498,7 +498,40 @@ export const formatDataSourceParamValue = (
   return type === 'timeRange' ? timeRangeFormatter(value) : value;
 };
 
-type WidgetMessage = (id: string, defaultMessage?: string) => string;
+type WidgetMessage = (id: string, defaultMessage?: string, values?: Record<string, string>) => string;
+
+export type ResolvedCatalog =
+  | { status: 'absent' }
+  | { status: 'resolved'; params: ParamItem[] }
+  | { status: 'invalid' };
+
+/** 已返回的 params:null 是无参目录。缺字段或其他非数组才是非法目录。 */
+export const resolveCatalogParams = (
+  dataSource: { params?: unknown } | null | undefined,
+): ResolvedCatalog => {
+  if (dataSource == null) return { status: 'absent' };
+  if (dataSource.params === null) return { status: 'resolved', params: [] };
+  if (Array.isArray(dataSource.params)) {
+    return { status: 'resolved', params: dataSource.params as ParamItem[] };
+  }
+  return { status: 'invalid' };
+};
+
+export type WidgetRequestPlan =
+  | { status: 'pending' }
+  | { status: 'failed'; reason: 'invalid' | 'lookup' }
+  | { status: 'waiting'; missing: MissingRequiredParam[] }
+  | { status: 'ready'; params: Record<string, any> };
+
+export class WidgetRequestBlocked extends Error {
+  readonly plan: Exclude<WidgetRequestPlan, { status: 'ready' }>;
+
+  constructor(plan: Exclude<WidgetRequestPlan, { status: 'ready' }>) {
+    super('widget-request-blocked');
+    this.name = 'WidgetRequestBlocked';
+    this.plan = plan;
+  }
+}
 
 export const fetchWidgetData = async ({
   config,
@@ -511,6 +544,7 @@ export const fetchWidgetData = async ({
   throwError = false,
   chartType,
   t,
+  catalogPhase,
 }: {
   config: any;
   dataSource?: any;
@@ -522,13 +556,14 @@ export const fetchWidgetData = async ({
   throwError?: boolean;
   chartType?: string;
   t?: WidgetMessage;
+  catalogPhase?: 'pending' | 'failed';
 }) => {
   if (!config?.dataSource) {
     return null;
   }
 
   try {
-    const finalRequestParams = buildWidgetRequestParams({
+    const plan = planWidgetRequest({
       config,
       dataSource,
       extraParams,
@@ -537,12 +572,17 @@ export const fetchWidgetData = async ({
       filterDefinitions,
       chartType: chartType || config?.chartType,
       t,
+      catalogPhase,
     });
-    if (!finalRequestParams) return null;
+    if (plan.status !== 'ready') {
+      if (throwError) throw new WidgetRequestBlocked(plan);
+      return null;
+    }
 
-    const result = await getSourceDataByApiId(config.dataSource, finalRequestParams);
+    const result = await getSourceDataByApiId(config.dataSource, plan.params);
     return result.data;
   } catch (err: any) {
+    if (err instanceof WidgetRequestBlocked) throw err;
     console.error('获取数据失败:', err);
     if (throwError) {
       throw err;
@@ -721,7 +761,7 @@ export const widgetDataVariableBlockReason = ({
   t,
 }: {
   config: { dataSourceParams?: ParamItem[]; filterBindings?: FilterBindings; chartType?: string } | null | undefined;
-  dataSource?: { params?: ParamItem[] } | null;
+  dataSource?: { params?: ParamItem[] | null } | null;
   extraParams?: Record<string, unknown>;
   dataVariableColumns?: Record<string, ColumnResult>;
   unifiedFilterValues?: Record<string, FilterValue>;
@@ -746,9 +786,11 @@ export const widgetDataVariableBlockReason = ({
       .filter(([, value]) => isDataVariableRef(value))
       .map(([name]) => name),
   );
+  const catalog = resolveCatalogParams(dataSource);
+  if (catalog.status === 'invalid') return 'request';
   const requestParams = processDataSourceParams({
     sourceParams,
-    definitionParams: Array.isArray(dataSource?.params) ? dataSource.params : undefined,
+    definitionParams: catalog.status === 'resolved' ? catalog.params : undefined,
     userParams: readyParams,
     unifiedFilterValues,
     filterBindings: filterBindings ?? config?.filterBindings,
@@ -758,18 +800,12 @@ export const widgetDataVariableBlockReason = ({
     preserveArrayNames,
     t,
   });
-  if (dataSource && !Array.isArray(dataSource.params)) return 'request';
   if (listMissingRequiredParams(
-    Array.isArray(dataSource?.params) ? dataSource.params : [],
+    catalog.status === 'resolved' ? catalog.params : [],
     requestParams,
   ).length > 0) return 'empty';
   return null;
 };
-
-type WidgetRequestPlan =
-  | { status: 'hold' }
-  | { status: 'waiting'; missing: MissingRequiredParam[] }
-  | { status: 'ready'; params: Record<string, any> };
 
 const shapeWidgetRequest = ({
   config,
@@ -783,6 +819,7 @@ const shapeWidgetRequest = ({
   dataVariableColumns,
   t,
   timeRangeFormatter,
+  catalogPhase,
 }: {
   config: any;
   dataSource?: any;
@@ -795,8 +832,12 @@ const shapeWidgetRequest = ({
   dataVariableColumns?: Record<string, ColumnResult>;
   t?: WidgetMessage;
   timeRangeFormatter?: (value: unknown) => unknown;
+  catalogPhase?: 'pending' | 'failed';
 }): WidgetRequestPlan => {
-  if (dataSource && !Array.isArray(dataSource.params)) return { status: 'hold' };
+  if (catalogPhase === 'pending') return { status: 'pending' };
+  if (catalogPhase === 'failed') return { status: 'failed', reason: 'lookup' };
+  const catalog = resolveCatalogParams(dataSource);
+  if (catalog.status === 'invalid') return { status: 'failed', reason: 'invalid' };
 
   const sourceParams = widgetSourceParams(config, dataSource);
   const userParams: Record<string, unknown> = {};
@@ -805,9 +846,9 @@ const shapeWidgetRequest = ({
   });
   Object.assign(userParams, extraParams || {});
   const applied = applyDataVariableParams(userParams, dataVariableColumns);
-  if (!applied) return { status: 'hold' };
+  if (!applied) return { status: 'pending' };
 
-  const definitionParams = Array.isArray(dataSource?.params) ? dataSource.params : undefined;
+  const definitionParams = catalog.status === 'resolved' ? catalog.params : undefined;
   const requestParams = processDataSourceParams({
     sourceParams,
     definitionParams,
@@ -857,14 +898,15 @@ export const buildDataVariableRequestParams = ({
 }: {
   variable: DataVariable;
   resolvedParams: Record<string, unknown>;
-  dataSource?: { params?: ParamItem[] } | null;
+  dataSource?: { params?: ParamItem[] | null } | null;
   filterValues?: Record<string, FilterValue>;
   filterDefinitions?: UnifiedFilterDefinition[];
 }): Record<string, unknown> => {
-  if (!Array.isArray(dataSource?.params)) {
+  const catalogState = resolveCatalogParams(dataSource);
+  if (catalogState.status !== 'resolved') {
     throw new DataVariableBlocked('request');
   }
-  const catalog = dataSource.params;
+  const catalog = catalogState.params;
   if (catalog.length === 0) return resolvedParams;
   const sourceParams = catalog.map((param) => ({
     ...param,

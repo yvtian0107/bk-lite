@@ -41,6 +41,7 @@ import {
   buildDefaultFilterBindings,
   buildDataVariableRequestParams,
   processDataSourceParams,
+  resolveCatalogParams,
 } from '@/app/ops-analysis/utils/widgetDataTransform';
 import { getDateRangeTimezone } from '@/app/ops-analysis/utils/dateRange';
 import { listMissingRequiredParams } from '@/app/ops-analysis/utils/requiredParamGate';
@@ -700,7 +701,8 @@ const ViewConfig: React.FC<ViewConfigPropsWithManager> = ({
           if (isDataVariableRef(value)) preserveArrayNames.add(name);
         });
       }
-      if (!Array.isArray(canonicalSelectedDataSource.params)) {
+      const catalog = resolveCatalogParams(canonicalSelectedDataSource);
+      if (catalog.status !== 'resolved') {
         setPreviewRawData(null);
         setPreviewLoading(false);
         if (previewOpen) {
@@ -710,8 +712,8 @@ const ViewConfig: React.FC<ViewConfigPropsWithManager> = ({
         return;
       }
       const requestParams = processDataSourceParams({
-        sourceParams: canonicalSelectedDataSource.params,
-        definitionParams: canonicalSelectedDataSource.params,
+        sourceParams: catalog.params,
+        definitionParams: catalog.params,
         userParams: requestUserParams,
         preserveArrayNames,
         unifiedFilterValues,
@@ -724,7 +726,7 @@ const ViewConfig: React.FC<ViewConfigPropsWithManager> = ({
         },
         t,
       });
-      if (listMissingRequiredParams(canonicalSelectedDataSource.params, requestParams).length > 0) {
+      if (listMissingRequiredParams(catalog.params, requestParams).length > 0) {
         setPreviewRawData(null);
         setPreviewLoading(false);
         if (previewOpen) {

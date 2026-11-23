@@ -1199,6 +1199,7 @@
     "sourceHasNoChart": "This data source has no chart type, so it cannot be used as a component",
     "dataSourceNotFound": "The data source does not exist.",
     "dataSourceLoadFailed": "Failed to load the data source",
+    "dataSourceParamsInvalid": "The data source parameter format is invalid",
     "dataFetchFailed": "Data query failed",
     "selectRequiredParam": "Select {label}",
     "fillRequiredParams": "Fill in: {labels}",

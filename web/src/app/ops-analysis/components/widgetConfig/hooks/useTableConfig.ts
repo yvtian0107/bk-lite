@@ -12,6 +12,7 @@ import type { DatasourceItem, ParamItem } from '@/app/ops-analysis/types/dataSou
 import {
   formatTimeRange,
   processDataSourceParams,
+  resolveCatalogParams,
 } from '@/app/ops-analysis/utils/widgetDataTransform';
 import { getDateRangeTimezone } from '@/app/ops-analysis/utils/dateRange';
 import { collectVariableIds } from '@/app/ops-analysis/utils/dataVariable';
@@ -271,7 +272,9 @@ export function useTableConfig({
       chartTypeOverride?: string,
     ): Record<string, any> | null => {
       const payload: Record<string, any> = {};
-      const sourceParams = targetDataSource.params || [];
+      const catalog = resolveCatalogParams(targetDataSource);
+      if (catalog.status !== 'resolved') return null;
+      const sourceParams = catalog.params;
       const processedParams = processFormParamsForSubmit(formParams, sourceParams);
       const userParams = processedParams.reduce<Record<string, any>>((acc, param) => {
         acc[param.name] = param.value;
@@ -279,7 +282,6 @@ export function useTableConfig({
       }, {});
       // 探列走的是原始表单值，还没换成取值列。带着编号发出去会报参数格式错误。
       if (collectVariableIds(userParams).length > 0) return null;
-      if (!Array.isArray(targetDataSource.params)) return null;
 
       Object.assign(
         payload,
@@ -300,7 +302,7 @@ export function useTableConfig({
         }),
       );
 
-      if (listMissingRequiredParams(targetDataSource.params, payload).length > 0) {
+      if (listMissingRequiredParams(sourceParams, payload).length > 0) {
         return null;
       }
 

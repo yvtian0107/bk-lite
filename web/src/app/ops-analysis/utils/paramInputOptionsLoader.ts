@@ -13,6 +13,7 @@ import {
   stableStringify,
 } from '@/app/ops-analysis/utils/optionsQueryParamRefs';
 import { listMissingRequiredParams } from '@/app/ops-analysis/utils/requiredParamGate';
+import { resolveCatalogParams } from '@/app/ops-analysis/utils/widgetDataTransform';
 import type { ParamItem } from '@/app/ops-analysis/types/dataSource';
 
 export type ParamInputOptionsState =
@@ -91,9 +92,12 @@ interface CatalogRow {
 const readCatalogParams = (
   items: CatalogRow[],
   sourceId: number,
-): ParamItem[] | undefined => {
+): ParamItem[] | 'invalid' | undefined => {
   const row = items.find((item) => item.id === sourceId);
-  return row && Array.isArray(row.params) ? row.params : undefined;
+  if (!row || !Object.prototype.hasOwnProperty.call(row, 'params')) return undefined;
+  const catalog = resolveCatalogParams(row);
+  if (catalog.status === 'invalid') return 'invalid';
+  return catalog.status === 'resolved' ? catalog.params : undefined;
 };
 
 const readListedItems = (response: unknown): CatalogRow[] => {
@@ -311,7 +315,15 @@ export const createParamInputOptionsLoader = (
           settled = true;
           return { status: 'error', options: [], errorMessage: 'option-source-missing' };
         }
-        let catalog = readCatalogParams(knownItems, sourceId) ?? readCatalogParams(listedItems, sourceId);
+        const knownCatalog = readCatalogParams(knownItems, sourceId);
+        const listedCatalog = knownCatalog === undefined
+          ? readCatalogParams(listedItems, sourceId)
+          : undefined;
+        let catalog = knownCatalog ?? listedCatalog;
+        if (catalog === 'invalid') {
+          settled = true;
+          return { status: 'error', options: [], errorMessage: 'option-source-unavailable' };
+        }
         if (!catalog && api.getDataSourceDetails) {
           try {
             const details = await api.getDataSourceDetails([sourceId]);
@@ -323,12 +335,13 @@ export const createParamInputOptionsLoader = (
             const errorMessage = getRequestErrorMessage(error, '') || 'option-source-unavailable';
             return { status: 'error', options: [], errorMessage };
           }
-          if (!catalog) {
+          if (catalog === 'invalid' || !catalog) {
             settled = true;
             return { status: 'error', options: [], errorMessage: 'option-source-unavailable' };
           }
         }
-        if (listMissingRequiredParams(catalog ?? [], resolvedParams).length > 0) {
+        const catalogParams = Array.isArray(catalog) ? catalog : [];
+        if (listMissingRequiredParams(catalogParams, resolvedParams).length > 0) {
           settled = true;
           return { status: 'blocked', options: [] };
         }

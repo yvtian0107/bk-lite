@@ -763,6 +763,7 @@ const WidgetWrapper: React.FC<WidgetWrapperProps> = ({
   ]);
   const requestParams = requestPlan.status === "ready" ? requestPlan.params : null;
   const requiredWait = requestPlan.status === "waiting" ? requestPlan : null;
+  const catalogFailed = requestPlan.status === "failed";
   const requiredWaitKey = requiredWait
     ? requiredWait.missing.map((item) => item.name).join("\0")
     : "";
@@ -776,7 +777,14 @@ const WidgetWrapper: React.FC<WidgetWrapperProps> = ({
     invalidatedWaitKeyRef.current = requiredWaitKey;
     fetchIdRef.current += 1;
   }
-  blockSuppliedDataRef.current = Boolean(requiredWait);
+  const invalidatedCatalogRef = useRef(false);
+  if (!catalogFailed) {
+    invalidatedCatalogRef.current = false;
+  } else if (!invalidatedCatalogRef.current) {
+    invalidatedCatalogRef.current = true;
+    fetchIdRef.current += 1;
+  }
+  blockSuppliedDataRef.current = Boolean(requiredWait) || catalogFailed;
 
   const requestSignatureParams = useMemo(() => {
     if (!requestEnabled) {
@@ -1389,7 +1397,17 @@ const WidgetWrapper: React.FC<WidgetWrapperProps> = ({
     hasSettledRequestRef.current = true;
     setHasSettledRequest(true);
   }, [requiredWaitKey]);
-  const isWaitingForInitialData = !requiredWait && (variablePending || (!variableBlocked && shouldWaitForInitialWidgetData({
+  useEffect(() => {
+    if (!catalogFailed) return;
+    setRawData(null);
+    setBaselineData(null);
+    setLoading(false);
+    setTableLoading(false);
+    setDataValidation(null);
+    hasSettledRequestRef.current = true;
+    setHasSettledRequest(true);
+  }, [catalogFailed]);
+  const isWaitingForInitialData = !requiredWait && !catalogFailed && (variablePending || (!variableBlocked && shouldWaitForInitialWidgetData({
     isSceneWidget,
     isTableLikeChart,
     hasDataSourceId: Boolean(normalizedDataSourceId),
@@ -1412,6 +1430,14 @@ const WidgetWrapper: React.FC<WidgetWrapperProps> = ({
   useEffect(() => {
     if (requiredWait) {
       onRenderStatus?.({ widgetId, status: "empty" });
+      return;
+    }
+    if (catalogFailed) {
+      onRenderStatus?.({
+        widgetId,
+        status: "failed",
+        error: t("dashboard.dataSourceParamsInvalid"),
+      });
       return;
     }
     if (variableBlocked) {
@@ -1454,6 +1480,7 @@ const WidgetWrapper: React.FC<WidgetWrapperProps> = ({
     isTableLikeChart,
     isWaitingForInitialData,
     isWaitingForSwitchOptions,
+    catalogFailed,
     requiredWait,
     variableBlocked,
     variableBlockMessage,
@@ -1537,6 +1564,8 @@ const WidgetWrapper: React.FC<WidgetWrapperProps> = ({
         description={requiredWaitMessage}
       />
     );
+  } else if (catalogFailed) {
+    body = renderError(t("dashboard.dataSourceParamsInvalid"));
   } else if (variableBlocked) {
     body = (
       <WidgetState

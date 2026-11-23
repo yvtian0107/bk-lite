@@ -117,15 +117,34 @@ describe('required parameter gate', () => {
     expect(staleCopy.status).toBe('ready');
   });
 
-  it('does not build a request while the catalog params are not an array', () => {
+  it('treats a resolved null catalog as parameterless and fails an illegal catalog', () => {
+    expect(planWidgetRequest({
+      config: { dataSourceParams: [{ ...room, required: true, value: '' }] },
+      dataSource: { params: null },
+    }).status).toBe('ready');
+    expect(buildWidgetRequestParams({
+      config: { dataSourceParams: [{ name: 'limit', type: 'number', filterType: 'fixed', value: 1 }] },
+      dataSource: { params: [] },
+    })).toEqual({ limit: 1 });
     expect(planWidgetRequest({
       config: { dataSourceParams: [room] },
-      dataSource: { params: null },
-    }).status).toBe('hold');
+      dataSource: {},
+    })).toMatchObject({ status: 'failed', reason: 'invalid' });
     expect(buildWidgetRequestParams({
       config: { dataSourceParams: [room] },
-      dataSource: {},
+      dataSource: { params: { name: 'server_room_id' } },
     })).toBeNull();
+    expect(planWidgetRequest({
+      config: { dataSourceParams: [room] },
+      catalogPhase: 'pending',
+    }).status).toBe('pending');
+    expect(planWidgetRequest({
+      config: { dataSourceParams: [room] },
+      catalogPhase: 'failed',
+    })).toMatchObject({ status: 'failed', reason: 'lookup' });
+    expect(buildWidgetRequestParams({
+      config: { dataSourceParams: [{ name: 'limit', type: 'number', filterType: 'fixed', value: 2 }] },
+    })).toEqual({ limit: 2 });
   });
 
   it('saves a required flag without requiring a default, including a hidden filter parameter', () => {
