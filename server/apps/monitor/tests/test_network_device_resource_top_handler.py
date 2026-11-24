@@ -24,11 +24,23 @@ def test_network_device_resource_top_handler_returns_ranked_traffic(monkeypatch)
     )
 
     class FakeVM:
+        def __init__(self):
+            self.queries = []
+
         def query(self, query, **kwargs):
-            value = "10" if "incoming" in query else "5"
+            self.queries.append(query)
+            if "ifHCInOctets" in query:
+                value = "10"
+            elif "ifHCOutOctets" in query:
+                value = "5"
+            else:
+                return {"status": "success", "data": {"result": []}}
+            assert "sw\\-1" in query
+            assert "secret-1" not in query
             return {"status": "success", "data": {"result": [{"metric": {"instance_id": "sw-1"}, "value": [time.time(), value]}]}}
 
-    monkeypatch.setattr(nm, "VictoriaMetricsAPI", FakeVM)
+    fake_vm = FakeVM()
+    monkeypatch.setattr(nm, "VictoriaMetricsAPI", lambda: fake_vm)
     out = nm.get_network_device_resource_top("traffic", user_info={"user": "u", "team": 1})
 
     assert out["result"] is True
