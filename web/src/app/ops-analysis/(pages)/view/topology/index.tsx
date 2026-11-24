@@ -183,6 +183,8 @@ const Topology = forwardRef<TopologyRef, TopologyProps>(
       clearOperationHistory,
       refreshAllSingleValueNodes,
       refreshAllChartNodes,
+      abortInflightChartRequests,
+      abortInflightSingleValueRequests,
       loadChartNodeData,
       updateSingleNodeData,
     } = useGraphOperations(
@@ -486,7 +488,8 @@ const Topology = forwardRef<TopologyRef, TopologyProps>(
         setDefinitions(loadedDefinitions);
         setFilterValues(nextValues);
         setAppliedFilterValues(nextValues);
-        void syncTopologyCanvasResources().then(() => {
+        void syncTopologyCanvasResources().then((canvasDataSources) => {
+          if (canvasDataSources == null) return;
           refreshTopologyNodes(
             'reload',
             nextValues,
@@ -556,6 +559,10 @@ const Topology = forwardRef<TopologyRef, TopologyProps>(
       refreshAllSingleValueNodes,
       refreshAllChartNodes,
       readCanvasDataSourceLookupStatus,
+      abortInflightDataRequests: () => {
+        abortInflightChartRequests();
+        abortInflightSingleValueRequests();
+      },
       refreshTopologyNodes,
       scheduleTopologyInitialization,
       startInitialization,

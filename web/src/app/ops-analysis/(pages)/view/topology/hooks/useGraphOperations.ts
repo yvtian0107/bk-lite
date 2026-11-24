@@ -189,5 +189,7 @@ export const useGraphOperations = (
     serializeTopologyData: nodeOperations.serializeTopologyData,
     loadChartNodeData: nodeOperations.loadChartNodeData,
     refreshAllChartNodes: nodeOperations.refreshAllChartNodes,
+    abortInflightChartRequests: nodeOperations.abortInflightChartRequests,
+    abortInflightSingleValueRequests: nodeOperations.abortInflightSingleValueRequests,
   };
 };

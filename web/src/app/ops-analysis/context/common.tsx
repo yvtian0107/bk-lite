@@ -11,6 +11,7 @@ import {
   useRef,
 } from 'react';
 import { useDataSourceApi } from '@/app/ops-analysis/api/dataSource';
+import { isTransportCanceled } from '@/utils/requestCancellation';
 import { useNamespaceApi } from '@/app/ops-analysis/api/namespace';
 import { useUserInfoContext } from '@/context/userInfo';
 import { retainRequestedDatasources } from '@/app/ops-analysis/utils/datasourceRecordId';
@@ -33,7 +34,7 @@ interface OpsAnalysisContextType {
   loadCanvasNamespaces: (ids?: Array<number | string>) => Promise<NamespaceItem[]>;
   refreshNamespaces: () => Promise<void>;
   fetchDataSources: (ids?: Array<number | string>) => Promise<DatasourceItem[]>;
-  loadCanvasDataSources: (ids?: Array<number | string>) => Promise<DatasourceItem[]>;
+  loadCanvasDataSources: (ids?: Array<number | string>) => Promise<DatasourceItem[] | null>;
   resetCanvasDataSourceLookup: () => void;
 }
 
@@ -71,6 +72,7 @@ const OpsAnalysisProviderCore = ({
   const dataSourceRequestCountRef = useRef(0);
   const canvasNamespaceRequestIdRef = useRef(0);
   const canvasDataSourceRequestIdRef = useRef(0);
+  const canvasLookupAbortRef = useRef<AbortController | null>(null);
   const canvasNamespaceKeyRef = useRef('');
   const namespacesRequestingRef = useRef(false);
   const dataSourcesRequestingRef = useRef(false);
@@ -217,6 +219,7 @@ const OpsAnalysisProviderCore = ({
     const requestId = canvasNamespaceRequestIdRef.current + 1;
 
     if (normalizedIds.length === 0) {
+      canvasNamespaceRequestIdRef.current = requestId;
       canvasNamespaceKeyRef.current = '';
       setRawNamespaces([]);
       return [];
@@ -339,17 +342,28 @@ const OpsAnalysisProviderCore = ({
     publishCanvasDataSourceLookupStatus('loading');
   }, []);
 
+  useEffect(() => () => {
+    canvasLookupAbortRef.current?.abort();
+  }, []);
+
   const loadCanvasDataSources = useCallback(async (ids: Array<number | string> = []) => {
     const requestedIds = Array.isArray(ids) ? ids : [];
     const normalizedIds = normalizeIds(requestedIds);
     const requestId = canvasDataSourceRequestIdRef.current + 1;
     canvasDataSourceRequestIdRef.current = requestId;
+    canvasLookupAbortRef.current?.abort();
+    const controller = new AbortController();
+    canvasLookupAbortRef.current = controller;
+    const settleCurrent = async (items: DatasourceItem[]): Promise<DatasourceItem[] | null> => {
+      await Promise.resolve();
+      return canvasDataSourceRequestIdRef.current === requestId ? items : null;
+    };
 
     if (normalizedIds.length === 0) {
       rawDataSourcesRef.current = [];
       setRawDataSources([]);
       publishCanvasDataSourceLookupStatus('success');
-      return [];
+      return settleCurrent([]);
     }
 
     const currentDataSources = retainRequestedDatasources(
@@ -367,7 +381,7 @@ const OpsAnalysisProviderCore = ({
       rawDataSourcesRef.current = scopedDataSources;
       setRawDataSources(scopedDataSources);
       publishCanvasDataSourceLookupStatus('success');
-      return applyDataSourceAuth(scopedDataSources);
+      return settleCurrent(applyDataSourceAuth(scopedDataSources));
     }
 
     try {
@@ -375,7 +389,10 @@ const OpsAnalysisProviderCore = ({
       dataSourceRequestCountRef.current += 1;
       dataSourcesRequestingRef.current = true;
       setDataSourcesLoading(true);
-      const response = await getDataSourceDetails(missingIds);
+      const response = await getDataSourceDetails(missingIds, controller.signal);
+      if (canvasDataSourceRequestIdRef.current !== requestId || controller.signal.aborted) {
+        return null;
+      }
       const responseDataSources = retainRequestedDatasources(
         normalizeDataSources(response),
         normalizedIds,
@@ -392,6 +409,13 @@ const OpsAnalysisProviderCore = ({
       }
       return applyDataSourceAuth(scopedDataSources);
     } catch (err) {
+      if (
+        controller.signal.aborted
+        || isTransportCanceled(err)
+        || canvasDataSourceRequestIdRef.current !== requestId
+      ) {
+        return null;
+      }
       console.error('加载画布数据源详情失败:', err);
       if (canvasDataSourceRequestIdRef.current === requestId) {
         setRawDataSources([]);

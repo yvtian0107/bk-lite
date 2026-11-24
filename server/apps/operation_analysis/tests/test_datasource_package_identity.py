@@ -14,7 +14,7 @@ from apps.operation_analysis.models.models import Dashboard, Directory
 from apps.operation_analysis.schemas.import_export_schema import YAMLDocument
 from apps.operation_analysis.services.import_export.datasource_package_identity import business_config_equal
 from apps.operation_analysis.services.import_export.export_service import ExportService
-from apps.operation_analysis.services.import_export.import_service import ImportService
+from apps.operation_analysis.services.import_export.import_service import ImportService, _log_token
 from apps.operation_analysis.services.import_export.precheck_service import PrecheckService
 
 WINDOW_KEY = "window-identity"
@@ -541,9 +541,11 @@ def test_builtin_canvas_name_conflict_log_drops_controls_and_truncates(caplog):
         view_sets=[],
     )
     leaked = ("S" * 80) + "TOKEN-LEAK"
-    uploaded = f"入侵\n{leaked}\x00"
+    # NUL 不能进 PostgreSQL text，也不能作为查询参数。入库名称保留换行和其他控制符。
+    stored = f"入侵\n{leaked}\x01"
+    uploaded = f"{stored}\x00"
     Dashboard.objects.create(
-        name=uploaded,
+        name=stored,
         directory=directory,
         groups=[1],
         created_by="s",
@@ -554,7 +556,7 @@ def test_builtin_canvas_name_conflict_log_drops_controls_and_truncates(caplog):
         dashboards=[
             {
                 "key": "dashboard::稳定画布",
-                "name": uploaded,
+                "name": stored,
                 "desc": "",
                 "other": {},
                 "view_sets": [],
@@ -581,7 +583,16 @@ def test_builtin_canvas_name_conflict_log_drops_controls_and_truncates(caplog):
     assert "TOKEN-LEAK" not in rendered
     assert "\n" not in rendered
     assert "\x00" not in rendered
+    assert "\x01" not in rendered
     assert "入侵" in rendered
+    cleaned = _log_token(uploaded)
+    assert record.args[2] == cleaned
+    assert "TOKEN-LEAK" not in cleaned
+    assert "\n" not in cleaned
+    assert "\x00" not in cleaned
+    assert "\x01" not in cleaned
+    assert "入侵" in cleaned
+    assert len(cleaned) == 80
 
 
 @pytest.mark.django_db

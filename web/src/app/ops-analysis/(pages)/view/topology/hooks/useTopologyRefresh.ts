@@ -57,7 +57,7 @@ interface UseTopologyRefreshControllerParams {
   setFilterValues: (values: Record<string, FilterValue>) => void;
   setNamespaceDraftId: (value: number | undefined) => void;
   setNodeChangeKey: React.Dispatch<React.SetStateAction<number>>;
-  syncTopologyCanvasResources: () => Promise<DatasourceItem[]>;
+  syncTopologyCanvasResources: () => Promise<DatasourceItem[] | null>;
   refreshAllSingleValueNodes: (
     values?: Record<string, FilterValue>,
     definitions?: UnifiedFilterDefinition[],
@@ -324,6 +324,7 @@ export const useTopologyRefresh = ({
         setAppliedFilterValues(nextAppliedValues);
         setNodeChangeKey((prev) => prev + 1);
         void syncTopologyCanvasResources().then((canvasDataSources) => {
+          if (canvasDataSources == null) return;
           callback?.({
             definitions: newDefinitions,
             appliedValues: nextAppliedValues,

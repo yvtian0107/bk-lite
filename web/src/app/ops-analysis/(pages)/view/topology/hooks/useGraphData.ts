@@ -4,7 +4,7 @@
  * 拓扑图数据管理核心 Hook，负责数据持久化、序列化和加载功能
  */
 
-import { useCallback, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { Graph as X6Graph, Node, Edge } from '@antv/x6';
 import { message } from 'antd';
 import { deliverWidgetCsvExport } from '@/app/ops-analysis/context/widgetCsvExportRegistry';
@@ -14,6 +14,7 @@ import { fetchWidgetData, planWidgetRequest, resolveEffectiveFilterBindings, Wid
 import { formatRequiredParamWaitMessage } from '@/app/ops-analysis/utils/requiredParamGate';
 import type { DataSourceLookupStatus } from '@/app/ops-analysis/utils/widgetRequestVersion';
 import { getRequestErrorMessage } from '@/app/ops-analysis/utils/requestError';
+import { isTransportCanceled } from '@/utils/requestCancellation';
 import { normalizeCanvasRefreshInterval } from '@/app/ops-analysis/utils/canvasRefreshInterval';
 import { normalizeStoredFilterDefinitions } from '@/app/ops-analysis/utils/unifiedFilterState';
 import {
@@ -142,6 +143,27 @@ export const useGraphData = (
   const tableQueryParamsRef = useRef<Map<string, TableQueryParams>>(new Map());
   const chartFetchGenerationRef = useRef<Map<string, number>>(new Map());
   const chartInflightCountRef = useRef<Map<string, number>>(new Map());
+  const chartAbortRef = useRef<Map<string, AbortController>>(new Map());
+  const chartAbortLifecycleRef = useRef(0);
+
+  const abortInflightChartRequests = useCallback(() => {
+    chartAbortRef.current.forEach((controller) => controller.abort());
+    chartAbortRef.current.clear();
+    chartFetchGenerationRef.current.forEach((generation, nodeId) => {
+      chartFetchGenerationRef.current.set(nodeId, generation + 1);
+    });
+  }, []);
+
+  useEffect(() => {
+    const lifecycle = ++chartAbortLifecycleRef.current;
+    return () => {
+      const controllers = Array.from(chartAbortRef.current.values());
+      queueMicrotask(() => {
+        if (chartAbortLifecycleRef.current !== lifecycle) return;
+        controllers.forEach((controller) => controller.abort());
+      });
+    };
+  }, []);
 
   const getEffectiveTableQueryParams = useCallback((
     valueConfig: ValueConfig,
@@ -311,6 +333,9 @@ export const useGraphData = (
     const generation = gate.generation;
     const isCurrent = () =>
       chartFetchGenerationRef.current.get(nodeId) === generation;
+    chartAbortRef.current.get(nodeId)?.abort();
+    const controller = new AbortController();
+    chartAbortRef.current.set(nodeId, controller);
     const previousData = node.getData();
     if (!silent && !options?.pageOnly) {
       const nextGeneration = (Number(previousData?.csvRequestGeneration) || 0) + 1;
@@ -414,7 +439,8 @@ export const useGraphData = (
       const chartData = await fetchWidgetData({
         config: valueConfig,
         dataSource,
-        getSourceDataByApiId: getRuntimeSourceDataByApiId,
+        getSourceDataByApiId: (sourceId, params) =>
+          getRuntimeSourceDataByApiId(sourceId, params, controller.signal),
         unifiedFilterValues,
         filterBindings: effectiveFilterBindings,
         filterDefinitions,
@@ -436,7 +462,7 @@ export const useGraphData = (
         onExportCsv: exportChartCsv,
       }, { overwrite: true });
     } catch (error) {
-      if (!isCurrent()) return;
+      if (isTransportCanceled(error) || !isCurrent()) return;
       if (error instanceof WidgetRequestBlocked) {
         const currentNodeData = node.getData();
         const blocked = error.plan;
@@ -482,6 +508,9 @@ export const useGraphData = (
         onExportCsv: exportChartCsv,
       }, { overwrite: true });
     } finally {
+      if (chartAbortRef.current.get(nodeId) === controller) {
+        chartAbortRef.current.delete(nodeId);
+      }
       finishMappedOwnerRequest(
         chartFetchGenerationRef.current,
         chartInflightCountRef.current,
@@ -622,7 +651,10 @@ export const useGraphData = (
       });
   }, [graphInstance, startLoadingAnimation]);
 
-  const handleLoadTopology = useCallback(async (topologyId: string | number): Promise<{
+  const handleLoadTopology = useCallback(async (
+    topologyId: string | number,
+    signal?: AbortSignal,
+  ): Promise<{
     filters: UnifiedFilterDefinition[];
     refreshInterval: number;
   }> => {
@@ -641,7 +673,10 @@ export const useGraphData = (
       setLoading(true);
     }
     try {
-      const topologyData = seeded ?? await getTopologyDetail(topologyId);
+      const topologyData = seeded ?? await getTopologyDetail(topologyId, signal);
+      if (signal?.aborted) {
+        return { filters: [], refreshInterval: 0 };
+      }
       const viewSets = topologyData.view_sets || {};
 
       loadTopologyData(viewSets);
@@ -656,13 +691,18 @@ export const useGraphData = (
         refreshInterval: normalizeCanvasRefreshInterval(topologyData.refresh_interval),
       };
     } catch (error) {
+      if (signal?.aborted || isTransportCanceled(error)) {
+        return { filters: [], refreshInterval: 0 };
+      }
       console.error('加载拓扑图失败:', error);
       return {
         filters: [],
         refreshInterval: 0,
       };
     } finally {
-      setLoading(false);
+      if (!signal?.aborted) {
+        setLoading(false);
+      }
     }
   }, [graphInstance, getTopologyDetail, loadTopologyData, playbackDetail]);
 
@@ -735,5 +775,6 @@ export const useGraphData = (
     serializeTopologyData,
     loadChartNodeData,
     refreshAllChartNodes,
+    abortInflightChartRequests,
   };
 };
