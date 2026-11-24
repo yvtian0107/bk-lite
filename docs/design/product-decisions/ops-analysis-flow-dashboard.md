@@ -24,7 +24,7 @@
 - 画布组件：单值做 KPI（可周期对比）；折线做 Bytes/s、Packets/s 和 TCP/UDP 多序列；饼图或 TopN 做协议占比；TopN 做 Source / Dest / 源 IP+端口 / 目标 IP+端口 / Protocol；Conversation 用表格多列。通信关系图挂在内置 Flow 盘上。
 - 内置初始化加载 `flow_dashboard.yaml`，新环境开箱即有 Flow 盘；数据源仍以 `source_api.json` 为准。
 - 协议号到 TCP/UDP、会话展示名、B/s 到 Mbps 都在监控查询或画布单位配置完成，不为此新做图。
-- 不复用 `get_host_*`、`query_metric_range_scoped`（只返回第一条且依赖环境相关 `metric_id`）、`get_network_device_resource_top`（专业详情默认 15 分钟入向加出向，不是 Flow 自选窗口和协议指标）、`query_latest_interface_metrics`（IF-MIB）。
+- 不复用 `get_host_*`、`query_metric_range_scoped`（只返回第一条且依赖环境相关 `metric_id`）、`get_network_device_resource_top`（详情公式的 15 分钟速率窗口，另按两个采集周期过滤原始样本，不是 Flow 自选窗口和协议指标）、`query_latest_interface_metrics`（IF-MIB）。
 
 ## 明确后置
 

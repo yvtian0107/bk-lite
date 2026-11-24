@@ -6354,7 +6354,7 @@ screens:
         appearance:
           frame: bare
         dataSource: 网络设备资源排行::monitor/get_network_device_resource_top
-        description: 标题栏可切换 CPU使用率、内存使用率、总流量。CPU 和内存沿用各设备类型的专业详情算法；总流量是详情默认 15 分钟窗口的入向速率与出向速率之和。
+        description: 标题栏可切换 CPU使用率、内存使用率、总流量。已有专业详情公式的设备沿用该公式；总流量速率窗口是详情默认 15 分钟。原始样本另按每台设备两个采集周期过滤。没有详情公式的设备仍按原排行计算。
         topNLabelField: display_name
         topNValueField: value
         dataSourceParams:
