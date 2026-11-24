@@ -340,20 +340,6 @@ const ParamTable = React.forwardRef<ParamTableRef, ParamTableProps>(
         ),
       },
       {
-        title: t("dataSource.requiredFlag"),
-        dataIndex: "required",
-        key: "required",
-        width: 90,
-        render: (_: unknown, record: ParamItem) => (
-          <Switch
-            disabled={readOnly}
-            checked={record.required === true}
-            aria-label={t("dataSource.requiredFlag")}
-            onChange={(checked: boolean) => handleRequiredChange(checked, record.id!)}
-          />
-        ),
-      },
-      {
         title: t("dataSource.paramType"),
         dataIndex: "type",
         key: "type",
@@ -514,6 +500,20 @@ const ParamTable = React.forwardRef<ParamTableRef, ParamTableProps>(
             />
           );
         },
+      },
+      {
+        title: t("dataSource.requiredFlag"),
+        dataIndex: "required",
+        key: "required",
+        width: 90,
+        render: (_: unknown, record: ParamItem) => (
+          <Switch
+            disabled={readOnly}
+            checked={record.required === true}
+            aria-label={t("dataSource.requiredFlag")}
+            onChange={(checked: boolean) => handleRequiredChange(checked, record.id!)}
+          />
+        ),
       },
       ...(readOnly
         ? []

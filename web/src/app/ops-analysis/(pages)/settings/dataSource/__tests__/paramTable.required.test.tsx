@@ -46,6 +46,12 @@ describe('data source parameter required switch', () => {
   it('saves and echoes whether a parameter is required', () => {
     const onChange = vi.fn();
     const view = render(<ParamTable params={[param(false)]} onChange={onChange} />);
+    const headers = screen.getAllByRole('columnheader').map((cell) => cell.textContent);
+    const defaultIndex = headers.indexOf('dataSource.defaultValue');
+    const requiredIndex = headers.indexOf('是否必填');
+    expect(defaultIndex).toBeGreaterThan(-1);
+    expect(requiredIndex).toBe(defaultIndex + 1);
+
     const toggle = screen.getByRole('switch', { name: '是否必填' });
     expect(toggle.getAttribute('aria-checked')).toBe('false');
 
