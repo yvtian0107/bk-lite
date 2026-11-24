@@ -2,7 +2,7 @@
  * 共享单值配置 Hook
  * 供仪表盘 ViewConfig 和拓扑 NodeConfPanel 复用
  */
-import { useState, useCallback, useEffect } from 'react';
+import { useState, useCallback, useEffect, useRef } from 'react';
 import type { FormInstance } from 'antd';
 import { message } from 'antd';
 import { useTranslation } from '@/utils/i18n';
@@ -59,6 +59,7 @@ export function useSingleValueConfig({
   const [fetchedSample, setFetchedSample] = useState<unknown>(null);
   const [selectedFields, setSelectedFields] = useState<string[]>([]);
   const [loadingSingleValueData, setLoadingSingleValueData] = useState(false);
+  const sampleGenerationRef = useRef(0);
   const [thresholdColors, setThresholdColors] =
     useState<ThresholdColorConfig[]>(DEFAULT_THRESHOLD_COLORS);
 
@@ -198,18 +199,28 @@ export function useSingleValueConfig({
     const resolvedId = dataSourceId ?? selectedDataSource?.id;
     if (!resolvedId || !selectedDataSource) return;
 
+    const generation = sampleGenerationRef.current + 1;
+    sampleGenerationRef.current = generation;
+    const stillCurrent = () => sampleGenerationRef.current === generation;
     setLoadingSingleValueData(true);
     try {
       const formValues = form.getFieldsValue();
       const userParams = formValues?.params || {};
+      const stopWithoutSample = (notify: () => void) => {
+        if (!stillCurrent()) return;
+        setFetchedSample(null);
+        notify();
+      };
       // 拓扑单值面板没有数据变量运行时，不能把 { dataVariableId } 原样发出去。
-      if (collectVariableIds(userParams).length > 0) return;
-      const catalog = resolveCatalogParams(selectedDataSource);
-      if (catalog.status === 'invalid') {
-        message.error(t('dashboard.dataSourceParamsInvalid'));
+      if (collectVariableIds(userParams).length > 0) {
+        stopWithoutSample(() => message.info(t('dashboard.fieldProbePreparing')));
         return;
       }
-      if (catalog.status !== 'resolved') return;
+      const catalog = resolveCatalogParams(selectedDataSource);
+      if (catalog.status !== 'resolved') {
+        stopWithoutSample(() => message.error(t('dashboard.dataSourceParamsInvalid')));
+        return;
+      }
       const requestParams = processDataSourceParams({
         sourceParams: catalog.params,
         definitionParams: catalog.params,
@@ -223,7 +234,7 @@ export function useSingleValueConfig({
       });
       const missing = listMissingRequiredParams(catalog.params, requestParams);
       if (missing.length > 0) {
-        message.warning(formatRequiredParamWaitMessage(missing, t));
+        stopWithoutSample(() => message.warning(formatRequiredParamWaitMessage(missing, t)));
         return;
       }
 
@@ -236,12 +247,14 @@ export function useSingleValueConfig({
       }
 
       const { data } = await getSourceDataByApiId(resolvedId, requestParams);
+      if (!stillCurrent()) return;
       setFetchedSample(data);
     } catch (error) {
+      if (!stillCurrent()) return;
       console.error('Failed to fetch data fields:', error);
       message.error(t('dashboard.fetchDataFieldsFailed'));
     } finally {
-      setLoadingSingleValueData(false);
+      if (stillCurrent()) setLoadingSingleValueData(false);
     }
   }, [selectedDataSource, dataSourceId, form, getSourceDataByApiId, builtinNamespaceId, chartType, t]);
 

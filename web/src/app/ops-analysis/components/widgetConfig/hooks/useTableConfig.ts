@@ -378,6 +378,28 @@ export function useTableConfig({
     [buildProbeParams, getSourceDataByApiId],
   );
 
+  const reportProbeBlock = useCallback((
+    probed:
+      | { status: 'columns'; columns: DisplayColumnRow[] }
+      | { status: 'waiting'; message: string }
+      | { status: 'failed'; message: string }
+      | { status: 'pending' },
+  ) => {
+    if (probed.status === 'waiting') {
+      message.warning(probed.message);
+      return;
+    }
+    if (probed.status === 'failed') {
+      message.error(probed.message);
+      return;
+    }
+    if (probed.status === 'pending') {
+      message.info(t('dashboard.fieldProbePreparing'));
+      return;
+    }
+    message.warning(t('dashboard.reProbeNoFields'));
+  }, [t]);
+
   const handleReProbeColumns = useCallback(async () => {
     if (!selectedDataSource || !isTableLikeChartType) return;
 
@@ -405,17 +427,7 @@ export function useTableConfig({
         message.success(t('dashboard.reProbeSuccess'));
         return;
       }
-      if (probed.status === 'waiting') {
-        message.warning(probed.message);
-        return;
-      }
-      if (probed.status === 'failed') {
-        message.error(probed.message);
-        return;
-      }
-      if (probed.status === 'columns') {
-        message.warning(t('dashboard.reProbeNoFields'));
-      }
+      reportProbeBlock(probed);
     } finally {
       setIsProbingColumns(false);
     }
@@ -425,6 +437,7 @@ export function useTableConfig({
     isTableLikeChartType,
     form,
     probeDefaultDisplayColumns,
+    reportProbeBlock,
     t,
   ]);
 
@@ -447,12 +460,14 @@ export function useTableConfig({
           currentParams,
           newChartType,
         );
-        if (probed.status === 'columns') {
+        if (probed.status === 'columns' && probed.columns.length > 0) {
           setDetectedDisplayColumns(probed.columns);
+          return;
         }
+        reportProbeBlock(probed);
       }
     },
-    [selectedDataSource, form, probeDefaultDisplayColumns, availableFields],
+    [selectedDataSource, form, probeDefaultDisplayColumns, availableFields, reportProbeBlock],
   );
 
   const resetTableConfig = useCallback(() => {

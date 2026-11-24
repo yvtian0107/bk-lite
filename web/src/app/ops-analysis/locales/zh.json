@@ -1466,6 +1466,7 @@
     "reProbeColumnsTip": "重新从当前数据源取样识别可用字段，用于生成或更新默认展示列。已手动配置的列不受影响。",
     "reProbeSuccess": "可用字段已刷新",
     "reProbeNoFields": "未探测到可用字段",
+    "fieldProbePreparing": "参数还在准备，请稍后再探测字段",
     "atLeastOneVisibleColumn": "请至少保留一列可见",
     "thresholdColorInvalid": "第 {index} 个阈值的颜色格式无效",
     "thresholdValueInvalid": "第 {index} 个阈值的数值无效",

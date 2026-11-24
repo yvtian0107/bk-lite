@@ -443,4 +443,82 @@ describe('useTableConfig probe requests', () => {
     expect(api).toHaveBeenCalledTimes(1);
     expect(probed).toMatchObject({ status: 'columns' });
   });
+
+  it('says parameters are still being prepared when a manual probe is waiting on a variable', async () => {
+    const api = vi.fn();
+    const info = vi.spyOn(message, 'info').mockImplementation(() => ({}) as never);
+    const warning = vi.spyOn(message, 'warning').mockImplementation(() => ({}) as never);
+    const { result } = renderHook(() =>
+      useTableConfig({
+        form: { getFieldValue: () => ({ room: { dataVariableId: 'var-1' } }) } as never,
+        chartType: 'table',
+        selectedDataSource: {
+          id: 9,
+          params: [{
+            name: 'room',
+            alias_name: '机房',
+            type: 'string',
+            filterType: 'params',
+            value: '',
+          }],
+          namespaces: [],
+        } as never,
+        availableFields: [],
+        getSourceDataByApiId: api,
+        processFormParamsForSubmit: processDataSourceFormParamsForSubmit,
+        t: (key) => key,
+      }),
+    );
+
+    await act(async () => {
+      await result.current.handleReProbeColumns();
+    });
+
+    expect(api).not.toHaveBeenCalled();
+    expect(result.current.isProbingColumns).toBe(false);
+    expect(info).toHaveBeenCalledWith('dashboard.fieldProbePreparing');
+    expect(warning).not.toHaveBeenCalledWith('dashboard.reProbeNoFields');
+    info.mockRestore();
+    warning.mockRestore();
+  });
+
+  it('shows the required-value message when switching to a table before probing', async () => {
+    const api = vi.fn();
+    const warning = vi.spyOn(message, 'warning').mockImplementation(() => ({}) as never);
+    const { result } = renderHook(() =>
+      useTableConfig({
+        form: { getFieldValue: () => ({ server_room_id: '' }) } as never,
+        chartType: 'bar',
+        selectedDataSource: {
+          id: 9,
+          params: [{
+            name: 'server_room_id',
+            alias_name: '机房',
+            type: 'string',
+            filterType: 'params',
+            value: '',
+            required: true,
+          }],
+          namespaces: [],
+        } as never,
+        availableFields: [],
+        getSourceDataByApiId: api,
+        processFormParamsForSubmit: processDataSourceFormParamsForSubmit,
+        t: (key, _defaultMessage, values) => (
+          key === 'dashboard.selectRequiredParam'
+            ? `请选择${values?.label ?? ''}`
+            : key
+        ),
+      }),
+    );
+
+    await act(async () => {
+      await result.current.handleChartTypeChange('table');
+    });
+
+    expect(api).not.toHaveBeenCalled();
+    expect(warning).toHaveBeenCalledWith('请选择机房');
+    expect(result.current.detectedDisplayColumns).toEqual([]);
+    warning.mockRestore();
+  });
 });

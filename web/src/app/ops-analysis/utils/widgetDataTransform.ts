@@ -546,6 +546,7 @@ export const fetchWidgetData = async ({
   chartType,
   t,
   catalogPhase,
+  readyPlan,
 }: {
   config: WidgetRequestConfig;
   dataSource?: { params?: unknown } | null;
@@ -561,33 +562,40 @@ export const fetchWidgetData = async ({
   chartType?: string;
   t?: WidgetMessage;
   catalogPhase?: 'pending' | 'failed';
+  readyPlan?: Extract<WidgetRequestPlan, { status: 'ready' }>;
 }) => {
   if (!config?.dataSource) {
     return null;
   }
 
   try {
-    const catalog = resolveCatalogParams(dataSource);
-    const phase = catalogPhase ?? (catalog.status === 'absent' ? 'pending' : undefined);
-    const plan = planWidgetRequest({
-      config,
-      dataSource,
-      extraParams,
-      unifiedFilterValues,
-      filterBindings,
-      filterDefinitions,
-      chartType: chartType || config?.chartType,
-      t,
-      catalogPhase: phase,
-    });
-    if (plan.status !== 'ready') {
-      if (throwError) throw new WidgetRequestBlocked(plan);
-      return null;
+    let requestParams: Record<string, unknown>;
+    if (readyPlan) {
+      requestParams = readyPlan.params;
+    } else {
+      const catalog = resolveCatalogParams(dataSource);
+      const phase = catalogPhase ?? (catalog.status === 'absent' ? 'pending' : undefined);
+      const plan = planWidgetRequest({
+        config,
+        dataSource,
+        extraParams,
+        unifiedFilterValues,
+        filterBindings,
+        filterDefinitions,
+        chartType: chartType || config?.chartType,
+        t,
+        catalogPhase: phase,
+      });
+      if (plan.status !== 'ready') {
+        if (throwError) throw new WidgetRequestBlocked(plan);
+        return null;
+      }
+      requestParams = plan.params;
     }
 
     const sourceId = Number(config.dataSource);
     if (!Number.isFinite(sourceId)) return null;
-    const result = await getSourceDataByApiId(sourceId, plan.params);
+    const result = await getSourceDataByApiId(sourceId, requestParams);
     return result.data;
   } catch (err: unknown) {
     if (isTransportCanceled(err)) {

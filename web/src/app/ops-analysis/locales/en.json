@@ -1466,6 +1466,7 @@
     "reProbeColumnsTip": "Sample the current data source again to identify available fields for generating or updating default display columns. Manually configured columns are not affected.",
     "reProbeSuccess": "Available fields refreshed",
     "reProbeNoFields": "No available fields detected",
+    "fieldProbePreparing": "Parameters are still being prepared. Probe the fields again in a moment.",
     "atLeastOneVisibleColumn": "Please keep at least one visible column",
     "thresholdColorInvalid": "Threshold {index} has an invalid color format",
     "thresholdValueInvalid": "Threshold {index} has an invalid numeric value",

@@ -12,7 +12,7 @@ _ROOM_STAT_REST_APIS = frozenset(
 _TARGET_PARAM = "server_room_id"
 
 
-def _with_required(params, required):
+def _mark_server_room_required(params):
     if not isinstance(params, list):
         return params, False
     changed = False
@@ -21,36 +21,28 @@ def _with_required(params, required):
         if not isinstance(param, dict) or param.get("name") != _TARGET_PARAM:
             next_params.append(param)
             continue
-        already = param.get("required") is True
-        if already is required:
+        if param.get("required") is True:
             next_params.append(param)
             continue
         updated = dict(param)
-        if required is True:
-            updated["required"] = True
-        else:
-            updated.pop("required", None)
+        updated["required"] = True
         next_params.append(updated)
         changed = True
     return next_params, changed
 
 
-def _apply(apps, required):
+def mark_builtin_room_stat_server_room_required(apps, _schema_editor):
     model = apps.get_model("operation_analysis", "DataSourceAPIModel")
     rows = model.objects.filter(
         is_build_in=True,
         rest_api__in=sorted(_ROOM_STAT_REST_APIS),
     )
     for row in rows.iterator():
-        next_params, changed = _with_required(row.params, required)
+        next_params, changed = _mark_server_room_required(row.params)
         if not changed:
             continue
         row.params = next_params
         row.save(update_fields=["params"])
-
-
-def mark_builtin_room_stat_server_room_required(apps, schema_editor):
-    _apply(apps, True)
 
 
 def keep_builtin_room_stat_required(_apps, _schema_editor):

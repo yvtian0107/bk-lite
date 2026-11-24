@@ -119,6 +119,7 @@ export interface TopologyNodeData {
   errorMessage?: string;
   waitMessage?: string;
   chartRequestState?: 'pending' | 'waiting' | 'error' | 'empty' | 'ready';
+  catalogHold?: boolean;
   fetchError?: boolean;
   rawData?: TopologyRawData;
   csvRequestParams?: unknown;

@@ -99,4 +99,32 @@ describe('single value config required catalog', () => {
     expect(error).toHaveBeenCalledWith('dashboard.dataSourceParamsInvalid');
     error.mockRestore();
   });
+
+  it('drops the previous field sample when a later probe is blocked and ignores the late response', async () => {
+    let resolveLate: ((value: { data: { lateOnly: number } }) => void) | undefined;
+    const params: Record<string, unknown> = { server_room_id: 'room-1' };
+    const api = vi.fn(() => new Promise<{ data: { lateOnly: number } }>((resolve) => {
+      resolveLate = resolve;
+    }));
+    const warning = vi.spyOn(message, 'warning').mockImplementation(() => ({}) as never);
+    const { result } = renderConfig({ id: 7, params: [room] }, params, api);
+
+    let late: Promise<void> | undefined;
+    act(() => {
+      late = result.current.fetchSingleValueDataFields();
+    });
+    params.server_room_id = '';
+    await act(async () => {
+      await result.current.fetchSingleValueDataFields();
+    });
+    expect(warning).toHaveBeenCalledWith('请选择机房');
+    expect(JSON.stringify(result.current.singleValueTreeData)).not.toContain('lateOnly');
+
+    await act(async () => {
+      resolveLate?.({ data: { lateOnly: 1 } });
+      await late;
+    });
+    expect(JSON.stringify(result.current.singleValueTreeData)).not.toContain('lateOnly');
+    warning.mockRestore();
+  });
 });

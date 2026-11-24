@@ -253,11 +253,24 @@ export const useGraphNodeOperations = ({
         const lookupStatus = options?.dataSourceLookupStatus ?? dataSourceLookupStatus;
         if (!catalogSource) {
           if (!isCurrent()) return;
-          if (lookupStatus === 'error') {
-            showSingleValueFetchError(node as Node, t('dashboard.dataSourceLoadFailed'));
-          } else if (lookupStatus === 'success') {
-            showSingleValueFetchError(node as Node, t('dashboard.dataSourceNotFound'));
+          if (lookupStatus === 'error' || lookupStatus === 'success') {
+            showSingleValueFetchError(
+              node as Node,
+              lookupStatus === 'error'
+                ? t('dashboard.dataSourceLoadFailed')
+                : t('dashboard.dataSourceNotFound'),
+            );
+            node.setData({ ...node.getData(), catalogHold: false }, { overwrite: true });
+            return;
           }
+          node.setData({
+            ...node.getData(),
+            catalogHold: true,
+            isLoading: true,
+            hasError: false,
+            fetchError: false,
+            errorMessage: undefined,
+          }, { overwrite: true });
           return;
         }
         const plan = planWidgetRequest({
@@ -280,6 +293,7 @@ export const useGraphNodeOperations = ({
               errorMessage: undefined,
               rawData: undefined,
               waitMessage,
+              catalogHold: false,
             },
             { overwrite: true },
           );
@@ -295,9 +309,11 @@ export const useGraphNodeOperations = ({
               ? t('dashboard.dataSourceParamsInvalid')
               : t('dashboard.dataSourceLoadFailed'),
           );
+          node.setData({ ...node.getData(), catalogHold: false }, { overwrite: true });
           return;
         }
 
+        node.setData({ ...node.getData(), catalogHold: false }, { overwrite: true });
         const compareResult = await fetchCompareData({
           dataSourceId: Number(valueConfig.dataSource),
           getSourceDataByApiId: (sourceId, params) =>
@@ -487,7 +503,32 @@ export const useGraphNodeOperations = ({
     graphInstance,
     startLoadingAnimation,
     handleSave,
+    {
+      dataSources: canvasDataSources,
+      dataSourceLookupStatus,
+    },
   );
+
+  const previousSingleLookupRef = useRef(dataSourceLookupStatus);
+  useEffect(() => {
+    const next = dataSourceLookupStatus;
+    const previous = previousSingleLookupRef.current;
+    previousSingleLookupRef.current = next;
+    if (!graphInstance || typeof graphInstance.getNodes !== 'function') return;
+    if (previous !== 'loading' && previous !== 'idle') return;
+    if (next !== 'success' && next !== 'error') return;
+    graphInstance.getNodes().forEach((node: Node) => {
+      const nodeData = node.getData();
+      if (nodeData?.type !== 'single-value' || !nodeData.catalogHold) return;
+      const source = canvasDataSources?.find(
+        (item) => String(item.id) === String(nodeData.valueConfig?.dataSource),
+      );
+      void updateSingleNodeData({ ...nodeData, id: node.id }, undefined, undefined, undefined, {
+        dataSource: source,
+        dataSourceLookupStatus: next,
+      });
+    });
+  }, [canvasDataSources, dataSourceLookupStatus, graphInstance, updateSingleNodeData]);
 
   const addNewNode = useCallback(
     (nodeConfig: TopologyNodeData, skipInitialFetch?: boolean) => {

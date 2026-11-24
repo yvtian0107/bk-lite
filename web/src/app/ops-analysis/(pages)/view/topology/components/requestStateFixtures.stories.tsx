@@ -71,14 +71,15 @@ const ProbeHints = () => {
     ), 0);
     api.error(zhOps.dashboard.dataSourceParamsInvalid, 0);
     api.warning(zhOps.dashboard.reProbeNoFields, 0);
+    api.info(zhOps.dashboard.fieldProbePreparing, 0);
   }, [api]);
 
   return (
     <div className="bg-[var(--color-bg)] p-4 text-[var(--color-text-1)]">
-      <div className="relative h-[168px] w-[480px]">
+      <div className="relative h-[220px] w-[560px]">
         {holder}
       </div>
-      <div className="text-sm">隔离夹具。探列等待、目录非法、真实无字段。不是 screen_11 业务验收。</div>
+      <div className="text-sm">隔离夹具。探列等待、目录非法、真实无字段、参数还在准备。不是 screen_11 业务验收。</div>
     </div>
   );
 };
