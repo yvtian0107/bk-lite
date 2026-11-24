@@ -151,6 +151,7 @@ import {
   acceptPreviewRawWrite,
   clearSampleKeyOnFetchFailure,
   isCurrentInteractionSample,
+  mutateOwnedInteractionSample,
   nextInteractionSampleTicket,
   planInteractionSample,
   type InteractionSampleTicket,
@@ -606,7 +607,7 @@ const ViewConfig: React.FC<ViewConfigPropsWithManager> = ({
             buildDisplayColumnsFromSchema(schemaFields),
           );
         } else {
-          const probedColumns = await tableConfig.probeDefaultDisplayColumns(
+          const probed = await tableConfig.probeDefaultDisplayColumns(
             fullItem,
             params,
             defaultChartType,
@@ -614,7 +615,9 @@ const ViewConfig: React.FC<ViewConfigPropsWithManager> = ({
           if (!isCurrentConfigRequest(requestId)) {
             return;
           }
-          tableConfig.setDetectedDisplayColumns(probedColumns);
+          if (probed.status === 'columns') {
+            tableConfig.setDetectedDisplayColumns(probed.columns);
+          }
         }
       }
     },
@@ -693,6 +696,7 @@ const ViewConfig: React.FC<ViewConfigPropsWithManager> = ({
         });
         const resolved = resolveParamRecord(userParams, run.columns);
         if (resolved.blocked) {
+          if (!isCurrentInteractionSample(sampleReadRef.current, ticket)) return;
           setPreviewRawData(null);
           setPreviewLoading(false);
           return;
@@ -704,12 +708,14 @@ const ViewConfig: React.FC<ViewConfigPropsWithManager> = ({
       }
       const catalog = resolveCatalogParams(canonicalSelectedDataSource);
       if (catalog.status !== 'resolved') {
-        setPreviewRawData(null);
-        setPreviewLoading(false);
-        if (previewOpen) {
-          setSuppliedPreviewRawData(null);
-          setSuppliedPreviewVersion((version) => version + 1);
-        }
+        mutateOwnedInteractionSample(sampleReadRef.current, ticket, () => {
+          setPreviewRawData(null);
+          setPreviewLoading(false);
+          if (previewOpen) {
+            setSuppliedPreviewRawData(null);
+            setSuppliedPreviewVersion((version) => version + 1);
+          }
+        });
         return;
       }
       const requestParams = processDataSourceParams({
@@ -728,12 +734,14 @@ const ViewConfig: React.FC<ViewConfigPropsWithManager> = ({
         t,
       });
       if (listMissingRequiredParams(catalog.params, requestParams).length > 0) {
-        setPreviewRawData(null);
-        setPreviewLoading(false);
-        if (previewOpen) {
-          setSuppliedPreviewRawData(null);
-          setSuppliedPreviewVersion((version) => version + 1);
-        }
+        mutateOwnedInteractionSample(sampleReadRef.current, ticket, () => {
+          setPreviewRawData(null);
+          setPreviewLoading(false);
+          if (previewOpen) {
+            setSuppliedPreviewRawData(null);
+            setSuppliedPreviewVersion((version) => version + 1);
+          }
+        });
         return;
       }
 
@@ -1074,7 +1082,7 @@ const ViewConfig: React.FC<ViewConfigPropsWithManager> = ({
             .filter((key) => isDisplayableDefaultField(key)),
         );
 
-        const probedColumns = await tableConfig.probeDefaultDisplayColumns(
+        const probed = await tableConfig.probeDefaultDisplayColumns(
           targetDataSource,
           formValues.params || {},
           formValues.chartType,
@@ -1082,15 +1090,16 @@ const ViewConfig: React.FC<ViewConfigPropsWithManager> = ({
         if (!isCurrentConfigRequest(requestId)) {
           return;
         }
-        const probeDefaultKeys = new Set(
-          (probedColumns || []).map((col) => col.key),
-        );
+        const probedColumns = probed.status === 'columns' ? probed.columns : [];
+        const probeDefaultKeys = new Set(probedColumns.map((col) => col.key));
 
-        tableConfig.setDetectedDisplayColumns(
-          (targetDataSource?.field_schema || []).length > 0
-            ? buildDisplayColumnsFromSchema(targetDataSource?.field_schema || [])
-            : probedColumns,
-        );
+        if ((targetDataSource?.field_schema || []).length > 0) {
+          tableConfig.setDetectedDisplayColumns(
+            buildDisplayColumnsFromSchema(targetDataSource?.field_schema || []),
+          );
+        } else if (probed.status === 'columns') {
+          tableConfig.setDetectedDisplayColumns(probed.columns);
+        }
 
         const fieldTitleMap = new Map<string, string>();
         (targetDataSource?.field_schema || []).forEach((field) => {
@@ -1132,7 +1141,7 @@ const ViewConfig: React.FC<ViewConfigPropsWithManager> = ({
             tableConfig.setDisplayColumns(defaults);
           }
         } else {
-          const probedColumns = await tableConfig.probeDefaultDisplayColumns(
+          const probed = await tableConfig.probeDefaultDisplayColumns(
             targetDataSource,
             formValues.params || {},
             formValues.chartType,
@@ -1140,9 +1149,11 @@ const ViewConfig: React.FC<ViewConfigPropsWithManager> = ({
           if (!isCurrentConfigRequest(requestId)) {
             return;
           }
-          tableConfig.setDetectedDisplayColumns(probedColumns);
-          if (replaceActionOnlyColumns) {
-            tableConfig.setDisplayColumns(probedColumns);
+          if (probed.status === 'columns') {
+            tableConfig.setDetectedDisplayColumns(probed.columns);
+            if (replaceActionOnlyColumns) {
+              tableConfig.setDisplayColumns(probed.columns);
+            }
           }
         }
       }

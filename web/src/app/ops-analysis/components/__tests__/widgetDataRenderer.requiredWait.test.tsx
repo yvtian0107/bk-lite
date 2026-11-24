@@ -10,6 +10,7 @@ const fetchCompareData = vi.hoisted(() => vi.fn());
 vi.mock('@/utils/i18n', () => ({
   useTranslation: () => ({
     t: (key: string, _defaultMessage?: string, values?: Record<string, string>) => {
+      if (key === 'dashboard.requiredParamListSeparator') return '、';
       if (key === 'dashboard.selectRequiredParam') return `请选择${values?.label ?? ''}`;
       if (key === 'dashboard.fillRequiredParams') return `请补充：${values?.labels ?? ''}`;
       return key;

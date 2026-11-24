@@ -54,8 +54,7 @@ const Fixture = () => {
   return (
     <IntlProvider locale="zh" messages={messages}>
       <div
-        className="min-h-screen p-6"
-        style={{ background: 'var(--color-bg)', color: 'var(--color-text-1)' }}
+        className="min-h-screen bg-[var(--color-bg)] p-6 text-[var(--color-text-1)]"
       >
         <div className="mb-4 flex items-center gap-3">
           <div className="text-sm">隔离夹具。不是 screen_11 业务验收。</div>
@@ -63,11 +62,8 @@ const Fixture = () => {
           <Button onClick={() => setMode('dark')}>暗色</Button>
           <div className="text-sm">{mode}</div>
         </div>
-        <div className="grid gap-4" style={{ gridTemplateColumns: '640px 1fr' }}>
-          <section
-            className="rounded border p-3"
-            style={{ borderColor: 'var(--color-border)', background: 'var(--color-bg-container)' }}
-          >
+        <div className="grid grid-cols-[640px_1fr] gap-4">
+          <section className="rounded border border-[var(--color-border)] bg-[var(--color-bg-container)] p-3">
             <div className="mb-2 text-sm font-medium">数据源参数配置</div>
             <ParamTable params={params} onChange={setParams} />
             <div className="mt-3 text-sm" data-testid="saved-required">已保存：{saved}</div>
@@ -76,14 +72,12 @@ const Fixture = () => {
           </section>
           <section className="grid gap-3">
             <div
-              className="h-40 rounded border"
-              style={{ borderColor: 'var(--color-border)', background: 'var(--color-bg-container)' }}
+              className="h-40 rounded border border-[var(--color-border)] bg-[var(--color-bg-container)]"
             >
               <WidgetState description="请选择机房" />
             </div>
             <div
-              className="h-40 rounded border"
-              style={{ borderColor: 'var(--color-border)', background: 'var(--color-bg-container)' }}
+              className="h-40 rounded border border-[var(--color-border)] bg-[var(--color-bg-container)]"
             >
               <WidgetState description="请补充：机房、监控对象" />
             </div>

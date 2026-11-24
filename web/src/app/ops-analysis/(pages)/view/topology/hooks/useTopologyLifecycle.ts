@@ -43,6 +43,9 @@ interface UseTopologyLifecycleParams {
     values?: Record<string, FilterValue>,
     definitions?: UnifiedFilterDefinition[],
     namespaceId?: number,
+    dataSources?: DatasourceItem[],
+    shouldRefreshNode?: unknown,
+    options?: { dataSourceLookupStatus?: DataSourceLookupStatus },
   ) => void;
   refreshAllChartNodes: (
     values?: Record<string, FilterValue>,
@@ -202,6 +205,9 @@ export const useTopologyLifecycle = ({
               syncedValues,
               autoBuiltFilters,
               initialNamespaceId,
+              canvasDataSources,
+              undefined,
+              { dataSourceLookupStatus: readCanvasDataSourceLookupStatus() },
             );
             refreshAllChartNodes(
               syncedValues,

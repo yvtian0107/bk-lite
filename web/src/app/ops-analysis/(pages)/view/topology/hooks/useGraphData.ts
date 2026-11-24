@@ -526,7 +526,8 @@ export const useGraphData = (
     unifiedFilterValues?: Record<string, FilterValue>,
     filterDefinitions?: UnifiedFilterDefinition[],
     dataSources?: DatasourceItem[],
-    namespaceId?: number
+    namespaceId?: number,
+    lookupStatus?: DataSourceLookupStatus,
   ) => {
     if (!graphInstance) return;
 
@@ -568,7 +569,7 @@ export const useGraphData = (
       dataSource,
       namespaceId,
       nextQueryParams,
-      { pageOnly },
+      { pageOnly, dataSourceLookupStatus: lookupStatus },
     );
   }, [graphInstance, loadChartNodeData, getEffectiveTableQueryParams]);
 
@@ -576,10 +577,19 @@ export const useGraphData = (
     unifiedFilterValues?: Record<string, FilterValue>,
     filterDefinitions?: UnifiedFilterDefinition[],
     dataSources?: DatasourceItem[],
-    namespaceId?: number
+    namespaceId?: number,
+    lookupStatus?: DataSourceLookupStatus,
   ) => {
     return (nodeId: string, queryParams: TableQueryParams) => {
-      handleTableQueryChange(nodeId, queryParams, unifiedFilterValues, filterDefinitions, dataSources, namespaceId);
+      handleTableQueryChange(
+        nodeId,
+        queryParams,
+        unifiedFilterValues,
+        filterDefinitions,
+        dataSources,
+        namespaceId,
+        lookupStatus,
+      );
     };
   }, [handleTableQueryChange]);
 
@@ -720,7 +730,8 @@ export const useGraphData = (
       unifiedFilterValues,
       filterDefinitions,
       dataSources,
-      namespaceId
+      namespaceId,
+      options?.dataSourceLookupStatus,
     );
 
     const nodes = graphInstance.getNodes();

@@ -53,8 +53,10 @@ def mark_builtin_room_stat_server_room_required(apps, schema_editor):
     _apply(apps, True)
 
 
-def unmark_builtin_room_stat_server_room_required(apps, schema_editor):
-    _apply(apps, False)
+def keep_builtin_room_stat_required(_apps, _schema_editor):
+    # 正向不记录改前是否已有 required。已部署的库无法把 true 拆回「迁移写入」和「原本就有」，
+    # 逆向删除会把用户或种子里原来的 true 一起拿掉，所以逆向保持现状。
+    return None
 
 
 class Migration(migrations.Migration):
@@ -65,6 +67,6 @@ class Migration(migrations.Migration):
     operations = [
         migrations.RunPython(
             mark_builtin_room_stat_server_room_required,
-            unmark_builtin_room_stat_server_room_required,
+            keep_builtin_room_stat_required,
         ),
     ]

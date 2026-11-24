@@ -522,7 +522,7 @@ export type WidgetRequestPlan =
   | { status: 'pending' }
   | { status: 'failed'; reason: 'invalid' | 'lookup' }
   | { status: 'waiting'; missing: MissingRequiredParam[] }
-  | { status: 'ready'; params: Record<string, any> };
+  | { status: 'ready'; params: Record<string, unknown> };
 
 export class WidgetRequestBlocked extends Error {
   readonly plan: Exclude<WidgetRequestPlan, { status: 'ready' }>;
@@ -547,10 +547,13 @@ export const fetchWidgetData = async ({
   t,
   catalogPhase,
 }: {
-  config: any;
-  dataSource?: any;
-  extraParams?: Record<string, any>;
-  getSourceDataByApiId: (dataSource: any, params: any) => Promise<any>;
+  config: WidgetRequestConfig;
+  dataSource?: { params?: unknown } | null;
+  extraParams?: Record<string, unknown>;
+  getSourceDataByApiId: (
+    dataSource: number,
+    params: Record<string, unknown>,
+  ) => Promise<{ data?: unknown }>;
   unifiedFilterValues?: Record<string, FilterValue>;
   filterBindings?: FilterBindings;
   filterDefinitions?: UnifiedFilterDefinition[];
@@ -582,9 +585,11 @@ export const fetchWidgetData = async ({
       return null;
     }
 
-    const result = await getSourceDataByApiId(config.dataSource, plan.params);
+    const sourceId = Number(config.dataSource);
+    if (!Number.isFinite(sourceId)) return null;
+    const result = await getSourceDataByApiId(sourceId, plan.params);
     return result.data;
-  } catch (err: any) {
+  } catch (err: unknown) {
     if (isTransportCanceled(err)) {
       if (throwError) throw err;
       return null;
@@ -726,9 +731,16 @@ export const hasActiveWidgetRuntimeParams = (
   runtimeParams: Record<string, unknown>,
 ): boolean => supportsComponentSwitch(chartType) && Object.keys(runtimeParams).length > 0;
 
+interface WidgetRequestConfig {
+  dataSource?: number | string;
+  dataSourceParams?: ParamItem[];
+  chartType?: string;
+  filterBindings?: FilterBindings;
+}
+
 const widgetSourceParams = (
   config: { dataSourceParams?: ParamItem[] } | null | undefined,
-  dataSource: { params?: ParamItem[] } | null | undefined,
+  dataSource: { params?: unknown } | null | undefined,
 ): ParamItem[] => {
   const rawParams = Array.isArray(config?.dataSourceParams) && config.dataSourceParams.length > 0
     ? config.dataSourceParams
@@ -828,9 +840,9 @@ const shapeWidgetRequest = ({
   timeRangeFormatter,
   catalogPhase,
 }: {
-  config: any;
-  dataSource?: any;
-  extraParams?: Record<string, any>;
+  config: WidgetRequestConfig;
+  dataSource?: { params?: unknown } | null;
+  extraParams?: Record<string, unknown>;
   unifiedFilterValues?: Record<string, FilterValue>;
   filterBindings?: FilterBindings;
   filterDefinitions?: UnifiedFilterDefinition[];
@@ -848,7 +860,7 @@ const shapeWidgetRequest = ({
 
   const sourceParams = widgetSourceParams(config, dataSource);
   const userParams: Record<string, unknown> = {};
-  sourceParams.forEach((param: any) => {
+  sourceParams.forEach((param) => {
     userParams[param.name] = param.value;
   });
   Object.assign(userParams, extraParams || {});

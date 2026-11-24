@@ -5,6 +5,7 @@ import {
   acceptPreviewRawWrite,
   clearSampleKeyOnFetchFailure,
   isCurrentInteractionSample,
+  mutateOwnedInteractionSample,
   nextInteractionSampleTicket,
   planInteractionSample,
   type InteractionSampleTicket,
@@ -146,4 +147,18 @@ test('switching widgets drops the in-flight sample and the next widget can load 
     sourceId: 'src-b',
     fetchedKey,
   }), { type: 'fetch', sampleKey: 'widget-b:src-b' });
+});
+
+test('a stale sample cannot clear a newer preview', () => {
+  const first = nextInteractionSampleTicket(EMPTY, 'widget-a');
+  const newer = nextInteractionSampleTicket(first, 'widget-a');
+  let cleared = 0;
+  assert.equal(mutateOwnedInteractionSample(newer, first, () => {
+    cleared += 1;
+  }), false);
+  assert.equal(cleared, 0);
+  assert.equal(mutateOwnedInteractionSample(newer, newer, () => {
+    cleared += 1;
+  }), true);
+  assert.equal(cleared, 1);
 });

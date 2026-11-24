@@ -67,7 +67,7 @@ interface UseTopologyRefreshControllerParams {
       nodeData: TopologyNodeData,
       dataSource?: DatasourceItem,
     ) => boolean,
-    options?: { silent?: boolean },
+    options?: { silent?: boolean; dataSourceLookupStatus?: DataSourceLookupStatus },
   ) => void;
   refreshAllChartNodes: (
     values?: Record<string, FilterValue>,
@@ -159,7 +159,10 @@ export const useTopologyRefresh = ({
         nextNamespaceId,
         dataSources,
         shouldRefreshNode,
-        silent ? { silent: true } : undefined,
+        {
+          ...(silent ? { silent: true } : {}),
+          dataSourceLookupStatus,
+        },
       );
       refreshAllChartNodes(
         nextValues,

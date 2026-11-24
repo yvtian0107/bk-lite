@@ -1,3 +1,4 @@
+import { message } from 'antd';
 import { act, renderHook } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 import { useTableConfig } from '../useTableConfig';
@@ -163,7 +164,9 @@ describe('useTableConfig probe requests', () => {
       }),
     );
 
-    let probed: Array<{ key: string }> = [];
+    let probed: Awaited<ReturnType<typeof result.current.probeDefaultDisplayColumns>> = {
+      status: 'pending',
+    };
     await act(async () => {
       probed = await result.current.probeDefaultDisplayColumns(
         {
@@ -185,7 +188,8 @@ describe('useTableConfig probe requests', () => {
     expect(calls[0]?.page).toBe(3);
     expect(calls[0]?.page_size).toBe(50);
     expect(calls[0]?.top_n).toBeUndefined();
-    expect(probed.map((column) => column.key)).toEqual([
+    expect(probed.status).toBe('columns');
+    expect(probed.status === 'columns' ? probed.columns.map((column) => column.key) : []).toEqual([
       'classification_name',
       'model_name',
       'model_id',
@@ -314,5 +318,129 @@ describe('useTableConfig probe requests', () => {
 
     expect(calls[0]?.page).toBe(2);
     expect(calls[0]?.page_size).toBe(15);
+  });
+
+  it('waits for a missing required value instead of claiming the probe found no fields', async () => {
+    const api = vi.fn();
+    const warning = vi.spyOn(message, 'warning').mockImplementation(() => ({}) as never);
+    const { result } = renderHook(() =>
+      useTableConfig({
+        form: { getFieldValue: () => ({ server_room_id: '' }) } as never,
+        chartType: 'table',
+        selectedDataSource: {
+          id: 9,
+          params: [{
+            name: 'server_room_id',
+            alias_name: '机房',
+            type: 'string',
+            filterType: 'params',
+            value: '',
+            required: true,
+          }],
+          namespaces: [],
+        } as never,
+        availableFields: [],
+        getSourceDataByApiId: api,
+        processFormParamsForSubmit: processDataSourceFormParamsForSubmit,
+        t: (key, _defaultMessage, values) => (
+          key === 'dashboard.requiredParamListSeparator'
+            ? '、'
+            : key === 'dashboard.fillRequiredParams'
+              ? `请补充：${values?.labels ?? ''}`
+              : key === 'dashboard.selectRequiredParam'
+                ? `请选择${values?.label ?? ''}`
+                : key
+        ),
+      }),
+    );
+
+    await act(async () => {
+      await result.current.handleReProbeColumns();
+    });
+
+    expect(api).not.toHaveBeenCalled();
+    expect(warning).toHaveBeenCalledWith('请选择机房');
+    expect(warning).not.toHaveBeenCalledWith('dashboard.reProbeNoFields');
+    warning.mockRestore();
+  });
+
+  it('reports an invalid catalog without requesting or claiming an empty field set', async () => {
+    const api = vi.fn();
+    const error = vi.spyOn(message, 'error').mockImplementation(() => ({}) as never);
+    const warning = vi.spyOn(message, 'warning').mockImplementation(() => ({}) as never);
+    const { result } = renderHook(() =>
+      useTableConfig({
+        form: { getFieldValue: () => ({}) } as never,
+        chartType: 'table',
+        selectedDataSource: { id: 9, params: { broken: true }, namespaces: [] } as never,
+        availableFields: [],
+        getSourceDataByApiId: api,
+        processFormParamsForSubmit: processDataSourceFormParamsForSubmit,
+        t: (key) => key,
+      }),
+    );
+
+    await act(async () => {
+      await result.current.handleReProbeColumns();
+    });
+
+    expect(api).not.toHaveBeenCalled();
+    expect(error).toHaveBeenCalledWith('dashboard.dataSourceParamsInvalid');
+    expect(warning).not.toHaveBeenCalledWith('dashboard.reProbeNoFields');
+    error.mockRestore();
+    warning.mockRestore();
+  });
+
+  it('keeps the empty-field warning when a ready probe returns no columns', async () => {
+    const api = vi.fn(async () => ({ data: { items: [] } }));
+    const warning = vi.spyOn(message, 'warning').mockImplementation(() => ({}) as never);
+    const { result } = renderHook(() =>
+      useTableConfig({
+        form: { getFieldValue: () => ({}) } as never,
+        chartType: 'table',
+        selectedDataSource: { id: 9, params: [], namespaces: [] } as never,
+        availableFields: [],
+        getSourceDataByApiId: api,
+        processFormParamsForSubmit: processDataSourceFormParamsForSubmit,
+        t: (key) => key,
+      }),
+    );
+
+    await act(async () => {
+      await result.current.handleReProbeColumns();
+    });
+
+    expect(api).toHaveBeenCalledTimes(1);
+    expect(warning).toHaveBeenCalledWith('dashboard.reProbeNoFields');
+    warning.mockRestore();
+  });
+
+  it('still probes a catalog whose params are null', async () => {
+    const api = vi.fn(async () => ({ data: { items: [{ name: 'A' }] } }));
+    const { result } = renderHook(() =>
+      useTableConfig({
+        form: { getFieldValue: () => ({}) } as never,
+        chartType: 'table',
+        selectedDataSource: { id: 9, params: null, namespaces: [] } as never,
+        availableFields: [],
+        getSourceDataByApiId: api,
+        processFormParamsForSubmit: processDataSourceFormParamsForSubmit,
+        t: (key) => key,
+      }),
+    );
+
+    let probed: Awaited<ReturnType<typeof result.current.probeDefaultDisplayColumns>> = {
+      status: 'pending',
+    };
+    await act(async () => {
+      probed = await result.current.probeDefaultDisplayColumns(
+        { id: 9, params: null, namespaces: [] } as never,
+        {},
+        'table',
+      );
+    });
+
+    expect(api).toHaveBeenCalledTimes(1);
+    expect(probed).toMatchObject({ status: 'columns' });
   });
 });

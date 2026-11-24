@@ -87,6 +87,10 @@ interface UseTopologyNodeConfigControllerParams {
     filterValues?: Record<string, FilterValue>,
     definitions?: UnifiedFilterDefinition[],
     namespaceId?: number,
+    options?: {
+      dataSource?: DatasourceItem;
+      dataSourceLookupStatus?: DataSourceLookupStatus;
+    },
   ) => void;
 }
 
@@ -325,6 +329,8 @@ export const useNodeConfigFlow = ({
             definitions: newDefinitions,
             appliedValues: nextAppliedValues,
             namespaceId: nextNamespaceId,
+            dataSources: nextDataSources,
+            dataSourceLookupStatus: nextLookupStatus,
           }) => {
             if (isSingleValue && nodeId) {
               updateSingleNodeData(
@@ -332,6 +338,12 @@ export const useNodeConfigFlow = ({
                 nextAppliedValues,
                 newDefinitions,
                 nextNamespaceId,
+                {
+                  dataSource: nextDataSources.find(
+                    (source) => source.id === nodeConfig.valueConfig?.dataSource,
+                  ),
+                  dataSourceLookupStatus: nextLookupStatus,
+                },
               );
             }
           },

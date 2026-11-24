@@ -30,8 +30,16 @@ const target = {
 };
 
 const t = (id: string, _defaultMessage?: string, values?: Record<string, string>) => {
+  if (id === 'dashboard.requiredParamListSeparator') return '、';
   if (id === 'dashboard.selectRequiredParam') return `请选择${values?.label ?? ''}`;
   if (id === 'dashboard.fillRequiredParams') return `请补充：${values?.labels ?? ''}`;
+  return id;
+};
+
+const english = (id: string, _defaultMessage?: string, values?: Record<string, string>) => {
+  if (id === 'dashboard.requiredParamListSeparator') return ', ';
+  if (id === 'dashboard.selectRequiredParam') return `Select ${values?.label ?? ''}`;
+  if (id === 'dashboard.fillRequiredParams') return `Fill in: ${values?.labels ?? ''}`;
   return id;
 };
 
@@ -57,6 +65,7 @@ describe('required parameter gate', () => {
       { name: 'monitor_object_id', label: '监控对象' },
     ]);
     expect(formatRequiredParamWaitMessage(missing, t)).toBe('请补充：机房、监控对象');
+    expect(formatRequiredParamWaitMessage(missing, english)).toBe('Fill in: 机房, 监控对象');
     expect(formatRequiredParamWaitMessage([missing[0]], t)).toBe('请选择机房');
   });
 

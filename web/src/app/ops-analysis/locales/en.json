@@ -1203,6 +1203,7 @@
     "dataFetchFailed": "Data query failed",
     "selectRequiredParam": "Select {label}",
     "fillRequiredParams": "Fill in: {labels}",
+    "requiredParamListSeparator": ", ",
     "inputName": "Please enter widget name",
     "paramSettings": "Parameter Settings",
     "queryParams": "Query Parameters",

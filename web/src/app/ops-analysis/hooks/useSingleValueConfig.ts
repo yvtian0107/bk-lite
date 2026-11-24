@@ -4,10 +4,13 @@
  */
 import { useState, useCallback, useEffect } from 'react';
 import type { FormInstance } from 'antd';
-import { Form, message } from 'antd';
+import { message } from 'antd';
 import { useTranslation } from '@/utils/i18n';
 import type { DatasourceItem } from '@/app/ops-analysis/types/dataSource';
-import { processDataSourceParams } from '@/app/ops-analysis/utils/widgetDataTransform';
+import {
+  processDataSourceParams,
+  resolveCatalogParams,
+} from '@/app/ops-analysis/utils/widgetDataTransform';
 import { DEFAULT_THRESHOLD_COLORS } from '@/app/ops-analysis/constants/threshold';
 import { ThresholdColorConfig } from '@/app/ops-analysis/utils/thresholdUtils';
 import {
@@ -18,6 +21,10 @@ import {
 import { canEnableCompare } from '@/app/ops-analysis/utils/compareQuery';
 import { getDateRangeTimezone } from '@/app/ops-analysis/utils/dateRange';
 import { collectVariableIds } from '@/app/ops-analysis/utils/dataVariable';
+import {
+  formatRequiredParamWaitMessage,
+  listMissingRequiredParams,
+} from '@/app/ops-analysis/utils/requiredParamGate';
 
 interface UseSingleValueConfigProps {
   form: FormInstance;
@@ -197,9 +204,15 @@ export function useSingleValueConfig({
       const userParams = formValues?.params || {};
       // 拓扑单值面板没有数据变量运行时，不能把 { dataVariableId } 原样发出去。
       if (collectVariableIds(userParams).length > 0) return;
+      const catalog = resolveCatalogParams(selectedDataSource);
+      if (catalog.status === 'invalid') {
+        message.error(t('dashboard.dataSourceParamsInvalid'));
+        return;
+      }
+      if (catalog.status !== 'resolved') return;
       const requestParams = processDataSourceParams({
-        sourceParams: selectedDataSource.params,
-        definitionParams: selectedDataSource.params,
+        sourceParams: catalog.params,
+        definitionParams: catalog.params,
         userParams,
         chartType,
         resolutionContext: {
@@ -208,6 +221,11 @@ export function useSingleValueConfig({
         },
         t,
       });
+      const missing = listMissingRequiredParams(catalog.params, requestParams);
+      if (missing.length > 0) {
+        message.warning(formatRequiredParamWaitMessage(missing, t));
+        return;
+      }
 
       if (
         builtinNamespaceId !== undefined &&

@@ -11,6 +11,16 @@ export const nextInteractionSampleTicket = (
   sequence: current.sequence + 1,
 });
 
+export const mutateOwnedInteractionSample = (
+  current: InteractionSampleTicket,
+  ticket: InteractionSampleTicket,
+  mutate: () => void,
+): boolean => {
+  if (!isCurrentInteractionSample(current, ticket)) return false;
+  mutate();
+  return true;
+};
+
 export const isCurrentInteractionSample = (
   current: InteractionSampleTicket,
   ticket: InteractionSampleTicket,

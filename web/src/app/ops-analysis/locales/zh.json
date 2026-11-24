@@ -1203,6 +1203,7 @@
     "dataFetchFailed": "数据查询失败",
     "selectRequiredParam": "请选择{label}",
     "fillRequiredParams": "请补充：{labels}",
+    "requiredParamListSeparator": "、",
     "inputName": "请输入组件名称",
     "paramSettings": "参数设置",
     "queryParams": "查询参数",

@@ -111,3 +111,11 @@ def test_marks_only_builtin_room_stat_server_room_and_is_idempotent():
     migration.mark_builtin_room_stat_server_room_required(apps, None)
     assert device.save_calls == [("params",)]
     assert rack.save_calls == [("params",)]
+
+    migration.keep_builtin_room_stat_required(apps, None)
+    assert device.params[0]["required"] is True
+    assert alarms.params[0]["required"] is True
+    assert "required" not in custom.params[0]
+    assert device.save_calls == [("params",)]
+    assert alarms.save_calls == []
+    assert custom.save_calls == []

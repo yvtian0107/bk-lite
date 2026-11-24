@@ -46,7 +46,8 @@ export const formatRequiredParamWaitMessage = (
   if (missing.length === 1) {
     return t('dashboard.selectRequiredParam', '请选择{label}', { label: missing[0].label });
   }
+  const separator = t('dashboard.requiredParamListSeparator', '、');
   return t('dashboard.fillRequiredParams', '请补充：{labels}', {
-    labels: missing.map((item) => item.label).join('、'),
+    labels: missing.map((item) => item.label).join(separator),
   });
 };
