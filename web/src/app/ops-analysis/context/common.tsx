@@ -29,6 +29,7 @@ interface OpsAnalysisContextType {
   dataSources: DatasourceItem[];
   dataSourcesLoading: boolean;
   canvasDataSourceLookupStatus: DataSourceLookupStatus;
+  readCanvasDataSourceLookupStatus: () => DataSourceLookupStatus;
   fetchNamespaces: (ids?: Array<number | string>) => Promise<NamespaceItem[]>;
   loadCanvasNamespaces: (ids?: Array<number | string>) => Promise<NamespaceItem[]>;
   refreshNamespaces: () => Promise<void>;
@@ -57,6 +58,15 @@ const OpsAnalysisProviderCore = ({
   const [dataSourcesLoading, setDataSourcesLoading] = useState(false);
   const [canvasDataSourceLookupStatus, setCanvasDataSourceLookupStatus] =
     useState<DataSourceLookupStatus>('idle');
+  const canvasDataSourceLookupStatusRef = useRef<DataSourceLookupStatus>('idle');
+  const publishCanvasDataSourceLookupStatus = useCallback((status: DataSourceLookupStatus) => {
+    canvasDataSourceLookupStatusRef.current = status;
+    setCanvasDataSourceLookupStatus(status);
+  }, []);
+  const readCanvasDataSourceLookupStatus = useCallback(
+    () => canvasDataSourceLookupStatusRef.current,
+    [],
+  );
 
   const namespaceRequestCountRef = useRef(0);
   const dataSourceRequestCountRef = useRef(0);
@@ -329,7 +339,7 @@ const OpsAnalysisProviderCore = ({
     canvasDataSourceRequestIdRef.current += 1;
     rawDataSourcesRef.current = [];
     setRawDataSources([]);
-    setCanvasDataSourceLookupStatus('loading');
+    publishCanvasDataSourceLookupStatus('loading');
   }, []);
 
   useEffect(() => () => {
@@ -352,7 +362,7 @@ const OpsAnalysisProviderCore = ({
     if (normalizedIds.length === 0) {
       rawDataSourcesRef.current = [];
       setRawDataSources([]);
-      setCanvasDataSourceLookupStatus('success');
+      publishCanvasDataSourceLookupStatus('success');
       return settleCurrent([]);
     }
 
@@ -370,12 +380,12 @@ const OpsAnalysisProviderCore = ({
         .filter((item): item is DatasourceItem => Boolean(item));
       rawDataSourcesRef.current = scopedDataSources;
       setRawDataSources(scopedDataSources);
-      setCanvasDataSourceLookupStatus('success');
+      publishCanvasDataSourceLookupStatus('success');
       return settleCurrent(applyDataSourceAuth(scopedDataSources));
     }
 
     try {
-      setCanvasDataSourceLookupStatus('loading');
+      publishCanvasDataSourceLookupStatus('loading');
       dataSourceRequestCountRef.current += 1;
       dataSourcesRequestingRef.current = true;
       setDataSourcesLoading(true);
@@ -392,9 +402,11 @@ const OpsAnalysisProviderCore = ({
       const scopedDataSources = normalizedIds
         .map((id) => nextMap.get(id))
         .filter((item): item is DatasourceItem => Boolean(item));
-      rawDataSourcesRef.current = scopedDataSources;
-      setRawDataSources(scopedDataSources);
-      setCanvasDataSourceLookupStatus('success');
+      if (canvasDataSourceRequestIdRef.current === requestId) {
+        rawDataSourcesRef.current = scopedDataSources;
+        setRawDataSources(scopedDataSources);
+        publishCanvasDataSourceLookupStatus('success');
+      }
       return applyDataSourceAuth(scopedDataSources);
     } catch (err) {
       if (
@@ -407,7 +419,7 @@ const OpsAnalysisProviderCore = ({
       console.error('加载画布数据源详情失败:', err);
       if (canvasDataSourceRequestIdRef.current === requestId) {
         setRawDataSources([]);
-        setCanvasDataSourceLookupStatus('error');
+        publishCanvasDataSourceLookupStatus('error');
       }
       return [];
     } finally {
@@ -431,6 +443,7 @@ const OpsAnalysisProviderCore = ({
     dataSources,
     dataSourcesLoading,
     canvasDataSourceLookupStatus,
+    readCanvasDataSourceLookupStatus,
     fetchNamespaces,
     loadCanvasNamespaces,
     refreshNamespaces,

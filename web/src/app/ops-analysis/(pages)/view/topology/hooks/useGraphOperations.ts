@@ -5,6 +5,8 @@ import { useCallback, useEffect, useRef } from 'react';
 import { hideAllEdgeTools, hideAllPorts } from '../utils/topologyUtils';
 import { useGraphHistory } from './useGraphHistory';
 import { useGraphInitializer } from './useGraphInitializer';
+import type { DatasourceItem } from '@/app/ops-analysis/types/dataSource';
+import type { DataSourceLookupStatus } from '@/app/ops-analysis/utils/widgetRequestVersion';
 import { useGraphNodeOperations } from './useGraphNodeOperations';
 
 export const useGraphOperations = (
@@ -16,6 +18,8 @@ export const useGraphOperations = (
   setSingleValueFetchErrorTooltip?: (
     tooltip: import('../components/singleValueFetchErrorTooltip').SingleValueFetchErrorTooltipState | null,
   ) => void,
+  dataSources?: DatasourceItem[],
+  dataSourceLookupStatus?: DataSourceLookupStatus,
 ) => {
   const isZoomLockedRef = useRef(isZoomLocked);
 
@@ -69,6 +73,8 @@ export const useGraphOperations = (
     graphInstance,
     state,
     handleSave,
+    dataSources,
+    dataSourceLookupStatus,
   });
 
   useGraphInitializer({

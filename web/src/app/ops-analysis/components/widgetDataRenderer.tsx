@@ -16,10 +16,11 @@ import {
 } from "@/app/ops-analysis/types/dashBoard";
 import { DatasourceItem } from "@/app/ops-analysis/types/dataSource";
 import type { InteractionSampleTicket } from "@/app/ops-analysis/utils/interactionSample";
+import { formatRequiredParamWaitMessage } from "@/app/ops-analysis/utils/requiredParamGate";
 import {
   buildWidgetExtraParams,
-  buildWidgetRequestParams,
   buildWidgetRequestSignatureParams,
+  planWidgetRequest,
   widgetDataVariableBlockReason,
   createWidgetRequestHistory,
   decideWidgetRequest,
@@ -329,6 +330,7 @@ const WidgetWrapper: React.FC<WidgetWrapperProps> = ({
     config?.sceneWidgetType || chartType,
   );
   const appliedSupplyVersionRef = useRef(0);
+  const blockSuppliedDataRef = useRef(false);
   const sampleTicketRef = useRef(sampleTicket);
   sampleTicketRef.current = sampleTicket;
   const rawDataTicketRef = useRef<InteractionSampleTicket | undefined>(undefined);
@@ -337,6 +339,13 @@ const WidgetWrapper: React.FC<WidgetWrapperProps> = ({
       return;
     }
     appliedSupplyVersionRef.current = suppliedRawDataVersion;
+    if (blockSuppliedDataRef.current) {
+      setRawData(null);
+      setBaselineData(null);
+      setLoading(false);
+      setTableLoading(false);
+      return;
+    }
     rawDataTicketRef.current = sampleTicketRef.current;
     setRawData(suppliedRawData);
     setLoading(false);
@@ -740,15 +749,15 @@ const WidgetWrapper: React.FC<WidgetWrapperProps> = ({
   const variableBlockMessage = variableBlockReason
     ? t(columnBlockReasonKey(variableBlockReason))
     : t("dashboard.noData");
-  const requestParams = useMemo(() => {
+  const requestPlan = useMemo(() => {
     if (!requestEnabled) {
-      return null;
+      return { status: "hold" as const };
     }
     if (usesDataVariables && !variableRuntime?.ready) {
-      return null;
+      return { status: "hold" as const };
     }
 
-    return buildWidgetRequestParams({
+    return planWidgetRequest({
       config,
       dataSource,
       extraParams: requestExtraParams,
@@ -774,6 +783,30 @@ const WidgetWrapper: React.FC<WidgetWrapperProps> = ({
     variableRuntime,
     variableColumns,
   ]);
+  const requestParams = requestPlan.status === "ready" ? requestPlan.params : null;
+  const requiredWait = requestPlan.status === "waiting" ? requestPlan : null;
+  const catalogFailed = requestPlan.status === "failed";
+  const requiredWaitKey = requiredWait
+    ? requiredWait.missing.map((item) => item.name).join("\0")
+    : "";
+  const requiredWaitMessage = requiredWait
+    ? formatRequiredParamWaitMessage(requiredWait.missing, t)
+    : "";
+  const invalidatedWaitKeyRef = useRef("");
+  if (!requiredWaitKey) {
+    invalidatedWaitKeyRef.current = "";
+  } else if (invalidatedWaitKeyRef.current !== requiredWaitKey) {
+    invalidatedWaitKeyRef.current = requiredWaitKey;
+    fetchIdRef.current += 1;
+  }
+  const invalidatedCatalogRef = useRef(false);
+  if (!catalogFailed) {
+    invalidatedCatalogRef.current = false;
+  } else if (!invalidatedCatalogRef.current) {
+    invalidatedCatalogRef.current = true;
+    fetchIdRef.current += 1;
+  }
+  blockSuppliedDataRef.current = Boolean(requiredWait) || catalogFailed;
 
   const requestSignatureParams = useMemo(() => {
     if (!requestEnabled) {
@@ -1417,7 +1450,27 @@ const WidgetWrapper: React.FC<WidgetWrapperProps> = ({
     setLoading(false);
     setTableLoading(false);
   }, [variableBlocked, variablePending]);
-  const isWaitingForInitialData = variablePending || (!variableBlocked && shouldWaitForInitialWidgetData({
+  useEffect(() => {
+    if (!requiredWaitKey) return;
+    setRawData(null);
+    setBaselineData(null);
+    setLoading(false);
+    setTableLoading(false);
+    setDataValidation(null);
+    hasSettledRequestRef.current = true;
+    setHasSettledRequest(true);
+  }, [requiredWaitKey]);
+  useEffect(() => {
+    if (!catalogFailed) return;
+    setRawData(null);
+    setBaselineData(null);
+    setLoading(false);
+    setTableLoading(false);
+    setDataValidation(null);
+    hasSettledRequestRef.current = true;
+    setHasSettledRequest(true);
+  }, [catalogFailed]);
+  const isWaitingForInitialData = !requiredWait && !catalogFailed && (variablePending || (!variableBlocked && shouldWaitForInitialWidgetData({
     isSceneWidget,
     isTableLikeChart,
     hasDataSourceId: Boolean(normalizedDataSourceId),
@@ -1427,7 +1480,7 @@ const WidgetWrapper: React.FC<WidgetWrapperProps> = ({
     hasDataValidation: Boolean(dataValidation),
     requestEnabled,
     hasRequested: previousRequestRef.current.hasRequested,
-  }));
+  })));
   const isWaitingForSwitchOptions = componentSwitchRequestGate === "pending";
   const isInitialNonTableLoading =
     shouldShowInitialWidgetLoading({
@@ -1438,6 +1491,18 @@ const WidgetWrapper: React.FC<WidgetWrapperProps> = ({
     });
 
   useEffect(() => {
+    if (requiredWait) {
+      onRenderStatus?.({ widgetId, status: "empty" });
+      return;
+    }
+    if (catalogFailed) {
+      onRenderStatus?.({
+        widgetId,
+        status: "failed",
+        error: t("dashboard.dataSourceParamsInvalid"),
+      });
+      return;
+    }
     if (variableBlocked) {
       onRenderStatus?.(variableBlockReason === "request"
         ? { widgetId, status: "failed", error: variableBlockMessage }
@@ -1478,6 +1543,8 @@ const WidgetWrapper: React.FC<WidgetWrapperProps> = ({
     isTableLikeChart,
     isWaitingForInitialData,
     isWaitingForSwitchOptions,
+    catalogFailed,
+    requiredWait,
     variableBlocked,
     variableBlockMessage,
     variableBlockReason,
@@ -1507,6 +1574,7 @@ const WidgetWrapper: React.FC<WidgetWrapperProps> = ({
       ? normalizedDataSourceId
       : undefined,
     fetchSourceData: async (params) => {
+      if (blockSuppliedDataRef.current) return null;
       if (typeof normalizedDataSourceId !== "number" || !Number.isFinite(normalizedDataSourceId)) {
         return null;
       }
@@ -1552,6 +1620,15 @@ const WidgetWrapper: React.FC<WidgetWrapperProps> = ({
         />
       </div>
     );
+  } else if (requiredWait) {
+    body = (
+      <WidgetState
+        kind="empty"
+        description={requiredWaitMessage}
+      />
+    );
+  } else if (catalogFailed) {
+    body = renderError(t("dashboard.dataSourceParamsInvalid"));
   } else if (variableBlocked) {
     body = (
       <WidgetState

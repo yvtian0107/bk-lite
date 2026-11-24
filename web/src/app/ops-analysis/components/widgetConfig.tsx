@@ -41,8 +41,10 @@ import {
   buildDefaultFilterBindings,
   buildDataVariableRequestParams,
   processDataSourceParams,
+  resolveCatalogParams,
 } from '@/app/ops-analysis/utils/widgetDataTransform';
 import { getDateRangeTimezone } from '@/app/ops-analysis/utils/dateRange';
+import { listMissingRequiredParams } from '@/app/ops-analysis/utils/requiredParamGate';
 import { DataVariableRuntimeProvider, withDatasourceNamespace } from '@/app/ops-analysis/context/dataVariableRuntime';
 import {
   collectVariableIds,
@@ -700,11 +702,24 @@ const ViewConfig: React.FC<ViewConfigPropsWithManager> = ({
           if (isDataVariableRef(value)) preserveArrayNames.add(name);
         });
       }
+      const catalog = resolveCatalogParams(canonicalSelectedDataSource);
+      if (catalog.status !== 'resolved') {
+        setPreviewRawData(null);
+        setPreviewLoading(false);
+        if (previewOpen) {
+          setSuppliedPreviewRawData(null);
+          setSuppliedPreviewVersion((version) => version + 1);
+        }
+        return;
+      }
       const requestParams = processDataSourceParams({
-        sourceParams: canonicalSelectedDataSource.params,
-        definitionParams: canonicalSelectedDataSource.params,
+        sourceParams: catalog.params,
+        definitionParams: catalog.params,
         userParams: requestUserParams,
         preserveArrayNames,
+        unifiedFilterValues,
+        filterBindings,
+        filterDefinitions,
         chartType,
         resolutionContext: {
           referenceNow: Date.now(),
@@ -712,6 +727,15 @@ const ViewConfig: React.FC<ViewConfigPropsWithManager> = ({
         },
         t,
       });
+      if (listMissingRequiredParams(catalog.params, requestParams).length > 0) {
+        setPreviewRawData(null);
+        setPreviewLoading(false);
+        if (previewOpen) {
+          setSuppliedPreviewRawData(null);
+          setSuppliedPreviewVersion((version) => version + 1);
+        }
+        return;
+      }
 
       if (
         effectiveNamespaceId !== undefined &&
@@ -746,6 +770,7 @@ const ViewConfig: React.FC<ViewConfigPropsWithManager> = ({
     canonicalSelectedDataSource,
     chartType,
     dataVariables,
+    filterBindings,
     filterDefinitions,
     dataSourceManager,
     builtinNamespaceId,

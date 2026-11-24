@@ -10,7 +10,9 @@ import { message } from 'antd';
 import { deliverWidgetCsvExport } from '@/app/ops-analysis/context/widgetCsvExportRegistry';
 import { isTablePageOnlyChange } from '@/app/ops-analysis/utils/widgetCsvExport';
 import { readExplicitPagePair } from '@/app/ops-analysis/utils/tablePagination';
-import { buildWidgetRequestParams, fetchWidgetData, resolveEffectiveFilterBindings } from '@/app/ops-analysis/utils/widgetDataTransform';
+import { fetchWidgetData, planWidgetRequest, resolveEffectiveFilterBindings, WidgetRequestBlocked } from '@/app/ops-analysis/utils/widgetDataTransform';
+import { formatRequiredParamWaitMessage } from '@/app/ops-analysis/utils/requiredParamGate';
+import type { DataSourceLookupStatus } from '@/app/ops-analysis/utils/widgetRequestVersion';
 import { getRequestErrorMessage } from '@/app/ops-analysis/utils/requestError';
 import { isTransportCanceled } from '@/utils/requestCancellation';
 import { normalizeCanvasRefreshInterval } from '@/app/ops-analysis/utils/canvasRefreshInterval';
@@ -41,6 +43,40 @@ type TableQueryParams = Record<string, unknown>;
 
 const isTableLikeChartType = (chartType?: string) =>
   chartType === 'table' || chartType === 'eventTable';
+
+type ChartRequestState = NonNullable<TopologyNodeData['chartRequestState']>;
+
+const chartRequestPatch = (
+  current: TopologyNodeData,
+  next: {
+    state: ChartRequestState;
+    rawData?: unknown;
+    errorMessage?: string;
+    waitMessage?: string;
+    csvRequestParams?: unknown;
+    dataSource?: DatasourceItem;
+    tableQueryParams?: TableQueryParams;
+  },
+): TopologyNodeData => ({
+  ...current,
+  isLoading: next.state === 'pending',
+  hasError: next.state === 'error',
+  errorMessage: next.state === 'error' ? next.errorMessage : undefined,
+  waitMessage: next.state === 'waiting' ? next.waitMessage : undefined,
+  chartRequestState: next.state,
+  rawData: next.state === 'pending'
+    ? current.rawData
+    : next.state === 'ready'
+      ? (next.rawData as TopologyNodeData['rawData'])
+      : null,
+  csvRequestParams: next.state === 'pending'
+    ? current.csvRequestParams
+    : next.state === 'ready'
+      ? next.csvRequestParams
+      : undefined,
+  ...(next.dataSource !== undefined ? { dataSource: next.dataSource } : {}),
+  ...(next.tableQueryParams !== undefined ? { tableQueryParams: next.tableQueryParams } : {}),
+});
 
 type LoadedEdgeData = EdgeCreationData & {
   arrowDirection: EdgeConnectionType;
@@ -274,7 +310,11 @@ export const useGraphData = (
     dataSource?: DatasourceItem,
     namespaceId?: number,
     tableQueryParams?: TableQueryParams,
-    options?: { silent?: boolean; pageOnly?: boolean },
+    options?: {
+      silent?: boolean;
+      pageOnly?: boolean;
+      dataSourceLookupStatus?: DataSourceLookupStatus;
+    },
   ) => {
     if (!graphInstance || !valueConfig.dataSource) return;
 
@@ -321,7 +361,36 @@ export const useGraphData = (
         Object.assign(extraParams, tableQueryParams);
       }
       const requestExtraParams = Object.keys(extraParams).length > 0 ? extraParams : undefined;
-      const csvRequestParams = buildWidgetRequestParams({
+      const lookup = options?.dataSourceLookupStatus;
+      if (!dataSource) {
+        if (!isCurrent()) return;
+        const currentNodeData = node.getData();
+        if (lookup === 'error' || lookup === 'success') {
+          node.setData({
+            ...chartRequestPatch(currentNodeData, {
+              state: 'error',
+              errorMessage: lookup === 'error'
+                ? t('dashboard.dataSourceLoadFailed')
+                : t('dashboard.dataSourceNotFound'),
+            }),
+            onExportCsv: exportChartCsv,
+          }, { overwrite: true });
+          return;
+        }
+        if (!silent) {
+          node.setData({
+            ...currentNodeData,
+            isLoading: true,
+            hasError: false,
+            errorMessage: undefined,
+            waitMessage: undefined,
+            chartRequestState: 'pending',
+          }, { overwrite: true });
+        }
+        return;
+      }
+
+      const plan = planWidgetRequest({
         config: valueConfig,
         dataSource,
         extraParams: requestExtraParams,
@@ -331,9 +400,45 @@ export const useGraphData = (
         chartType: valueConfig.chartType,
         t,
       });
-      
+      if (plan.status !== 'ready') {
+        if (!isCurrent()) return;
+        const currentNodeData = node.getData();
+        if (plan.status === 'waiting') {
+          node.setData({
+            ...chartRequestPatch(currentNodeData, {
+              state: 'waiting',
+              waitMessage: formatRequiredParamWaitMessage(plan.missing, t),
+            }),
+            onExportCsv: exportChartCsv,
+          }, { overwrite: true });
+          return;
+        }
+        if (plan.status === 'failed') {
+          node.setData({
+            ...chartRequestPatch(currentNodeData, {
+              state: 'error',
+              errorMessage: t('dashboard.dataSourceParamsInvalid'),
+            }),
+            onExportCsv: exportChartCsv,
+          }, { overwrite: true });
+          return;
+        }
+        if (!silent) {
+          node.setData({
+            ...currentNodeData,
+            isLoading: true,
+            hasError: false,
+            errorMessage: undefined,
+            waitMessage: undefined,
+            chartRequestState: 'pending',
+          }, { overwrite: true });
+        }
+        return;
+      }
+
       const chartData = await fetchWidgetData({
         config: valueConfig,
+        dataSource,
         getSourceDataByApiId: (sourceId, params) =>
           getRuntimeSourceDataByApiId(sourceId, params, controller.signal),
         unifiedFilterValues,
@@ -347,32 +452,60 @@ export const useGraphData = (
       if (!isCurrent()) return;
       const currentNodeData = node.getData();
       node.setData({
-        ...currentNodeData,
-        isLoading: false,
-        rawData: chartData,
-        hasError: false,
-        errorMessage: undefined,
-        dataSource,
-        csvRequestParams,
-        tableQueryParams: tableQueryParams ?? {},
+        ...chartRequestPatch(currentNodeData, {
+          state: chartData == null ? 'empty' : 'ready',
+          rawData: chartData,
+          csvRequestParams: plan.params,
+          dataSource,
+          tableQueryParams: tableQueryParams ?? {},
+        }),
         onExportCsv: exportChartCsv,
       }, { overwrite: true });
     } catch (error) {
       if (isTransportCanceled(error) || !isCurrent()) return;
+      if (error instanceof WidgetRequestBlocked) {
+        const currentNodeData = node.getData();
+        const blocked = error.plan;
+        if (blocked.status === 'waiting') {
+          node.setData({
+            ...chartRequestPatch(currentNodeData, {
+              state: 'waiting',
+              waitMessage: formatRequiredParamWaitMessage(blocked.missing, t),
+            }),
+            onExportCsv: exportChartCsv,
+          }, { overwrite: true });
+          return;
+        }
+        if (blocked.status === 'failed') {
+          node.setData({
+            ...chartRequestPatch(currentNodeData, {
+              state: 'error',
+              errorMessage: blocked.reason === 'lookup'
+                ? t('dashboard.dataSourceLoadFailed')
+                : t('dashboard.dataSourceParamsInvalid'),
+            }),
+            onExportCsv: exportChartCsv,
+          }, { overwrite: true });
+          return;
+        }
+        return;
+      }
       const currentNodeData = node.getData();
       if (silent && currentNodeData?.rawData) {
         node.setData({
           ...currentNodeData,
           isLoading: false,
+          chartRequestState: 'ready',
         }, { overwrite: true });
         return;
       }
       node.setData({
-        ...currentNodeData,
-        isLoading: false,
-        rawData: silent ? currentNodeData?.rawData ?? previousData?.rawData ?? null : null,
-        hasError: true,
-        errorMessage: getRequestErrorMessage(error, t('dashboard.dataFetchFailed')),
+        ...chartRequestPatch(currentNodeData, {
+          state: 'error',
+          errorMessage: getRequestErrorMessage(error, t('dashboard.dataFetchFailed')),
+          rawData: silent ? currentNodeData?.rawData ?? previousData?.rawData ?? null : null,
+        }),
+        onExportCsv: exportChartCsv,
       }, { overwrite: true });
     } finally {
       if (chartAbortRef.current.get(nodeId) === controller) {
@@ -579,7 +712,7 @@ export const useGraphData = (
     dataSources?: DatasourceItem[],
     namespaceId?: number,
     shouldRefreshNode?: (nodeData: TopologyNodeData, dataSource?: DatasourceItem) => boolean,
-    options?: { silent?: boolean },
+    options?: { silent?: boolean; dataSourceLookupStatus?: DataSourceLookupStatus },
   ) => {
     if (!graphInstance) return;
 

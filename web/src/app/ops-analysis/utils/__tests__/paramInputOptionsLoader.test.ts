@@ -518,4 +518,161 @@ describe('paramInputOptionsLoader runtime errors', () => {
     assert.deepEqual(getSourceDataByApiId.mock.calls.map((call) => call[0]), [999999]);
     assert.equal(getDataSourceList.mock.calls.length, 0);
   });
+
+  it('loads a parameterless option source and pauses only a source missing its own required input', async () => {
+    const getSourceDataByApiId = vi.fn<GetSourceDataByApiId>(
+      async () => asSourceData([{ inst_uuid: 'room-1', inst_name: '一号机房' }]),
+    );
+    const getDataSourceDetails = vi.fn(async () => {
+      throw new Error('details must not be called when the catalog is already known');
+    });
+    const loader = createParamInputOptionsLoader(
+      {
+        getDataSourceList: async () => [],
+        getSourceDataByApiId,
+        getDataSourceDetails,
+        resolveOptionSource: async () => ({ status: 'resolved', id: 116 }),
+      },
+      () => ({
+        knownDataSources: [{ id: 116, rest_api: 'cmdb/get_room_list', params: [] }],
+      }),
+    );
+
+    assert.deepEqual(await loader.load({
+      control: 'select',
+      optionsSource: {
+        type: 'dynamic',
+        sourceId: 116,
+        sourceRef: { type: 'rest_api', value: 'cmdb/get_room_list' },
+        valueField: 'inst_uuid',
+        labelField: 'inst_name',
+      },
+    }, { resolvedParams: {} }).promise, {
+      status: 'success',
+      options: [{ value: 'room-1', label: '一号机房' }],
+    });
+    assert.equal(getSourceDataByApiId.mock.calls.length, 1);
+
+    const blockedFetch = vi.fn<GetSourceDataByApiId>();
+    const blocked = createParamInputOptionsLoader(
+      {
+        getDataSourceList: async () => [],
+        getSourceDataByApiId: blockedFetch,
+        resolveOptionSource: async () => ({ status: 'resolved', id: 88 }),
+      },
+      () => ({
+        knownDataSources: [{
+          id: 88,
+          params: [{ name: 'server_room_id', alias_name: '机房', required: true }],
+        }],
+      }),
+    );
+    assert.deepEqual(await blocked.load({
+      control: 'select',
+      optionsSource: {
+        type: 'dynamic',
+        sourceId: 88,
+        valueField: 'id',
+        labelField: 'name',
+      },
+    }, { resolvedParams: { server_room_id: '   ' } }).promise, {
+      status: 'blocked',
+      options: [],
+    });
+    assert.equal(blockedFetch.mock.calls.length, 0);
+  });
+
+  it('does not query options when the catalog lookup fails', async () => {
+    const getSourceDataByApiId = vi.fn<GetSourceDataByApiId>();
+    const loader = createParamInputOptionsLoader({
+      getDataSourceList: async () => {
+        throw new Error('list must not be called');
+      },
+      getSourceDataByApiId,
+      getDataSourceDetails: async () => {
+        throw new Error('catalog down');
+      },
+      resolveOptionSource: async () => ({ status: 'resolved', id: 116 }),
+    });
+
+    const result = await loader.load({
+      control: 'select',
+      optionsSource: {
+        type: 'dynamic',
+        sourceId: 116,
+        valueField: 'inst_uuid',
+        labelField: 'inst_name',
+      },
+    }).promise;
+    assert.equal(result?.status, 'error');
+    assert.equal(getSourceDataByApiId.mock.calls.length, 0);
+  });
+
+  it('treats a known null catalog as parameterless and does not load details again', async () => {
+    const getSourceDataByApiId = vi.fn<GetSourceDataByApiId>(
+      async () => asSourceData([{ inst_uuid: 'room-1', inst_name: '一号机房' }]),
+    );
+    const getDataSourceDetails = vi.fn(async () => {
+      throw new Error('details must not be called for a resolved null catalog');
+    });
+    const loader = createParamInputOptionsLoader(
+      {
+        getDataSourceList: async () => [],
+        getSourceDataByApiId,
+        getDataSourceDetails,
+        resolveOptionSource: async () => ({ status: 'resolved', id: 116 }),
+      },
+      () => ({
+        knownDataSources: [{ id: 116, rest_api: 'cmdb/get_room_list', params: null }],
+      }),
+    );
+
+    assert.deepEqual(await loader.load({
+      control: 'select',
+      optionsSource: {
+        type: 'dynamic',
+        sourceId: 116,
+        sourceRef: { type: 'rest_api', value: 'cmdb/get_room_list' },
+        valueField: 'inst_uuid',
+        labelField: 'inst_name',
+      },
+    }, { resolvedParams: {} }).promise, {
+      status: 'success',
+      options: [{ value: 'room-1', label: '一号机房' }],
+    });
+    assert.equal(getSourceDataByApiId.mock.calls.length, 1);
+    assert.equal(getDataSourceDetails.mock.calls.length, 0);
+  });
+
+  it('ends an illegal catalog without requesting option data or another detail', async () => {
+    const getSourceDataByApiId = vi.fn<GetSourceDataByApiId>();
+    const getDataSourceDetails = vi.fn(async () => []);
+    const loader = createParamInputOptionsLoader(
+      {
+        getDataSourceList: async () => [],
+        getSourceDataByApiId,
+        getDataSourceDetails,
+        resolveOptionSource: async () => ({ status: 'resolved', id: 116 }),
+      },
+      () => ({
+        knownDataSources: [{ id: 116, params: { bad: true } as never }],
+      }),
+    );
+
+    assert.deepEqual(await loader.load({
+      control: 'select',
+      optionsSource: {
+        type: 'dynamic',
+        sourceId: 116,
+        valueField: 'inst_uuid',
+        labelField: 'inst_name',
+      },
+    }).promise, {
+      status: 'error',
+      options: [],
+      errorMessage: 'option-source-unavailable',
+    });
+    assert.equal(getSourceDataByApiId.mock.calls.length, 0);
+    assert.equal(getDataSourceDetails.mock.calls.length, 0);
+  });
 });

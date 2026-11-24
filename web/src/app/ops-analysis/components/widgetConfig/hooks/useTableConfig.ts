@@ -12,9 +12,11 @@ import type { DatasourceItem, ParamItem } from '@/app/ops-analysis/types/dataSou
 import {
   formatTimeRange,
   processDataSourceParams,
+  resolveCatalogParams,
 } from '@/app/ops-analysis/utils/widgetDataTransform';
 import { getDateRangeTimezone } from '@/app/ops-analysis/utils/dateRange';
 import { collectVariableIds } from '@/app/ops-analysis/utils/dataVariable';
+import { listMissingRequiredParams } from '@/app/ops-analysis/utils/requiredParamGate';
 import {
   DisplayColumnRow,
   buildDisplayColumnsFromSchema,
@@ -270,7 +272,9 @@ export function useTableConfig({
       chartTypeOverride?: string,
     ): Record<string, any> | null => {
       const payload: Record<string, any> = {};
-      const sourceParams = targetDataSource.params || [];
+      const catalog = resolveCatalogParams(targetDataSource);
+      if (catalog.status !== 'resolved') return null;
+      const sourceParams = catalog.params;
       const processedParams = processFormParamsForSubmit(formParams, sourceParams);
       const userParams = processedParams.reduce<Record<string, any>>((acc, param) => {
         acc[param.name] = param.value;
@@ -297,6 +301,10 @@ export function useTableConfig({
           t,
         }),
       );
+
+      if (listMissingRequiredParams(sourceParams, payload).length > 0) {
+        return null;
+      }
 
       if (
         builtinNamespaceId !== undefined &&
