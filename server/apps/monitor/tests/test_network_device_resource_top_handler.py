@@ -35,7 +35,7 @@ def test_network_device_resource_top_handler_returns_ranked_traffic(monkeypatch)
                 value = "5"
             else:
                 return {"status": "success", "data": {"result": []}}
-            assert "sw\\-1" in query
+            assert "sw\\\\-1" in query
             assert "secret-1" not in query
             return {"status": "success", "data": {"result": [{"metric": {"instance_id": "sw-1"}, "value": [time.time(), value]}]}}
 

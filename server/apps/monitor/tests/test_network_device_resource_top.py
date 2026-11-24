@@ -80,10 +80,7 @@ def _render(template: str, *instance_ids: str) -> str:
 
 
 def test_detail_window_matches_the_professional_dashboard_default():
-    from apps.monitor.services.network_device_resource_top import (
-        DETAIL_DEFAULT_WINDOW_MINUTES,
-        DETAIL_QUERY_CHUNK_SIZE,
-    )
+    from apps.monitor.services.network_device_resource_top import DETAIL_DEFAULT_WINDOW_MINUTES, DETAIL_QUERY_CHUNK_SIZE
 
     source = DASHBOARD_CORE.read_text(encoding="utf-8")
     assert "originValue: 15" in source
@@ -178,18 +175,34 @@ def test_memory_queries_keep_each_object_fallback_order():
         "switch": (
             "max(device_memory_usage{__$labels__}) by (instance_id)",
             "avg(device_memory_usage{__$labels__}) by (instance_id)",
-            "(sum(device_memory_used{__$labels__}) by (instance_id) / (sum(device_memory_used{__$labels__}) by (instance_id) + sum(device_memory_free{__$labels__}) by (instance_id)) * 100)",
+            (
+                "(sum(device_memory_used{__$labels__}) by (instance_id) / "
+                "(sum(device_memory_used{__$labels__}) by (instance_id) + "
+                "sum(device_memory_free{__$labels__}) by (instance_id)) * 100)"
+            ),
             "(sum(device_memory_used{__$labels__}) by (instance_id) / sum(device_memory_total{__$labels__}) by (instance_id) * 100)",
         ),
         "router": (
             "avg(device_memory_usage{__$labels__}) by (instance_id)",
-            "(sum(device_memory_used{__$labels__}) by (instance_id) / (sum(device_memory_used{__$labels__}) by (instance_id) + sum(device_memory_free{__$labels__}) by (instance_id)) * 100)",
-            "((sum(device_memory_total{__$labels__}) by (instance_id) - sum(device_memory_free{__$labels__}) by (instance_id)) / sum(device_memory_total{__$labels__}) by (instance_id) * 100)",
+            (
+                "(sum(device_memory_used{__$labels__}) by (instance_id) / "
+                "(sum(device_memory_used{__$labels__}) by (instance_id) + "
+                "sum(device_memory_free{__$labels__}) by (instance_id)) * 100)"
+            ),
+            (
+                "((sum(device_memory_total{__$labels__}) by (instance_id) - "
+                "sum(device_memory_free{__$labels__}) by (instance_id)) / "
+                "sum(device_memory_total{__$labels__}) by (instance_id) * 100)"
+            ),
         ),
         "firewall": (
             "avg(device_memory_usage{__$labels__}) by (instance_id)",
             "avg(snmp_device_memory_usage{__$labels__}) by (instance_id)",
-            "((sum(device_memory_total{__$labels__}) by (instance_id) - sum(device_memory_free{__$labels__}) by (instance_id)) / sum(device_memory_total{__$labels__}) by (instance_id) * 100)",
+            (
+                "((sum(device_memory_total{__$labels__}) by (instance_id) - "
+                "sum(device_memory_free{__$labels__}) by (instance_id)) / "
+                "sum(device_memory_total{__$labels__}) by (instance_id) * 100)"
+            ),
         ),
         "loadbalance": (
             "avg(device_memory_usage{__$labels__}) by (instance_id)",
@@ -307,6 +320,20 @@ def test_tuple_instance_id_is_matched_inside_the_dashboard_query():
     )
     assert rows[0]["instance_id"] == "switch-1"
     assert rows[0]["value"] == 55.0
+
+
+def test_memory_value_is_not_clamped_to_a_percentage():
+    template = _dashboard_metric_queries("router")["device_memory_usage"]
+
+    def respond(query, _kwargs):
+        assert query == _render(template, "rt-1")
+        return [_point("rt-1", 140), _point("rt-1", -1, NOW - timedelta(minutes=1))]
+
+    rows = NetworkDeviceResourceTopService(vm_api=RecordingVM(respond), now=NOW).run(
+        "memory",
+        [_instance("rt-1", "Router")],
+    )
+    assert rows[0]["value"] == 140.0
 
 
 def test_one_traffic_direction_is_kept_when_the_other_is_absent():
