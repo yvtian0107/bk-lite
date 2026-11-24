@@ -31,9 +31,7 @@ FALLBACK_METRIC_NAMES = {
     "memory": ("device_memory_usage", "device_memory_used", "device_memory_free", "device_memory_total"),
     "traffic": ("device_total_incoming_traffic", "device_total_outgoing_traffic"),
 }
-_RATE_SELECTOR = re.compile(
-    r"\b(?P<fn>rate|irate|increase|delta)\((?P<name>[A-Za-z_:][A-Za-z0-9_:]*)\{(?P<labels>[^{}]*)\}(?P<window>\[[^\]]+\])\)"
-)
+_RATE_SELECTOR = re.compile(r"\b(?P<fn>rate|irate|increase|delta)\((?P<name>[A-Za-z_:][A-Za-z0-9_:]*)\{(?P<labels>[^{}]*)\}(?P<window>\[[^\]]+\])\)")
 _INSTANT_SELECTOR = re.compile(r"(?<![\w:])(?P<name>[A-Za-z_:][A-Za-z0-9_:]*)\{(?P<labels>[^{}]*)\}")
 DETAIL_METRIC_MANIFEST = Path(__file__).resolve().parent.parent / "support-files" / "network_device_detail_metrics.json"
 DETAIL_METRIC_NAMES = frozenset(
@@ -131,9 +129,7 @@ def gate_raw_selectors(query: str, cutoff_literal: str) -> str:
 
     def _rate(match: re.Match) -> str:
         instant = f"{match.group('name')}{{{match.group('labels')}}}"
-        return _hold(
-            f"({match.group('fn')}({instant}{match.group('window')}) and ignoring(__name__) (timestamp({instant}) >= {cutoff_literal}))"
-        )
+        return _hold(f"({match.group('fn')}({instant}{match.group('window')}) and ignoring(__name__) (timestamp({instant}) >= {cutoff_literal}))")
 
     gated = _RATE_SELECTOR.sub(_rate, query)
 
@@ -371,11 +367,7 @@ class NetworkDeviceResourceTopService:
                     for samples in found.values():
                         for logical_id in failed_ids:
                             samples.pop(logical_id, None)
-                    fallback.extend(
-                        device
-                        for device in devices
-                        if device["logical_id"] in failed_ids and device not in fallback
-                    )
+                    fallback.extend(device for device in devices if device["logical_id"] in failed_ids and device not in fallback)
                     continue
                 query = join_label_queries(group["template"], matchers).replace("__$window__", rate_window)
                 if "__$" in query:

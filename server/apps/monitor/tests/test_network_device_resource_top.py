@@ -428,7 +428,6 @@ def test_same_detail_template_is_chunked_at_the_instance_cap(monkeypatch):
     import apps.monitor.services.network_device_resource_top as service
 
     monkeypatch.setattr(service, "DETAIL_QUERY_CHUNK_SIZE", 2)
-    template = _dashboard_metric_queries("switch")["device_cpu_usage"]
     calls = []
 
     def respond(query, _kwargs):
