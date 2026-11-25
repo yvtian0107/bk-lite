@@ -37,6 +37,10 @@ def test_network_device_resource_top_handler_returns_ranked_traffic(monkeypatch)
                 return {"status": "success", "data": {"result": []}}
             assert "sw\\\\-1" in query
             assert "secret-1" not in query
+            assert "[5m]" in query
+            assert "[15m]" not in query
+            assert "and ignoring(__name__)" in query
+            assert '__name__="device_total_' not in query
             return {"status": "success", "data": {"result": [{"metric": {"instance_id": "sw-1"}, "value": [time.time(), value]}]}}
 
     fake_vm = FakeVM()

@@ -36,8 +36,6 @@ const detailMetricOutputPath = resolve(
 const DETAIL_METRIC_NAMES = new Set([
   'device_cpu_usage',
   'device_memory_usage',
-  'device_total_incoming_traffic',
-  'device_total_outgoing_traffic',
 ]);
 const sourceFiles: string[] = [];
 const directoryRouteKeys = new Map<string, string>();

@@ -1,52 +1,42 @@
-"""Network-device resource ranking aligned to professional monitor detail queries.
+"""Current-value ranking for network devices.
 
-Devices with a professional detail formula reuse that PromQL. Raw sample age is a
-separate gate: a series stays in the calculation only when its own timestamp is
-within two collection intervals. The 15-minute detail window is only the rate
-range, not that freshness gate. Devices without a detail formula keep the
-previous raw-series average or sum.
+CPU and memory reuse the existing detail capability for Switch, Router, Firewall,
+Loadbalance and Wanopt, including each template's or / max / avg order. Categories
+without that capability are left off the board. Total traffic reuses the public
+IF-MIB catalog: per-interface HC or 32-bit rate over a fixed 5 minutes, summed,
+then inbound plus outbound. That is a different window and aggregation shape from
+the detail page's variable-duration sum-then-or query.
+
+A raw series is fresh for two collection intervals. VictoriaMetrics lookback is
+open at the far end, so gauge search uses two intervals plus one second and does
+not read the aggregation timestamp. rate() ignores that lookback, so traffic also
+keeps a counter only when timestamp() of the raw series is inside the same age.
+sampled_at remains the timestamp on the instant-vector point.
 """
 
-import json
 import math
 import re
 from dataclasses import dataclass
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 from functools import lru_cache
 from pathlib import Path
 from typing import Any
 
-from apps.monitor.services.metric_query_contract import AuthorizedMetricQueryError, build_instance_matcher_groups, join_label_queries
+from apps.monitor.services.metric_query_contract import build_instance_matcher_groups, join_label_queries
 from apps.monitor.services.metric_series import MAX_INSTANCE_IDS
 from apps.monitor.utils.dimension import parse_instance_id
 
 SUPPORTED_METRIC_TYPES = ("cpu", "memory", "traffic")
 NETWORK_DEVICE_TYPE_ID = "Network Device"
-DETAIL_DEFAULT_WINDOW_MINUTES = 15
-DETAIL_RATE_WINDOW_SECONDS = DETAIL_DEFAULT_WINDOW_MINUTES * 60
+CPU_MEMORY_OBJECT_NAMES = frozenset({"Switch", "Router", "Firewall", "Loadbalance", "Wanopt"})
+GAUGE_METRIC_NAMES = {"cpu": "device_cpu_usage", "memory": "device_memory_usage"}
+TRAFFIC_METRIC_NAMES = ("device_total_incoming_traffic", "device_total_outgoing_traffic")
+IFMIB_RATE_WINDOW_SECONDS = 300
 DEFAULT_COLLECTION_INTERVAL_SECONDS = 300
 DETAIL_QUERY_CHUNK_SIZE = MAX_INSTANCE_IDS
-FALLBACK_METRIC_NAMES = {
-    "cpu": ("device_cpu_usage",),
-    "memory": ("device_memory_usage", "device_memory_used", "device_memory_free", "device_memory_total"),
-    "traffic": ("device_total_incoming_traffic", "device_total_outgoing_traffic"),
-}
-_RATE_SELECTOR = re.compile(r"\b(?P<fn>rate|irate|increase|delta)\((?P<name>[A-Za-z_:][A-Za-z0-9_:]*)\{(?P<labels>[^{}]*)\}(?P<window>\[[^\]]+\])\)")
-_INSTANT_SELECTOR = re.compile(r"(?<![\w:])(?P<name>[A-Za-z_:][A-Za-z0-9_:]*)\{(?P<labels>[^{}]*)\}")
 DETAIL_METRIC_MANIFEST = Path(__file__).resolve().parent.parent / "support-files" / "network_device_detail_metrics.json"
-DETAIL_METRIC_NAMES = frozenset(
-    {
-        "device_cpu_usage",
-        "device_memory_usage",
-        "device_total_incoming_traffic",
-        "device_total_outgoing_traffic",
-    }
-)
-METRIC_QUERY_NAMES = {
-    "cpu": ("device_cpu_usage",),
-    "memory": ("device_memory_usage",),
-    "traffic": ("device_total_incoming_traffic", "device_total_outgoing_traffic"),
-}
+_CATALOG_SELECTOR = "{instance_type='switch', __$labels__}"
+_CATALOG_RATE = re.compile(r"rate\(([A-Za-z_:][A-Za-z0-9_:]*)\{([^{}]*)\}\[5m\]\)")
 
 
 @dataclass(frozen=True)
@@ -88,10 +78,6 @@ def _monitor_object_type_id(monitor_object) -> str:
     return "" if related_id in (None, "") else str(related_id)
 
 
-def _is_network_device(meta) -> bool:
-    return bool(meta) and meta.get("object_type_id") == NETWORK_DEVICE_TYPE_ID
-
-
 def _instance_keys(instance) -> tuple[str, ...]:
     monitor_object = getattr(instance, "monitor_object", None)
     raw = getattr(monitor_object, "instance_id_keys", None) or ["instance_id"]
@@ -107,6 +93,19 @@ def collection_interval_seconds(value) -> int:
     return number if number > 0 else DEFAULT_COLLECTION_INTERVAL_SECONDS
 
 
+def gauge_search_window_seconds(interval_seconds: int) -> int:
+    """Search window that keeps a sample exactly two intervals old.
+
+    VictoriaMetrics instant lookback is (time-step, time]. Two intervals alone
+    drops that boundary sample.
+    """
+    return 2 * int(interval_seconds) + 1
+
+
+def traffic_search_window_seconds(interval_seconds: int) -> int:
+    return max(IFMIB_RATE_WINDOW_SECONDS, gauge_search_window_seconds(interval_seconds))
+
+
 def freshness_cutoff_literal(reference: datetime, interval_seconds: int) -> str:
     cutoff = reference.timestamp() - 2 * interval_seconds
     if math.isfinite(cutoff) and float(cutoff).is_integer():
@@ -114,68 +113,13 @@ def freshness_cutoff_literal(reference: datetime, interval_seconds: int) -> str:
     return format(cutoff, ".6f").rstrip("0").rstrip(".")
 
 
-def gate_raw_selectors(query: str, cutoff_literal: str) -> str:
-    """Keep each raw series only when its own timestamp is at least the cutoff.
-
-    The comparison uses timestamp(), not the aggregation result time. rate() keeps
-    its range selector and then drops a series whose latest raw sample is older
-    than the cutoff.
-    """
-    tokens = []
-
-    def _hold(expression: str) -> str:
-        tokens.append(expression)
-        return f"@@GATE{len(tokens) - 1}@@"
-
-    def _rate(match: re.Match) -> str:
-        instant = f"{match.group('name')}{{{match.group('labels')}}}"
-        return _hold(f"({match.group('fn')}({instant}{match.group('window')}) and ignoring(__name__) (timestamp({instant}) >= {cutoff_literal}))")
-
-    gated = _RATE_SELECTOR.sub(_rate, query)
-
-    def _instant(match: re.Match) -> str:
-        instant = f"{match.group('name')}{{{match.group('labels')}}}"
-        return _hold(f"({instant} and timestamp({instant}) >= {cutoff_literal})")
-
-    gated = _INSTANT_SELECTOR.sub(_instant, gated)
-    for index in range(len(tokens) - 1, -1, -1):
-        gated = gated.replace(f"@@GATE{index}@@", tokens[index])
-    return gated
-
-
-def _logical_instance_id(instance) -> str:
-    parsed = parse_instance_id(getattr(instance, "id", None))
-    if not parsed or parsed[0] in (None, ""):
-        return ""
-    return str(parsed[0])
-
-
-def _detail_window() -> str:
-    from apps.monitor.services.dashboard_query_capabilities import _query_window
-
-    return _query_window(0, DETAIL_RATE_WINDOW_SECONDS * 1000)
-
-
-def _duration_literal(seconds: int) -> str:
-    from apps.monitor.services.dashboard_query_capabilities import _format_duration
-
-    return _format_duration(seconds)
-
-
-def _search_window_seconds(metric_type: str, interval_seconds: int) -> int:
-    freshness = 2 * interval_seconds
-    if metric_type == "traffic":
-        return max(DETAIL_RATE_WINDOW_SECONDS, freshness)
-    return freshness
-
-
-def _matcher_id(raw_id, logical_id: str, keys: tuple[str, ...]) -> str | None:
-    if len(keys) <= 1:
-        return logical_id
-    parsed = parse_instance_id(raw_id)
-    if len(parsed) < len(keys) or any(value in (None, "") for value in parsed[: len(keys)]):
+def _single_instance_id(instance) -> str | None:
+    if _instance_keys(instance) != ("instance_id",):
         return None
-    return str(raw_id)
+    parsed = parse_instance_id(getattr(instance, "id", None))
+    if len(parsed) != 1 or parsed[0] in (None, ""):
+        return None
+    return str(parsed[0])
 
 
 def _chunks(values: list[str], size: int):
@@ -186,6 +130,8 @@ def _chunks(values: list[str], size: int):
 
 @lru_cache(maxsize=1)
 def load_network_device_detail_metrics() -> dict[tuple[str, str], NetworkDeviceDetailMetric]:
+    import json
+
     from apps.monitor.services.dashboard_query_capabilities import load_dashboard_query_capabilities
 
     payload = json.loads(DETAIL_METRIC_MANIFEST.read_text(encoding="utf-8"))
@@ -200,16 +146,12 @@ def load_network_device_detail_metrics() -> dict[tuple[str, str], NetworkDeviceD
             raise RuntimeError("invalid network device detail metric")
         object_name = str(item.get("object_name") or "").strip()
         metric_name = str(item.get("metric_name") or "").strip()
+        if object_name not in CPU_MEMORY_OBJECT_NAMES or metric_name not in set(GAUGE_METRIC_NAMES.values()):
+            continue
         capability_id = str(item.get("capability_id") or "").strip()
         capability = capabilities.get(capability_id)
         key = (object_name, metric_name)
-        if (
-            not object_name
-            or metric_name not in DETAIL_METRIC_NAMES
-            or capability is None
-            or object_name not in capability.object_names
-            or key in bindings
-        ):
+        if capability is None or object_name not in capability.object_names or key in bindings:
             raise RuntimeError(f"invalid network device detail metric: {object_name}.{metric_name or '-'}")
         bindings[key] = NetworkDeviceDetailMetric(
             object_name=object_name,
@@ -218,6 +160,36 @@ def load_network_device_detail_metrics() -> dict[tuple[str, str], NetworkDeviceD
             template=capability.template,
         )
     return bindings
+
+
+@lru_cache(maxsize=1)
+def _device_total_catalog() -> dict[str, str]:
+    from apps.monitor.management.services.plugin_migrate import _build_common_ifmib_metrics
+
+    found = {}
+    for item in _build_common_ifmib_metrics("switch", ""):
+        name = str(item.get("name") or "")
+        if name in TRAFFIC_METRIC_NAMES:
+            found[name] = str(item["query"])
+    if set(found) != set(TRAFFIC_METRIC_NAMES):
+        raise RuntimeError("公共 IF-MIB 总流量定义缺失")
+    return found
+
+
+def build_device_total_rate_query(metric_name: str, matcher: str, cutoff: str) -> str:
+    template = _device_total_catalog()[metric_name]
+    if _CATALOG_SELECTOR not in template:
+        raise RuntimeError("公共 IF-MIB 总流量定义无法套用到排行")
+    scoped = template.replace(_CATALOG_SELECTOR, "{" + matcher + "}")
+
+    def _gate(match):
+        selector = f"{match.group(1)}{{{match.group(2)}}}"
+        return f"(rate({selector}[5m]) and ignoring(__name__) (timestamp({selector}) >= {cutoff}))"
+
+    gated, count = _CATALOG_RATE.subn(_gate, scoped)
+    if count != 2:
+        raise RuntimeError("公共 IF-MIB 总流量定义无法套用到排行")
+    return gated
 
 
 def build_ranked_rows(candidates, device_meta, *, limit=10):
@@ -243,10 +215,47 @@ def build_ranked_rows(candidates, device_meta, *, limit=10):
     return rows
 
 
+def _collect_devices(authorized_instances):
+    meta = {}
+    devices = []
+    for instance in authorized_instances:
+        object_type_id = _monitor_object_type_id(getattr(instance, "monitor_object", None))
+        if object_type_id != NETWORK_DEVICE_TYPE_ID:
+            continue
+        instance_id = _single_instance_id(instance)
+        if instance_id is None:
+            continue
+        monitor_object = getattr(instance, "monitor_object", None)
+        item = {
+            "name": getattr(instance, "name", ""),
+            "ip": getattr(instance, "ip", ""),
+            "object_name": getattr(monitor_object, "name", ""),
+            "object_type_id": object_type_id,
+            "interval": collection_interval_seconds(getattr(instance, "interval", None)),
+        }
+        meta[instance_id] = item
+        devices.append({"instance_id": instance_id, "object_name": item["object_name"], "interval": item["interval"]})
+    return devices, meta
+
+
 class NetworkDeviceResourceTopService:
     def __init__(self, *, vm_api, now=None):
         self.vm_api = vm_api
         self.now = now
+
+    def run(self, metric_type, authorized_instances, *, limit=10):
+        metric_type = validate_metric_type(metric_type)
+        if not 1 <= int(limit) <= 100:
+            raise ValueError("limit 必须在 1 到 100 之间")
+        reference = _aware(self.now) or datetime.now(timezone.utc)
+        devices, meta = _collect_devices(authorized_instances)
+        if not devices:
+            return []
+        if metric_type == "traffic":
+            candidates = self._traffic_candidates(devices, reference)
+        else:
+            candidates = self._gauge_candidates(metric_type, devices, reference)
+        return build_ranked_rows(candidates, meta, limit=int(limit))
 
     def _query_instant(self, query: str, window: str, reference: datetime):
         try:
@@ -273,196 +282,63 @@ class NetworkDeviceResourceTopService:
             samples.append((instance_id, value, sampled_at))
         return samples
 
-    def _query_fallback(self, metric_name: str, logical_ids: list[str], window: str, reference: datetime):
-        grouped = {}
-        for chunk in _chunks(sorted(set(logical_ids)), DETAIL_QUERY_CHUNK_SIZE):
-            try:
-                matcher = build_instance_matcher_groups(tuple(chunk), ["instance_id"])[0][0]
-            except AuthorizedMetricQueryError:
-                continue
-            query = f'{{__name__="{metric_name}",{matcher}}}'
-            for instance_id, value, sampled_at in self._query_instant(query, window, reference):
-                if instance_id not in set(chunk) or value < 0:
-                    continue
-                grouped.setdefault(instance_id, {}).setdefault(metric_name, []).append((value, sampled_at))
-        return grouped
+    def _remember(self, found: dict, instance_id: str, value: float, sampled_at: datetime, allowed: set[str]):
+        if instance_id not in allowed:
+            return
+        current = found.get(instance_id)
+        if current is None or sampled_at >= current[1]:
+            found[instance_id] = (value, sampled_at)
 
-    def run(self, metric_type, authorized_instances, *, limit=10):
-        metric_type = validate_metric_type(metric_type)
-        if not 1 <= int(limit) <= 100:
-            raise ValueError("limit 必须在 1 到 100 之间")
-        reference = _aware(self.now) or datetime.now(timezone.utc)
-        meta = {}
-        devices = []
-        for instance in authorized_instances:
-            logical_id = _logical_instance_id(instance)
-            if not logical_id:
-                continue
-            keys = _instance_keys(instance)
-            item = {
-                "name": getattr(instance, "name", ""),
-                "ip": getattr(instance, "ip", ""),
-                "object_name": getattr(getattr(instance, "monitor_object", None), "name", ""),
-                "object_type_id": _monitor_object_type_id(getattr(instance, "monitor_object", None)),
-                "instance_keys": keys,
-                "interval": collection_interval_seconds(getattr(instance, "interval", None)),
-            }
-            if not _is_network_device(item):
-                continue
-            meta[logical_id] = item
-            devices.append(
-                {
-                    "logical_id": logical_id,
-                    "raw_id": getattr(instance, "id", logical_id),
-                    "keys": keys,
-                    "interval": item["interval"],
-                    "object_name": item["object_name"],
-                }
-            )
-        if not devices:
-            return []
-
-        metric_names = METRIC_QUERY_NAMES[metric_type]
+    def _gauge_candidates(self, metric_type: str, devices: list[dict], reference: datetime):
+        metric_name = GAUGE_METRIC_NAMES[metric_type]
         bindings = load_network_device_detail_metrics()
         groups = {}
-        fallback = []
         for device in devices:
-            matcher_id = _matcher_id(device["raw_id"], device["logical_id"], device["keys"])
-            placed = False
-            for metric_name in metric_names:
-                binding = bindings.get((device["object_name"], metric_name))
-                if binding is None or matcher_id is None:
-                    continue
-                placed = True
-                group_key = (binding.capability_id, device["keys"], metric_name, device["interval"])
-                group = groups.get(group_key)
-                member = {"logical_id": device["logical_id"], "matcher_id": matcher_id}
-                if group is None:
-                    groups[group_key] = {
-                        "template": binding.template,
-                        "keys": list(device["keys"]),
-                        "metric_name": metric_name,
-                        "interval": device["interval"],
-                        "members": [member],
-                    }
-                else:
-                    group["members"].append(member)
-            if not placed:
-                fallback.append(device)
+            if device["object_name"] not in CPU_MEMORY_OBJECT_NAMES:
+                continue
+            binding = bindings.get((device["object_name"], metric_name))
+            if binding is None:
+                continue
+            group = groups.setdefault(
+                (binding.capability_id, device["interval"]),
+                {"template": binding.template, "interval": device["interval"], "ids": []},
+            )
+            group["ids"].append(device["instance_id"])
 
-        rate_window = _detail_window()
-        found = {metric_name: {} for metric_name in metric_names}
+        found = {}
         for group in groups.values():
-            metric_name = group["metric_name"]
-            cutoff = freshness_cutoff_literal(reference, group["interval"])
-            window = _duration_literal(_search_window_seconds(metric_type, group["interval"]))
-            members = sorted({member["matcher_id"]: member for member in group["members"]}.values(), key=lambda item: item["matcher_id"])
-            for chunk in _chunks(members, DETAIL_QUERY_CHUNK_SIZE):
-                aliases = {member["logical_id"]: member["logical_id"] for member in chunk}
-                aliases.update({member["matcher_id"]: member["logical_id"] for member in chunk})
-                try:
-                    matchers = build_instance_matcher_groups(tuple(member["matcher_id"] for member in chunk), group["keys"])
-                except AuthorizedMetricQueryError:
-                    failed_ids = {member["logical_id"] for member in chunk}
-                    for samples in found.values():
-                        for logical_id in failed_ids:
-                            samples.pop(logical_id, None)
-                    fallback.extend(device for device in devices if device["logical_id"] in failed_ids and device not in fallback)
-                    continue
-                query = join_label_queries(group["template"], matchers).replace("__$window__", rate_window)
+            window = f"{gauge_search_window_seconds(group['interval'])}s"
+            for chunk in _chunks(sorted(set(group["ids"])), DETAIL_QUERY_CHUNK_SIZE):
+                matchers = build_instance_matcher_groups(tuple(chunk), ["instance_id"])
+                query = join_label_queries(group["template"], matchers)
                 if "__$" in query:
                     raise RuntimeError("网络设备详情查询模板参数不完整")
-                query = gate_raw_selectors(query, cutoff)
+                allowed = set(chunk)
                 for instance_id, value, sampled_at in self._query_instant(query, window, reference):
-                    logical_id = aliases.get(instance_id)
-                    if logical_id is None:
-                        continue
-                    current = found[metric_name].get(logical_id)
-                    if current is None or sampled_at > current[1]:
-                        found[metric_name][logical_id] = (value, sampled_at)
+                    self._remember(found, instance_id, value, sampled_at, allowed)
+        return [NetworkCandidate(instance_id, value, sampled_at, metric_type) for instance_id, (value, sampled_at) in found.items()]
 
-        candidates = _candidates_from_detail(found, metric_names, metric_type)
-        if fallback:
-            candidates.extend(self._fallback_candidates(metric_type, fallback, reference))
-        return build_ranked_rows(candidates, meta, limit=int(limit))
-
-    def _fallback_candidates(self, metric_type: str, devices: list[dict], reference: datetime):
-        logical_ids = [device["logical_id"] for device in devices]
-        window = _duration_literal(max(2 * device["interval"] for device in devices))
-        grouped = {}
-        for metric_name in FALLBACK_METRIC_NAMES[metric_type]:
-            for instance_id, metrics in self._query_fallback(metric_name, logical_ids, window, reference).items():
-                grouped.setdefault(instance_id, {}).update(metrics)
-        intervals = {device["logical_id"]: device["interval"] for device in devices}
-        return _aggregate_fallback(metric_type, grouped, intervals, reference)
-
-
-def _fresh(samples, reference: datetime, interval_seconds: int):
-    limit = timedelta(seconds=2 * interval_seconds)
-    return [item for item in samples if reference - item[1] <= limit]
-
-
-def _aggregate_fallback(metric_type: str, grouped: dict, intervals: dict[str, int], reference: datetime):
-    candidates = []
-    for instance_id, by_metric in grouped.items():
-        interval = intervals[instance_id]
-
-        def fresh(name, _interval=interval):
-            return _fresh(by_metric.get(name, []), reference, _interval)
-
-        if metric_type == "cpu":
-            used = fresh("device_cpu_usage")
-            if not used:
-                continue
-            value = sum(item[0] for item in used) / len(used)
-        elif metric_type == "traffic":
-            used = fresh("device_total_incoming_traffic") + fresh("device_total_outgoing_traffic")
-            if not used:
-                continue
-            value = sum(item[0] for item in used)
-        else:
-            usage = fresh("device_memory_usage")
-            used_bytes = fresh("device_memory_used")
-            free = fresh("device_memory_free")
-            total = fresh("device_memory_total")
-            if usage:
-                value = sum(item[0] for item in usage) / len(usage)
-                used = usage
-            elif used_bytes and total and sum(item[0] for item in total) > 0:
-                value = sum(item[0] for item in used_bytes) / sum(item[0] for item in total) * 100
-                used = used_bytes + total
-            elif total and free and sum(item[0] for item in total) > 0:
-                value = (sum(item[0] for item in total) - sum(item[0] for item in free)) / sum(item[0] for item in total) * 100
-                used = total + free
-            elif used_bytes and free and sum(item[0] for item in used_bytes) + sum(item[0] for item in free) > 0:
-                value = sum(item[0] for item in used_bytes) / (sum(item[0] for item in used_bytes) + sum(item[0] for item in free)) * 100
-                used = used_bytes + free
-            else:
-                continue
-            if not 0 <= value <= 100:
-                continue
-        candidates.append(NetworkCandidate(instance_id, value, max(item[1] for item in used), metric_type))
-    return candidates
-
-
-def _candidates_from_detail(found: dict, metric_names: tuple[str, ...], metric_type: str):
-    candidates = []
-    if metric_type == "traffic":
-        instance_ids = set().union(*(samples.keys() for samples in found.values())) if found else set()
-        for instance_id in instance_ids:
-            parts = [found[metric_name][instance_id] for metric_name in metric_names if instance_id in found[metric_name]]
-            if not parts:
-                continue
-            candidates.append(
-                NetworkCandidate(
-                    instance_id,
-                    sum(value for value, _sampled_at in parts),
-                    max(sampled_at for _value, sampled_at in parts),
-                    metric_type,
-                )
-            )
-        return candidates
-    metric_name = metric_names[0]
-    for instance_id, (value, sampled_at) in found[metric_name].items():
-        candidates.append(NetworkCandidate(instance_id, value, sampled_at, metric_type))
-    return candidates
+    def _traffic_candidates(self, devices: list[dict], reference: datetime):
+        by_interval = {}
+        for device in devices:
+            by_interval.setdefault(device["interval"], []).append(device["instance_id"])
+        totals = {}
+        for interval, instance_ids in by_interval.items():
+            cutoff = freshness_cutoff_literal(reference, interval)
+            window = f"{traffic_search_window_seconds(interval)}s"
+            for chunk in _chunks(sorted(set(instance_ids)), DETAIL_QUERY_CHUNK_SIZE):
+                matcher = build_instance_matcher_groups(tuple(chunk), ["instance_id"])[0][0]
+                allowed = set(chunk)
+                for metric_name in TRAFFIC_METRIC_NAMES:
+                    query = build_device_total_rate_query(metric_name, matcher, cutoff)
+                    for instance_id, value, sampled_at in self._query_instant(query, window, reference):
+                        if instance_id not in allowed:
+                            continue
+                        current = totals.get(instance_id)
+                        if current is None:
+                            totals[instance_id] = [value, sampled_at]
+                        else:
+                            current[0] += value
+                            if sampled_at > current[1]:
+                                current[1] = sampled_at
+        return [NetworkCandidate(instance_id, value, sampled_at, "traffic") for instance_id, (value, sampled_at) in totals.items()]
