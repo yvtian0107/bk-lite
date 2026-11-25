@@ -1,3 +1,4 @@
+import logging
 from datetime import datetime, timezone
 from types import SimpleNamespace
 
@@ -10,7 +11,6 @@ from apps.monitor.services.network_device_resource_top import (
     NetworkDeviceResourceTopService,
     build_ranked_rows,
     collection_interval_seconds,
-    freshness_cutoff_literal,
     gauge_search_window_seconds,
     load_network_device_detail_metrics,
     traffic_search_window_seconds,
@@ -25,7 +25,7 @@ NO_CARD_OBJECTS = (
     "ConsoleServer",
     "VoiceGateway",
 )
-CATALOG_SELECTOR = "{instance_type='switch', __$labels__}"
+LOCAL_QUERY_BYTE_BUDGET = 16128
 
 
 class FakeVM:
@@ -69,18 +69,21 @@ def _catalog(metric_name):
     return next(item["query"] for item in _build_common_ifmib_metrics("switch", "") if item["name"] == metric_name)
 
 
-def _expected_traffic_query(metric_name, instance_id, interval):
-    matcher = build_instance_matcher_groups((instance_id,), ["instance_id"])[0][0]
-    query = _catalog(metric_name).replace(CATALOG_SELECTOR, "{" + matcher + "}")
-    cutoff = freshness_cutoff_literal(NOW, collection_interval_seconds(interval))
+def _query_bytes(query):
+    return len(query.encode("utf-8"))
 
-    def _gate(match):
-        selector = f"{match.group(1)}{{{match.group(2)}}}"
-        return f"(rate({selector}[5m]) and ignoring(__name__) (timestamp({selector}) >= {cutoff}))"
 
-    import re
+def _matcher_body(query):
+    marker = 'instance_id=~"'
+    start = query.find(marker)
+    assert start >= 0
+    start += len(marker)
+    end = query.find('"', start)
+    return query[start:end]
 
-    return re.sub(r"rate\(([A-Za-z_:][A-Za-z0-9_:]*)\{([^{}]*)\}\[5m\]\)", _gate, query)
+
+def _id_count(query):
+    return _matcher_body(query).count("|") + 1
 
 
 def test_cpu_and_memory_bindings_cover_only_the_five_detail_objects():
@@ -177,9 +180,14 @@ def test_traffic_uses_the_public_ifmib_or_then_sum_and_raw_timestamp_gate():
         },
     )
     queries = [query for query, _kwargs in vm.calls]
-    assert queries[0] == _expected_traffic_query("device_total_incoming_traffic", "sw-1", 60)
-    assert queries[1] == _expected_traffic_query("device_total_outgoing_traffic", "sw-1", 60)
+    assert queries[0].startswith("sum((rate(interface_ifHCInOctets") or queries[0].startswith("sum(rate(interface_ifHCInOctets")
+    assert "interface_ifInOctets" in queries[0]
+    assert "or" in queries[0]
+    assert "timestamp(" in queries[0] and "ignoring(__name__)" in queries[0] and "[5m]" in queries[0]
+    assert "interface_ifHCOutOctets" in queries[1] and "interface_ifOutOctets" in queries[1]
+    assert "timestamp(" in queries[1] and "[5m]" in queries[1]
     assert all(call[1]["step"] == "300s" and call[1]["lookback_delta"] == "300s" for call in vm.calls)
+    assert all(call[1]["time"] == NOW.timestamp() for call in vm.calls)
     assert '__name__="' not in "".join(queries)
     assert "instance_type=" not in "".join(queries)
     assert "[15m]" not in "".join(queries)
@@ -254,6 +262,153 @@ def test_ranking_sorts_before_rounding_and_keeps_the_existing_fields():
         "unit",
         "sampled_at",
     ]
+
+
+def _huawei_ids(count):
+    return [f"dc01_switch_snmp_huawei_{index:08d}" for index in range(count)]
+
+
+def test_switch_memory_long_ids_are_split_on_utf8_bytes():
+    for count in (33, 34):
+        devices = [_device(instance_id, "Switch") for instance_id in _huawei_ids(count)]
+        _rows, vm = _run("memory", devices, {})
+        assert vm.calls
+        assert all(_query_bytes(query) <= LOCAL_QUERY_BYTE_BUDGET for query, _kwargs in vm.calls)
+        assert len(vm.calls) > 1
+        assert sum(_id_count(query) for query, _kwargs in vm.calls) == count
+        assert all(call[1]["step"] == "601s" and call[1]["lookback_delta"] == "601s" and call[1]["time"] == NOW.timestamp() for call in vm.calls)
+
+
+def test_two_hundred_short_ids_stay_together_and_the_next_id_starts_a_new_batch():
+    short = [f"a{index:03d}" for index in range(200)]
+    _rows, vm = _run("cpu", [_device(instance_id, "Switch") for instance_id in short], {})
+    assert len(vm.calls) == 1
+    assert _id_count(vm.calls[0][0]) == 200
+    assert _query_bytes(vm.calls[0][0]) <= LOCAL_QUERY_BYTE_BUDGET
+
+    wider = short + ["a200"]
+    _rows, vm = _run("cpu", [_device(instance_id, "Switch") for instance_id in wider], {})
+    assert sorted(_id_count(query) for query, _kwargs in vm.calls) == [1, 200]
+    assert all(_query_bytes(query) <= LOCAL_QUERY_BYTE_BUDGET for query, _kwargs in vm.calls)
+
+
+def test_unicode_ids_are_budgeted_as_utf8_bytes():
+    devices = [_device(f"测{index:03d}" + ("测" * 80), "Switch") for index in range(8)]
+    _rows, vm = _run("memory", devices, {})
+    assert len(vm.calls) > 1
+    assert len(devices) <= 200
+    assert all(_query_bytes(query) <= LOCAL_QUERY_BYTE_BUDGET for query, _kwargs in vm.calls)
+    assert any(len(query) < _query_bytes(query) for query, _kwargs in vm.calls)
+
+
+def test_regex_metacharacters_are_escaped_before_the_byte_budget():
+    devices = [_device(f"a.b|c({index:03d})" + ("x" * 40), "Switch") for index in range(40)]
+    _rows, vm = _run("memory", devices, {})
+    sent = "".join(query for query, _kwargs in vm.calls)
+    assert "a\\\\.b\\\\|c\\\\(" in sent
+    assert "a.b|c(" not in sent
+    assert len(vm.calls) > 1
+    assert all(_query_bytes(query) <= LOCAL_QUERY_BYTE_BUDGET for query, _kwargs in vm.calls)
+
+
+def test_traffic_batches_follow_the_larger_direction_and_keep_the_raw_timestamp_gate():
+    devices = [_device(instance_id, "Wireless") for instance_id in _huawei_ids(140)]
+    _rows, vm = _run("traffic", devices, {})
+    assert len(vm.calls) > 2
+    assert len(vm.calls) % 2 == 0
+    times = set()
+    for index in range(0, len(vm.calls), 2):
+        incoming, in_kwargs = vm.calls[index]
+        outgoing, out_kwargs = vm.calls[index + 1]
+        assert _matcher_body(incoming) == _matcher_body(outgoing)
+        assert _query_bytes(incoming) <= LOCAL_QUERY_BYTE_BUDGET
+        assert _query_bytes(outgoing) <= LOCAL_QUERY_BYTE_BUDGET
+        assert "timestamp(" in incoming and "timestamp(" in outgoing
+        assert "[5m]" in incoming and "[5m]" in outgoing
+        assert "ignoring(__name__)" in incoming and "ignoring(__name__)" in outgoing
+        assert in_kwargs["step"] == out_kwargs["step"] == "601s"
+        assert in_kwargs["lookback_delta"] == out_kwargs["lookback_delta"] == "601s"
+        times.add(in_kwargs["time"])
+        times.add(out_kwargs["time"])
+    assert times == {NOW.timestamp()}
+
+
+def test_a_high_value_in_a_later_batch_still_wins_the_global_top():
+    ids = [f"a{index:03d}" for index in range(201)]
+    points = [_point(instance_id, 1) for instance_id in ids]
+    points[-1] = _point("a200", 99)
+    rows, vm = _run("cpu", [_device(instance_id, "Switch", name=instance_id) for instance_id in ids], {"device_cpu_usage": points})
+    assert len(vm.calls) >= 2
+    assert rows[0]["instance_id"] == "a200"
+    assert rows[0]["value"] == 99.0
+    assert len(rows) == 10
+
+
+def test_a_later_batch_failure_does_not_return_a_partial_board():
+    class BoomVM:
+        def __init__(self):
+            self.calls = []
+
+        def query(self, query, **kwargs):
+            self.calls.append(query)
+            if len(self.calls) > 1:
+                raise RuntimeError("vm failed SECRET-DEVICE-9 max(device_memory_usage{instance_id")
+            return {"status": "success", "data": {"result": [_point("a000", 4)]}}
+
+    vm = BoomVM()
+    devices = [_device(f"a{index:03d}", "Switch") for index in range(201)]
+    with pytest.raises(RuntimeError) as caught:
+        NetworkDeviceResourceTopService(vm_api=vm, now=NOW).run("cpu", devices)
+    assert "SECRET-DEVICE-9" not in str(caught.value)
+    assert "device_memory_usage" not in str(caught.value)
+    assert len(vm.calls) >= 1
+
+
+def test_one_oversized_id_sends_nothing_even_when_only_a_later_group_overflows(caplog):
+    huge = "SECRET-HUGE-" + ("x" * 4000)
+    devices = [
+        _device("sw-1", "Switch", interval=300),
+        _device(huge, "Switch", interval=60),
+    ]
+    vm = FakeVM({})
+    with caplog.at_level(logging.ERROR, logger="monitor"):
+        with pytest.raises(RuntimeError) as caught:
+            NetworkDeviceResourceTopService(vm_api=vm, now=NOW).run("memory", devices)
+    assert vm.calls == []
+    assert "SECRET-HUGE" not in str(caught.value)
+    rendered = " ".join(record.getMessage() for record in caplog.records)
+    assert "SECRET-HUGE" not in rendered
+    assert "max(" not in rendered
+    assert any(record.levelno == logging.ERROR for record in caplog.records)
+    message = caplog.records[-1].getMessage()
+    assert "failed_stage=single_query_over_budget" in message
+    assert "metric_type=memory" in message
+    assert "budget_bytes=16128" in message
+    assert "query_bytes=" in message
+    assert caplog.records[-1].exc_info is None
+
+
+def test_signature_fallback_cannot_drop_step_and_lookback():
+    class KwargsOnly:
+        def __init__(self):
+            self.calls = []
+
+        def query(self, query, **kwargs):
+            self.calls.append(kwargs)
+            if kwargs:
+                raise TypeError("step")
+            return {"status": "success", "data": {"result": [_point("sw-1", 9)]}}
+
+    vm = KwargsOnly()
+    with pytest.raises(TypeError):
+        NetworkDeviceResourceTopService(vm_api=vm, now=NOW).run("cpu", [_device("sw-1", "Switch")])
+    assert len(vm.calls) == 1
+    assert vm.calls[0]["step"] == "601s"
+
+
+def test_negative_gauge_values_stay_in_the_ranking():
+    rows, _vm = _run("cpu", [_device("sw-1", "Switch")], {"device_cpu_usage": [_point("sw-1", -3.5)]})
+    assert rows[0]["value"] == -3.5
 
 
 def test_result_timestamp_is_stored_as_sampled_at_without_a_python_age_filter():

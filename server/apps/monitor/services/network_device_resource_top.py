@@ -22,6 +22,7 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Any
 
+from apps.core.logger import monitor_logger as logger
 from apps.monitor.services.metric_query_contract import build_instance_matcher_groups, join_label_queries
 from apps.monitor.services.metric_series import MAX_INSTANCE_IDS
 from apps.monitor.utils.dimension import parse_instance_id
@@ -34,6 +35,9 @@ TRAFFIC_METRIC_NAMES = ("device_total_incoming_traffic", "device_total_outgoing_
 IFMIB_RATE_WINDOW_SECONDS = 300
 DEFAULT_COLLECTION_INTERVAL_SECONDS = 300
 DETAIL_QUERY_CHUNK_SIZE = MAX_INSTANCE_IDS
+# Local margin under VictoriaMetrics' default -search.maxQueryLen of 16384.
+# This is not read from VM and is not a protocol field.
+QUERY_BYTE_BUDGET = 16128
 DETAIL_METRIC_MANIFEST = Path(__file__).resolve().parent.parent / "support-files" / "network_device_detail_metrics.json"
 _CATALOG_SELECTOR = "{instance_type='switch', __$labels__}"
 _CATALOG_RATE = re.compile(r"rate\(([A-Za-z_:][A-Za-z0-9_:]*)\{([^{}]*)\}\[5m\]\)")
@@ -49,10 +53,14 @@ class NetworkCandidate:
 
 @dataclass(frozen=True)
 class NetworkDeviceDetailMetric:
-    object_name: str
-    metric_name: str
     capability_id: str
     template: str
+
+
+class _QueryBudgetExceeded(RuntimeError):
+    def __init__(self, query_bytes: int):
+        super().__init__("网络设备资源指标查询失败")
+        self.query_bytes = query_bytes
 
 
 def validate_metric_type(metric_type: str) -> str:
@@ -122,10 +130,66 @@ def _single_instance_id(instance) -> str | None:
     return str(parsed[0])
 
 
-def _chunks(values: list[str], size: int):
-    step = max(1, int(size))
-    for start in range(0, len(values), step):
-        yield values[start : start + step]
+def _utf8_len(value: str) -> int:
+    return len(value.encode("utf-8"))
+
+
+def _log_query_failure(*, metric_type, failed_stage, query_bytes, chunk_count, capability_id="", direction="", error_type):
+    logger.error(
+        "network device resource top query failed metric_type=%s failed_stage=%s "
+        "capability_id=%s direction=%s chunk_count=%s query_bytes=%s budget_bytes=%s error_type=%s",
+        metric_type,
+        failed_stage,
+        capability_id,
+        direction,
+        chunk_count,
+        query_bytes,
+        QUERY_BYTE_BUDGET,
+        error_type,
+    )
+
+
+def _pack_rendered(ids, render, measure):
+    """Greedy batches. The stored render is the one whose size was measured."""
+    ordered = sorted(set(ids))
+    singles = []
+    for instance_id in ordered:
+        rendered = render([instance_id])
+        size = measure(rendered)
+        if size > QUERY_BYTE_BUDGET:
+            raise _QueryBudgetExceeded(size)
+        singles.append((instance_id, rendered))
+
+    batches = []
+    current_ids = []
+    current_rendered = None
+    for instance_id, single in singles:
+        if not current_ids:
+            current_ids = [instance_id]
+            current_rendered = single
+            continue
+        if len(current_ids) >= DETAIL_QUERY_CHUNK_SIZE:
+            batches.append((current_ids, current_rendered))
+            current_ids = [instance_id]
+            current_rendered = single
+            continue
+        trial_ids = current_ids + [instance_id]
+        trial = render(trial_ids)
+        if measure(trial) <= QUERY_BYTE_BUDGET:
+            current_ids = trial_ids
+            current_rendered = trial
+            continue
+        batches.append((current_ids, current_rendered))
+        current_ids = [instance_id]
+        current_rendered = single
+    if current_ids:
+        batches.append((current_ids, current_rendered))
+    return batches
+
+
+def _fail_closed(exc: Exception):
+    safe = RuntimeError("网络设备资源指标查询失败")
+    raise safe.with_traceback(exc.__traceback__) from None
 
 
 @lru_cache(maxsize=1)
@@ -153,12 +217,7 @@ def load_network_device_detail_metrics() -> dict[tuple[str, str], NetworkDeviceD
         key = (object_name, metric_name)
         if capability is None or object_name not in capability.object_names or key in bindings:
             raise RuntimeError(f"invalid network device detail metric: {object_name}.{metric_name or '-'}")
-        bindings[key] = NetworkDeviceDetailMetric(
-            object_name=object_name,
-            metric_name=metric_name,
-            capability_id=capability_id,
-            template=capability.template,
-        )
+        bindings[key] = NetworkDeviceDetailMetric(capability_id=capability_id, template=capability.template)
     return bindings
 
 
@@ -258,10 +317,7 @@ class NetworkDeviceResourceTopService:
         return build_ranked_rows(candidates, meta, limit=int(limit))
 
     def _query_instant(self, query: str, window: str, reference: datetime):
-        try:
-            response = self.vm_api.query(query, step=window, lookback_delta=window, time=reference.timestamp())
-        except TypeError:
-            response = self.vm_api.query(query)
+        response = self.vm_api.query(query, step=window, lookback_delta=window, time=reference.timestamp())
         if not isinstance(response, dict) or response.get("status") != "success":
             raise RuntimeError("网络设备资源指标查询失败")
         result = response.get("data", {}).get("result", [])
@@ -301,20 +357,54 @@ class NetworkDeviceResourceTopService:
                 continue
             group = groups.setdefault(
                 (binding.capability_id, device["interval"]),
-                {"template": binding.template, "interval": device["interval"], "ids": []},
+                {"template": binding.template, "capability_id": binding.capability_id, "interval": device["interval"], "ids": []},
             )
             group["ids"].append(device["instance_id"])
 
-        found = {}
+        plans = []
         for group in groups.values():
             window = f"{gauge_search_window_seconds(group['interval'])}s"
-            for chunk in _chunks(sorted(set(group["ids"])), DETAIL_QUERY_CHUNK_SIZE):
-                matchers = build_instance_matcher_groups(tuple(chunk), ["instance_id"])
-                query = join_label_queries(group["template"], matchers)
+            template = group["template"]
+
+            def render(chunk_ids, template=template):
+                query = join_label_queries(template, build_instance_matcher_groups(tuple(chunk_ids), ["instance_id"]))
                 if "__$" in query:
                     raise RuntimeError("网络设备详情查询模板参数不完整")
-                allowed = set(chunk)
-                for instance_id, value, sampled_at in self._query_instant(query, window, reference):
+                return query
+
+            try:
+                batches = _pack_rendered(group["ids"], render, _utf8_len)
+            except _QueryBudgetExceeded as exc:
+                _log_query_failure(
+                    metric_type=metric_type,
+                    failed_stage="single_query_over_budget",
+                    query_bytes=exc.query_bytes,
+                    chunk_count=0,
+                    capability_id=group["capability_id"],
+                    error_type="QueryBudgetExceeded",
+                )
+                raise RuntimeError("网络设备资源指标查询失败") from None
+            plans.append((group["capability_id"], window, batches))
+
+        found = {}
+        for capability_id, window, batches in plans:
+            for chunk_ids, query in batches:
+                try:
+                    samples = self._query_instant(query, window, reference)
+                except TypeError:
+                    raise
+                except Exception as exc:
+                    _log_query_failure(
+                        metric_type=metric_type,
+                        failed_stage="query_chunk",
+                        query_bytes=_utf8_len(query),
+                        chunk_count=len(batches),
+                        capability_id=capability_id,
+                        error_type=type(exc).__name__,
+                    )
+                    _fail_closed(exc)
+                allowed = set(chunk_ids)
+                for instance_id, value, sampled_at in samples:
                     self._remember(found, instance_id, value, sampled_at, allowed)
         return [NetworkCandidate(instance_id, value, sampled_at, metric_type) for instance_id, (value, sampled_at) in found.items()]
 
@@ -322,16 +412,49 @@ class NetworkDeviceResourceTopService:
         by_interval = {}
         for device in devices:
             by_interval.setdefault(device["interval"], []).append(device["instance_id"])
-        totals = {}
+        plans = []
         for interval, instance_ids in by_interval.items():
             cutoff = freshness_cutoff_literal(reference, interval)
             window = f"{traffic_search_window_seconds(interval)}s"
-            for chunk in _chunks(sorted(set(instance_ids)), DETAIL_QUERY_CHUNK_SIZE):
-                matcher = build_instance_matcher_groups(tuple(chunk), ["instance_id"])[0][0]
-                allowed = set(chunk)
-                for metric_name in TRAFFIC_METRIC_NAMES:
-                    query = build_device_total_rate_query(metric_name, matcher, cutoff)
-                    for instance_id, value, sampled_at in self._query_instant(query, window, reference):
+
+            def render(chunk_ids, cutoff=cutoff):
+                matcher = build_instance_matcher_groups(tuple(chunk_ids), ["instance_id"])[0][0]
+                return tuple(build_device_total_rate_query(name, matcher, cutoff) for name in TRAFFIC_METRIC_NAMES)
+
+            try:
+                batches = _pack_rendered(instance_ids, render, lambda pair: max(_utf8_len(query) for query in pair))
+            except _QueryBudgetExceeded as exc:
+                _log_query_failure(
+                    metric_type="traffic",
+                    failed_stage="single_query_over_budget",
+                    query_bytes=exc.query_bytes,
+                    chunk_count=0,
+                    direction="+".join(TRAFFIC_METRIC_NAMES),
+                    error_type="QueryBudgetExceeded",
+                )
+                raise RuntimeError("网络设备资源指标查询失败") from None
+            plans.append((window, batches))
+
+        totals = {}
+        for window, batches in plans:
+            for chunk_ids, queries in batches:
+                allowed = set(chunk_ids)
+                for direction, query in zip(TRAFFIC_METRIC_NAMES, queries):
+                    try:
+                        samples = self._query_instant(query, window, reference)
+                    except TypeError:
+                        raise
+                    except Exception as exc:
+                        _log_query_failure(
+                            metric_type="traffic",
+                            failed_stage="query_chunk",
+                            query_bytes=_utf8_len(query),
+                            chunk_count=len(batches),
+                            direction=direction,
+                            error_type=type(exc).__name__,
+                        )
+                        _fail_closed(exc)
+                    for instance_id, value, sampled_at in samples:
                         if instance_id not in allowed:
                             continue
                         current = totals.get(instance_id)
