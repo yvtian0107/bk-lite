@@ -47,6 +47,10 @@ import {
   formatVisibleChartValue,
   getLineBarYAxisName,
 } from '@/app/ops-analysis/utils/chartValueFormat';
+import {
+  appendReferenceSeries,
+  isReferenceSeries,
+} from '@/app/ops-analysis/utils/chartReferenceLines';
 
 interface BarChartProps {
   rawData: any;
@@ -184,16 +188,19 @@ const BarChart: React.FC<BarChartProps> = ({
           color: chartTheme.tooltipTextColor,
         },
         formatter: wrapDataLinkTooltipFormatter(function (params: any) {
-          if (!params || params.length === 0) return '';
+          const rows = (params || []).filter(
+            (param: { seriesId?: string }) => !isReferenceSeries({ id: param.seriesId }),
+          );
+          if (rows.length === 0) return '';
           const tooltipPaddingY = scaleScreenMetric(4, screenRenderContext);
           const tooltipPaddingX = scaleScreenMetric(8, screenRenderContext);
           const tooltipGap = scaleScreenMetric(4, screenRenderContext);
           const markerSize = scaleScreenMetric(10, screenRenderContext);
           const markerGap = scaleScreenMetric(6, screenRenderContext);
           let content = `<div style="padding: ${tooltipPaddingY}px ${tooltipPaddingX}px;">
-            <div style="position: sticky; top: 0; z-index: 1; margin-bottom: ${tooltipGap}px; font-weight: bold; background: ${chartTheme.tooltipBackgroundColor};">${params[0].axisValueLabel}</div>`;
+            <div style="position: sticky; top: 0; z-index: 1; margin-bottom: ${tooltipGap}px; font-weight: bold; background: ${chartTheme.tooltipBackgroundColor};">${rows[0].axisValueLabel}</div>`;
 
-          params.forEach((param: any) => {
+          rows.forEach((param: any) => {
             content += `
               <div style="display: flex; align-items: center; margin-bottom: ${scaleScreenMetric(2, screenRenderContext)}px;">
                 <span style="display: inline-block; width: ${markerSize}px; height: ${markerSize}px; background-color: ${param.color}; border-radius: ${scaleScreenMetric(2, screenRenderContext)}px; margin-right: ${markerGap}px;"></span>
@@ -292,6 +299,7 @@ const BarChart: React.FC<BarChartProps> = ({
         type: 'bar',
         data: withChartLinkPoints(item.data, item.points),
         barMaxWidth: scaleScreenMetric(40, screenRenderContext),
+        ...(config?.stack ? { stack: 'total' } : {}),
         itemStyle: {
           borderRadius: usesScreenChartTheme
             ? [
@@ -322,6 +330,7 @@ const BarChart: React.FC<BarChartProps> = ({
             chartData?.points,
           ),
           barMaxWidth: scaleScreenMetric(40, screenRenderContext),
+          ...(config?.stack ? { stack: 'total' } : {}),
           itemStyle: {
             borderRadius: usesScreenChartTheme
               ? [
@@ -345,32 +354,10 @@ const BarChart: React.FC<BarChartProps> = ({
       ];
     }
 
-    // 阈值线（对齐 Grafana）：按 config.thresholdColors 在 Y 轴画水平虚线，
-    // 跳过基线 0，只挂在第一条系列上。
-    const thresholdLines = (config?.thresholdColors || [])
-      .map((th) => ({ value: Number(th.value), color: th.color }))
-      .filter((th) => !Number.isNaN(th.value) && th.value !== 0);
-    if (thresholdLines.length > 0 && built.series.length > 0) {
-      built.series[0].markLine = {
-        symbol: 'none',
-        silent: true,
-        data: thresholdLines.map((th) => ({
-          yAxis: th.value,
-          lineStyle: {
-            color: th.color,
-            type: 'dashed',
-            width: scaleScreenMetricFloat(1.5, screenRenderContext),
-          },
-          label: {
-            show: true,
-            position: 'insideEndTop',
-            formatter: String(th.value),
-            color: th.color,
-            fontSize: scaleScreenMetric(10, screenRenderContext),
-          },
-        })),
-      };
-    }
+    built.series = appendReferenceSeries(built.series, config, {
+      lineWidth: scaleScreenMetricFloat(1.5, screenRenderContext),
+      fontSize: scaleScreenMetric(10, screenRenderContext),
+    });
 
     return built;
   }, [
@@ -392,9 +379,11 @@ const BarChart: React.FC<BarChartProps> = ({
     yAxisName,
   ]);
 
-  const legendData = option.series.map((item: { name?: string }) => ({
-    name: item.name || t('topology.treeValueTitle'),
-  }));
+  const legendData = option.series
+    .filter((item: { id?: string }) => !isReferenceSeries(item))
+    .map((item: { name?: string }) => ({
+      name: item.name || t('topology.treeValueTitle'),
+    }));
 
   if (loading) {
     return (

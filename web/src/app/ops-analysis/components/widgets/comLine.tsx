@@ -47,6 +47,11 @@ import {
   countRenderableLinePoints,
   resolveLineSeriesPointMark,
 } from '@/app/ops-analysis/utils/lineSeriesSymbol';
+import { positiveSeriesMax } from '@/app/ops-analysis/utils/chartSeriesExtent';
+import {
+  appendReferenceSeries,
+  isReferenceSeries,
+} from '@/app/ops-analysis/utils/chartReferenceLines';
 
 interface EChartsInstance {
   dispatchAction: (payload: Record<string, any>) => void;
@@ -332,16 +337,19 @@ const TrendLine: React.FC<TrendLineProps> = ({
           color: chartTheme.tooltipTextColor,
         },
         formatter: wrapDataLinkTooltipFormatter(function (params: any) {
-          if (!params || params.length === 0) return '';
+          const rows = (params || []).filter(
+            (param: { seriesId?: string }) => !isReferenceSeries({ id: param.seriesId }),
+          );
+          if (rows.length === 0) return '';
           const tooltipPaddingY = scaleScreenMetric(4, screenRenderContext);
           const tooltipPaddingX = scaleScreenMetric(8, screenRenderContext);
           const tooltipGap = scaleScreenMetric(4, screenRenderContext);
           const markerSize = scaleScreenMetric(10, screenRenderContext);
           const markerGap = scaleScreenMetric(6, screenRenderContext);
           let content = `<div style="padding: ${tooltipPaddingY}px ${tooltipPaddingX}px;">
-            <div style="position: sticky; top: 0; z-index: 1; margin-bottom: ${tooltipGap}px; font-weight: bold; background: ${chartTheme.tooltipBackgroundColor};">${params[0].axisValueLabel}</div>`;
+            <div style="position: sticky; top: 0; z-index: 1; margin-bottom: ${tooltipGap}px; font-weight: bold; background: ${chartTheme.tooltipBackgroundColor};">${rows[0].axisValueLabel}</div>`;
 
-          params.forEach((param: any) => {
+          rows.forEach((param: any) => {
             content += `
               <div style="display: flex; align-items: center; margin-bottom: ${scaleScreenMetric(2, screenRenderContext)}px;">
                 <span style="display: inline-block; width: ${markerSize}px; height: ${markerSize}px; background-color: ${param.color}; border-radius: 50%; margin-right: ${markerGap}px;"></span>
@@ -440,10 +448,7 @@ const TrendLine: React.FC<TrendLineProps> = ({
     let largeSeriesIndices: number[] = [];
 
     if (chartData && chartData.series && chartData.series.length >= 2) {
-      const seriesMaxValues = chartData.series.map((item: any) => {
-        const nums = (item.data || []).filter((v: any) => typeof v === 'number' && v > 0);
-        return nums.length > 0 ? Math.max(...nums) : 0;
-      });
+      const seriesMaxValues = chartData.series.map((item: any) => positiveSeriesMax(item.data));
       const maxVal = Math.max(...seriesMaxValues);
       const minVal = Math.min(...seriesMaxValues.filter((v: number) => v > 0));
       if (minVal > 0 && maxVal / minVal >= DUAL_AXIS_THRESHOLD) {
@@ -600,32 +605,10 @@ const TrendLine: React.FC<TrendLineProps> = ({
       ];
     }
 
-    // 阈值线（对齐 Grafana）：按 config.thresholdColors 在 Y 轴画水平虚线，
-    // 跳过基线 0 以免杂乱。只挂在第一条系列上，避免重复绘制。
-    const thresholdLines = (config?.thresholdColors || [])
-      .map((th) => ({ value: Number(th.value), color: th.color }))
-      .filter((th) => !Number.isNaN(th.value) && th.value !== 0);
-    if (thresholdLines.length > 0 && built.series.length > 0) {
-      built.series[0].markLine = {
-        symbol: 'none',
-        silent: true,
-        data: thresholdLines.map((th) => ({
-          yAxis: th.value,
-          lineStyle: {
-            color: th.color,
-            type: 'dashed',
-            width: scaleScreenMetricFloat(1.5, screenRenderContext),
-          },
-          label: {
-            show: true,
-            position: 'insideEndTop',
-            formatter: String(th.value),
-            color: th.color,
-            fontSize: scaleScreenMetric(10, screenRenderContext),
-          },
-        })),
-      };
-    }
+    built.series = appendReferenceSeries(built.series, config, {
+      lineWidth: scaleScreenMetricFloat(1.5, screenRenderContext),
+      fontSize: scaleScreenMetric(10, screenRenderContext),
+    });
 
     return built;
   }, [
@@ -648,9 +631,11 @@ const TrendLine: React.FC<TrendLineProps> = ({
     zoomRange,
   ]);
 
-  const legendData = option.series.map((item: { name?: string }) => ({
-    name: item.name || t('topology.treeValueTitle'),
-  }));
+  const legendData = option.series
+    .filter((item: { id?: string }) => !isReferenceSeries(item))
+    .map((item: { name?: string }) => ({
+      name: item.name || t('topology.treeValueTitle'),
+    }));
 
   if (loading) {
     return (

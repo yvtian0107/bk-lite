@@ -23,6 +23,7 @@ import { useTableServerQuery } from '@/app/ops-analysis/utils/useTableServerQuer
 import { useTableBodyScrollY } from '../shared/useTableBodyScrollY';
 import { getScreenWidgetScale } from '../shared/screenMetrics';
 import styles from '../comTable.module.scss';
+import AutoScrollRegion from '../shared/AutoScrollRegion';
 import WidgetState from '@/app/ops-analysis/components/widget-state';
 import { useInteractionSurface } from '@/app/ops-analysis/context/interactionSurface';
 import { InteractionActionCell, useWidgetDataLink } from '@/app/ops-analysis/components/interactionTitleIcon';
@@ -189,7 +190,8 @@ const EventTable: React.FC<EventTableProps> = ({
   }
 
   return (
-    <div
+    <AutoScrollRegion
+      config={config}
       className={`ops-analysis-event-table flex h-full min-h-0 flex-col pt-2 ${
         usesScreenTheme ? styles.screenDarkRoot : ''
       }`}
@@ -240,7 +242,7 @@ const EventTable: React.FC<EventTableProps> = ({
           }}
         />
       </div>
-    </div>
+    </AutoScrollRegion>
   );
 };
 

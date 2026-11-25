@@ -2,6 +2,7 @@ import React, { useEffect } from 'react';
 import type { ValueConfig } from '@/app/ops-analysis/components/ops-analysis-widgets';
 import ChartEmptyState from '@/components/chart-empty-state';
 import MarkdownRenderer from '@/components/markdown';
+import AutoScrollRegion from '@/app/ops-analysis/components/widgets/shared/AutoScrollRegion';
 
 export interface OpsAnalysisTextPanelProps {
   rawData?: unknown;
@@ -26,9 +27,13 @@ const OpsAnalysisTextPanel: React.FC<OpsAnalysisTextPanelProps> = ({ config, onR
   }
 
   return (
-    <div className="h-full w-full overflow-auto px-3 py-2 text-sm leading-relaxed text-(--color-text-1)">
+    <AutoScrollRegion
+      config={config}
+      scrollPort
+      className="h-full w-full overflow-auto px-3 py-2 text-sm leading-relaxed text-(--color-text-1)"
+    >
       <MarkdownRenderer content={content} />
-    </div>
+    </AutoScrollRegion>
   );
 };
 

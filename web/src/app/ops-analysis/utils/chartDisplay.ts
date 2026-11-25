@@ -216,13 +216,13 @@ export function presentBar(
     otherName: string;
   },
 ): LineBarChartData {
+  if (display.displayLimit === undefined && display.sortByValue !== true) {
+    return chart;
+  }
   // 时间分类保持转换后的顺序。按数值重排会打乱已经按时间或字典序排好的轴。
   if (ChartDataTransformer.shouldFormatAsTimeDimension(
     collectRawDimensionValues(input.rawData, input.mapping),
   )) {
-    return chart;
-  }
-  if (display.displayLimit === undefined && display.sortByValue !== true) {
     return chart;
   }
 

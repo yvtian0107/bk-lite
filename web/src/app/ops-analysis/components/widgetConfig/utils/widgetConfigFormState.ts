@@ -33,6 +33,8 @@ import {
 } from '@/app/ops-analysis/utils/lineBarFieldMapping';
 import { readSingleValueStyle } from '@/app/ops-analysis/utils/singleValueStyle';
 import { readChartDisplay } from '@/app/ops-analysis/utils/chartDisplay';
+import { readReferenceLines } from '@/app/ops-analysis/utils/chartReferenceLines';
+import { readAutoScroll } from '@/app/ops-analysis/utils/widgetAutoScroll';
 import type { WidgetConfigFormValues } from './submitConfig';
 
 export const NETWORK_STATUS_TOPOLOGY = 'networkStatusTopology';
@@ -237,6 +239,10 @@ function buildClearedChartDependentFormFields() {
     scalarCalcTimeField: undefined,
     displayLimit: undefined,
     sortByValue: false,
+    stack: false,
+    referenceLines: [],
+    autoScrollEnabled: false,
+    autoScrollIntervalSec: 2,
   };
 }
 
@@ -463,6 +469,13 @@ export function applyOpenedValueConfigToFormValues(
   const openedChartDisplay = readChartDisplay(valueConfig);
   formValues.displayLimit = openedChartDisplay.displayLimit;
   formValues.sortByValue = openedChartDisplay.sortByValue === true;
+  formValues.stack = valueConfig?.stack === true;
+  formValues.referenceLines = readReferenceLines({
+    referenceLines: valueConfig?.referenceLines ?? [],
+  });
+  const openedAutoScroll = readAutoScroll(valueConfig);
+  formValues.autoScrollEnabled = openedAutoScroll.enabled;
+  formValues.autoScrollIntervalSec = openedAutoScroll.intervalMs / 1000;
   if (
     normalizeLineBarFieldList(formValues.selectedFields).length === 0
     && (formValues.chartType === 'single' || formValues.chartType === 'gauge')

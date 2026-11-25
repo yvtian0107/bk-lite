@@ -21,6 +21,19 @@ describe('line series single point mark', () => {
     });
   });
 
+  it('stops after two renderable points', () => {
+    const seen: number[] = [];
+    const data = new Proxy([1, 2, 3, 4], {
+      get(target, prop, receiver) {
+        if (typeof prop === 'string' && /^\d+$/.test(prop)) seen.push(Number(prop));
+        return Reflect.get(target, prop, receiver);
+      },
+    });
+
+    expect(countRenderableLinePoints(data)).toBe(2);
+    expect(Math.max(...seen)).toBeLessThan(3);
+  });
+
   it('keeps dense trends as unmarked lines', () => {
     expect(resolveLineSeriesPointMark(2)).toMatchObject({
       showSymbol: false,

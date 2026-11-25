@@ -11,6 +11,7 @@ import {
 } from '@/app/ops-analysis/utils/cardList';
 import { useTranslation } from '@/utils/i18n';
 import { CardListAccent } from './cardListAccent';
+import AutoScrollRegion from './shared/AutoScrollRegion';
 
 interface ComCardListProps {
   rawData: unknown;
@@ -48,7 +49,7 @@ const ComCardList: React.FC<ComCardListProps> = ({
   }, [hasData, loading, onReady]);
 
   return (
-    <div className="h-full min-h-0 w-full">
+    <AutoScrollRegion config={config} className="h-full min-h-0 w-full">
       <ChartSurface
         loading={loading}
         hasData={hasData}
@@ -64,7 +65,7 @@ const ComCardList: React.FC<ComCardListProps> = ({
           message={`${t('dashboard.cardListOverflowWarning')} (${parsed.total}/${DEFAULT_CARD_LIST_MAX_ITEMS})`}
         />
       ) : null}
-      <div className="min-h-0 flex-1 overflow-y-auto pr-1">
+      <div className="min-h-0 flex-1 overflow-y-auto pr-1" data-auto-scroll-port="">
         <div
           data-layout={layout}
           className={
@@ -76,6 +77,7 @@ const ComCardList: React.FC<ComCardListProps> = ({
           {parsed.items.map((item, index) => (
               <article
                 key={`${item.primary}-${index}`}
+                data-auto-scroll-row=""
                 className={`group/data-link flex min-w-0 items-center gap-3 rounded-md border border-(--color-border-2) bg-(--color-bg) px-3 py-2 ${dataLinkActive ? 'cursor-pointer' : ''}`}
                 onClick={dataLinkActive ? () => openPoint(points[index]) : undefined}
               >
@@ -125,7 +127,7 @@ const ComCardList: React.FC<ComCardListProps> = ({
         </div>
       </div>
       </ChartSurface>
-    </div>
+    </AutoScrollRegion>
   );
 };
 

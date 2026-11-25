@@ -32,6 +32,7 @@ import {
   resolveConfiguredTopNBarPercent,
 } from '@/app/ops-analysis/utils/topNData';
 import { resolveChartBinding } from '@/app/ops-analysis/utils/chartFieldContract';
+import AutoScrollRegion from './shared/AutoScrollRegion';
 
 interface TopNProps {
   rawData: any;
@@ -157,7 +158,8 @@ const TopN: React.FC<TopNProps> = ({
     content = <WidgetState />;
   } else {
     content = (
-      <div
+      <AutoScrollRegion
+        config={config}
         className="flex h-full min-h-0 flex-col overflow-hidden"
         style={{
           paddingBottom: scaleScreenMetric(4, screenRenderContext),
@@ -208,7 +210,7 @@ const TopN: React.FC<TopNProps> = ({
             </span>
           </div>
         )}
-        <div className="min-h-0 flex-1 overflow-y-auto">
+        <div className="min-h-0 flex-1 overflow-y-auto" data-auto-scroll-port="">
           <div
             className="grid items-center"
             style={{
@@ -223,6 +225,7 @@ const TopN: React.FC<TopNProps> = ({
               return (
                 <React.Fragment key={`${item.name}-${index}`}>
                   <span
+                    data-auto-scroll-row=""
                     className={`flex h-7 min-w-0 items-center truncate whitespace-nowrap rounded-l-md text-[13px] ${dataLinkActive ? 'cursor-pointer' : ''}`}
                     onClick={dataLinkActive ? () => openPoint(points[index]) : undefined}
                     style={{
@@ -291,7 +294,7 @@ const TopN: React.FC<TopNProps> = ({
             })}
           </div>
         </div>
-      </div>
+      </AutoScrollRegion>
     );
   }
 

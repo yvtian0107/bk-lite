@@ -13,7 +13,13 @@ const isRenderablePoint = (value: unknown): boolean => {
 
 export const countRenderableLinePoints = (data: unknown): number => {
   if (!Array.isArray(data)) return 0;
-  return data.filter(isRenderablePoint).length;
+  let count = 0;
+  for (const value of data) {
+    if (!isRenderablePoint(value)) continue;
+    count += 1;
+    if (count > 1) return count;
+  }
+  return count;
 };
 
 /** 两个及以上采样点画折线并隐藏拐点；只有一个点时折线不存在，改画圆点。 */

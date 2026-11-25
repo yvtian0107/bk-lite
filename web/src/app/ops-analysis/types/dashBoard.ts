@@ -26,6 +26,8 @@ import type { OpsAnalysisWidgetSurface } from '@/app/ops-analysis/utils/chartTyp
 import type { DataVariable } from '@/app/ops-analysis/utils/dataVariable';
 import type { DateRangeValue } from './dateRange';
 import type { SingleValueStyleConfig } from '@/app/ops-analysis/utils/singleValueStyle';
+import type { ChartReferenceLine } from '@/app/ops-analysis/utils/chartReferenceLines';
+import type { WidgetAutoScroll } from '@/app/ops-analysis/utils/widgetAutoScroll';
 
 export type FilterType = 'selector' | 'fixed';
 
@@ -152,6 +154,12 @@ export interface ValueConfig {
   displayLimit?: number;
   /** 饼图和柱状图按数值降序。只存 true，缺省为关闭。 */
   sortByValue?: boolean;
+  /** 柱状图叠在同一分类上。只存 true，缺省为并排。 */
+  stack?: boolean;
+  /** 折线和柱状图的水平参考线。不配就不画。 */
+  referenceLines?: ChartReferenceLine[];
+  /** 大屏列表只滚动已经拿到的行。只存开启，缺省为手滚。 */
+  autoScroll?: WidgetAutoScroll;
   dimensionField?: string;
   valueField?: string;
   /** 折线/柱状多选数值。有值时优先于 valueField；只选一个时与 valueField 同时写入。 */

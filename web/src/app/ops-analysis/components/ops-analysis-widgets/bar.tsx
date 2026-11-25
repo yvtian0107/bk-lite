@@ -13,6 +13,10 @@ import {
   readChartDisplay,
 } from '@/app/ops-analysis/utils/chartDisplay';
 import { toLineBarFieldMapping } from '@/app/ops-analysis/utils/lineBarFieldMapping';
+import {
+  appendReferenceSeries,
+  isReferenceSeries,
+} from '@/app/ops-analysis/utils/chartReferenceLines';
 import ChartLegend from '@/components/chart-legend';
 import ChartWithSidebarLegend from '@/components/chart-with-sidebar-legend';
 import {
@@ -113,13 +117,15 @@ const OpsAnalysisBar: React.FC<OpsAnalysisBarProps> = ({
           if (!params || params.length === 0) return '';
           return renderEChartsTooltipCard({
             title: params[0].axisValueLabel,
-            rows: params.map((param: any, index: number) => ({
-              key: `${param.seriesName || 'series'}-${index}`,
-              color: param.color,
-              markerShape: 'square',
-              label: param.seriesName || '--',
-              value: formatVisibleChartValue(param.value, config),
-            })),
+            rows: params
+              .filter((param: { seriesId?: string }) => !isReferenceSeries({ id: param.seriesId }))
+              .map((param: any, index: number) => ({
+                key: `${param.seriesName || 'series'}-${index}`,
+                color: param.color,
+                markerShape: 'square',
+                label: param.seriesName || '--',
+                value: formatVisibleChartValue(param.value, config),
+              })),
           });
         },
       },
@@ -223,26 +229,7 @@ const OpsAnalysisBar: React.FC<OpsAnalysisBarProps> = ({
       ];
     }
 
-    const thresholdLines = (config?.thresholdColors || [])
-      .map((threshold) => ({ value: Number(threshold.value), color: threshold.color }))
-      .filter((threshold) => !Number.isNaN(threshold.value) && threshold.value !== 0);
-    if (thresholdLines.length > 0 && built.series.length > 0) {
-      built.series[0].markLine = {
-        symbol: 'none',
-        silent: true,
-        data: thresholdLines.map((threshold) => ({
-          yAxis: threshold.value,
-          lineStyle: { color: threshold.color, type: 'dashed', width: 1.5 },
-          label: {
-            show: true,
-            position: 'insideEndTop',
-            formatter: String(threshold.value),
-            color: threshold.color,
-            fontSize: 10,
-          },
-        })),
-      };
-    }
+    built.series = appendReferenceSeries(built.series, config);
 
     return built;
   }, [
@@ -255,9 +242,11 @@ const OpsAnalysisBar: React.FC<OpsAnalysisBarProps> = ({
     yAxisName,
   ]);
 
-  const legendData = option.series.map((item: { name?: string }) => ({
-    name: item.name || t('topology.treeValueTitle'),
-  }));
+  const legendData = option.series
+    .filter((item: { id?: string }) => !isReferenceSeries(item))
+    .map((item: { name?: string }) => ({
+      name: item.name || t('topology.treeValueTitle'),
+    }));
 
   return (
     <ChartWithSidebarLegend

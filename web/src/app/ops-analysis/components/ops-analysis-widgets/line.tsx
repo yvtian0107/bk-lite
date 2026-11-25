@@ -25,6 +25,11 @@ import {
   countRenderableLinePoints,
   resolveLineSeriesPointMark,
 } from '@/app/ops-analysis/utils/lineSeriesSymbol';
+import { positiveSeriesMax } from '@/app/ops-analysis/utils/chartSeriesExtent';
+import {
+  appendReferenceSeries,
+  isReferenceSeries,
+} from '@/app/ops-analysis/utils/chartReferenceLines';
 
 interface EChartsInstance {
   dispatchAction: (payload: Record<string, any>) => void;
@@ -261,13 +266,15 @@ const OpsAnalysisLine: React.FC<OpsAnalysisLineProps> = ({
           if (!params || params.length === 0) return '';
           return renderEChartsTooltipCard({
             title: params[0].axisValueLabel,
-            rows: params.map((param: any, index: number) => ({
-              key: `${param.seriesName || 'series'}-${index}`,
-              color: param.color,
-              markerShape: 'circle',
-              label: param.seriesName || '--',
-              value: formatVisibleChartValue(param.value, config),
-            })),
+            rows: params
+              .filter((param: { seriesId?: string }) => !isReferenceSeries({ id: param.seriesId }))
+              .map((param: any, index: number) => ({
+                key: `${param.seriesName || 'series'}-${index}`,
+                color: param.color,
+                markerShape: 'circle',
+                label: param.seriesName || '--',
+                value: formatVisibleChartValue(param.value, config),
+              })),
           });
         },
       },
@@ -345,12 +352,7 @@ const OpsAnalysisLine: React.FC<OpsAnalysisLineProps> = ({
     let largeSeriesIndices: number[] = [];
 
     if (chartData && chartData.series && chartData.series.length >= 2) {
-      const seriesMaxValues = chartData.series.map((item: any) => {
-        const numericValues = (item.data || []).filter(
-          (value: any) => typeof value === 'number' && value > 0,
-        );
-        return numericValues.length > 0 ? Math.max(...numericValues) : 0;
-      });
+      const seriesMaxValues = chartData.series.map((item: any) => positiveSeriesMax(item.data));
       const maxVal = Math.max(...seriesMaxValues);
       const minVal = Math.min(...seriesMaxValues.filter((value: number) => value > 0));
       if (minVal > 0 && maxVal / minVal >= DUAL_AXIS_THRESHOLD) {
@@ -460,26 +462,7 @@ const OpsAnalysisLine: React.FC<OpsAnalysisLineProps> = ({
       ];
     }
 
-    const thresholdLines = (config?.thresholdColors || [])
-      .map((threshold) => ({ value: Number(threshold.value), color: threshold.color }))
-      .filter((threshold) => !Number.isNaN(threshold.value) && threshold.value !== 0);
-    if (thresholdLines.length > 0 && built.series.length > 0) {
-      built.series[0].markLine = {
-        symbol: 'none',
-        silent: true,
-        data: thresholdLines.map((threshold) => ({
-          yAxis: threshold.value,
-          lineStyle: { color: threshold.color, type: 'dashed', width: 1.5 },
-          label: {
-            show: true,
-            position: 'insideEndTop',
-            formatter: String(threshold.value),
-            color: threshold.color,
-            fontSize: 10,
-          },
-        })),
-      };
-    }
+    built.series = appendReferenceSeries(built.series, config);
 
     return built;
   }, [
@@ -493,9 +476,11 @@ const OpsAnalysisLine: React.FC<OpsAnalysisLineProps> = ({
     zoomRange,
   ]);
 
-  const legendData = option.series.map((item: { name?: string }) => ({
-    name: item.name || t('topology.treeValueTitle'),
-  }));
+  const legendData = option.series
+    .filter((item: { id?: string }) => !isReferenceSeries(item))
+    .map((item: { name?: string }) => ({
+      name: item.name || t('topology.treeValueTitle'),
+    }));
 
   return (
     <ChartWithSidebarLegend

@@ -19,6 +19,7 @@ import {
 } from './shared/tableLikeData';
 import { useTableBodyScrollY } from './shared/useTableBodyScrollY';
 import styles from './comTable.module.scss';
+import AutoScrollRegion from './shared/AutoScrollRegion';
 import type { DatasourceItem } from '@/app/ops-analysis/types/dataSource';
 import type {
   ScreenRenderContext,
@@ -448,8 +449,8 @@ const ComTable: React.FC<ComTableProps> = ({
   };
 
   return (
-    <div
-      // 标题和表格的间距必须在 h-full 内部。margin-top 会把同高的表格顶出卡片的 overflow:hidden，分页器底部被裁掉。
+    <AutoScrollRegion
+      config={config}
       className={`flex h-full min-h-0 flex-col pt-2 ${usesScreenTheme ? styles.screenDarkRoot : ''}`}
       style={screenTableStyle}
     >
@@ -503,8 +504,9 @@ const ComTable: React.FC<ComTableProps> = ({
           }}
         />
       </div>
-    </div>
+    </AutoScrollRegion>
   );
 };
 
 export default ComTable;
+

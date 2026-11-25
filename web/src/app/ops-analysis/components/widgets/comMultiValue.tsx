@@ -10,6 +10,7 @@ import { getOpsChartThemeByMode } from '@/app/ops-analysis/utils/chartTheme';
 import { scaleScreenMetric } from './shared/screenMetrics';
 import WidgetState from '@/app/ops-analysis/components/widget-state';
 import { resolveMultiValueRowDisplay } from '@/app/ops-analysis/utils/chartValueFormat';
+import AutoScrollRegion from './shared/AutoScrollRegion';
 
 interface ComMultiValueProps {
   rawData: unknown;
@@ -58,7 +59,12 @@ const ComMultiValue: React.FC<ComMultiValueProps> = ({
 
   const padding = scaleScreenMetric(8, screenRenderContext);
   return (
-    <div className="h-full w-full overflow-y-auto overflow-x-hidden" style={{ padding }}>
+    <AutoScrollRegion
+      config={config}
+      scrollPort
+      className="h-full w-full overflow-y-auto overflow-x-hidden"
+      style={{ padding }}
+    >
       <div className="flex flex-col gap-1">
         {result.items.map((item, index) => {
           const display = resolveMultiValueRowDisplay(
@@ -69,6 +75,7 @@ const ComMultiValue: React.FC<ComMultiValueProps> = ({
           return (
           <div
             key={`${index}-${item.label}`}
+            data-auto-scroll-row=""
             className={`group/data-link flex min-w-0 items-center justify-between gap-3 rounded px-2 py-1 ${dataLinkActive ? 'cursor-pointer' : ''}`}
             onClick={dataLinkActive ? () => openPoint(points[index]) : undefined}
           >
@@ -93,7 +100,7 @@ const ComMultiValue: React.FC<ComMultiValueProps> = ({
           );
         })}
       </div>
-    </div>
+    </AutoScrollRegion>
   );
 };
 

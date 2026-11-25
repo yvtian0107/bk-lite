@@ -4,6 +4,8 @@ import type {
   ValueMapping,
 } from '@/app/ops-analysis/components/ops-analysis-config-sections/types';
 import type { OpsChartThemeMode } from '@/app/ops-analysis/utils/chartTheme';
+import type { ChartReferenceLine } from '@/app/ops-analysis/utils/chartReferenceLines';
+import type { WidgetAutoScroll } from '@/app/ops-analysis/utils/widgetAutoScroll';
 
 export type ChartType =
   | 'line'
@@ -220,6 +222,8 @@ export interface ValueConfig {
   unitId?: string;
   valueMappings?: ValueMapping[];
   stack?: boolean;
+  referenceLines?: ChartReferenceLine[];
+  autoScroll?: WidgetAutoScroll;
   fillOpacity?: number;
   content?: string;
   conversionFactor?: number;

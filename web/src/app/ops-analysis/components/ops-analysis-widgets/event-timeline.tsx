@@ -14,6 +14,7 @@ import {
 } from '@/app/ops-analysis/utils/interactionLink';
 import { isScreenChartThemeMode } from '@/app/ops-analysis/utils/chartTheme';
 import { useTranslation } from '@/utils/i18n';
+import AutoScrollRegion from '@/app/ops-analysis/components/widgets/shared/AutoScrollRegion';
 
 export interface OpsAnalysisEventTimelineProps {
   rawData: unknown;
@@ -61,7 +62,7 @@ const OpsAnalysisEventTimeline: React.FC<OpsAnalysisEventTimelineProps> = ({
   }, [hasData, loading, onReady]);
 
   return (
-    <div className="h-full min-h-0 w-full">
+    <AutoScrollRegion config={config} className="h-full min-h-0 w-full">
       <ChartSurface
         loading={loading}
         hasData={hasData}
@@ -77,11 +78,12 @@ const OpsAnalysisEventTimeline: React.FC<OpsAnalysisEventTimelineProps> = ({
           message={`${t('dashboard.eventTimelineOverflowWarning')} (${parsed.total}/${DEFAULT_EVENT_TIMELINE_MAX_ITEMS})`}
         />
       ) : null}
-      <div className="min-h-0 flex-1 overflow-y-auto pr-1">
+      <div className="min-h-0 flex-1 overflow-y-auto pr-1" data-auto-scroll-port="">
         <div className="relative pl-5">
           {parsed.items.map((item, index) => (
             <div
               key={`${item.time}-${item.title}-${index}`}
+              data-auto-scroll-row=""
               className={`relative pb-4${dataLinkActive ? ' cursor-pointer' : ''}`}
               onClick={dataLinkActive
                 ? () => openPoint(eventTimelineLinkPoint(item))
@@ -140,7 +142,7 @@ const OpsAnalysisEventTimeline: React.FC<OpsAnalysisEventTimelineProps> = ({
         </div>
       </div>
       </ChartSurface>
-    </div>
+    </AutoScrollRegion>
   );
 };
 

@@ -84,6 +84,7 @@ import {
 import { useTableConfig } from './widgetConfig/hooks/useTableConfig';
 import { TableSettingsSection } from './widgetConfig/sections/tableSettingsSection';
 import { ChartDisplayFields } from './widgetConfig/sections/chartDisplayFields';
+import { ChartBehaviorFields } from './widgetConfig/sections/chartBehaviorFields';
 import { TopNSettingsSection } from './widgetConfig/sections/topNSettingsSection';
 import { NodeGraphSettingsSection } from './widgetConfig/sections/nodeGraphSettingsSection';
 import { GaugeSettingsSection } from './widgetConfig/sections/gaugeSettingsSection';
@@ -2094,6 +2095,7 @@ const ViewConfig: React.FC<ViewConfigPropsWithManager> = ({
             {(chartType === 'topN' || chartType === 'pie' || chartType === 'bar') && (
               <ChartDisplayFields t={t} chartType={chartType} />
             )}
+            <ChartBehaviorFields t={t} chartType={chartType} />
 
             {chartType === 'cardList' && (
               <CardListSettingsSection

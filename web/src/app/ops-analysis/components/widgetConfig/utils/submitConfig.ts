@@ -40,6 +40,11 @@ import {
   type Application3DWallConfig,
 } from '@/app/ops-analysis/utils/application3DWallConfig';
 import { chartDisplayPatch, CHART_DISPLAY_KEYS } from '@/app/ops-analysis/utils/chartDisplay';
+import { persistReferenceLines } from '@/app/ops-analysis/utils/chartReferenceLines';
+import {
+  persistAutoScroll,
+  supportsAutoScroll,
+} from '@/app/ops-analysis/utils/widgetAutoScroll';
 import { persistLineBarFormFields } from '@/app/ops-analysis/utils/lineBarFieldMapping';
 import {
   persistSingleValueStyle,
@@ -83,6 +88,10 @@ export interface WidgetConfigFormValues {
   pieScalarFields?: Array<{ field?: string; label?: string }>;
   displayLimit?: number;
   sortByValue?: boolean;
+  stack?: boolean;
+  referenceLines?: Array<{ name?: string; value?: number; color?: string }>;
+  autoScrollEnabled?: boolean;
+  autoScrollIntervalSec?: number;
   multiValueLabelField?: string;
   multiValueValueField?: string;
   nodeGraphIdentityMode?: 'ip' | 'service';
@@ -527,6 +536,23 @@ export const omitForeignChartTypeFields = <T extends object>(
       delete next.valueMappings;
     }
   }
+  if (chartType !== 'bar' && chartType !== 'line') {
+    delete next.stack;
+    delete next.referenceLines;
+  } else {
+    if (next.stack !== true) delete next.stack;
+    if (!Array.isArray(next.referenceLines) || next.referenceLines.length === 0) {
+      delete next.referenceLines;
+    }
+  }
+  const autoScroll = next.autoScroll;
+  const autoScrollEnabled = !!autoScroll
+    && typeof autoScroll === 'object'
+    && !Array.isArray(autoScroll)
+    && (autoScroll as { enabled?: unknown }).enabled === true;
+  if (!supportsAutoScroll(chartType) || !autoScrollEnabled) {
+    delete next.autoScroll;
+  }
   return stripUnsetOptionalNumericDisplayFields(next);
 };
 
@@ -584,6 +610,9 @@ export const dashboardWidgetValueConfigPatch = (
   singleStyle: config.singleStyle,
   interaction: config.interaction,
   actions: config.actions,
+  stack: config.stack,
+  referenceLines: config.referenceLines,
+  autoScroll: config.autoScroll,
 });
 
 export const buildAddedDashboardWidgetValueConfig = (
@@ -662,6 +691,15 @@ export const mergeScreenWidgetValueConfig = (
     ) {
       delete merged[key];
     }
+  }
+  if (!Object.prototype.hasOwnProperty.call(submitted, 'stack')) {
+    delete merged.stack;
+  }
+  if (!Object.prototype.hasOwnProperty.call(submitted, 'referenceLines')) {
+    delete merged.referenceLines;
+  }
+  if (!Object.prototype.hasOwnProperty.call(submitted, 'autoScroll')) {
+    delete merged.autoScroll;
   }
 
   return omitForeignChartTypeFields(merged, chartType);
@@ -980,6 +1018,18 @@ export const buildWidgetSubmitConfig = ({
   }
   if (displayPatch.sortByValue !== undefined) {
     result.sortByValue = displayPatch.sortByValue;
+  }
+
+  if ((chartType === 'bar' || chartType === 'line') && values.stack === true) {
+    result.stack = true;
+  }
+  if (chartType === 'bar' || chartType === 'line') {
+    const referenceLines = persistReferenceLines(values.referenceLines);
+    if (referenceLines) result.referenceLines = referenceLines;
+  }
+  if (supportsAutoScroll(chartType)) {
+    const autoScroll = persistAutoScroll(values);
+    if (autoScroll) result.autoScroll = autoScroll;
   }
 
   return { config: result };
