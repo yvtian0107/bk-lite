@@ -1,4 +1,5 @@
 import logging
+import traceback
 from datetime import datetime, timezone
 from types import SimpleNamespace
 
@@ -375,17 +376,18 @@ def test_one_oversized_id_sends_nothing_even_when_only_a_later_group_overflows(c
         with pytest.raises(RuntimeError) as caught:
             NetworkDeviceResourceTopService(vm_api=vm, now=NOW).run("memory", devices)
     assert vm.calls == []
+    assert type(caught.value) is RuntimeError
+    assert str(caught.value) == "网络设备资源指标查询失败"
     assert "SECRET-HUGE" not in str(caught.value)
-    rendered = " ".join(record.getMessage() for record in caplog.records)
+    assert caplog.records == []
+    rendered = "".join(traceback.format_exception(caught.value))
+    assert "_pack_rendered" in rendered
+    assert "failed_stage=single_query_over_budget" in rendered
+    assert "metric_type=memory" in rendered
+    assert "budget_bytes=16128" in rendered
+    assert "query_bytes=" in rendered
     assert "SECRET-HUGE" not in rendered
     assert "max(" not in rendered
-    assert any(record.levelno == logging.ERROR for record in caplog.records)
-    message = caplog.records[-1].getMessage()
-    assert "failed_stage=single_query_over_budget" in message
-    assert "metric_type=memory" in message
-    assert "budget_bytes=16128" in message
-    assert "query_bytes=" in message
-    assert caplog.records[-1].exc_info is None
 
 
 def test_signature_fallback_cannot_drop_step_and_lookback():

@@ -22,7 +22,6 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Any
 
-from apps.core.logger import monitor_logger as logger
 from apps.monitor.services.metric_query_contract import build_instance_matcher_groups, join_label_queries
 from apps.monitor.services.metric_series import MAX_INSTANCE_IDS
 from apps.monitor.utils.dimension import parse_instance_id
@@ -134,19 +133,24 @@ def _utf8_len(value: str) -> int:
     return len(value.encode("utf-8"))
 
 
-def _log_query_failure(*, metric_type, failed_stage, query_bytes, chunk_count, capability_id="", direction="", error_type):
-    logger.error(
-        "network device resource top query failed metric_type=%s failed_stage=%s "
-        "capability_id=%s direction=%s chunk_count=%s query_bytes=%s budget_bytes=%s error_type=%s",
-        metric_type,
-        failed_stage,
-        capability_id,
-        direction,
-        chunk_count,
-        query_bytes,
-        QUERY_BYTE_BUDGET,
-        error_type,
+def _safe_query_error(exc, *, metric_type, failed_stage, query_bytes, chunk_count, capability_id="", direction="", error_type):
+    """Return a safe error for the handler log. The original exception is left unchanged."""
+    safe = RuntimeError("网络设备资源指标查询失败")
+    safe.add_note(
+        "metric_type=%s failed_stage=%s capability_id=%s direction=%s "
+        "chunk_count=%s query_bytes=%s budget_bytes=%s error_type=%s"
+        % (
+            metric_type,
+            failed_stage,
+            capability_id,
+            direction,
+            chunk_count,
+            query_bytes,
+            QUERY_BYTE_BUDGET,
+            error_type,
+        )
     )
+    return safe.with_traceback(exc.__traceback__)
 
 
 def _pack_rendered(ids, render, measure):
@@ -185,11 +189,6 @@ def _pack_rendered(ids, render, measure):
     if current_ids:
         batches.append((current_ids, current_rendered))
     return batches
-
-
-def _fail_closed(exc: Exception):
-    safe = RuntimeError("网络设备资源指标查询失败")
-    raise safe.with_traceback(exc.__traceback__) from None
 
 
 @lru_cache(maxsize=1)
@@ -372,10 +371,12 @@ class NetworkDeviceResourceTopService:
                     raise RuntimeError("网络设备详情查询模板参数不完整")
                 return query
 
+            failure = None
             try:
                 batches = _pack_rendered(group["ids"], render, _utf8_len)
             except _QueryBudgetExceeded as exc:
-                _log_query_failure(
+                failure = _safe_query_error(
+                    exc,
                     metric_type=metric_type,
                     failed_stage="single_query_over_budget",
                     query_bytes=exc.query_bytes,
@@ -383,18 +384,21 @@ class NetworkDeviceResourceTopService:
                     capability_id=group["capability_id"],
                     error_type="QueryBudgetExceeded",
                 )
-                raise RuntimeError("网络设备资源指标查询失败") from None
+            if failure is not None:
+                raise failure
             plans.append((group["capability_id"], window, batches))
 
         found = {}
         for capability_id, window, batches in plans:
             for chunk_ids, query in batches:
+                failure = None
                 try:
                     samples = self._query_instant(query, window, reference)
                 except TypeError:
                     raise
                 except Exception as exc:
-                    _log_query_failure(
+                    failure = _safe_query_error(
+                        exc,
                         metric_type=metric_type,
                         failed_stage="query_chunk",
                         query_bytes=_utf8_len(query),
@@ -402,7 +406,8 @@ class NetworkDeviceResourceTopService:
                         capability_id=capability_id,
                         error_type=type(exc).__name__,
                     )
-                    _fail_closed(exc)
+                if failure is not None:
+                    raise failure
                 allowed = set(chunk_ids)
                 for instance_id, value, sampled_at in samples:
                     self._remember(found, instance_id, value, sampled_at, allowed)
@@ -421,10 +426,12 @@ class NetworkDeviceResourceTopService:
                 matcher = build_instance_matcher_groups(tuple(chunk_ids), ["instance_id"])[0][0]
                 return tuple(build_device_total_rate_query(name, matcher, cutoff) for name in TRAFFIC_METRIC_NAMES)
 
+            failure = None
             try:
                 batches = _pack_rendered(instance_ids, render, lambda pair: max(_utf8_len(query) for query in pair))
             except _QueryBudgetExceeded as exc:
-                _log_query_failure(
+                failure = _safe_query_error(
+                    exc,
                     metric_type="traffic",
                     failed_stage="single_query_over_budget",
                     query_bytes=exc.query_bytes,
@@ -432,7 +439,8 @@ class NetworkDeviceResourceTopService:
                     direction="+".join(TRAFFIC_METRIC_NAMES),
                     error_type="QueryBudgetExceeded",
                 )
-                raise RuntimeError("网络设备资源指标查询失败") from None
+            if failure is not None:
+                raise failure
             plans.append((window, batches))
 
         totals = {}
@@ -440,12 +448,14 @@ class NetworkDeviceResourceTopService:
             for chunk_ids, queries in batches:
                 allowed = set(chunk_ids)
                 for direction, query in zip(TRAFFIC_METRIC_NAMES, queries):
+                    failure = None
                     try:
                         samples = self._query_instant(query, window, reference)
                     except TypeError:
                         raise
                     except Exception as exc:
-                        _log_query_failure(
+                        failure = _safe_query_error(
+                            exc,
                             metric_type="traffic",
                             failed_stage="query_chunk",
                             query_bytes=_utf8_len(query),
@@ -453,7 +463,8 @@ class NetworkDeviceResourceTopService:
                             direction=direction,
                             error_type=type(exc).__name__,
                         )
-                        _fail_closed(exc)
+                    if failure is not None:
+                        raise failure
                     for instance_id, value, sampled_at in samples:
                         if instance_id not in allowed:
                             continue
