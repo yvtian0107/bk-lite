@@ -133,7 +133,7 @@ def query_interface_current_count(instances, *, interface_match=None, vm_api=Non
             if past_deadline(read_deadline):
                 _raise_interface_deadline()
             _fail_metric_query(match, exc)
-        for instance_id, count in _parse_instance_counts(payload):
+        for instance_id, count in _count_payload_rows(payload, match):
             owners = _owners(instance_id, by_id, by_label)
             if owners and count > 0:
                 total += count * len(owners)
@@ -309,7 +309,7 @@ def _query_metrics(vm_api, labels: list[str], metric_names: tuple[str, ...], *, 
 def _if_name_selector(names) -> str:
     escaped = "|".join(re.escape(item) for item in names)
     escaped = escaped.replace("\\", "\\\\").replace('"', '\\"')
-    return f'ifDescr=~"^(?:{escaped})$"'
+    return f'ifDescr=~"^\\\\s*(?:{escaped})\\\\s*$"'
 
 
 def _count_promql(match: str, selector: str) -> str:
@@ -329,6 +329,14 @@ def _count_promql(match: str, selector: str) -> str:
         inner = " or ".join(terms)
     trimmed = 'label_replace({inner}, "ifDescr", "$1", "ifDescr", "^\\\\s*(.*\\\\S)\\\\s*$")'.format(inner=inner)
     return f"count by (instance_id) (count by (instance_id, ifDescr) ({trimmed}))"
+
+
+def _count_payload_rows(payload, match) -> list[tuple[str, int]]:
+    data = payload.get("data") if isinstance(payload, dict) else None
+    result = data.get("result") if isinstance(data, dict) else None
+    if not isinstance(payload, dict) or payload.get("status") != "success" or not isinstance(result, list):
+        _fail_metric_query(match, RuntimeError("VictoriaMetricsQueryFailed"))
+    return _parse_instance_counts(payload)
 
 
 def _parse_instance_counts(payload) -> list[tuple[str, int]]:

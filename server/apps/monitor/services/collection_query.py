@@ -7,11 +7,8 @@ import threading
 import time
 from collections import Counter, defaultdict
 from datetime import datetime, timezone
-from types import SimpleNamespace
-
 from apps.core.logger import monitor_logger as logger
 from apps.monitor.models.collect_config import CollectConfig
-from apps.monitor.models.monitor_object import MonitorInstance
 from apps.monitor.models.plugin import MonitorPlugin
 from apps.monitor.services.active_alert_ranking import format_active_alert_local_time
 from apps.monitor.services.generic_query import GenericQueryError, _checked_sort, _optional_page, _table
@@ -101,7 +98,7 @@ def query_collection_rows(
         page_no, size = paging
         start = (page_no - 1) * size
         visible = ordered[start : start + size]
-    rows = _rolled_rows(visible, locale=locale, vm_api=vm, deadline=read_deadline)
+    rows = _rolled_rows(visible, locale=locale, vm_api=vm, deadline=read_deadline, plugin_population=ordered)
     rows.sort(key=lambda row: _sort_key(row, None))
     labeled = [_public_row(row) for row in rows]
     if paging is None:
@@ -185,7 +182,7 @@ def _object_ids(instances) -> list:
     return ids
 
 
-def _rolled_rows(instances, *, locale, vm_api, deadline, with_labels=True) -> list[dict]:
+def _rolled_rows(instances, *, locale, vm_api, deadline, with_labels=True, plugin_population=None) -> list[dict]:
     if not instances:
         return []
     objects = []
@@ -208,9 +205,10 @@ def _rolled_rows(instances, *, locale, vm_api, deadline, with_labels=True) -> li
     else:
         object_labels = {}
         type_labels = {}
-    plugins_by_object = _plugins_by_object([item.id for item in objects])
+    population = list(instances if plugin_population is None else plugin_population)
+    plugins_by_object = _plugins_by_object(_object_ids(population))
     configured = _configured_plugin_ids(instances, plugins_by_object)
-    report_maps = _report_maps(instances, plugins_by_object, vm_api, configured, deadline)
+    report_maps = _report_maps(instances, plugins_by_object, vm_api, configured, deadline, population)
     rows = []
     for instance in instances:
         monitor_object = instance.monitor_object
@@ -271,11 +269,17 @@ def _plugin_status_query(plugin) -> str:
     return query
 
 
-def _report_maps(instances, plugins_by_object, vm_api, configured, deadline) -> dict[tuple, dict[str, float]]:
-    """没人配置的插件不再查询。选择器只含配置了该插件的实例，以及完全没有配置的实例。
+def _report_maps(instances, plugins_by_object, vm_api, configured, deadline, population=None) -> dict[tuple, dict[str, float]]:
+    """没人配置的插件不再查询。选择器只含这次要出结果的实例。
 
+    手动实例能搭乘的插件，只来自本次请求已经授权并过滤后的实例，不到库里再找同对象的其他实例。
     失联仍是已配置插件减去有上报的插件。最后采样时间不再计入没配给这台机器的插件。
     """
+    if past_deadline(deadline):
+        logger.warning("event=collection_query_deadline_exceeded")
+        raise GenericQueryError("采集查询超时")
+    if population is None:
+        population = instances
     keys_by_object = {}
     for instance in instances:
         monitor_object = instance.monitor_object
@@ -286,7 +290,7 @@ def _report_maps(instances, plugins_by_object, vm_api, configured, deadline) -> 
         object_id = _instance_object_id(instance)
         if object_id is not None and not configured.get(instance.id):
             manual_by_object[object_id].append(instance)
-    in_use = _plugin_ids_in_use(list(manual_by_object), plugins_by_object) if manual_by_object else {}
+    in_use = _plugin_ids_in_use(population, plugins_by_object) if manual_by_object else {}
 
     maps = {}
     groups = {}
@@ -421,18 +425,14 @@ def _unscopeable_reason(query: str, keys: tuple[str, ...], instances) -> str:
     return "not_narrowed"
 
 
-def _plugin_ids_in_use(object_ids, plugins_by_object) -> dict:
-    rows = list(
-        MonitorInstance.objects.filter(monitor_object_id__in=object_ids, is_deleted=False).values_list("id", "monitor_object_id")
-    )
-    refs = [SimpleNamespace(id=item_id, monitor_object_id=object_id) for item_id, object_id in rows]
-    configured = _configured_plugin_ids(refs, plugins_by_object)
-    object_of = {item_id: object_id for item_id, object_id in rows}
+def _plugin_ids_in_use(population, plugins_by_object) -> dict:
+    configured = _configured_plugin_ids(population, plugins_by_object)
     in_use = defaultdict(set)
-    for instance_id, plugin_ids in configured.items():
-        object_id = object_of.get(instance_id)
-        if object_id is not None:
-            in_use[object_id].update(plugin_ids)
+    for instance in population:
+        object_id = _instance_object_id(instance)
+        if object_id is None:
+            continue
+        in_use[object_id].update(configured.get(instance.id, ()))
     return in_use
 
 

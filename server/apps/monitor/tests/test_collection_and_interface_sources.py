@@ -2,6 +2,7 @@
 
 import asyncio
 import logging
+import re
 import threading
 import time
 from datetime import datetime, timezone
@@ -353,6 +354,72 @@ def test_collection_manual_page_still_reads_plugins_configured_on_the_object():
     assert page["items"][0]["last_sample_at"]
     assert calls
     assert all("manuala" in query and "configuredz" not in query for query in calls)
+
+
+def test_collection_manual_status_stays_inside_the_request_scope():
+    obj = _object("collect-manual-scope")
+    manual = _instance(obj, "manualb", name="a")
+    peer = _instance(obj, "peerb", name="m")
+    outsider = _instance(obj, "outb", name="z")
+    peer_plugin = _plugin(obj, "peer-up", "up{plugin='peerpage'}")
+    outside_plugin = _plugin(obj, "out-up", "up{plugin='outpage'}")
+    _config(peer, peer_plugin)
+    _config(outsider, outside_plugin)
+    calls = []
+    now = time.time()
+
+    class _RecordingVM:
+        def query(self, query, step=None):
+            calls.append(query)
+            return {
+                "status": "success",
+                "data": {"result": [_sample("manualb", now), _sample("outb", now), _sample("peerb", now)]},
+            }
+
+    alone = query_collection_rows([manual], vm_api=_RecordingVM())
+    assert alone[0]["collect_mode"] == "手动"
+    assert alone[0]["collect_status"] == "正常"
+    assert alone[0]["report_status"] == "失联"
+    assert alone[0]["last_sample_at"] == ""
+    assert calls == []
+    assert query_collection_count([manual], report_status="unavailable", vm_api=_RecordingVM()) == 1
+
+    calls.clear()
+    page = query_collection_rows([manual, peer], page=1, page_size=1, vm_api=_RecordingVM())
+    assert page["count"] == 2
+    assert page["items"][0]["name"] == "a"
+    assert page["items"][0]["collect_mode"] == "手动"
+    assert page["items"][0]["collect_status"] == "正常"
+    assert page["items"][0]["report_status"] == "正常"
+    assert page["items"][0]["last_sample_at"]
+    sent = " ".join(calls)
+    assert "peerpage" in sent
+    assert "manualb" in sent
+    assert "outpage" not in sent
+    assert "outb" not in sent
+    assert "peerb" not in sent
+
+
+def test_collection_past_deadline_with_no_jobs_fails():
+    obj = _object("collect-empty-deadline")
+    manual = _instance(obj, "quiet", name="quiet")
+    calls = []
+
+    class _RecordingVM:
+        def query(self, query, step=None):
+            calls.append(query)
+            return {"status": "success", "data": {"result": []}}
+
+    with pytest.raises(GenericQueryError, match="采集查询超时"):
+        query_collection_rows([manual], vm_api=_RecordingVM(), deadline=time.monotonic() - 1)
+    with pytest.raises(GenericQueryError, match="采集查询超时"):
+        query_collection_count([manual], report_status="unavailable", vm_api=_RecordingVM(), deadline=time.monotonic() - 1)
+    bare = _plugin(obj, "bare-up", "up")
+    host = _instance(obj, "barehost", name="bare")
+    _config(host, bare)
+    with pytest.raises(GenericQueryError, match="采集查询超时"):
+        query_collection_rows([host], vm_api=_RecordingVM(), deadline=time.monotonic() - 1)
+    assert calls == []
 
 
 def test_collection_requires_page_and_page_size_together():
@@ -939,6 +1006,91 @@ def test_interface_list_and_count_stop_on_deadline_without_a_partial_result(monk
     with pytest.raises(GenericQueryError, match="接口查询超时"):
         query_interface_current_count([left, right], interface_match="down", vm_api=_VM(), deadline=time.monotonic() + 0.01)
     assert len(calls) == 1
+
+
+def _if_descr_pattern(query):
+    found = re.search(r'ifDescr=~"((?:\\.|[^"])*)"', query)
+    assert found, query
+    body = found.group(1)
+    chars = []
+    index = 0
+    while index < len(body):
+        if body[index] == "\\" and index + 1 < len(body):
+            chars.append(body[index + 1])
+            index += 2
+        else:
+            chars.append(body[index])
+            index += 1
+    return "".join(chars)
+
+
+def test_interface_error_page_hydrates_display_when_if_descr_has_surrounding_space():
+    obj = _object("pad-switch")
+    switch = _instance(obj, "swpad", name="core")
+
+    def matches(query, label):
+        return re.search(_if_descr_pattern(query), label) is not None
+
+    def responder(query):
+        if "ifInErrors" in query or "ifOutErrors" in query:
+            assert "ifDescr=~" not in query
+            return _vector([("swpad", " eth0", "3")])
+        if "ifDescr=~" in query:
+            assert matches(query, " eth0")
+            assert matches(query, "eth0 ")
+            assert matches(query, "eth0")
+            assert not matches(query, "eth0x")
+            assert not matches(query, "xeth0")
+            if query.startswith("interface_ifOperStatus"):
+                return _vector([("swpad", " eth0", "2")])
+            if "ifHCInOctets" in query:
+                return _vector([("swpad", " eth0", "12")])
+        return {"status": "success", "data": {"result": []}}
+
+    vm, _calls = _recording_vm(responder)
+    page = query_interface_current_rows([switch], interface_match="error", page=1, page_size=1, vm_api=vm)
+    assert page["count"] == 1
+    assert page["items"][0]["if_name"] == "eth0"
+    assert page["items"][0]["oper_status"] == "Down"
+    assert page["items"][0]["in_rate"] == "12 B/s"
+    assert page["items"][0]["in_errors"] == 3
+
+
+def test_interface_count_fails_closed_on_a_non_success_payload(monkeypatch, caplog):
+    obj = _object("count-fail-switch")
+    left = _instance(obj, "alpha", name="alpha")
+    right = _instance(obj, "beta", name="beta")
+    calls = []
+
+    class _VM:
+        def query(self, query, step=None):
+            calls.append(query)
+            if len(calls) == 1:
+                return {"status": "error", "data": {"result": []}}
+            return _count_vector([("beta", 4)])
+
+    monkeypatch.setattr("apps.monitor.services.interface_current._SELECTOR_BUDGET", 1)
+    with pytest.raises(GenericQueryError, match="接口指标查询失败"):
+        query_interface_current_count([left, right], interface_match="down", vm_api=_VM())
+    assert len(calls) == 1
+
+    calls.clear()
+
+    class _Later:
+        def query(self, query, step=None):
+            calls.append(query)
+            if len(calls) == 1:
+                return _count_vector([("alpha", 4)])
+            return {"status": "error", "error": "SECRET-VM-BODY"}
+
+    with caplog.at_level(logging.ERROR, logger="monitor"):
+        with pytest.raises(GenericQueryError, match="接口指标查询失败") as raised:
+            query_interface_current_count([left, right], interface_match="down", vm_api=_Later())
+    assert len(calls) == 2
+    assert str(raised.value) == "接口指标查询失败"
+    formatted = "\n".join(logging.Formatter().format(record) for record in caplog.records)
+    assert "SECRET-VM-BODY" not in formatted
+    assert "SECRET-VM-BODY" not in str(raised.value)
 
 
 def test_interface_count_requires_no_page_or_sort():
