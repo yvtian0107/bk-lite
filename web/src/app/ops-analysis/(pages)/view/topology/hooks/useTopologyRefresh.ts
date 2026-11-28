@@ -9,6 +9,7 @@ import type {
 } from '@/app/ops-analysis/types/dashBoard';
 import type { TopologyNodeData } from '@/app/ops-analysis/types/topology';
 import { collectTopologyNamespaceIds } from '@/app/ops-analysis/utils/canvasResources';
+import type { DataSourceLookupStatus } from '@/app/ops-analysis/utils/widgetRequestVersion';
 import {
   buildFiltersFromNodes,
   syncFilterValuesWithDefinitions,
@@ -35,6 +36,7 @@ interface PostMutationPayload {
   appliedValues: Record<string, FilterValue>;
   dataSources: DatasourceItem[];
   namespaceId: number | undefined;
+  dataSourceLookupStatus: DataSourceLookupStatus;
 }
 
 interface UseTopologyRefreshControllerParams {
@@ -65,7 +67,7 @@ interface UseTopologyRefreshControllerParams {
       nodeData: TopologyNodeData,
       dataSource?: DatasourceItem,
     ) => boolean,
-    options?: { silent?: boolean },
+    options?: { silent?: boolean; dataSourceLookupStatus?: DataSourceLookupStatus },
   ) => void;
   refreshAllChartNodes: (
     values?: Record<string, FilterValue>,
@@ -76,10 +78,12 @@ interface UseTopologyRefreshControllerParams {
       nodeData: TopologyNodeData,
       dataSource?: DatasourceItem,
     ) => boolean,
-    options?: { silent?: boolean },
+    options?: { silent?: boolean; dataSourceLookupStatus?: DataSourceLookupStatus },
   ) => void;
+  dataSourceLookupStatus: DataSourceLookupStatus;
   updateDefinitions: (definitions: UnifiedFilterDefinition[]) => void;
   organizationId?: string | number | null;
+  readCanvasDataSourceLookupStatus: () => DataSourceLookupStatus;
 }
 
 export const useTopologyRefresh = ({
@@ -103,6 +107,8 @@ export const useTopologyRefresh = ({
   refreshAllChartNodes,
   updateDefinitions,
   organizationId,
+  dataSourceLookupStatus,
+  readCanvasDataSourceLookupStatus,
 }: UseTopologyRefreshControllerParams) => {
   const refreshTopologyNodes = useCallback(
     (
@@ -153,7 +159,10 @@ export const useTopologyRefresh = ({
         nextNamespaceId,
         dataSources,
         shouldRefreshNode,
-        silent ? { silent: true } : undefined,
+        {
+          ...(silent ? { silent: true } : {}),
+          dataSourceLookupStatus,
+        },
       );
       refreshAllChartNodes(
         nextValues,
@@ -161,7 +170,10 @@ export const useTopologyRefresh = ({
         dataSources,
         nextNamespaceId,
         shouldRefreshNode,
-        silent ? { silent: true } : undefined,
+        {
+          ...(silent ? { silent: true } : {}),
+          dataSourceLookupStatus,
+        },
       );
     },
     [
@@ -169,6 +181,7 @@ export const useTopologyRefresh = ({
       appliedNamespaceId,
       dataSources,
       definitions,
+      dataSourceLookupStatus,
       refreshAllChartNodes,
       refreshAllSingleValueNodes,
     ],
@@ -320,6 +333,7 @@ export const useTopologyRefresh = ({
             appliedValues: nextAppliedValues,
             dataSources: canvasDataSources,
             namespaceId: resolveTopologyNamespaceId(canvasDataSources),
+            dataSourceLookupStatus: readCanvasDataSourceLookupStatus(),
           });
         });
       }, 100);
@@ -334,6 +348,7 @@ export const useTopologyRefresh = ({
       setAppliedFilterValues,
       setDefinitions,
       setFilterValues,
+      readCanvasDataSourceLookupStatus,
       setNodeChangeKey,
       syncTopologyCanvasResources,
     ],

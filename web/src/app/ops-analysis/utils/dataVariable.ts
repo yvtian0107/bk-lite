@@ -1,4 +1,5 @@
 import type { InputControlConfig } from '@/app/ops-analysis/types/dataSource';
+import { isMissingRequiredParamValue } from '@/app/ops-analysis/utils/requiredParamGate';
 
 export const DATA_VARIABLE_ROW_LIMIT = 10_000;
 export const DATA_VARIABLE_MAX_DEPTH = 3;
@@ -103,7 +104,7 @@ export const missingRequiredParam = (
 ): boolean => Array.isArray(catalog) && catalog.some((param) => (
   param.required === true
   && typeof param.name === 'string'
-  && isEmptyParamValue(params[param.name])
+  && isMissingRequiredParamValue(params[param.name])
 ));
 
 const isConditionGroup = (value: unknown): value is { logic?: unknown; items: unknown[] } =>

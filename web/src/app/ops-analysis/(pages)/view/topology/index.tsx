@@ -122,7 +122,11 @@ const Topology = forwardRef<TopologyRef, TopologyProps>(
     const intl = useIntl();
     const state = useTopologyState();
     const dataSourceManager = useDataSourceManager();
-    const { loadCanvasNamespaces } = useOpsAnalysis();
+    const {
+      loadCanvasNamespaces,
+      canvasDataSourceLookupStatus,
+      readCanvasDataSourceLookupStatus,
+    } = useOpsAnalysis();
     const shareOrganizationSeed = useShareOrganizationSeed();
 
     const {
@@ -190,6 +194,8 @@ const Topology = forwardRef<TopologyRef, TopologyProps>(
       handleNodeRemovedCallback,
       isFullscreen,
       setSingleValueFetchErrorTooltip,
+      dataSourceManager.dataSources,
+      canvasDataSourceLookupStatus,
     );
 
     const playbackDetail = usePlaybackInitialDetail();
@@ -317,6 +323,8 @@ const Topology = forwardRef<TopologyRef, TopologyProps>(
       refreshAllChartNodes,
       updateDefinitions,
       organizationId: shareOrganizationSeed,
+      dataSourceLookupStatus: canvasDataSourceLookupStatus,
+      readCanvasDataSourceLookupStatus,
     });
 
     const canPersistRefreshInterval = canPersistCanvasRefreshInterval({
@@ -431,6 +439,7 @@ const Topology = forwardRef<TopologyRef, TopologyProps>(
       addNewNode,
       handleAddChartNode,
       handleNodeUpdate,
+      dataSourceLookupStatus: canvasDataSourceLookupStatus,
       handleViewConfigConfirm,
       loadChartNodeData,
       scheduleTopologyPostMutation,
@@ -549,6 +558,7 @@ const Topology = forwardRef<TopologyRef, TopologyProps>(
       loadCanvasNamespaces,
       refreshAllSingleValueNodes,
       refreshAllChartNodes,
+      readCanvasDataSourceLookupStatus,
       abortInflightDataRequests: () => {
         abortInflightChartRequests();
         abortInflightSingleValueRequests();

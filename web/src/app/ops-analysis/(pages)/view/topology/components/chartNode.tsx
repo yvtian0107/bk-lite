@@ -20,6 +20,7 @@ import { useTopologyCsvExportHoverEnabled } from '../utils/topologyCsvExportHove
 import ScreenWidgetThemeProvider from '@/app/ops-analysis/components/screenWidgetThemeProvider';
 import { fullscreenPopupContainer } from '@/utils/fullscreenPopupContainer';
 import WidgetErrorState from '@/app/ops-analysis/components/widgetErrorState';
+import WidgetState from '@/app/ops-analysis/components/widget-state';
 import {
   getTopologyNodeChromeKind,
   TOPOLOGY_CHART_NODE_CLASS,
@@ -70,6 +71,8 @@ const ChartNodeContent: React.FC<ChartNodeProps> = ({ node }) => {
     rawData,
     hasError,
     errorMessage,
+    waitMessage,
+    chartRequestState,
     name: componentName,
     description,
     dataSource,
@@ -102,9 +105,19 @@ const ChartNodeContent: React.FC<ChartNodeProps> = ({ node }) => {
     dataSource,
     ...(isTableLikeChart ? { onQueryChange: handleQueryChange } : {}),
   };
+  const shouldShowWait = chartRequestState === 'waiting' && !isLoading;
+  const shouldShowEmpty = chartRequestState === 'empty' && !isLoading && !hasError;
+  const shouldShowError = hasError && !isLoading && !shouldShowWait;
   const shouldShowLoading =
-    (isLoading || (!rawData && !hasError)) && !isTableLikeChart;
-  const shouldShowError = hasError && !isLoading;
+    !shouldShowWait
+    && !shouldShowEmpty
+    && !shouldShowError
+    && (
+      isLoading
+      || chartRequestState === 'pending'
+      || (!rawData && !hasError && chartRequestState !== 'ready' && chartRequestState !== 'empty')
+    )
+    && !isTableLikeChart;
   const normalizedDescription = description?.trim();
   const panelChromeBg = chartTheme.panelChromeBg || chartTheme.panelBg;
   const panelChromeHeaderBg =
@@ -241,10 +254,14 @@ const ChartNodeContent: React.FC<ChartNodeProps> = ({ node }) => {
               {t('common.loading')}
             </div>
           </div>
+        ) : shouldShowWait ? (
+          <WidgetState kind="empty" description={waitMessage} />
         ) : shouldShowError ? (
           <WidgetErrorState
             message={errorMessage || t('dashboard.dataFetchFailed')}
           />
+        ) : shouldShowEmpty ? (
+          <WidgetState kind="empty" description={t('dashboard.noData')} />
         ) : (
           <div
             className="h-full min-h-0 w-full overflow-hidden"

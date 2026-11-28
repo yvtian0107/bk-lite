@@ -2,12 +2,15 @@
  * 共享单值配置 Hook
  * 供仪表盘 ViewConfig 和拓扑 NodeConfPanel 复用
  */
-import { useState, useCallback, useEffect } from 'react';
+import { useState, useCallback, useEffect, useRef } from 'react';
 import type { FormInstance } from 'antd';
-import { Form, message } from 'antd';
+import { message } from 'antd';
 import { useTranslation } from '@/utils/i18n';
 import type { DatasourceItem } from '@/app/ops-analysis/types/dataSource';
-import { processDataSourceParams } from '@/app/ops-analysis/utils/widgetDataTransform';
+import {
+  processDataSourceParams,
+  resolveCatalogParams,
+} from '@/app/ops-analysis/utils/widgetDataTransform';
 import { DEFAULT_THRESHOLD_COLORS } from '@/app/ops-analysis/constants/threshold';
 import { ThresholdColorConfig } from '@/app/ops-analysis/utils/thresholdUtils';
 import {
@@ -18,6 +21,10 @@ import {
 import { canEnableCompare } from '@/app/ops-analysis/utils/compareQuery';
 import { getDateRangeTimezone } from '@/app/ops-analysis/utils/dateRange';
 import { collectVariableIds } from '@/app/ops-analysis/utils/dataVariable';
+import {
+  formatRequiredParamWaitMessage,
+  listMissingRequiredParams,
+} from '@/app/ops-analysis/utils/requiredParamGate';
 
 interface UseSingleValueConfigProps {
   form: FormInstance;
@@ -52,6 +59,7 @@ export function useSingleValueConfig({
   const [fetchedSample, setFetchedSample] = useState<unknown>(null);
   const [selectedFields, setSelectedFields] = useState<string[]>([]);
   const [loadingSingleValueData, setLoadingSingleValueData] = useState(false);
+  const sampleGenerationRef = useRef(0);
   const [thresholdColors, setThresholdColors] =
     useState<ThresholdColorConfig[]>(DEFAULT_THRESHOLD_COLORS);
 
@@ -191,15 +199,31 @@ export function useSingleValueConfig({
     const resolvedId = dataSourceId ?? selectedDataSource?.id;
     if (!resolvedId || !selectedDataSource) return;
 
+    const generation = sampleGenerationRef.current + 1;
+    sampleGenerationRef.current = generation;
+    const stillCurrent = () => sampleGenerationRef.current === generation;
     setLoadingSingleValueData(true);
     try {
       const formValues = form.getFieldsValue();
       const userParams = formValues?.params || {};
+      const stopWithoutSample = (notify: () => void) => {
+        if (!stillCurrent()) return;
+        setFetchedSample(null);
+        notify();
+      };
       // 拓扑单值面板没有数据变量运行时，不能把 { dataVariableId } 原样发出去。
-      if (collectVariableIds(userParams).length > 0) return;
+      if (collectVariableIds(userParams).length > 0) {
+        stopWithoutSample(() => message.info(t('dashboard.fieldProbePreparing')));
+        return;
+      }
+      const catalog = resolveCatalogParams(selectedDataSource);
+      if (catalog.status !== 'resolved') {
+        stopWithoutSample(() => message.error(t('dashboard.dataSourceParamsInvalid')));
+        return;
+      }
       const requestParams = processDataSourceParams({
-        sourceParams: selectedDataSource.params,
-        definitionParams: selectedDataSource.params,
+        sourceParams: catalog.params,
+        definitionParams: catalog.params,
         userParams,
         chartType,
         resolutionContext: {
@@ -208,6 +232,11 @@ export function useSingleValueConfig({
         },
         t,
       });
+      const missing = listMissingRequiredParams(catalog.params, requestParams);
+      if (missing.length > 0) {
+        stopWithoutSample(() => message.warning(formatRequiredParamWaitMessage(missing, t)));
+        return;
+      }
 
       if (
         builtinNamespaceId !== undefined &&
@@ -218,12 +247,14 @@ export function useSingleValueConfig({
       }
 
       const { data } = await getSourceDataByApiId(resolvedId, requestParams);
+      if (!stillCurrent()) return;
       setFetchedSample(data);
     } catch (error) {
+      if (!stillCurrent()) return;
       console.error('Failed to fetch data fields:', error);
       message.error(t('dashboard.fetchDataFieldsFailed'));
     } finally {
-      setLoadingSingleValueData(false);
+      if (stillCurrent()) setLoadingSingleValueData(false);
     }
   }, [selectedDataSource, dataSourceId, form, getSourceDataByApiId, builtinNamespaceId, chartType, t]);
 

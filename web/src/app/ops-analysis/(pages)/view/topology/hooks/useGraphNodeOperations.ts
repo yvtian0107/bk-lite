@@ -1,7 +1,11 @@
 import { useCallback, useEffect, useMemo, useRef } from 'react';
 import type { Node, Graph as X6Graph } from '@antv/x6';
 import { v4 as uuidv4 } from 'uuid';
-import { resolveEffectiveFilterBindings } from '@/app/ops-analysis/utils/widgetDataTransform';
+import {
+  planWidgetRequest,
+  resolveEffectiveFilterBindings,
+} from '@/app/ops-analysis/utils/widgetDataTransform';
+import { formatRequiredParamWaitMessage } from '@/app/ops-analysis/utils/requiredParamGate';
 import { useDataSourceApi, withRuntimeSourceDataErrorSuppression } from '@/app/ops-analysis/api/dataSource';
 import type { DatasourceItem } from '@/app/ops-analysis/types/dataSource';
 import type {
@@ -50,6 +54,7 @@ import {
   showSingleValueFetchError,
   SINGLE_VALUE_ERROR_PLACEHOLDER,
 } from '../utils/singleValueNodeError';
+import type { DataSourceLookupStatus } from '@/app/ops-analysis/utils/widgetRequestVersion';
 import { useGraphData } from './useGraphData';
 import type { useTopologyState } from './useTopologyState';
 
@@ -115,12 +120,16 @@ interface UseGraphNodeOperationsParams {
   graphInstance: X6Graph | null;
   state: ReturnType<typeof useTopologyState>;
   handleSave: () => void;
+  dataSources?: DatasourceItem[];
+  dataSourceLookupStatus?: DataSourceLookupStatus;
 }
 
 export const useGraphNodeOperations = ({
   graphInstance,
   state,
   handleSave,
+  dataSources: canvasDataSources,
+  dataSourceLookupStatus,
 }: UseGraphNodeOperationsParams) => {
   const { t } = useTranslation();
   const { getSourceDataByApiId } = useDataSourceApi();
@@ -181,7 +190,11 @@ export const useGraphNodeOperations = ({
       unifiedFilterValues?: Record<string, FilterValue>,
       filterDefinitions?: UnifiedFilterDefinition[],
       namespaceId?: number,
-      options?: { silent?: boolean },
+      options?: {
+        silent?: boolean;
+        dataSource?: DatasourceItem;
+        dataSourceLookupStatus?: DataSourceLookupStatus;
+      },
     ) => {
       if (!nodeConfig || !graphInstance || !nodeConfig.id) return;
 
@@ -235,13 +248,80 @@ export const useGraphNodeOperations = ({
           filterDefinitions || [],
           valueConfig.filterBindings,
         );
+        const catalogSource = options?.dataSource
+          ?? canvasDataSources?.find(
+            (source) => String(source.id) === String(valueConfig.dataSource),
+          );
+        const lookupStatus = options?.dataSourceLookupStatus ?? dataSourceLookupStatus;
+        if (!catalogSource) {
+          if (!isCurrent()) return;
+          if (lookupStatus === 'error' || lookupStatus === 'success') {
+            showSingleValueFetchError(
+              node as Node,
+              lookupStatus === 'error'
+                ? t('dashboard.dataSourceLoadFailed')
+                : t('dashboard.dataSourceNotFound'),
+            );
+            node.setData({ ...node.getData(), catalogHold: false }, { overwrite: true });
+            return;
+          }
+          node.setData({
+            ...node.getData(),
+            catalogHold: true,
+            isLoading: true,
+            hasError: false,
+            fetchError: false,
+            errorMessage: undefined,
+          }, { overwrite: true });
+          return;
+        }
+        const plan = planWidgetRequest({
+          config: valueConfig,
+          dataSource: catalogSource,
+          unifiedFilterValues,
+          filterBindings: effectiveFilterBindings,
+          filterDefinitions,
+        });
+        if (!isCurrent()) return;
+        if (plan.status === 'pending') return;
+        if (plan.status === 'waiting') {
+          const waitMessage = formatRequiredParamWaitMessage(plan.missing, t);
+          node.setData(
+            {
+              ...node.getData(),
+              isLoading: false,
+              hasError: false,
+              fetchError: false,
+              errorMessage: undefined,
+              rawData: undefined,
+              waitMessage,
+              catalogHold: false,
+            },
+            { overwrite: true },
+          );
+          resetSingleValueFetchErrorVisual(node as Node);
+          node.setAttrByPath('label/text', waitMessage);
+          adjustSingleValueNodeSize(node as Node, waitMessage, 80);
+          return;
+        }
+        if (plan.status === 'failed') {
+          showSingleValueFetchError(
+            node as Node,
+            plan.reason === 'invalid'
+              ? t('dashboard.dataSourceParamsInvalid')
+              : t('dashboard.dataSourceLoadFailed'),
+          );
+          node.setData({ ...node.getData(), catalogHold: false }, { overwrite: true });
+          return;
+        }
 
+        node.setData({ ...node.getData(), catalogHold: false }, { overwrite: true });
         const compareResult = await fetchCompareData({
           dataSourceId: Number(valueConfig.dataSource),
           getSourceDataByApiId: (sourceId, params) =>
             getRuntimeSourceDataByApiId(sourceId, params, controller.signal),
           config: valueConfig,
-          dataSource: { params: valueConfig.dataSourceParams || [] },
+          dataSource: catalogSource,
           extraParams:
             namespaceId !== undefined
               ? { namespace_id: namespaceId }
@@ -441,14 +521,46 @@ export const useGraphNodeOperations = ({
         );
       }
     },
-    [graphInstance, getRuntimeSourceDataByApiId, startLoadingAnimation, t],
+    [
+      canvasDataSources,
+      dataSourceLookupStatus,
+      graphInstance,
+      getRuntimeSourceDataByApiId,
+      startLoadingAnimation,
+      t,
+    ],
   );
 
   const dataOperations = useGraphData(
     graphInstance,
     startLoadingAnimation,
     handleSave,
+    {
+      dataSources: canvasDataSources,
+      dataSourceLookupStatus,
+    },
   );
+
+  const previousSingleLookupRef = useRef(dataSourceLookupStatus);
+  useEffect(() => {
+    const next = dataSourceLookupStatus;
+    const previous = previousSingleLookupRef.current;
+    previousSingleLookupRef.current = next;
+    if (!graphInstance || typeof graphInstance.getNodes !== 'function') return;
+    if (previous !== 'loading' && previous !== 'idle') return;
+    if (next !== 'success' && next !== 'error') return;
+    graphInstance.getNodes().forEach((node: Node) => {
+      const nodeData = node.getData();
+      if (nodeData?.type !== 'single-value' || !nodeData.catalogHold) return;
+      const source = canvasDataSources?.find(
+        (item) => String(item.id) === String(nodeData.valueConfig?.dataSource),
+      );
+      void updateSingleNodeData({ ...nodeData, id: node.id }, undefined, undefined, undefined, {
+        dataSource: source,
+        dataSourceLookupStatus: next,
+      });
+    });
+  }, [canvasDataSources, dataSourceLookupStatus, graphInstance, updateSingleNodeData]);
 
   const addNewNode = useCallback(
     (nodeConfig: TopologyNodeData, skipInitialFetch?: boolean) => {
@@ -467,7 +579,18 @@ export const useGraphNodeOperations = ({
         singleValueSourceReady(valueConfig)
       ) {
         startLoadingAnimation(addedNode);
-        updateSingleNodeData({ ...nodeConfig, id: addedNode.id });
+        updateSingleNodeData(
+          { ...nodeConfig, id: addedNode.id },
+          undefined,
+          undefined,
+          undefined,
+          {
+            dataSource: canvasDataSources?.find(
+              (source) => source.id === valueConfig.dataSource,
+            ),
+            dataSourceLookupStatus,
+          },
+        );
       } else if (
         skipInitialFetch &&
         nodeConfig.type === 'single-value' &&
@@ -477,7 +600,7 @@ export const useGraphNodeOperations = ({
       }
       return addedNode.id;
     },
-    [graphInstance, updateSingleNodeData, startLoadingAnimation],
+    [canvasDataSources, dataSourceLookupStatus, graphInstance, updateSingleNodeData, startLoadingAnimation],
   );
 
   function getUpdatedNodeConfig(
@@ -595,6 +718,12 @@ export const useGraphNodeOperations = ({
             unifiedFilterValues,
             filterDefinitions,
             namespaceId,
+            {
+              dataSource: canvasDataSources?.find(
+                (source) => source.id === updatedConfig.valueConfig?.dataSource,
+              ),
+              dataSourceLookupStatus,
+            },
           );
         }
         state.setNodeEditVisible(false);
@@ -603,7 +732,7 @@ export const useGraphNodeOperations = ({
         console.error('节点更新失败:', error);
       }
     },
-    [graphInstance, updateSingleNodeData, state, startLoadingAnimation],
+    [canvasDataSources, dataSourceLookupStatus, graphInstance, updateSingleNodeData, state, startLoadingAnimation],
   );
 
   const handleViewConfigConfirm = useCallback(
@@ -613,6 +742,7 @@ export const useGraphNodeOperations = ({
       filterDefinitions?: UnifiedFilterDefinition[],
       dataSources?: DatasourceItem[],
       namespaceId?: number,
+      options?: { dataSourceLookupStatus?: DataSourceLookupStatus },
     ) => {
       if (state.editingNodeData && graphInstance) {
         const node = graphInstance.getCellById(state.editingNodeData.id);
@@ -638,13 +768,18 @@ export const useGraphNodeOperations = ({
               filterDefinitions,
               dataSource,
               namespaceId,
+              undefined,
+              {
+                dataSourceLookupStatus:
+                  options?.dataSourceLookupStatus ?? dataSourceLookupStatus,
+              },
             );
           }
         }
       }
       state.setViewConfigVisible(false);
     },
-    [graphInstance, state, dataOperations],
+    [dataSourceLookupStatus, graphInstance, state, dataOperations],
   );
 
   const handleAddChartNode = useCallback(
@@ -664,11 +799,23 @@ export const useGraphNodeOperations = ({
       };
       const nodeId = addNewNode(nodeConfig);
       if (!skipInitialFetch && nodeConfig.valueConfig?.dataSource && nodeId) {
-        dataOperations.loadChartNodeData(nodeId, nodeConfig.valueConfig);
+        const dataSource = canvasDataSources?.find(
+          (source) => source.id === nodeConfig.valueConfig?.dataSource,
+        );
+        dataOperations.loadChartNodeData(
+          nodeId,
+          nodeConfig.valueConfig,
+          undefined,
+          undefined,
+          dataSource,
+          undefined,
+          undefined,
+          { dataSourceLookupStatus },
+        );
       }
       return { nodeId, valueConfig: nodeConfig.valueConfig };
     },
-    [graphInstance, addNewNode, dataOperations],
+    [canvasDataSources, dataSourceLookupStatus, graphInstance, state, addNewNode, dataOperations],
   );
 
   const handleNodeEditClose = useCallback(() => {
@@ -686,7 +833,7 @@ export const useGraphNodeOperations = ({
         nodeData: TopologyNodeData,
         dataSource?: DatasourceItem,
       ) => boolean,
-      options?: { silent?: boolean },
+      options?: { silent?: boolean; dataSourceLookupStatus?: DataSourceLookupStatus },
     ) => {
       if (!graphInstance) return;
 
@@ -708,12 +855,16 @@ export const useGraphNodeOperations = ({
             unifiedFilterValues,
             filterDefinitions,
             namespaceId,
-            options,
+            {
+              silent: options?.silent,
+              dataSource,
+              dataSourceLookupStatus: options?.dataSourceLookupStatus ?? dataSourceLookupStatus,
+            },
           );
         }
       });
     },
-    [graphInstance, updateSingleNodeData],
+    [dataSourceLookupStatus, graphInstance, updateSingleNodeData],
   );
 
   return {

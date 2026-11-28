@@ -229,6 +229,49 @@ describe('chart requests keep the saved analysis mode and paging', () => {
     assert.equal(captured?.analysis_mode, 'detail');
   });
 
+  it('sends a plan that was already ready and does not plan that request again', async () => {
+    let captured: Record<string, unknown> | undefined;
+    const blocked = await fetchWidgetData({
+      config: { dataSource: 8, chartType: 'pie', dataSourceParams: [] },
+      dataSource: {
+        params: [{
+          name: 'server_room_id',
+          alias_name: '机房',
+          type: 'string',
+          filterType: 'params',
+          value: '',
+          required: true,
+        }],
+      },
+      getSourceDataByApiId: async () => {
+        throw new Error('catalog should block this call');
+      },
+      throwError: true,
+    }).then(() => 'sent', (error: unknown) => error);
+    assert.equal(blocked instanceof Error ? blocked.name : '', 'WidgetRequestBlocked');
+
+    await fetchWidgetData({
+      config: { dataSource: 8, chartType: 'pie', dataSourceParams: [] },
+      dataSource: {
+        params: [{
+          name: 'server_room_id',
+          alias_name: '机房',
+          type: 'string',
+          filterType: 'params',
+          value: '',
+          required: true,
+        }],
+      },
+      readyPlan: { status: 'ready', params: { server_room_id: 'room-1', page: 2 } },
+      getSourceDataByApiId: async (_id, request) => {
+        captured = request;
+        return { data: { items: [] } };
+      },
+    });
+    assert.equal(captured?.server_room_id, 'room-1');
+    assert.equal(captured?.page, 2);
+  });
+
   it('keeps four model columns when the table is empty and a re-probe sees no aliases', () => {
     const schema = [
       { key: 'classification_name', title: '分类', value_type: 'string' as const },

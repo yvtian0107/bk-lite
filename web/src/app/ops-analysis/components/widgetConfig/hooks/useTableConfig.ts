@@ -12,9 +12,14 @@ import type { DatasourceItem, ParamItem } from '@/app/ops-analysis/types/dataSou
 import {
   formatTimeRange,
   processDataSourceParams,
+  resolveCatalogParams,
 } from '@/app/ops-analysis/utils/widgetDataTransform';
 import { getDateRangeTimezone } from '@/app/ops-analysis/utils/dateRange';
 import { collectVariableIds } from '@/app/ops-analysis/utils/dataVariable';
+import {
+  formatRequiredParamWaitMessage,
+  listMissingRequiredParams,
+} from '@/app/ops-analysis/utils/requiredParamGate';
 import {
   DisplayColumnRow,
   buildDisplayColumnsFromSchema,
@@ -41,7 +46,11 @@ interface UseTableConfigProps {
   filterBindings?: FilterBindings;
   filterDefinitions?: UnifiedFilterDefinition[];
   builtinNamespaceId?: number;
-  t: (key: string) => string;
+  t: (
+    key: string,
+    defaultMessage?: string,
+    values?: Record<string, string>,
+  ) => string;
 }
 
 interface FilterFieldOption {
@@ -268,16 +277,24 @@ export function useTableConfig({
       targetDataSource: DatasourceItem,
       formParams: Record<string, any>,
       chartTypeOverride?: string,
-    ): Record<string, any> | null => {
+    ): { status: 'ready'; payload: Record<string, any> }
+      | { status: 'waiting'; message: string }
+      | { status: 'failed'; message: string }
+      | { status: 'pending' } => {
       const payload: Record<string, any> = {};
-      const sourceParams = targetDataSource.params || [];
+      const catalog = resolveCatalogParams(targetDataSource);
+      if (catalog.status === 'invalid') {
+        return { status: 'failed', message: t('dashboard.dataSourceParamsInvalid') };
+      }
+      if (catalog.status !== 'resolved') return { status: 'pending' };
+      const sourceParams = catalog.params;
       const processedParams = processFormParamsForSubmit(formParams, sourceParams);
       const userParams = processedParams.reduce<Record<string, any>>((acc, param) => {
         acc[param.name] = param.value;
         return acc;
       }, {});
       // 探列走的是原始表单值，还没换成取值列。带着编号发出去会报参数格式错误。
-      if (collectVariableIds(userParams).length > 0) return null;
+      if (collectVariableIds(userParams).length > 0) return { status: 'pending' };
 
       Object.assign(
         payload,
@@ -298,6 +315,11 @@ export function useTableConfig({
         }),
       );
 
+      const missing = listMissingRequiredParams(sourceParams, payload);
+      if (missing.length > 0) {
+        return { status: 'waiting', message: formatRequiredParamWaitMessage(missing, t) };
+      }
+
       if (
         builtinNamespaceId !== undefined &&
         Array.isArray(targetDataSource.namespaces) &&
@@ -306,7 +328,7 @@ export function useTableConfig({
         payload.namespace_id = builtinNamespaceId;
       }
 
-      return payload;
+      return { status: 'ready', payload };
     },
     [
       chartType,
@@ -324,29 +346,59 @@ export function useTableConfig({
       targetDataSource: DatasourceItem,
       formParams: Record<string, any>,
       chartTypeOverride?: string,
-    ): Promise<DisplayColumnRow[]> => {
+    ): Promise<
+      | { status: 'columns'; columns: DisplayColumnRow[] }
+      | { status: 'waiting'; message: string }
+      | { status: 'failed'; message: string }
+      | { status: 'pending' }
+    > => {
       try {
-        const payload = buildProbeParams(targetDataSource, formParams, chartTypeOverride);
-        if (!payload) return [];
-        const { data: sourceData } = await getSourceDataByApiId(targetDataSource.id, payload);
+        const request = buildProbeParams(targetDataSource, formParams, chartTypeOverride);
+        if (request.status !== 'ready') return request;
+        const { data: sourceData } = await getSourceDataByApiId(targetDataSource.id, request.payload);
         const firstRecord = extractFirstRecordFromSourceData(sourceData);
         if (!firstRecord || Object.keys(firstRecord).length === 0) {
-          return [];
+          return { status: 'columns', columns: [] };
         }
 
         const detectedKeys = Object.keys(firstRecord);
 
-        return mergeDetectedFieldsWithSchema(
-          detectedKeys,
-          targetDataSource?.field_schema || [],
-        );
+        return {
+          status: 'columns',
+          columns: mergeDetectedFieldsWithSchema(
+            detectedKeys,
+            targetDataSource?.field_schema || [],
+          ),
+        };
       } catch (error) {
         console.error('Failed to probe default display columns:', error);
-        return [];
+        return { status: 'failed', message: t('dashboard.dataFetchFailed') };
       }
     },
     [buildProbeParams, getSourceDataByApiId],
   );
+
+  const reportProbeBlock = useCallback((
+    probed:
+      | { status: 'columns'; columns: DisplayColumnRow[] }
+      | { status: 'waiting'; message: string }
+      | { status: 'failed'; message: string }
+      | { status: 'pending' },
+  ) => {
+    if (probed.status === 'waiting') {
+      message.warning(probed.message);
+      return;
+    }
+    if (probed.status === 'failed') {
+      message.error(probed.message);
+      return;
+    }
+    if (probed.status === 'pending') {
+      message.info(t('dashboard.fieldProbePreparing'));
+      return;
+    }
+    message.warning(t('dashboard.reProbeNoFields'));
+  }, [t]);
 
   const handleReProbeColumns = useCallback(async () => {
     if (!selectedDataSource || !isTableLikeChartType) return;
@@ -354,13 +406,14 @@ export function useTableConfig({
     try {
       setIsProbingColumns(true);
       const currentParams = (form.getFieldValue('params') || {}) as Record<string, any>;
-      const probedColumns = await probeDefaultDisplayColumns(
+      const probed = await probeDefaultDisplayColumns(
         selectedDataSource,
         currentParams,
         chartType,
       );
 
-      if (probedColumns.length > 0) {
+      if (probed.status === 'columns' && probed.columns.length > 0) {
+        const probedColumns = probed.columns;
         setDetectedDisplayColumns(probedColumns);
         // 关键:把探测结果写入 displayColumns(实际渲染数组)
         // 同时保留用户自定义列(isDefault !== true 的列),与 tooltip 文案一致
@@ -374,8 +427,7 @@ export function useTableConfig({
         message.success(t('dashboard.reProbeSuccess'));
         return;
       }
-
-      message.warning(t('dashboard.reProbeNoFields'));
+      reportProbeBlock(probed);
     } finally {
       setIsProbingColumns(false);
     }
@@ -385,6 +437,7 @@ export function useTableConfig({
     isTableLikeChartType,
     form,
     probeDefaultDisplayColumns,
+    reportProbeBlock,
     t,
   ]);
 
@@ -402,15 +455,19 @@ export function useTableConfig({
           return;
         }
 
-        const probedColumns = await probeDefaultDisplayColumns(
+        const probed = await probeDefaultDisplayColumns(
           selectedDataSource,
           currentParams,
           newChartType,
         );
-        setDetectedDisplayColumns(probedColumns);
+        if (probed.status === 'columns' && probed.columns.length > 0) {
+          setDetectedDisplayColumns(probed.columns);
+          return;
+        }
+        reportProbeBlock(probed);
       }
     },
-    [selectedDataSource, form, probeDefaultDisplayColumns, availableFields],
+    [selectedDataSource, form, probeDefaultDisplayColumns, availableFields, reportProbeBlock],
   );
 
   const resetTableConfig = useCallback(() => {

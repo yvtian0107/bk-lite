@@ -13,6 +13,7 @@ import {
   syncFilterValuesWithDefinitions,
 } from '../utils/namespaceUtils';
 import { syncAndFillOrganizationFilterValues } from '@/app/ops-analysis/utils/unifiedFilterState';
+import type { DataSourceLookupStatus } from '@/app/ops-analysis/utils/widgetRequestVersion';
 import type { useTopologyState } from './useTopologyState';
 
 interface UseTopologyLifecycleParams {
@@ -42,13 +43,19 @@ interface UseTopologyLifecycleParams {
     values?: Record<string, FilterValue>,
     definitions?: UnifiedFilterDefinition[],
     namespaceId?: number,
+    dataSources?: DatasourceItem[],
+    shouldRefreshNode?: unknown,
+    options?: { dataSourceLookupStatus?: DataSourceLookupStatus },
   ) => void;
   refreshAllChartNodes: (
     values?: Record<string, FilterValue>,
     definitions?: UnifiedFilterDefinition[],
     dataSources?: DatasourceItem[],
     namespaceId?: number,
+    shouldRefreshNode?: unknown,
+    options?: { dataSourceLookupStatus?: DataSourceLookupStatus },
   ) => void;
+  readCanvasDataSourceLookupStatus: () => DataSourceLookupStatus;
   abortInflightDataRequests: () => void;
   refreshTopologyNodes: (
     scope: 'reload',
@@ -67,7 +74,6 @@ export const useTopologyLifecycle = ({
   state,
   definitions,
   appliedFilterValues,
-  appliedNamespaceId,
   setAppliedFilterValues,
   setAppliedNamespaceId,
   setDefinitions,
@@ -80,8 +86,8 @@ export const useTopologyLifecycle = ({
   loadCanvasNamespaces,
   refreshAllSingleValueNodes,
   refreshAllChartNodes,
+  readCanvasDataSourceLookupStatus,
   abortInflightDataRequests,
-  refreshTopologyNodes,
   scheduleTopologyInitialization,
   startInitialization,
   syncTopologyCanvasResources,
@@ -199,12 +205,17 @@ export const useTopologyLifecycle = ({
               syncedValues,
               autoBuiltFilters,
               initialNamespaceId,
+              canvasDataSources,
+              undefined,
+              { dataSourceLookupStatus: readCanvasDataSourceLookupStatus() },
             );
             refreshAllChartNodes(
               syncedValues,
               autoBuiltFilters,
               canvasDataSources,
               initialNamespaceId,
+              undefined,
+              { dataSourceLookupStatus: readCanvasDataSourceLookupStatus() },
             );
             finishInitialization();
           });

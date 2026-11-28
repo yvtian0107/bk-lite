@@ -90,6 +90,8 @@ const chartValueConfig: ValueConfig = {
   chartType: 'pie',
 };
 
+const readyCatalog = { id: 7, params: [] };
+
 const singleValueNode: TopologyNodeData = {
   id: 'sv-1',
   type: 'single-value',
@@ -139,12 +141,12 @@ describe('topology chart node owner requests', () => {
       useGraphData(graph as never, vi.fn()),
     );
 
-    void result.current.loadChartNodeData('chart-1', chartValueConfig);
+    void result.current.loadChartNodeData('chart-1', chartValueConfig, undefined, undefined, readyCatalog);
     await Promise.resolve();
     expect(testState.fetchWidgetData).toHaveBeenCalledTimes(1);
 
     await act(async () => {
-      await result.current.loadChartNodeData('chart-1', chartValueConfig, undefined, undefined, undefined, undefined, undefined, {
+      await result.current.loadChartNodeData('chart-1', chartValueConfig, undefined, undefined, readyCatalog, undefined, undefined, {
         silent: true,
       });
     });
@@ -173,11 +175,11 @@ describe('topology chart node owner requests', () => {
       useGraphData(graph as never, vi.fn()),
     );
 
-    void result.current.loadChartNodeData('chart-1', chartValueConfig);
+    void result.current.loadChartNodeData('chart-1', chartValueConfig, undefined, undefined, readyCatalog);
     await Promise.resolve();
 
     await act(async () => {
-      await result.current.loadChartNodeData('chart-1', chartValueConfig, undefined, undefined, undefined, undefined, undefined, {
+      await result.current.loadChartNodeData('chart-1', chartValueConfig, undefined, undefined, readyCatalog, undefined, undefined, {
         silent: true,
       });
     });
@@ -219,14 +221,14 @@ describe('topology chart node owner requests', () => {
       chartValueConfig,
       undefined,
       undefined,
-      undefined,
+      readyCatalog,
       undefined,
       undefined,
       { silent: true },
     );
     await Promise.resolve();
 
-    void result.current.loadChartNodeData('chart-1', chartValueConfig);
+    void result.current.loadChartNodeData('chart-1', chartValueConfig, undefined, undefined, readyCatalog);
     await Promise.resolve();
     expect(testState.fetchWidgetData).toHaveBeenCalledTimes(2);
 
@@ -271,13 +273,13 @@ describe('topology chart node owner requests', () => {
       chartValueConfig,
       undefined,
       undefined,
-      undefined,
+      readyCatalog,
       undefined,
       undefined,
       { silent: true },
     );
     await Promise.resolve();
-    void result.current.loadChartNodeData('chart-1', chartValueConfig);
+    void result.current.loadChartNodeData('chart-1', chartValueConfig, undefined, undefined, readyCatalog);
     await Promise.resolve();
     expect(testState.fetchWidgetData).toHaveBeenCalledTimes(2);
 
@@ -293,7 +295,7 @@ describe('topology chart node owner requests', () => {
         chartValueConfig,
         undefined,
         undefined,
-        undefined,
+        readyCatalog,
         undefined,
         undefined,
         { silent: true },
@@ -331,9 +333,9 @@ describe('topology chart node owner requests', () => {
       useGraphData(graph as never, vi.fn()),
     );
 
-    void result.current.loadChartNodeData('chart-1', chartValueConfig);
+    void result.current.loadChartNodeData('chart-1', chartValueConfig, undefined, undefined, readyCatalog);
     await Promise.resolve();
-    void result.current.loadChartNodeData('chart-1', chartValueConfig);
+    void result.current.loadChartNodeData('chart-1', chartValueConfig, undefined, undefined, readyCatalog);
     await Promise.resolve();
     expect(testState.fetchWidgetData).toHaveBeenCalledTimes(2);
 
@@ -349,7 +351,7 @@ describe('topology chart node owner requests', () => {
         chartValueConfig,
         undefined,
         undefined,
-        undefined,
+        readyCatalog,
         undefined,
         undefined,
         { silent: true },
@@ -380,7 +382,13 @@ describe('topology chart node owner requests', () => {
     });
 
     const { result } = renderHook(() => useGraphData(graph as never, vi.fn()));
-    void result.current.loadChartNodeData('chart-1', chartValueConfig);
+    void result.current.loadChartNodeData(
+      'chart-1',
+      chartValueConfig,
+      undefined,
+      undefined,
+      readyCatalog,
+    );
     await waitFor(() => expect(signals).toHaveLength(1));
 
     act(() => {
@@ -393,6 +401,149 @@ describe('topology chart node owner requests', () => {
     });
     expect(node.getData().hasError).not.toBe(true);
     expect(node.getData().rawData).toEqual({ name: 'A' });
+  });
+});
+
+describe('topology table page lookup', () => {
+  const installHandler = (
+    lookup: 'loading' | 'success',
+  ) => {
+    const node = {
+      ...createFakeNode({
+        type: 'chart',
+        valueConfig: { dataSource: 7, chartType: 'table', dataSourceParams: [] },
+      }),
+      id: 'chart-1',
+    };
+    const graph = {
+      getCellById: () => node,
+      getNodes: () => [node],
+    };
+    const { result } = renderHook(() => useGraphData(graph as never, vi.fn()));
+    act(() => {
+      result.current.refreshAllChartNodes(undefined, undefined, [], undefined, undefined, {
+        dataSourceLookupStatus: lookup,
+      });
+    });
+    node.setData({
+      ...node.getData(),
+      isLoading: false,
+      hasError: false,
+      errorMessage: undefined,
+      chartRequestState: 'ready',
+    });
+    return node;
+  };
+
+  it('keeps a real pending page change pending and finishes a missing source after lookup success', async () => {
+    const pendingNode = installHandler('loading');
+    await act(async () => {
+      pendingNode.getData().onTableQueryChange?.('chart-1', { page: 2, pageSize: 20 });
+      await Promise.resolve();
+    });
+    expect(testState.fetchWidgetData).not.toHaveBeenCalled();
+    expect(pendingNode.getData().chartRequestState).toBe('pending');
+    expect(pendingNode.getData().hasError).not.toBe(true);
+
+    const missingNode = installHandler('success');
+    await act(async () => {
+      missingNode.getData().onTableQueryChange?.('chart-1', { page: 3, pageSize: 20 });
+      await Promise.resolve();
+    });
+    expect(testState.fetchWidgetData).not.toHaveBeenCalled();
+    expect(missingNode.getData().hasError).toBe(true);
+    expect(missingNode.getData().errorMessage).toBe('dashboard.dataSourceNotFound');
+    expect(missingNode.getData().chartRequestState).toBe('error');
+  });
+
+  it('resumes a page that was left pending once the catalog lookup finishes', async () => {
+    const node = {
+      ...createFakeNode({
+        type: 'chart',
+        valueConfig: { dataSource: 7, chartType: 'table', dataSourceParams: [] },
+      }),
+      id: 'chart-1',
+    };
+    const graph = {
+      getCellById: () => node,
+      getNodes: () => [node],
+    };
+    const { result, rerender } = renderHook(
+      ({ catalog }: { catalog: { dataSources: unknown[]; dataSourceLookupStatus: 'loading' | 'success' } }) =>
+        useGraphData(graph as never, vi.fn(), undefined, catalog as never),
+      {
+        initialProps: {
+          catalog: { dataSources: [], dataSourceLookupStatus: 'loading' as const },
+        },
+      },
+    );
+
+    act(() => {
+      result.current.refreshAllChartNodes(undefined, undefined, [], undefined, undefined, {
+        dataSourceLookupStatus: 'loading',
+      });
+    });
+    await act(async () => {
+      node.getData().onTableQueryChange?.('chart-1', { page: 2, pageSize: 20 });
+      await Promise.resolve();
+    });
+    expect(testState.fetchWidgetData).not.toHaveBeenCalled();
+    expect(node.getData().chartRequestState).toBe('pending');
+
+    testState.fetchWidgetData.mockResolvedValue([{ name: '服务器', value: 1 }]);
+    rerender({
+      catalog: {
+        dataSources: [{ id: 7, params: [] }],
+        dataSourceLookupStatus: 'success',
+      },
+    });
+    await waitFor(() => expect(testState.fetchWidgetData).toHaveBeenCalledTimes(1));
+    expect(node.getData().chartRequestState).toBe('ready');
+
+    await act(async () => {
+      node.getData().onTableQueryChange?.('chart-1', { page: 3, pageSize: 20 });
+      await Promise.resolve();
+    });
+    expect(testState.fetchWidgetData).toHaveBeenCalledTimes(2);
+    expect(node.getData().chartRequestState).toBe('ready');
+  });
+
+  it('finishes a pending chart as not found when lookup succeeds without that source', async () => {
+    const node = {
+      ...createFakeNode({
+        type: 'chart',
+        valueConfig: { dataSource: 7, chartType: 'pie', dataSourceParams: [] },
+      }),
+      id: 'chart-2',
+    };
+    const graph = {
+      getCellById: () => node,
+      getNodes: () => [node],
+    };
+    const { result, rerender } = renderHook(
+      ({ catalog }: { catalog: { dataSources: unknown[]; dataSourceLookupStatus: 'loading' | 'success' } }) =>
+        useGraphData(graph as never, vi.fn(), undefined, catalog as never),
+      {
+        initialProps: {
+          catalog: { dataSources: [], dataSourceLookupStatus: 'loading' as const },
+        },
+      },
+    );
+
+    act(() => {
+      result.current.refreshAllChartNodes(undefined, undefined, [], undefined, undefined, {
+        dataSourceLookupStatus: 'loading',
+      });
+    });
+    expect(testState.fetchWidgetData).not.toHaveBeenCalled();
+    expect(node.getData().chartRequestState).toBe('pending');
+
+    rerender({
+      catalog: { dataSources: [], dataSourceLookupStatus: 'success' },
+    });
+    await waitFor(() => expect(node.getData().chartRequestState).toBe('error'));
+    expect(node.getData().errorMessage).toBe('dashboard.dataSourceNotFound');
+    expect(testState.fetchWidgetData).not.toHaveBeenCalled();
   });
 });
 
@@ -418,13 +569,16 @@ describe('topology single-value node owner requests', () => {
       }),
     );
 
-    void result.current.updateSingleNodeData(singleValueNode);
+    void result.current.updateSingleNodeData(singleValueNode, undefined, undefined, undefined, {
+      dataSource: readyCatalog as never,
+    });
     await Promise.resolve();
     expect(testState.fetchCompareData).toHaveBeenCalledTimes(1);
 
     await act(async () => {
       await result.current.updateSingleNodeData(singleValueNode, undefined, undefined, undefined, {
         silent: true,
+        dataSource: readyCatalog as never,
       });
     });
     expect(testState.fetchCompareData).toHaveBeenCalledTimes(1);
@@ -456,12 +610,15 @@ describe('topology single-value node owner requests', () => {
       }),
     );
 
-    void result.current.updateSingleNodeData(singleValueNode);
+    void result.current.updateSingleNodeData(singleValueNode, undefined, undefined, undefined, {
+      dataSource: readyCatalog as never,
+    });
     await Promise.resolve();
 
     await act(async () => {
       await result.current.updateSingleNodeData(singleValueNode, undefined, undefined, undefined, {
         silent: true,
+        dataSource: readyCatalog as never,
       });
     });
     expect(testState.fetchCompareData).toHaveBeenCalledTimes(1);
@@ -504,10 +661,13 @@ describe('topology single-value node owner requests', () => {
 
     void result.current.updateSingleNodeData(singleValueNode, undefined, undefined, undefined, {
       silent: true,
+      dataSource: readyCatalog as never,
     });
     await Promise.resolve();
 
-    void result.current.updateSingleNodeData(singleValueNode);
+    void result.current.updateSingleNodeData(singleValueNode, undefined, undefined, undefined, {
+      dataSource: readyCatalog as never,
+    });
     await Promise.resolve();
     expect(testState.fetchCompareData).toHaveBeenCalledTimes(2);
 
@@ -549,6 +709,8 @@ describe('topology single-value node owner requests', () => {
           setEditingNodeData: vi.fn(),
         } as never,
         handleSave: vi.fn(),
+        dataSources: [readyCatalog as never],
+        dataSourceLookupStatus: 'success',
       }),
     );
 
@@ -655,7 +817,9 @@ describe('topology single-value node owner requests', () => {
       }),
     );
 
-    void result.current.updateSingleNodeData(singleValueNode);
+    void result.current.updateSingleNodeData(singleValueNode, undefined, undefined, undefined, {
+      dataSource: readyCatalog as never,
+    });
     await waitFor(() => expect(signals).toHaveLength(1));
     act(() => {
       result.current.abortInflightSingleValueRequests();
@@ -666,5 +830,157 @@ describe('topology single-value node owner requests', () => {
     });
     expect(node.getData().hasError).not.toBe(true);
     expect(node.getData().fetchError).not.toBe(true);
+  });
+
+  it('waits on the latest required catalog and does not treat the old snapshot as authority', async () => {
+    const node = createFakeNode({
+      type: 'single-value',
+      label: '42',
+      rawData: { cpu: 42 },
+    });
+    const graph = createFakeGraph({ 'sv-1': node });
+    const { result } = renderHook(() =>
+      useGraphNodeOperations({
+        graphInstance: graph as never,
+        state: dummyState,
+        handleSave: vi.fn(),
+      }),
+    );
+
+    await act(async () => {
+      await result.current.updateSingleNodeData(
+        {
+          ...singleValueNode,
+          valueConfig: {
+            ...singleValueNode.valueConfig,
+            dataSourceParams: [{ name: 'server_room_id', type: 'string', value: '' }],
+          },
+        },
+        undefined,
+        undefined,
+        undefined,
+        {
+          dataSource: {
+            id: 7,
+            params: [{
+              name: 'server_room_id',
+              alias_name: '机房',
+              type: 'string',
+              required: true,
+              value: '',
+            }],
+          } as never,
+        },
+      );
+    });
+
+    expect(testState.fetchCompareData).not.toHaveBeenCalled();
+    expect(node.getData().isLoading).toBe(false);
+    expect(node.getData().hasError).not.toBe(true);
+    expect(node.getData().rawData).toBeUndefined();
+    expect(node.setAttrByPath).toHaveBeenCalledWith('label/text', 'dashboard.selectRequiredParam');
+  });
+
+  it('requests when the latest catalog is empty even if the snapshot says required', async () => {
+    const node = createFakeNode({ type: 'single-value' });
+    const graph = createFakeGraph({ 'sv-1': node });
+    testState.fetchCompareData.mockResolvedValue({ currentData: { cpu: 1 }, baselineData: null });
+    const { result } = renderHook(() =>
+      useGraphNodeOperations({
+        graphInstance: graph as never,
+        state: dummyState,
+        handleSave: vi.fn(),
+      }),
+    );
+
+    await act(async () => {
+      await result.current.updateSingleNodeData(
+        {
+          ...singleValueNode,
+          valueConfig: {
+            ...singleValueNode.valueConfig,
+            dataSourceParams: [{
+              name: 'server_room_id',
+              type: 'string',
+              required: true,
+              value: '',
+            }],
+          },
+        },
+        undefined,
+        undefined,
+        undefined,
+        { dataSource: { id: 7, params: null } as never },
+      );
+    });
+
+    expect(testState.fetchCompareData).toHaveBeenCalledTimes(1);
+  });
+
+  it('keeps loading while the catalog lookup is still pending and fails when the source is missing', async () => {
+    const node = createFakeNode({ type: 'single-value' });
+    const graph = createFakeGraph({ 'sv-1': node });
+    const { result } = renderHook(() =>
+      useGraphNodeOperations({
+        graphInstance: graph as never,
+        state: dummyState,
+        handleSave: vi.fn(),
+      }),
+    );
+
+    await act(async () => {
+      await result.current.updateSingleNodeData(singleValueNode, undefined, undefined, undefined, {
+        dataSourceLookupStatus: 'loading',
+      });
+    });
+    expect(testState.fetchCompareData).not.toHaveBeenCalled();
+    expect(node.getData().hasError).not.toBe(true);
+    expect(node.getData().isLoading).toBe(true);
+
+    await act(async () => {
+      await result.current.updateSingleNodeData(singleValueNode, undefined, undefined, undefined, {
+        dataSourceLookupStatus: 'success',
+      });
+    });
+    expect(testState.fetchCompareData).not.toHaveBeenCalled();
+    expect(node.getData().hasError).toBe(true);
+    expect(node.getData().errorMessage).toBe('dashboard.dataSourceNotFound');
+  });
+
+  it('resumes a single-value node after the catalog lookup leaves loading', async () => {
+    const node = Object.assign(createFakeNode({ ...singleValueNode }), { id: 'sv-1' });
+    const graph = {
+      getCellById: () => node,
+      getNodes: () => [node],
+    };
+    testState.fetchCompareData.mockResolvedValue({ currentData: { cpu: 9 }, baselineData: null });
+    const { result, rerender } = renderHook(
+      ({
+        lookup,
+        sources,
+      }: {
+        lookup: 'loading' | 'success';
+        sources: unknown[];
+      }) => useGraphNodeOperations({
+        graphInstance: graph as never,
+        state: dummyState,
+        handleSave: vi.fn(),
+        dataSources: sources as never,
+        dataSourceLookupStatus: lookup,
+      }),
+      { initialProps: { lookup: 'loading' as const, sources: [] as unknown[] } },
+    );
+
+    await act(async () => {
+      await result.current.updateSingleNodeData(singleValueNode);
+    });
+    expect(testState.fetchCompareData).not.toHaveBeenCalled();
+    expect(node.getData().catalogHold).toBe(true);
+    expect(node.getData().isLoading).toBe(true);
+
+    rerender({ lookup: 'success', sources: [readyCatalog] });
+    await waitFor(() => expect(testState.fetchCompareData).toHaveBeenCalledTimes(1));
+    expect(node.getData().catalogHold).toBe(false);
+    expect(node.setAttrByPath).toHaveBeenCalledWith('label/text', '9');
   });
 });
